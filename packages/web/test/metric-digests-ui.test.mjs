@@ -24,5 +24,6 @@ test('metric digests UI reports hosted requirement and routes drill-back without
   const client = { listMetricSubscriptions: async () => { throw Error('HOSTED_API_REQUIRED'); } };
   const ui = await mount(t, MetricSubscriptions, { metric, client }); assert.match(JSON.stringify(ui.toJSON()), /Needs hosted API/); assert.equal(button(ui, 'Subscribe to email digest'), undefined);
   assert.deepEqual(parseRoute('#/metrics/revenue'), { page: 'metric', metricId: 'revenue' }); assert.equal(routeHash({ page: 'metric', metricId: 'revenue' }), '#/metrics/revenue');
-  const detail = await mount(t, MetricDetail, { id: 'revenue' }); assert.match(JSON.stringify(detail.toJSON()), /Needs hosted API/);
+  assert.equal(routeProblem({ mode: 'hosted', session: { role: 'reader' } }, 'metric'), undefined);
+  await act(async () => ui.update(createElement(MetricDetail, { id: 'revenue' }))); assert.match(JSON.stringify(ui.toJSON()), /Needs hosted API/);
 });

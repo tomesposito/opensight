@@ -102,7 +102,7 @@ export class JobRenderer implements JobExecutor {
       const url = new URL(this.origin);
       if (url.origin !== this.origin || url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) throw new MetadataError('DIGEST_ORIGIN_REQUIRED', 503);
       const result = await new DigestComputation(this.data).compute(context, spec, now);
-      const unsubscribe = `${this.origin}/api/v1/metric-unsubscribe/${[context.tenantId, context.namespaceId, jobId, spec.unsubscribeToken].map(encodeURIComponent).join('/')}`;
+      const unsubscribe = `${this.origin}/api/api/v1/metric-unsubscribe/${[context.tenantId, context.namespaceId, jobId, spec.unsubscribeToken].map(encodeURIComponent).join('/')}`;
       return digestMessage(result, `${this.origin}/#/metrics/${encodeURIComponent(spec.metricId)}`, unsubscribe);
     }
     if (spec.kind === 'refresh') throw new MetadataError('JOB_DELIVERY_INVALID', 422);

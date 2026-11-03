@@ -48,6 +48,8 @@ export class DigestStore {
     identifier(scope.tenantId); identifier(scope.namespaceId); identifier(id);
     if (!/^[a-f0-9]{64}$/.test(token)) throw new MetadataError('DIGEST_UNSUBSCRIBE_INVALID', 404);
     await this.jobs.db.transaction(async c => {
+      // Serialize with delivery/revocation, including when a tenant is suspended.
+      await c.query('UPDATE h1_tenants SET version = version WHERE tenant_id = ?', [scope.tenantId]);
       const job = await this.jobs.find(c, scope, id);
       if (job.spec.kind !== 'digest' || !timingSafeEqual(Buffer.from(token), Buffer.from(job.spec.unsubscribeToken))) throw new MetadataError('DIGEST_UNSUBSCRIBE_INVALID', 404);
       if (job.stopped) return;

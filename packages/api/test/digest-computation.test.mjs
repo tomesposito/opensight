@@ -48,3 +48,53 @@ test('digests: unresolved/foreign fields, unpublished and foreign-owned datasets
   await assert.rejects(compute.authorize(await f.login('one', 'other'), spec), { code: 'DIGEST_DATASET_ACCESS_DENIED' });
   await assert.rejects(compute.authorize(await f.login('two'), spec), { code: 'METRIC_NOT_FOUND' });
 });
+
+test('digests: empty-group identities respect the executed expression, including explicit sums and ratios', async () => {
+  const { zeroIdentity } = await import('../dist/digest-computation.js'), { parseExpression } = await import('@opensight/query-engine');
+  for (const [expression, expected] of [['sum({amount})', true], ['sum({amount}) * 2', true], ['sum({amount}) - sum({cost})', true], ['count({amount})', true], ['distinct_count({region})', true], ['avg({amount})', false], ['sum({amount}) / count({amount})', false], ['sum({amount}) + 1', false]]) {
+    assert.equal(zeroIdentity(parseExpression(expression, '$', { validationOnly: true })), expected, expression);
+  }
+});
+
+test('digests: real source RLS filters totals/drivers and CLS denies metric, date and grouping bypasses', async t => {
+  const { upload } = await import('./source-helpers.mjs');
+  const f = await digestFixture(t), compute = new DigestComputation(f.data);
+  const policy = { rowLevel: true, rowRules: [{ id: 'east-only', principals: [{ type: 'user', id: 'admin' }], predicate: { column: 'region', operator: 'eq', value: 'east' } }] };
+  const source = await f.sources.upload(await f.login(), { ...upload(policy), base64: Buffer.from('day,region,amount\n2026-10-19,east,10\n2026-10-26,east,30\n2026-10-26,west,999999\n').toString('base64') });
+  const ref = { kind: 'dataset', id: 'secured' };
+  const bound = await f.sources.get(await f.login(), source.id);
+  await f.metadata.put(await f.login(), ref, { definition: { DataSet: { DataSetId: 'secured', OutputColumns: bound.binding.columns.map(c => ({ Name: c.name, Type: c.type })) } }, sources: [{ kind: 'source', id: source.id, ownerId: 'admin' }] });
+  await f.metadata.assetTransaction(await f.login(), true, a => { const c = new MetricCatalog(a); c.create('secured', ref, definition, c.schema(ref)); c.publish('secured', 1, c.schema(ref)); });
+  const spec = newDigest('secured', 'admin', digestInput), result = await compute.compute(await f.login(), spec, monday);
+  assert.equal(result.current, 30); assert.equal(result.previous, 10); assert.deepEqual(result.drivers.map(d => d.value), ['east']);
+  const key = { kind: 'source', id: source.id, ownerId: 'admin' }, saved = await f.metadata.get(await f.login(), key);
+  for (const column of ['amount', 'day', 'region']) {
+    const current = await f.metadata.get(await f.login(), key);
+    await f.metadata.put(await f.login(), key, { ...saved.body, policy: { ...saved.body.policy, protectedColumns: [column], columnGrants: [] } }, current.version);
+    await assert.rejects(compute.compute(await f.login(), spec, monday), error => ['COLUMN_ACCESS_DENIED', 'UNRESOLVED_BINDING', 'SOURCE_POLICY_REQUIRED'].includes(error.code), column);
+  }
+});
+
+test('digests: readers with an existing owned source can execute legacy metrics; protected datasets without rules fail closed', async t => {
+  const f = await digestFixture(t), compute = new DigestComputation(f.data), ref = { kind: 'dataset', id: 'legacy' };
+  const source = await f.sources.get(await f.login(), f.source.id);
+  const body = { definition: { DataSet: { DataSetId: 'legacy', OutputColumns: source.binding.columns.map(c => ({ Name: c.name, Type: c.type })) } }, sources: [{ kind: 'source', id: source.id, ownerId: 'admin' }] };
+  await f.metadata.put(await f.login(), ref, body);
+  await f.metadata.assetTransaction(await f.login(), true, a => { const c = new MetricCatalog(a); c.create('legacy', ref, definition, c.schema(ref)); c.publish('legacy', 1, c.schema(ref)); });
+  const spec = newDigest('legacy', 'admin', digestInput);
+  await f.metadata.put(await f.login(), { kind: 'user', id: 'admin' }, { name: 'Reader with existing data access', role: 'reader' }, 1);
+  const result = await compute.compute(await f.login(), spec, monday); assert.equal(result.current, 35);
+  await assert.rejects(compute.authorize(await f.login('one', 'other'), spec), { code: 'DATASET_ACCESS_DENIED' });
+  // The administrator changes the dataset guard, then the reader must lose access.
+  await f.metadata.put(await f.login('one', 'other'), ref, { ...body, definition: { DataSet: { ...body.definition.DataSet, RowLevelPermissionDataSet: { Arn: 'urn:synthetic:missing-policy' } } } }, 1);
+  await assert.rejects(compute.compute(await f.login(), spec, monday), { code: 'SOURCE_POLICY_REQUIRED' });
+});
+
+test('digests: governed averages keep per-group values instead of summing averages into a total', async t => {
+  const f = await digestFixture(t), compute = new DigestComputation(f.data);
+  await f.metadata.assetTransaction(await f.login(), true, a => { const c = new MetricCatalog(a); c.create('average', f.ref, { ...definition, name: 'Average', defaultAggregation: 'AVG' }, c.schema(f.ref)); c.publish('average', 1, c.schema(f.ref)); });
+  const result = await compute.compute(await f.login(), newDigest('average', 'admin', digestInput), monday);
+  assert.equal(result.current, 17.5); assert.equal(result.previous, 15); assert.equal(result.change, 2.5);
+  assert.deepEqual(result.drivers.map(d => d.change), [20, -15]);
+  assert.match(digestMessage(result, 'https://example.test', 'https://example.test/unsubscribe').html, /need not add to the overall change/);
+});

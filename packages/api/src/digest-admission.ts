@@ -14,7 +14,7 @@ export async function admitMetricDataset(data: HostedData, context: TenantContex
     if (source.kind !== 'source' || source.ownerId !== context.userId) throw new MetadataError('DATASET_ACCESS_DENIED', 403);
     const policies = (await data.sources.metadata.list(context, 'policy')).filter(p => p.body.datasetId === datasetId);
     const wire = object(dataset.body.definition), d = object(wire.DataSet ?? wire);
-    if (policies.length > 1 || (d.RowLevelPermissionDataSet || d.ColumnLevelPermissionRules) && !policies.length) throw new MetadataError('SOURCE_POLICY_REQUIRED', 403);
+    if (policies.length > 1 || (d.RowLevelPermissionDataSet || d.ColumnLevelPermissionRules || object(d.RowLevelPermissionTagConfiguration ?? {}).Status === 'ENABLED') && !policies.length) throw new MetadataError('SOURCE_POLICY_REQUIRED', 403);
     const admittedSource = await data.sources.get(context, source.id);
     const a = await data.admit(context, source.id, 'query', base => {
       if (!policies[0]) return base;

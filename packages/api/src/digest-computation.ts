@@ -1,4 +1,4 @@
-import { metricColumn, planPreparedQuery, type InteractiveQuery, type PublishedMetric, type ResultValue } from '@opensight/query-engine';
+import { metricColumn, metricExpression, parseExpression, planPreparedQuery, type RowExpression, type InteractiveQuery, type PublishedMetric, type ResultValue } from '@opensight/query-engine';
 import { MetadataError } from './metadata-db.js';
 import type { TenantContext } from './metadata.js';
 import { MetricCatalog, metricRecord } from './metric-model.js';
@@ -41,7 +41,7 @@ export function digestDrivers(dimension: string, current: { value: ResultValue; 
   if (a.size !== current.length || b.size !== previous.length) throw new MetadataError('DIGEST_GROUP_INVALID', 422);
   const drivers = [...new Set([...a.keys(), ...b.keys()])].map(key => {
     const av = a.get(key), bv = b.get(key), current = av ? av.metric : zeroForMissing ? 0 : null, previous = bv ? bv.metric : zeroForMissing ? 0 : null;
-    return { dimension, value: (av ?? bv)!.value, current, previous, change: current === null || previous === null ? null : current - previous };
+    return { dimension, value: (av ?? bv)!.value, current, previous, change: current === null || previous === null ? null : finite(current - previous) };
   });
   return drivers.sort((a, b) => (b.change === null ? -1 : Math.abs(b.change)) - (a.change === null ? -1 : Math.abs(a.change)) || compare(scalarKey(a.value), scalarKey(b.value)));
 }
@@ -50,6 +50,19 @@ const finite = (v: unknown): number | null => {
   if (typeof v !== 'number' || !Number.isFinite(v)) throw new MetadataError('DIGEST_VALUE_UNAVAILABLE', 422);
   return v;
 };
+/** Zero is the identity of these aggregates, including linear combinations.
+ * Ratios/averages/extrema retain unavailable values for absent groups. */
+export function zeroIdentity(expression: RowExpression): boolean {
+  if (expression.kind === 'call') return ['sum', 'count', 'distinct_count'].includes(expression.name.toLowerCase());
+  if (expression.kind === 'unary' && ['+', '-'].includes(expression.operator)) return zeroIdentity(expression.operand);
+  if (expression.kind === 'binary') {
+    if (['+', '-'].includes(expression.operator)) return zeroIdentity(expression.left) && zeroIdentity(expression.right);
+    const constant = (v: RowExpression) => v.kind === 'literal' && typeof v.value === 'number' && Number.isFinite(v.value);
+    if (expression.operator === '*') return constant(expression.left) && zeroIdentity(expression.right) || zeroIdentity(expression.left) && constant(expression.right);
+    if (expression.operator === '/') return zeroIdentity(expression.left) && constant(expression.right) && expression.right.kind === 'literal' && expression.right.value !== 0;
+  }
+  return false;
+}
 export class DigestComputation {
   readonly prep: HostedPrep;
   constructor(readonly data: HostedData) { this.prep = new HostedPrep(data); }
@@ -102,14 +115,15 @@ export class DigestComputation {
     };
     const a = await run(p.periods.current), b = await run(p.periods.previous);
     if (a.length > 1 || b.length > 1) throw new MetadataError('DIGEST_VALUE_UNAVAILABLE', 422);
-    const count = p.metric.defaultAggregation === 'COUNT' || p.metric.defaultAggregation === 'DISTINCT_COUNT';
+    const expression = parseExpression(metricExpression(p.metric), '$.metric', { validationOnly: true });
+    const count = expression.kind === 'call' && ['count', 'distinct_count'].includes(expression.name.toLowerCase());
     const current = a[0]?.metric ?? (count ? 0 : null), previous = b[0]?.metric ?? (count ? 0 : null);
     const change = current === null || previous === null ? null : finite(current - previous), drivers: DigestDriver[] = [];
     for (const dimension of spec.dimensions) {
       const currentGroups = await run(p.periods.current, dimension), previousGroups = await run(p.periods.previous, dimension);
       // Missing categories are zero only for count/sum. Null aggregates remain
       // unavailable; AVG/MIN/MAX and derived expressions must not invent zeros.
-      const zeroForMissing = /^(?:\s*\{[^{}]+\}\s*)$/.test(p.metric.expression) && ['SUM', 'COUNT', 'DISTINCT_COUNT'].includes(p.metric.defaultAggregation);
+      const zeroForMissing = zeroIdentity(expression);
       drivers.push(...digestDrivers(dimension, currentGroups, previousGroups, zeroForMissing).slice(0, 5));
     }
     await data.publication(context, p.stamp);

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { metricHosted, metricLocal } from './metric-helpers.mjs';
 import { upload } from './source-helpers.mjs';
 import { definition, digestInput } from './digest-helpers.mjs';
+import { publicPath } from '../dist/runtime-ingress.js';
 import { serverlessV1Methods } from '../dist/v1-route-contract.js';
 import { serverlessDataPath } from '../dist/serverless-application.js';
 const good = (r, status = 200) => { assert.equal(r.status, status, JSON.stringify(r.body)); return r.body; };
@@ -40,5 +41,7 @@ test('digest routes are honest on local API and explicitly enabled on the server
   const reply = await f.request('/api/v1/metrics/revenue/subscriptions', { method: 'POST', body: digestInput }); assert.equal(reply.status, 503); assert.equal(reply.body.errorCode, 'HOSTED_API_REQUIRED');
   assert.deepEqual(serverlessV1Methods('/api/v1/metrics/revenue/subscriptions'), ['GET', 'POST']);
   assert.deepEqual(serverlessV1Methods('/api/v1/metric-subscriptions/sub/preview'), ['GET']);
-  assert.equal(serverlessDataPath(`/api/v1/metric-unsubscribe/t/n/sub/${'a'.repeat(64)}`), true);
+  const internal = `/api/v1/metric-unsubscribe/t/n/sub/${'a'.repeat(64)}`;
+  assert.equal(serverlessDataPath(internal), true); assert.equal(publicPath(`/api${internal}`), internal);
+  assert.deepEqual(serverlessV1Methods(internal), ['GET', 'POST']);
 });
