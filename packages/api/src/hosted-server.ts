@@ -49,6 +49,11 @@ import { referenceConfig, referenceDisclosure, assertReferenceSurfaces } from '.
 import { V1Routes, type DurableV1Factory } from './v1-routes.js';
 import { publicQuotaMessage } from './storage-breakdown.js';
 
+function egressChunkBytes(chunk: unknown, encoding: unknown): number {
+  if (typeof chunk === 'string') return Buffer.byteLength(chunk, typeof encoding === 'string' ? encoding as BufferEncoding : 'utf8');
+  if (chunk instanceof Uint8Array) return chunk.byteLength;
+  return 0;
+}
 const invocationFinishes = new WeakMap<Server, () => Promise<void>>();
 export async function finishHostedInvocation(server: Server): Promise<void> { await invocationFinishes.get(server)?.(); }
 const drains = new WeakMap<Server, () => Promise<void>>();
@@ -173,6 +178,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   };
   const handle = (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     requests++;
+    let egressSettle: (() => Promise<void>) | undefined;
     const work = (async () => {
       boundary(request, config.origin);
       let path = request.url!;
@@ -338,7 +344,37 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       };
       const context = await metadata.authenticate(request, verified);
       path = scopePath(path, context);
+      // Egress gate before routing (and before the apiCalls charge): a denied
+      // request is not routed, consumes no admitted egress, and its 429 body
+      // is not counted. Embed routes above run before this boundary and are
+      // not counted in this slice; operator/health/pre-auth routes have no
+      // tenant context and are not counted either.
+      if (usage) await usage.checkEgress(context);
       await usage?.consume(metadata, context, 'apiCalls');
+      if (usage) {
+        const scope = { tenantId: context.tenantId, namespaceId: context.namespaceId };
+        let bytes = 0, recording: Promise<void> | undefined;
+        const startRecording = (): void => {
+          // The response is already sent when this settles, so a recording
+          // failure cannot crash, double-send, or corrupt it. It is surfaced
+          // as EGRESS_RECORD_FAILED rather than silently pretending success;
+          // the gate then reads only durably recorded bytes.
+          recording ??= usage.recordEgressBytes(scope, bytes).catch(() => { console.error('EGRESS_RECORD_FAILED'); });
+        };
+        const originalWrite = typeof response.write === 'function' ? response.write.bind(response) : undefined;
+        const originalEnd = response.end.bind(response);
+        if (originalWrite) response.write = ((chunk: unknown, ...args: unknown[]) => {
+          bytes += egressChunkBytes(chunk, args[0]);
+          return (originalWrite as (chunk: unknown, ...rest: unknown[]) => boolean)(chunk, ...args);
+        }) as typeof response.write;
+        response.end = ((chunk: unknown, ...args: unknown[]) => {
+          if (chunk !== undefined && typeof chunk !== 'function') bytes += egressChunkBytes(chunk, args[0]);
+          if (originalWrite) response.write = originalWrite;
+          startRecording();
+          return (originalEnd as (chunk?: unknown, ...rest: unknown[]) => ServerResponse)(chunk, ...args);
+        }) as typeof response.end;
+        egressSettle = async () => { startRecording(); await recording; };
+      }
       if (await analyticsSettingsRoute(request, response, path, '', analytics, context, async () => {
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
         if (!hasCapability(user.body.role as Parameters<typeof hasCapability>[0], 'admin')) throw new MetadataError('SECURITY_ADMIN_REQUIRED', 403);
@@ -452,7 +488,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       const errorCode = dataError ? error.code : error instanceof MetadataError || error instanceof SecurityError ? error.code : error instanceof RequestError ? 'HOSTED_REQUEST_INVALID' : 'HOSTED_INTERNAL_ERROR';
       const quotaMessage = publicQuotaMessage(error);
       send(response, status, { errorCode, ...(quotaMessage === undefined ? {} : { Message: quotaMessage }) });
-    }).finally(() => { active.delete(work); });
+    }).finally(async () => { active.delete(work); await egressSettle?.(); });
     active.add(work);
     return work;
   };

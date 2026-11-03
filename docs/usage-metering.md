@@ -38,13 +38,30 @@ rollup uses current storage, not a reconstructed month-end or byte-time value.
 Thus a rerun can change the timestamp and storage snapshot without changing
 the counters. This is a refreshable record, not an immutable invoice.
 
-Egress is **recorded-only**. `recordEgressBytes(scope, bytes)` accepts an actual
-non-negative safe integer byte count and atomically updates the daily admitted
-counter and appends an `h8_usage_events` row (`metric: egressBytes`, `unit: byte`,
-`outcome: admitted`). It uses the existing active-tenant serialization and
-scope checks. No runtime surface currently calls it with real transfer counts;
-no request/response estimates are made. Zero means no bytes were recorded,
-not proof of zero traffic. `egress.ts` remains an unrelated endpoint allowlist.
+Egress is **recorded from actual transfers**. `recordEgressBytes(scope, bytes)`
+accepts an actual non-negative safe integer byte count and atomically updates
+the daily admitted counter and appends an `h8_usage_events` row
+(`metric: egressBytes`, `unit: byte`, `outcome: admitted`). It uses the
+existing active-tenant serialization and scope checks. The hosted server
+supplies it with the real response body bytes of authenticated tenant API
+requests (the same population that consumes `apiCalls` there); it is counted
+after the response is sent, never estimated from API calls. Operator,
+health/metrics and pre-auth responses have no tenant context and are not
+counted, and embed-session responses are not counted in this slice.
+`egress.ts` remains an unrelated endpoint allowlist.
+
+When the tenant's entitlement sets the optional `egressBytes` cap (#193),
+egress is also **hard-capped per UTC calendar month**. The hosted path checks
+the month's recorded admitted total before routing a tenant request
+(check-before / record-after, like the AI spend cap): at or over the cap the
+request is refused with `USAGE_LIMIT_EXCEEDED` (429) before routing and
+before the `apiCalls` charge, and the refusal records no admitted bytes. The
+response that crosses the cap is admitted and recorded in full; the next
+request is denied. A tenant whose entitlement omits `egressBytes` is metered
+but never denied by this gate. A recording failure after a response is sent
+is surfaced as `EGRESS_RECORD_FAILED` on the server console rather than
+hidden; the gate reads only durably recorded bytes, and corrupt or unsafe
+monthly counters fail closed with `ENTITLEMENT_UNRESOLVED` (503).
 
 ## Operator access and D-81 record
 
@@ -59,7 +76,8 @@ Tenant sessions, browser administrators and embed credentials cannot access it.
 Invocation/serverless HTTP mode returns `RESOURCE_NOT_FOUND` (404), including
 for valid operator credentials. Trusted operator processes can use the
 `HostedUsage` methods directly with the operator database and the configured
-object deployment. No additional tenant-plane route or quota is introduced.
+object deployment. These routes add no tenant-plane route; the #193 egress
+quota is enforced on the existing tenant API path, not through a new route.
 Missing/malformed months return `USAGE_PERIOD_INVALID` (400); unknown/deleted
 tenants return `TENANT_UNAVAILABLE` (403). A mismatched namespace fails with
 `ENTITLEMENT_UNRESOLVED` (503). A hosted server without usage configured also
