@@ -31,10 +31,10 @@ await runJourney('j5-migration', 'Admin + Author', async j => {
     else {
       const actual = await page.locator('.author-card').allTextContents();
       assert.match(actual.join('\n'), /unresolved|unavailable|No data|Unable to load|not found|not supported/i);
-      return 'Before remap the imported visual honestly shows its unresolved dataset; the remap step that follows binds it to local data.';
+      j.gap('imported-live-visual', 'The imported asset renders at least one populated visual.', { reason: 'This sanitized bundle contains definitions only, referring to an unconfigured Athena dataset; no source rows are included.', actual });
     }
   });
-  await j.step('remap-and-populate', page, async () => {
+  await j.step('remap-and-assign', page, async () => {
     await button(page, 'Remap sheet to local dataset').click();
     await page.locator('.author-card .author-card-toolbar strong').click();
     const binding = page.locator('.dataset-binding');
@@ -44,11 +44,11 @@ await runJourney('j5-migration', 'Admin + Author', async j => {
     assert.match(bindingText, /Fields requiring manual assignment: country, deaths/);
     await button(page, 'Assign region').click();
     await button(page, 'Assign revenue').click();
-    await page.waitForFunction(() => !document.querySelector('.author-card [aria-busy="true"]'));
-    const paths = page.locator('.author-card .chart svg path[d]');
-    await paths.first().waitFor();
-    assert.ok(await paths.count(), 'The imported asset renders at least one populated visual.');
-    return 'Remapped the imported pie to the local sales dataset; country and deaths matched no local field, so region and revenue were assigned by hand and the pie renders populated slices.';
+    const wells = await page.locator('.field-wells').innerText();
+    assert.match(wells, /region/); assert.match(wells, /SUM\(revenue\)/);
+    const card = await page.locator('.author-card').first().innerText();
+    assert.match(card, /Unsupported features: .*\(retained, read-only\)/);
+    return 'Remap binds the local sales dataset and manual assignment fills both wells (region, SUM(revenue)), but the card still shows the placeholder: retained, read-only properties (title, sortConfiguration, dataLabels.overlap) block rendering per docs/bundle-roundtrip.md, so the imported-live-visual gap stays open for a product decision (evidence on issue #191).';
   });
   await j.step('save-import', page, async () => {
     await button(page, 'Save draft').click(); await page.getByText('Draft saved on this device.', { exact: true }).waitFor();
