@@ -1,4 +1,4 @@
-// Integrity check for the marketing site (issues #93, #106, #134, #176, #183, #185).
+// Integrity check for the marketing site (issues #93, #106, #134, #176, #183, #184, #185).
 // Usage: node site/check.mjs  (exit 0 = pass)
 // Verifies: every local asset referenced from index.html exists, no external
 // requests beyond allowlisted links, required sections and AEO artifacts present.
@@ -104,7 +104,8 @@ const sitemap = readArtifact('sitemap.xml');
 check(sitemap.includes('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">') &&
   sitemap.includes('</urlset>'), 'sitemap.xml must use the sitemap namespace and urlset');
 const locations = [...sitemap.matchAll(/<url>\s*<loc>([^<]+)<\/loc>\s*<\/url>/g)].map(m => m[1]);
-const publicUrls = ['https://getopensight.org/', 'https://getopensight.org/demo/', `${APP_ORIGIN}/`,
+const publicUrls = ['https://getopensight.org/', 'https://getopensight.org/pricing/',
+  'https://getopensight.org/demo/', `${APP_ORIGIN}/`,
   canonicalUrl(''), ...manifest.map(page => canonicalUrl(page.slug))];
 check(locations.length === publicUrls.length, `sitemap.xml must list exactly ${publicUrls.length} public entry points`);
 for (const url of publicUrls) {
@@ -235,6 +236,74 @@ try {
 } catch (error) {
   check(false, `docs generation failed: ${error.message}`);
 }
+
+// 14. Pricing page (issue #184): the copy Tom approved on 2026-11-03 is exact,
+// the tier table carries the decided quotas, vendor sources are linked, and
+// the home nav links Pricing next to Request access.
+const pricingUrl = 'https://getopensight.org/pricing/';
+const pricing = readArtifact('pricing/index.html');
+const stripTags = text => text.replace(/<[^>]+>/g, '');
+check(pricing.match(/<title>([^<]+)<\/title>/)?.[1] === 'Pricing — OpenSight',
+  'pricing: incorrect page title');
+check(pricing.match(/<h1>([^<]+)<\/h1>/)?.[1] === 'Pricing', 'pricing: H1 must be Pricing');
+const pricingCanonicals = [...pricing.matchAll(/<link rel="canonical" href="([^"]+)">/g)].map(m => m[1]);
+check(pricingCanonicals.length === 1 && pricingCanonicals[0] === pricingUrl,
+  'pricing: expected exactly one canonical link naming the pricing page');
+check(pricing.includes('Apache-2.0'), 'pricing: page must name the Apache-2.0 license');
+check(!/MIT license/i.test(pricing), 'pricing: page must not claim an MIT license');
+const pricingParas = [...pricing.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/g)].map(m => stripTags(m[1]));
+for (const copy of [
+  'OpenSight is free. Run it yourself and it costs nothing: the code is Apache-2.0, it is the same product we host, and no feature sits behind a paywall.',
+  'Hosted OpenSight is paying us to run it for you — hosting, backups, updates, support, and an SLA. The tiers below differ in quotas, not in features.',
+  'The free tier has no time limit. The quotas above are its limit, not a clock.',
+  'Hit a quota and that usage stops until the next month or a higher tier. There is no overage bill running in the background.',
+  'Take a team of 20: 4 people who build dashboards and 16 who view them. That team fits the Regular tier above, at 20 users.',
+  'Tableau (Standard): 4 Creators at $75 is $300 a month. 16 Viewers at $15 is $240 a month. That is $540 a month, $6,480 a year, billed annually.',
+  'Power BI (Pro): $14 per person, so 20 people is $280 a month, $3,360 a year, paid yearly. One check first: Pro is included in Microsoft 365 E5, so if your team already has E5, you may already be paying for it.',
+  'OpenSight hosted (Regular): $99 a month, $1,188 a year. The price does not change when a viewer starts building, because there are no seat roles to price.',
+  'OpenSight self-hosted: $0. You run it on your own machine and pay for that machine.',
+  "Vendor prices checked 2 November 2026 on Tableau's and Microsoft's published pricing pages; links to both pages will sit under this section on the page itself.",
+  'Hosted workspaces are opening in small batches. Request access and we set your workspace up by hand and send you an invitation.',
+]) check(pricingParas.includes(copy), `pricing: missing or altered approved copy: ${copy.slice(0, 60)}…`);
+check(pricing.includes('<h2>What a 20-person team costs elsewhere</h2>'),
+  'pricing: missing approved comparison heading');
+const tierHeaders = [...pricing.matchAll(/<th scope="col">([\s\S]*?)<\/th>/g)].map(m => stripTags(m[1]));
+check(JSON.stringify(tierHeaders) === JSON.stringify(
+  ['Quota', 'Free', 'Light — $29/mo', 'Regular — $99/mo', 'Heavy — $399/mo']),
+  `pricing: tier table headers differ from the decided tiers: ${tierHeaders.join(' | ')}`);
+const tierBody = pricing.match(/<tbody>([\s\S]*?)<\/tbody>/)?.[1] ?? '';
+const tierRows = [...tierBody.matchAll(/<tr>([\s\S]*?)<\/tr>/g)]
+  .map(row => [...row[1].matchAll(/<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>/g)].map(cell => stripTags(cell[1])));
+const expectedTierRows = [
+  ['Users', '3', '5', '20', '75'],
+  ['Storage', '5 GB', '10 GB', '100 GB', '500 GB'],
+  ['API calls', '10k', '30k', '300k', '2M'],
+  ['Queries', '500', '1.5k', '15k', '100k'],
+  ['Natural-language queries', '10', '50', '500', '3k'],
+  ['Emails', '100', '500', '5k', '25k'],
+  ['Egress', '5 GB', '20 GB', '150 GB', '800 GB'],
+];
+check(JSON.stringify(tierRows) === JSON.stringify(expectedTierRows),
+  'pricing: tier table quotas differ from the decided quotas');
+check(pricing.includes('<caption>Per tenant, per month</caption>'),
+  'pricing: tier table must be captioned per tenant, per month');
+for (const link of [
+  '<a href="https://www.tableau.com/pricing/cloud">Tableau pricing</a>',
+  '<a href="https://www.microsoft.com/power-platform/products/power-bi/pricing">Microsoft Power BI pricing</a>',
+]) check(pricing.includes(link), `pricing: missing vendor source link: ${link}`);
+check(pricing.includes('<a class="btn btn-primary btn-lg" href="../#request-access">Request hosted access</a>'),
+  'pricing: missing Request hosted access button to the home request-access form');
+for (const match of pricing.matchAll(/\b(?:href|src)="([^"]+)"/g)) {
+  const ref = match[1];
+  if (/^(?:https?:|#)/.test(ref) || ref === '../demo/') continue;
+  const path = ref.split(/[?#]/)[0];
+  const target = path.startsWith('/') ? resolve(root, path.slice(1)) : resolve(root, 'pricing', path);
+  check(existsSync(target), `pricing: missing local reference: ${ref}`);
+}
+const homeNavCta = html.match(/<div class="nav-cta">([\s\S]*?)<\/div>/)?.[1] ?? '';
+check(homeNavCta.indexOf('href="pricing/">Pricing</a>') !== -1 &&
+  homeNavCta.indexOf('href="pricing/">Pricing</a>') < homeNavCta.indexOf('href="#request-access">Request access</a>'),
+  'home nav must link Pricing next to Request access');
 
 if (failures.length) {
   console.error(`site/check.mjs FAILED (${failures.length}):`);
