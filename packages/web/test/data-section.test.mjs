@@ -35,12 +35,31 @@ test('empty landing has creation, all tabs, and no staged dataset rows', async t
   let created = 0;
   const ui = await mount(t, { onCreate: () => created++ });
   assert.match(ui.text(), /No datasets yet/); assert.doesNotMatch(ui.text(), /Orders|demo-sales/);
-  assert.deepEqual(ui.root.findAllByProps({ role: 'tab' }).map(node => node.children[0]), ['Datasets', 'Topics', 'Data sources', 'Metrics']);
+  assert.deepEqual(ui.root.findAllByProps({ role: 'tab' }).map(node => node.children[0]), ['Datasets', 'Topics', 'Data sources', 'Metrics', 'Input tables']);
   await act(() => button(ui, 'Create dataset').props.onClick()); assert.equal(created, 1);
   await act(() => button(ui, 'Topics').props.onClick()); assert.match(ui.text(), /No topics available/);
   await act(() => button(ui, 'Data sources').props.onClick()); assert.match(ui.text(), /No data sources yet/);
   await act(() => button(ui, 'Datasets').props.onKeyDown({ key: 'ArrowRight', preventDefault() {}, currentTarget: {} }));
   assert.equal(button(ui, 'Topics').props['aria-selected'], true);
+});
+test('input tables tab lists tables and opens a read-only grid for viewers', async t => {
+  const full = { id: 't1', namespaceId: 'default', ownerId: 'someone', name: 'Forecast', boundDatasetId: null,
+    columns: [{ name: 'region', type: 'text', required: true }, { name: 'amount', type: 'number', required: false }],
+    rows: [{ id: 'r1', values: { region: 'East', amount: 10 } }], editors: [], canEdit: false, canManage: false, version: 1, createdAt: '2026-11-03T00:00:00.000Z', updatedAt: '2026-11-03T00:00:00.000Z' };
+  const itClient = { ...client,
+    listInputTables: async () => ({ tables: [{ id: 't1', name: 'Forecast', boundDatasetId: null, columnCount: 2, rowCount: 1, canEdit: false, canManage: false, version: 1, updatedAt: full.updatedAt }] }),
+    getInputTable: async () => full, createInputTable: async () => full, updateInputTable: async () => full,
+    addInputTableRow: async () => ({ row: full.rows[0], version: 2 }), updateInputTableRow: async () => ({ row: full.rows[0], version: 2 }),
+    deleteInputTableRow: async () => ({ deleted: true, version: 2 }), deleteInputTable: async () => ({ deleted: true }),
+    setInputTableEditors: async () => full, getInputTableAudit: async () => ({ entries: [] }) };
+  const ui = await mount(t, { client: itClient });
+  await act(async () => { button(ui, 'Input tables').props.onClick(); });
+  await act(async () => {});
+  assert.match(ui.text(), /Forecast/); assert.match(ui.text(), /Read-only/);
+  await act(async () => { button(ui, 'Forecast').props.onClick(); });
+  await act(async () => {});
+  assert.match(ui.text(), /East/);
+  assert.match(ui.text(), /Read-only: editing needs an editor grant/);
 });
 test('landing searches and filters real datasets, shows badges and opens exact row/menu targets', async t => {
   const opened = [], edited = [];
