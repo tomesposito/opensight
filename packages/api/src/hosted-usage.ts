@@ -8,6 +8,8 @@ import type { AiMeter } from './ai-settings.js';
 
 export interface Entitlement {
   apiCalls: number; storageBytes: number; computeAttempts: number;
+  /** Optional monthly egress cap in bytes. Absent = no cap (metering still records). */
+  egressBytes?: number;
   /** Optional AI spend cap in cents per UTC day. Absent = no cap (metering still records). */
   aiSpendCapCents?: number;
   /** Warning threshold as a percentage of the cap, 0-100. Default 80 when a cap is set. */
@@ -42,9 +44,10 @@ export function entitlementConfig(raw: string | undefined): Entitlements {
   try {
     const input = object(JSON.parse(raw!), ['defaults', 'tenants']);
     const limits = (raw: unknown): Entitlement => {
-      const r = object(raw, ['apiCalls', 'storageBytes', 'computeAttempts', 'aiSpendCapCents', 'aiWarnPct', 'aiCostCentsPerMillionTokens']);
+      const r = object(raw, ['apiCalls', 'storageBytes', 'computeAttempts', 'egressBytes', 'aiSpendCapCents', 'aiWarnPct', 'aiCostCentsPerMillionTokens']);
       for (const k of ['apiCalls', 'storageBytes', 'computeAttempts']) if (!Number.isSafeInteger(r[k]) || Number(r[k]) < 0) throw Error();
       const out: Entitlement = { apiCalls: Number(r.apiCalls), storageBytes: Number(r.storageBytes), computeAttempts: Number(r.computeAttempts) };
+      if (r.egressBytes !== undefined) { if (!Number.isSafeInteger(r.egressBytes) || Number(r.egressBytes) < 0) throw Error(); out.egressBytes = Number(r.egressBytes); }
       if (r.aiSpendCapCents !== undefined) { if (!Number.isSafeInteger(r.aiSpendCapCents) || Number(r.aiSpendCapCents) < 0) throw Error(); out.aiSpendCapCents = Number(r.aiSpendCapCents); }
       if (r.aiWarnPct !== undefined) { if (!Number.isSafeInteger(r.aiWarnPct) || Number(r.aiWarnPct) < 0 || Number(r.aiWarnPct) > 100) throw Error(); out.aiWarnPct = Number(r.aiWarnPct); }
       if (r.aiCostCentsPerMillionTokens !== undefined) { if (!Number.isSafeInteger(r.aiCostCentsPerMillionTokens) || Number(r.aiCostCentsPerMillionTokens) < 0) throw Error(); out.aiCostCentsPerMillionTokens = Number(r.aiCostCentsPerMillionTokens); }
@@ -218,8 +221,39 @@ export class HostedUsage {
     });
     if (denied) throw new MetadataError('USAGE_LIMIT_EXCEEDED', 429);
   }
-  /** Recorded-only bytes from a caller that knows the actual transferred amount.
-   * No runtime surface supplies this yet: never infer egress from API calls. */
+  /**
+   * Pre-routing egress gate (fail closed), check-before / record-after like
+   * the AI spend cap: when an egressBytes cap is configured and the current
+   * UTC calendar month's recorded admitted egress already meets/exceeds it,
+   * USAGE_LIMIT_EXCEEDED (429) is thrown and the caller must not route the
+   * request. The response that crosses the cap is admitted and recorded via
+   * recordEgressBytes; the next request is denied. A denial records no
+   * admitted bytes, so monthly admitted totals (which sum admitted only) are
+   * never distorted by denied requests. Absent cap never denies. Corrupt or
+   * unsafe counter values fail closed with ENTITLEMENT_UNRESOLVED (503).
+   */
+  async checkEgress(scope: Scope): Promise<void> {
+    const entitlement = this.entitlement(scope);
+    const cap = entitlement.egressBytes;
+    if (cap !== undefined && (!Number.isSafeInteger(cap) || cap < 0)) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+    const month = new Date(this.clock()).toISOString().slice(0, 7);
+    const denied = await this.db.transaction(async c => {
+      await this.lockAiScope(c, scope);
+      const rows = await c.query(`SELECT admitted, denied FROM h8_usage
+        WHERE tenant_id = ? AND namespace_id = ? AND period >= ? AND period <= ?
+        AND metric = 'egressBytes'`, [scope.tenantId, scope.namespaceId, `${month}-01`, `${month}-31`]);
+      let total = 0;
+      for (const row of rows) {
+        usageInteger(row.denied);
+        total = usageInteger(total + usageInteger(row.admitted));
+      }
+      return cap !== undefined && total >= cap;
+    }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
+    if (denied) throw new MetadataError('USAGE_LIMIT_EXCEEDED', 429);
+  }
+  /** Record actual transferred bytes from a caller that knows the amount.
+   * The hosted tenant path supplies this with real response body bytes;
+   * never infer egress from API calls or estimates. */
   async recordEgressBytes(scope: Scope, bytes: number): Promise<void> {
     if (!Number.isSafeInteger(bytes) || bytes < 0) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
     this.entitlement(scope);
