@@ -145,6 +145,7 @@ test('site integrity checks catch missing docs, sitemap/canonical drift and exte
     cpSync(resolve(repoRoot, 'site', name), join(root, 'site', name));
   }
   cpSync(resolve(repoRoot, 'site/docs'), join(root, 'site/docs'), { recursive: true });
+  cpSync(resolve(repoRoot, 'site/pricing'), join(root, 'site/pricing'), { recursive: true });
   // The existing homepage check only checks asset existence: no media copies needed.
   mkdirSync(join(root, 'site/assets'));
   const home = readFileSync(join(root, 'site/index.html'), 'utf8');
@@ -164,6 +165,7 @@ test('site integrity checks catch missing docs, sitemap/canonical drift and exte
     ['docs/docs.css', text => text + '\n@import "https://example.com/font.css";', /asset loads and imports/],
     ['docs/docs.css', text => text + '\nbody { background: url(//example.com/image.png); }', /asset loads and imports/],
     ['docs/permissions/index.html', text => text.replace('Access to an OpenSight', 'Obsolete text about OpenSight'), /stale generated docs/],
+    ['pricing/index.html', text => text.replace('$99 a month, $1,188 a year', '$99 a month'), /missing or altered approved copy/],
   ];
   for (const [name, change, expected] of cases) {
     const path = join(root, 'site', name), before = readFileSync(path, 'utf8');
