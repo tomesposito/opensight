@@ -193,8 +193,16 @@ export const emptyInputTablesState = (): InputTablesState => ({ version: 1, tabl
 export class InputTableStore {
   private constructor(readonly store: AutomationStore<InputTablesState>) {}
   static async load(path?: string): Promise<InputTableStore> {
-    const store = await AutomationStore.load(emptyInputTablesState(), path, validateInputTablesState);
-    return new InputTableStore(store);
+    try {
+      const store = await AutomationStore.load(emptyInputTablesState(), path, validateInputTablesState);
+      return new InputTableStore(store);
+    } catch (error) {
+      // AutomationStore wraps load failures; surface the named corruption error so a
+      // corrupt input-table store fails closed under its own code, not a generic one.
+      const cause = (error as { cause?: unknown })?.cause;
+      if (cause instanceof Error && cause.message.startsWith('INPUT_TABLE_STORE_CORRUPT')) throw cause;
+      throw error;
+    }
   }
   read(): InputTablesState { return this.store.read(); }
   /** Single serialized mutation; audit entries are appended atomically with the data change. */

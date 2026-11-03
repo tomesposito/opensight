@@ -18,8 +18,8 @@ export interface InputTableDependencies {
   localIdentity?: Identity;
   /** Returns true when the caller may reference this dataset id. When omitted, ids are accepted as opaque references. */
   isDatasetVisible?: (identity: Identity, datasetId: string) => boolean;
-  /** Same-namespace user ids for editors validation; omit to validate shape only. */
-  workspaceUserIds?: (identity: Identity) => readonly string[];
+  /** Same-namespace user ids for editors validation; omit (or return undefined) to validate shape only. */
+  workspaceUserIds?: (identity: Identity) => readonly string[] | undefined;
 }
 
 const PREP_TYPE: Record<InputColumn['type'], PrepColumn['type']> = { text: 'STRING', number: 'DECIMAL', date: 'DATETIME', boolean: 'BOOLEAN' };

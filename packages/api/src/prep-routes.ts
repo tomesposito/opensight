@@ -46,6 +46,9 @@ export class PrepRoutes {
   analytics = disabledAnalytics;
   metricLookup?: (identity: Identity) => MetricLookup;
   checkMetricDelete?: (identity: Identity, id: string) => Promise<void>;
+  /** Issue #161: governed input tables exposed as prep sources (reference form `input-table-<id>`). */
+  inputTableSources?: (identity: Identity) => PrepSource[];
+  inputTableTables?: (identity: Identity) => PrepMemoryTable[];
   private readonly blaze = new BlazeStore();
   private readonly configured = new Map<string, string>();
   private requirement(identity: Identity, id: string, state = this.store.read()): string | null {
@@ -116,6 +119,12 @@ export class PrepRoutes {
       } else for (const r of this.references(d.pipeline)) visit(r);
     };
     for (const ref of this.references(pipeline)) visit(ref);
+    // Issue #161: input tables referenced by source id (pipeline input or a join source)
+    // ride the in-memory table path. Only same-namespace tables are returned by the hook,
+    // so a foreign reference stays unresolved and context() fails closed below.
+    const referenced = new Set(this.references(pipeline).filter((r): r is string => typeof r === 'string'));
+    if (typeof pipeline.input === 'string') referenced.add(pipeline.input);
+    for (const table of this.inputTableTables?.(identity) ?? []) if (referenced.has(table.source.id) && !tables.some(t => t.source.id === table.source.id)) tables.push(table);
     return { ...await this.context(identity, pipeline.input, datasets), datasets, tables, cachedInputs: [...cachedInputs.values()] };
   }
   private async materialize(identity: Identity, id: string, table: BlazeTable): Promise<void> {
@@ -226,7 +235,7 @@ export class PrepRoutes {
   }
   private owned(identity: Identity, entry: Pick<Stored, 'namespaceId' | 'userId'>): boolean { return identity.namespaceId === entry.namespaceId && identity.userId === entry.userId; }
   private async sources(identity: Identity): Promise<PrepSource[]> {
-    return [...await this.connectors.prepSources(identity), ...this.bindings.filter(b => this.owned(identity, b)).map(b => b.source)];
+    return [...await this.connectors.prepSources(identity), ...this.bindings.filter(b => this.owned(identity, b)).map(b => b.source), ...(this.inputTableSources?.(identity) ?? [])];
   }
   private datasets(identity: Identity, state = this.store.read()): PrepDataset[] {
     return state.datasets.filter(e => this.owned(identity, e)).map(e => ({ id: e.resource.dataSetId, pipeline: e.resource.opensightPrep! }));
