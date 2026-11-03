@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- A QuickSight alternatives page on the marketing site at /alternatives/quicksight and a migration guide in the docs at /docs/migrating-from-quicksight: what converts on bundle import, what must be rebuilt by hand, and where QuickSight is the better choice, in the copy approved for the issue. The home page's QuickSight section links the alternatives page, and both pages are listed in the sitemap (#186).
+
 - A pricing page on the marketing site at /pricing: OpenSight is free to self-host, and the hosted tiers (Free, Light $29/mo, Regular $99/mo, Heavy $399/mo) differ in quotas, not features, with a worked 20-person cost comparison against Tableau and Power BI from the vendors' published prices. Linked from the home-page nav and listed in the sitemap (#184).
 
 - Governed input tables (writeback v1): a workspace can create OpenSight-owned tables with typed columns (text/number/date/boolean, required or optional), edit them in a grid on the Data page, and join them in data prep like uploaded datasets. Sources are never mutated; editing needs an explicit per-table editor grant plus an author-class role (readers never write), and every change lands in an append-only audit trail that survives table deletion (#161).
