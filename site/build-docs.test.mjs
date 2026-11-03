@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { buildDocs, canonicalUrl, description, escapeHtml, manifest, renderDocs, renderMarkdown, repoRoot, rewriteLink } from './build-docs.mjs';
 
 test('docs headings, paragraphs and inline formatting preserve text and make unique anchors', () => {
@@ -132,4 +133,46 @@ test('docs committed HTML exactly matches fresh rendering of current sources and
   const committed = readdirSync(resolve(repoRoot, 'site/docs'), { recursive: true })
     .filter(path => path.endsWith('.html')).map(path => `site/docs/${path}`).sort();
   assert.deepEqual(committed, [...pages.keys()].sort(), 'Remove obsolete generated pages when changing the manifest');
+});
+
+test('site integrity checks catch missing docs, sitemap/canonical drift and external assets', t => {
+  const root = mkdtempSync(join(tmpdir(), 'opensight-docs-check-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(root, 'site'), { recursive: true });
+  mkdirSync(join(root, 'docs'));
+  for (const { source } of manifest) cpSync(resolve(repoRoot, source), join(root, source));
+  for (const name of ['index.html', 'check.mjs', 'build-docs.mjs', 'sitemap.xml', 'robots.txt', 'styles.css', 'app.js']) {
+    cpSync(resolve(repoRoot, 'site', name), join(root, 'site', name));
+  }
+  cpSync(resolve(repoRoot, 'site/docs'), join(root, 'site/docs'), { recursive: true });
+  // The existing homepage check only checks asset existence: no media copies needed.
+  mkdirSync(join(root, 'site/assets'));
+  const home = readFileSync(join(root, 'site/index.html'), 'utf8');
+  for (const match of home.matchAll(/(?:src|href|poster)="(assets\/[^"?#]+)(?:[?#][^"]*)?"/g)) {
+    writeFileSync(join(root, 'site', match[1]), '');
+  }
+  const run = () => spawnSync(process.execPath, [join(root, 'site/check.mjs')], { encoding: 'utf8' });
+  const baseline = run();
+  assert.equal(baseline.status, 0, baseline.stderr);
+  const cases = [
+    ['docs/permissions/index.html', () => null, /missing docs\/permissions\/index.html/],
+    ['sitemap.xml', text => text.replace(/\s*<url>\s*<loc>https:\/\/getopensight.org\/docs\/permissions\/<\/loc>\s*<\/url>/, ''), /missing public entry point: https:\/\/getopensight.org\/docs\/permissions\//],
+    ['docs/permissions/index.html', text => text.replace('rel="canonical"', 'rel="alternate"'), /incorrect canonical URL/],
+    ['docs/permissions/index.html', text => text.replace('</head>', '<link rel="stylesheet" href="//example.com/style.css"></head>'), /external asset load/],
+    ['docs/permissions/index.html', text => text.replace('</head>', '<meta name="robots" content="noindex"></head>'), /docs must be indexable/],
+    ['docs/permissions/index.html', text => text.replace('</body>', '<script>alert(1)</script></body>'), /scripts and embedded content/],
+    ['docs/docs.css', text => text + '\n@import "https://example.com/font.css";', /asset loads and imports/],
+    ['docs/docs.css', text => text + '\nbody { background: url(//example.com/image.png); }', /asset loads and imports/],
+    ['docs/permissions/index.html', text => text.replace('Access to an OpenSight', 'Obsolete text about OpenSight'), /stale generated docs/],
+  ];
+  for (const [name, change, expected] of cases) {
+    const path = join(root, 'site', name), before = readFileSync(path, 'utf8');
+    const after = change(before);
+    if (after === null) rmSync(path);
+    else writeFileSync(path, after);
+    const result = run();
+    assert.equal(result.status, 1, `${name}: ${result.stdout}`);
+    assert.match(result.stderr, expected);
+    writeFileSync(path, before);
+  }
 });

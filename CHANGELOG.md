@@ -13,6 +13,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Indexable documentation pages for local setup, connectors, embedding and shipped
+  permissions/row-level security, generated from repository Markdown with freshness
+  checks, a docs index, site navigation and sitemap entries (#185).
+
 - Marketing site head now carries a canonical link, the share image's true dimensions (2400x1260) and alt text, and a SoftwareApplication JSON-LD block, so search and AI tools can identify OpenSight cleanly (#183).
 
 - Usage tracking now records the marketing capture events: `data_source_connected` on a live (PostgreSQL) source registration, `dashboard_saved` (with a workspace-first flag) on dashboard publish, and `dashboard_edited` on republish — tenant-level, counts and flags only, so activation and week-4 retention can be computed (#179).

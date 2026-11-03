@@ -9,4 +9,22 @@
   <url>
     <loc>https://app.getopensight.org/</loc>
   </url>
+  <url>
+    <loc>https://getopensight.org/docs/</loc>
+  </url>
+  <url>
+    <loc>https://getopensight.org/docs/getting-started/</loc>
+  </url>
+  <url>
+    <loc>https://getopensight.org/docs/connectors/</loc>
+  </url>
+  <url>
+    <loc>https://getopensight.org/docs/embedding/</loc>
+  </url>
+  <url>
+    <loc>https://getopensight.org/docs/embedding-sessions/</loc>
+  </url>
+  <url>
+    <loc>https://getopensight.org/docs/permissions/</loc>
+  </url>
 </urlset>
