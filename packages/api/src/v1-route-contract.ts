@@ -6,6 +6,10 @@ export function serverlessV1Methods(path: string): readonly string[] | undefined
   if (new RegExp(`^/api/v1/prep-templates/${id}$`).test(path)) return ['GET', 'PUT'];
   if (new RegExp(`^/api/v1/prep-templates/${id}/(?:publish|datasets)$`).test(path)) return ['POST'];
   if (new RegExp(`^/api/v1/prep-templates/${id}/(?:versions|export)$`).test(path)) return ['GET'];
+  if (new RegExp(`^/api/v1/metrics/${id}/subscriptions$`).test(path)) return ['GET', 'POST'];
+  if (new RegExp(`^/api/v1/metric-subscriptions/${id}/preview$`).test(path)) return ['GET'];
+  if (new RegExp(`^/api/v1/metric-subscriptions/${id}$`).test(path)) return ['DELETE'];
+  if (new RegExp(`^/api/v1/metric-unsubscribe/${id}/${id}/${id}/[a-f0-9]{64}$`).test(path)) return ['GET', 'POST'];
   if (path === '/api/v1/metric-datasets') return ['GET'];
   if (path === '/api/v1/metrics') return ['GET', 'POST'];
   if (new RegExp(`^/api/v1/metrics/${id}$`).test(path)) return ['GET', 'PUT'];

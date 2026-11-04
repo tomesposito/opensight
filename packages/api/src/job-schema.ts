@@ -1,3 +1,4 @@
+import { digestSpec, type DigestSpec } from './digest-model.js';
 import type { Database, SqlConnection, SqlRow } from './metadata-db.js';
 import { MetadataError, missing } from './metadata-db.js';
 import { identifier, object, type Scope } from './metadata-resources.js';
@@ -5,7 +6,7 @@ import type { Revisions } from './metadata.js';
 import { enabled, validateSchedule, type Schedule } from './schedule.js';
 import { validateAlert, type AlertCondition } from './alerts.js';
 
-export type JobSpec = { kind: 'refresh'; target: { kind: 'source' | 'prepared-dataset' | 'dataset'; id: string }; enabled: boolean; schedule: Schedule }
+export type JobSpec = DigestSpec | { kind: 'refresh'; target: { kind: 'source' | 'prepared-dataset' | 'dataset'; id: string }; enabled: boolean; schedule: Schedule }
   | { kind: 'report'; dashboardId: string; recipients: string[]; enabled: boolean; schedule: Schedule }
   | { kind: 'alert'; datasetId: string; dashboardId: string; visualId: string; fieldId: string; dimensions: Record<string, string | number | null>; condition: AlertCondition; recipients: string[]; enabled: boolean };
 export interface Job extends Scope { id: string; ownerId: string; version: number; spec: JobSpec; nextRun: string | null; stopped: boolean; alertState: 'ok' | 'triggered' }
@@ -17,6 +18,7 @@ export const scoped = 'tenant_id = ? AND namespace_id = ?';
 export const scopeArgs = (s: Scope) => [s.tenantId, s.namespaceId];
 export function jobSpec(raw: unknown): JobSpec {
   const b = object(raw);
+  if (b.kind === 'digest') return digestSpec(b);
   const active = enabled(b.enabled);
   if (b.kind === 'refresh') {
     object(b, ['kind', 'target', 'enabled', 'schedule']); const target = object(b.target, ['kind', 'id']);

@@ -233,6 +233,14 @@ and Ask O use the latest published expression, aggregation and format. Open a
 dataset's **Metrics** tab to define a metric or inspect its history. See
 [governed metrics](docs/governed-metrics.md) for permissions and join safety.
 
+Published metrics offer **Subscribe** for a weekly or daily email digest in a
+hosted workspace. Digests compare completed periods, show the largest dimension
+changes, and link back to a fresh preview with unsubscribe controls. Each send
+uses the subscriber's current data permissions. Shared email lists await a
+recipient-resolution decision; see [metric digests](docs/metric-digests.md).
+
+![Metric digest preview from a real local hosted API using synthetic regional sales](docs/images/metric-digest-preview.png)
+
 Saved dataset calculations can be **promoted** into that same draft form. The
 original calculation remains unchanged, and provenance records its source.
 

@@ -7,6 +7,6 @@ export function rowFilterSql(f: RowFilter, dialect: SqlDialect, bind: (value: Pa
   const q = (name: string) => quoteIdentifier(name, dialect);
   const column = dialect === 'mysql' && (!f.scalarType || f.scalarType === 'string') ? `${q(f.columnName)} COLLATE utf8mb4_0900_bin` : q(f.columnName);
   const placeholder = (value: ParameterValue) => f.scalarType === 'datetime' ? dialect === 'mysql' ? mysqlDateCast(bind(value)) : `CAST(${bind(value)} AS TIMESTAMP)` : bind(value);
-  if ('value' in f) return `${column} ${f.operator === 'GREATER_THAN_OR_EQUAL_TO' ? '>=' : f.operator === 'LESS_THAN_OR_EQUAL_TO' ? '<=' : '='} ${placeholder(f.value)}`;
+  if ('value' in f) return `${column} ${f.operator === 'GREATER_THAN_OR_EQUAL_TO' ? '>=' : f.operator === 'LESS_THAN_OR_EQUAL_TO' ? '<=' : f.operator === 'LESS_THAN' ? '<' : '='} ${placeholder(f.value)}`;
   return f.values.length ? `${column} IN (${f.values.map(placeholder).join(', ')})` : 'FALSE';
 }

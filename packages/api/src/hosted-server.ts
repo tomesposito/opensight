@@ -1,3 +1,5 @@
+import { DigestStore } from './digest-store.js';
+import { unsubscribeRoute } from './digest-routes.js';
 import { initializeIdeas, limitIdeas, listIdeas, myIdeas, submitIdea, transitionIdea } from './ideas.js';
 import { analyticsSettingsRoute } from './analytics-settings.js';
 import { accessRequestNotifyTo, accessRequestRate, initializeAccessRequests, limitAccessRequests, listAccessRequests, notifyAccessRequests, storeAccessRequest } from './access-requests.js';
@@ -157,7 +159,6 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const invocation = options.invocation?.compose?.(metadata, budgets, options.builtinAuth, usage?.aiMeter(), analytics);
   const jobs = invocation?.jobs ?? new JobStore(options.membershipDatabase, metadata);
   const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets, undefined, undefined, analytics), jobs);
-  const v1 = new V1Routes(data, options.env ?? process.env, { invocation: !!options.invocation, analytics, durable: invocation?.v1 });
   const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets, undefined, undefined, analytics));
   const mail = invocation?.mail ?? options.mailTransport ?? smtpFromEnvironment(options.env);
   // Stripe billing (issue #194) composes on the single-node hosted server;
@@ -169,7 +170,9 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const unmigrated = await options.membershipDatabase.transaction(c => c.query(`SELECT j.resource_id FROM h1_resources j WHERE j.kind = 'job'
     AND NOT EXISTS (SELECT 1 FROM h7_migrations m WHERE m.tenant_id = j.tenant_id AND m.namespace_id = j.namespace_id)`));
   if (unmigrated.length) throw new MetadataError('JOB_MIGRATION_REQUIRED', 503);
-  const renderer = new JobRenderer(data.data, embedContent), runner = new JobRunner(jobs, renderer, mail);
+  const renderer = new JobRenderer(data.data, embedContent, config.origin), runner = new JobRunner(jobs, renderer, mail);
+  const digests = new DigestStore(jobs, renderer);
+  const v1 = new V1Routes(data, options.env ?? process.env, { invocation: !!options.invocation, analytics, durable: invocation?.v1, digests });
   const ownership = new JobOwnership(jobs, renderer), scheduler = new Scheduler(() => runner.tick());
   const sessions = new EmbedSessions(options.membershipDatabase, metadata, policy, embedSessionKey(options.env ?? process.env), (context, grant) => embedContent.authorize(context, grant));
   await sessions.initialize(!options.invocation);
@@ -363,6 +366,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       // the single-node data/job/embedding plane just because Lambda can invoke it.
       const invitationPath = /^\/api\/(?:namespaces\/[^/]+\/)?invitations(?:\/[A-Za-z0-9_-]+)?$/;
       if (options.invocation && !['/api/session', '/api/auth/switch', '/api/auth/logout', '/api/namespaces', '/api/users', '/api/groups'].includes(path) && !invitationPath.test(path) && !/^\/api\/(?:namespaces\/[A-Za-z0-9_-]+\/)?ideas$/.test(path) && !invocation?.allows(path)) throw new MetadataError('SERVERLESS_STORAGE_REQUIRED', 503);
+      if (await unsubscribeRoute(request, response, path, digests)) return;
       if (await invocation?.embedOperation?.(request, response, path, sessions)) return;
       if (await embedSessionRoute(request, response, path, sessions, embedContent, invocation?.embedResult, invocation?.resultMaxBytes, invocation?.idleReconnect)) return;
       // Every other request, including unknown and legacy routes, must verify first.

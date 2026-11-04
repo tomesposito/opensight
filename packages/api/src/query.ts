@@ -65,8 +65,8 @@ export function validateQuery(raw: unknown): QueryBody {
       const parameter = parameters.declarations.find(p => p.name === parameterName);
       if (!parameter) throw new RequestError(400, `${path}.parameterName: undeclared parameter ${parameterName}`);
       const operator = filter.operator ?? 'EQUALS';
-      if (!['EQUALS', 'GREATER_THAN_OR_EQUAL_TO', 'LESS_THAN_OR_EQUAL_TO'].includes(String(operator)) || operator !== 'EQUALS' && (parameter.multiple || parameter.type === 'string')) throw new RequestError(400, `${path}.operator: expected equality, or a range comparison with a single number/datetime parameter`);
-      return { columnName, parameterName, operator: operator as 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO' };
+      if (!['EQUALS', 'GREATER_THAN_OR_EQUAL_TO', 'LESS_THAN_OR_EQUAL_TO', 'LESS_THAN'].includes(String(operator)) || operator !== 'EQUALS' && (parameter.multiple || parameter.type === 'string')) throw new RequestError(400, `${path}.operator: expected equality, or a range comparison with a single number/datetime parameter`);
+      return { columnName, parameterName, operator: operator as 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO' | 'LESS_THAN' };
     }
     if (Object.hasOwn(filter, 'operator')) invalid(`${path}.operator`);
     return Object.hasOwn(filter, 'values')

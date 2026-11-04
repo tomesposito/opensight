@@ -297,3 +297,10 @@ details[open] .data-menu-items { animation: menu-open 150ms ease-out; }
 .prep-promotions td button { margin: 4px; white-space: nowrap; }
 .prep-promotions pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .prep-promotions label { display: grid; gap: 4px; margin: 12px 0; }
+
+/* Metric digests reuse the data workspace's compact forms and controls. */
+.metric-definition-form form > label { display: grid; gap: 4px; margin: 12px 0; }
+.metric-definition-form form > label textarea { width: 100%; box-sizing: border-box; }
+.metric-definition-form li > button { margin: 4px; }
+.metric-definition-form li { overflow-wrap: anywhere; }
+.metric-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; }

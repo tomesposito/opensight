@@ -12,6 +12,14 @@ if (/^\/api\/v1\/prep-templates\/[A-Za-z0-9_-]{1,512}\/(?:publish|datasets)$/.te
 return ['POST'];
 if (/^\/api\/v1\/prep-templates\/[A-Za-z0-9_-]{1,512}\/(?:versions|export)$/.test(path))
 return ['GET'];
+if (/^\/api\/v1\/metrics\/[A-Za-z0-9_-]{1,512}\/subscriptions$/.test(path))
+return ['GET', 'POST'];
+if (/^\/api\/v1\/metric-subscriptions\/[A-Za-z0-9_-]{1,512}\/preview$/.test(path))
+return ['GET'];
+if (/^\/api\/v1\/metric-subscriptions\/[A-Za-z0-9_-]{1,512}$/.test(path))
+return ['DELETE'];
+if (/^\/api\/v1\/metric-unsubscribe\/[A-Za-z0-9_-]{1,512}\/[A-Za-z0-9_-]{1,512}\/[A-Za-z0-9_-]{1,512}\/[a-f0-9]{64}$/.test(path))
+return ['GET', 'POST'];
 if (path === '/api/v1/metric-datasets')
 return ['GET'];
 if (path === '/api/v1/metrics')

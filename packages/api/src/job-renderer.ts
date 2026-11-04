@@ -1,3 +1,4 @@
+import { DigestComputation, digestMessage } from './digest-computation.js';
 import { planPreparedVisual } from '@opensight/query-engine';
 import { compileVisual } from '@opensight/web/compiler';
 import { HostedData } from './hosted-data.js';
@@ -15,7 +16,7 @@ import type { MailMessage } from './mail.js';
 export interface JobExecutor {
   authorize(context: TenantContext, spec: JobSpec): Promise<void>;
   execute(context: TenantContext, spec: JobSpec, now: Date): Promise<{ triggered?: boolean }>;
-  render(context: TenantContext, spec: JobSpec, now: Date): Promise<Pick<MailMessage, 'subject' | 'html'>>;
+  render(context: TenantContext, spec: JobSpec, now: Date, jobId?: string): Promise<Pick<MailMessage, 'subject' | 'html'>>;
   begin(context: TenantContext, recheck: () => Promise<void>): void;
   verifyDelivery?(context: TenantContext): Promise<void>;
 }
@@ -23,12 +24,13 @@ export interface JobExecutor {
  * Neither legacy DashboardSnapshots nor the operator identity can render data. */
 export class JobRenderer implements JobExecutor {
   readonly prep: HostedPrep;
-  constructor(readonly data: HostedData, readonly content: EmbedContent) { this.prep = new HostedPrep(data); }
+  constructor(readonly data: HostedData, readonly content: EmbedContent, readonly origin = process.env.OPENSIGHT_PUBLIC_ORIGIN) { this.prep = new HostedPrep(data); }
   begin(context: TenantContext, recheck: () => Promise<void>): void { this.data.prepaidCompute.add(context); this.content.data.prepaidCompute.add(context); this.data.begin(context, undefined, recheck, recheck); this.content.data.begin(context, undefined, recheck, recheck); }
   async verifyDelivery(context: TenantContext): Promise<void> {
+    await this.data.publication(context, await this.data.sources.metadata.revisions(context));
     await this.content.data.publication(context, await this.content.data.sources.metadata.revisions(context));
   }
-  private async dashboard(context: TenantContext, spec: Exclude<JobSpec, { kind: 'refresh' }>) {
+  private async dashboard(context: TenantContext, spec: Extract<JobSpec, { kind: 'report' | 'alert' }>) {
     const asset = await this.content.asset(context, 'dashboard', spec.dashboardId), stored = object(asset.body.definition), definition = object(stored.Definition);
     if (!Array.isArray(asset.body.datasets) || asset.body.datasets.length !== 1 || !Array.isArray(definition.DataSetIdentifierDeclarations) || definition.DataSetIdentifierDeclarations.length !== 1) throw new MetadataError('JOB_DATASET_UNSUPPORTED', 422);
     const binding = object(asset.body.datasets[0]);
@@ -45,6 +47,10 @@ export class JobRenderer implements JobExecutor {
     return { asset, stored, definition, admission, analysis, dataSetArn: String(object(definition.DataSetIdentifierDeclarations[0]).DataSetArn) };
   }
   async authorize(context: TenantContext, spec: JobSpec): Promise<void> {
+    if (spec.kind === 'digest') {
+      if (context.userId !== spec.subscriberId) throw new MetadataError('DIGEST_SELF_ONLY', 403);
+      await new DigestComputation(this.data).authorize(context, spec); return;
+    }
     if (spec.kind === 'refresh') {
       await this.data.sources.capability(context, 'build');
       if (spec.target.kind === 'prepared-dataset') { await this.prep.get(context, spec.target.id); return; }
@@ -89,8 +95,16 @@ export class JobRenderer implements JobExecutor {
     }
     return {};
   }
-  async render(context: TenantContext, spec: JobSpec, now: Date): Promise<Pick<MailMessage, 'subject' | 'html'>> {
+  async render(context: TenantContext, spec: JobSpec, now: Date, jobId?: string): Promise<Pick<MailMessage, 'subject' | 'html'>> {
     await this.authorize(context, spec);
+    if (spec.kind === 'digest') {
+      if (!this.origin || !jobId) throw new MetadataError('DIGEST_ORIGIN_REQUIRED', 503);
+      const url = new URL(this.origin);
+      if (url.origin !== this.origin || url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) throw new MetadataError('DIGEST_ORIGIN_REQUIRED', 503);
+      const result = await new DigestComputation(this.data).compute(context, spec, now);
+      const unsubscribe = `${this.origin}/api/api/v1/metric-unsubscribe/${[context.tenantId, context.namespaceId, jobId, spec.unsubscribeToken].map(encodeURIComponent).join('/')}`;
+      return digestMessage(result, `${this.origin}/#/metrics/${encodeURIComponent(spec.metricId)}`, unsubscribe);
+    }
     if (spec.kind === 'refresh') throw new MetadataError('JOB_DELIVERY_INVALID', 422);
     if (spec.kind === 'alert') {
       const metric = await this.metric(context, spec, now);

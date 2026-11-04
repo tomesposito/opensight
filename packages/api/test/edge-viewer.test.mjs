@@ -106,3 +106,14 @@ test('Issue #146: edge and packaged edge admit workspace selection with login bo
     assert.equal(context.handler(e).statusCode, 403);
   }
 });
+
+test('issue 162 edge admits subscription and one-click unsubscribe routes without opening token neighbors', () => {
+  for (const path of ['/api/v1/metrics/revenue/subscriptions', '/api/v1/metric-subscriptions/sub/preview', `/api/v1/metric-unsubscribe/tenant/namespace/sub/${'a'.repeat(64)}`]) {
+    const event = frame(); event.request.uri = `/api${path}`;
+    assert.equal(context.handler(event).uri, `/api${path}`);
+  }
+  for (const token of ['guess', 'a'.repeat(63), 'a'.repeat(65)]) {
+    const event = frame(); event.request.uri = `/api/api/v1/metric-unsubscribe/tenant/namespace/sub/${token}`;
+    assert.equal(context.handler(event).statusCode, 403);
+  }
+});

@@ -42,7 +42,7 @@ export async function runServerlessEvent(raw: ScheduledEvent, db: InvocationData
   if (inspected.kind.startsWith('job-')) {
     const budgets = await loadBudgets(db.membership, metadata); scope.own({ close: () => budgets.shutdown(), force: () => budgets.close() });
     const adapters = serverlessAdapters(db.membership, metadata, budgets, aws, env);
-    const jobs = new DurableJobs(adapters.jobs!, new JobRenderer(adapters.data.data, adapters.embedContent), adapters.mail!);
+    const jobs = new DurableJobs(adapters.jobs!, new JobRenderer(adapters.data.data, adapters.embedContent, env.OPENSIGHT_PUBLIC_ORIGIN), adapters.mail!);
     try { await jobs.run(event, scope.remaining()); } finally { await adapters.finish(); }
     return;
   }
@@ -85,7 +85,7 @@ export async function replayServerlessEvent(event: DispatchEnvelope, db: Invocat
   if (target.kind.startsWith('job-')) {
     const budgets = await loadBudgets(db.membership, metadata); scope.own({ close: () => budgets.shutdown(), force: () => budgets.close() });
     const adapters = serverlessAdapters(db.membership, metadata, budgets, aws, env);
-    try { await new DurableJobs(adapters.jobs!, new JobRenderer(adapters.data.data, adapters.embedContent), adapters.mail!).replay(event, acceptAmbiguous); }
+    try { await new DurableJobs(adapters.jobs!, new JobRenderer(adapters.data.data, adapters.embedContent, env.OPENSIGHT_PUBLIC_ORIGIN), adapters.mail!).replay(event, acceptAmbiguous); }
     finally { await adapters.finish(); }
     return;
   }
