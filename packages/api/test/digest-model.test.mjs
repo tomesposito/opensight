@@ -55,6 +55,8 @@ test('digests: shared destinations round-trip strictly and resolve active namesp
   const input = { ...digestInput, destination: { kind: 'shared', recipientIds: ['admin', 'other'] } };
   const spec = newDigest('revenue', 'admin', input);
   assert.deepEqual(digestSpec(spec), spec);
+  for (const patch of [{ destination: null }, { destination: 'email' }, { schedule: { kind: 'daily', at: '01:00', timeZone: 'UTC' } }, { unsubscribeToken: 'guess' }]) assert.throws(() => digestSpec({ ...spec, ...patch }), { code: 'DIGEST_SUBSCRIPTION_INVALID' });
+  assert.throws(() => newDigest('revenue', 'admin', { ...input, destination: null }), { code: 'METADATA_INVALID' });
   for (const recipients of [[], ['admin', 'admin'], ['team@example.test'], Array.from({ length: 51 }, (_, i) => `user${i}`)]) {
     assert.throws(() => digestSpec({ ...spec, recipients }), { code: 'DIGEST_SHARED_RECIPIENT_INVALID' });
     assert.throws(() => newDigest('revenue', 'admin', { ...input, destination: { kind: 'shared', recipientIds: recipients } }), { code: 'DIGEST_SHARED_RECIPIENT_INVALID' });

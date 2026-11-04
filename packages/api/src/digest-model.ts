@@ -25,7 +25,7 @@ export function digestInput(raw: unknown): { cadence: DigestSpec['cadence']; tim
   if (!Array.isArray(b.dimensions) || b.dimensions.length > 20 || new Set(b.dimensions).size !== b.dimensions.length) throw new MetadataError('DIGEST_DIMENSIONS_INVALID', 400);
   const timeColumn = field(b.timeColumn), dimensions = b.dimensions.map(field);
   if (dimensions.includes(timeColumn)) throw new MetadataError('DIGEST_DIMENSIONS_INVALID', 400);
-  const d = object(b.destination ?? { kind: 'self' });
+  const d = object(b.destination === undefined ? { kind: 'self' } : b.destination);
   let destination: DigestDestination;
   if (d.kind === 'self') { object(d, ['kind']); destination = { kind: 'self' }; }
   else if (d.kind === 'shared') { object(d, ['kind', 'recipientIds']); destination = { kind: 'shared', recipientIds: recipientIds(d.recipientIds) }; }
@@ -46,7 +46,7 @@ export function digestSpec(raw: unknown): DigestSpec {
   const input = digestInput({ cadence: b.cadence, timeColumn: b.timeColumn, dimensions: b.dimensions });
   const subscriberId = identifier(b.subscriberId), schedule = digestSchedule(input.cadence);
   // Existing personal subscriptions predate the explicit discriminator.
-  const destination = b.destination ?? 'self';
+  const destination = b.destination === undefined ? 'self' : b.destination;
   if (destination !== 'self' && destination !== 'shared') throw new MetadataError('DIGEST_SUBSCRIPTION_INVALID', 400);
   const recipients = destination === 'shared' ? recipientIds(b.recipients) : b.recipients;
   if (b.kind !== 'digest' || b.enabled !== true || !Array.isArray(recipients) || destination === 'self' && (recipients.length !== 1 || recipients[0] !== subscriberId)

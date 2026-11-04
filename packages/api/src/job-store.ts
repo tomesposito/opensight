@@ -178,7 +178,9 @@ export class JobStore {
     await lockTenant(c, run); const owner = await member(c, run, run.ownerId);
     const job = await this.find(c, run, run.jobId);
     if (job.stopped || !job.spec.enabled || job.version !== run.jobVersion || job.ownerId !== run.ownerId) throw new MetadataError('JOB_REVISED', 403);
-    if (JSON.stringify(run.revisions) !== JSON.stringify(await revisions(c, run))) throw new MetadataError('JOB_AUTHORIZATION_REVISED', 403);
+    // Shared digests resolve current membership/policies at each attempt. Their
+    // rendered revision snapshot is fenced again at SMTP handoff.
+    if (!(run.spec.kind === 'digest' && run.spec.destination === 'shared') && JSON.stringify(run.revisions) !== JSON.stringify(await revisions(c, run))) throw new MetadataError('JOB_AUTHORIZATION_REVISED', 403);
     if (!(run.spec.kind === 'digest' ? isRole(owner.role) : hasCapability(owner.role as Role, 'build'))) throw new MetadataError('JOB_OWNER_FORBIDDEN', 403);
     const row = (await c.query(`SELECT state FROM h7_occurrences WHERE ${scoped} AND occurrence_id = ?`, [...scopeArgs(run), run.id]))[0];
     if (!row || !['queued', 'running', 'delivering'].includes(String(row.state))) throw new MetadataError('JOB_CANCELLED', 403);
