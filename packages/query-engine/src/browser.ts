@@ -22,5 +22,5 @@ export { relativeDifference, formatNumber, shiftDate, resultDate, groupedPeriodD
 export { ExpressionBinder } from './expressions.js';
 export { QueryEngineError } from './validation.js';
 export type { BoundColumn } from './types.js';
-export { planPreparedVisual } from './prepared-query.js';
+export { planPreparedVisual, queryPrepared } from './prepared-query.js';
 export * from './governed-metrics.js';

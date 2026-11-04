@@ -241,6 +241,14 @@ recipient-resolution decision; see [metric digests](docs/metric-digests.md).
 
 ![Metric digest preview from a real local hosted API using synthetic regional sales](docs/images/metric-digest-preview.png)
 
+Local/organization **Notebooks** combine SQL, markdown and visuals, then publish
+as parameterized apps that run under each viewer's permissions. Saved results
+are private dataset snapshots with visible as-of times. Hosted notebooks,
+scheduled refresh and dashboard consumption of snapshots remain follow-ons.
+See [notebook semantics and API](docs/notebooks.md).
+
+![Notebook run view using the real local API and synthetic sales](docs/images/notebooks.png)
+
 Saved dataset calculations can be **promoted** into that same draft form. The
 original calculation remains unchanged, and provenance records its source.
 

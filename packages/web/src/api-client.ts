@@ -1,3 +1,4 @@
+import type { Notebook, NotebookSummary, NotebookContent, NotebookRun, NotebookSnapshot, NotebookDataset } from './notebooks.js';
 import type { MetricSubscriptionInput, MetricSubscription, MetricDigestPreview } from './metric-digests.js';
 import type { Idea } from './ideas.js';
 import type { InputAuditEntry, InputCellValue, InputColumn, InputRow, InputTableFull, InputTableSummary } from './input-tables.js';
@@ -336,6 +337,15 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     return items;
   };
   const getPreparedRows = (id: string) => resource<PreparedRows>(`/api/datasets/${encodeURIComponent(id)}/rows`);
+  const listNotebooks = (signal?: AbortSignal) => resource<{ notebooks: NotebookSummary[]; canCreate: boolean }>('/api/notebooks', 'GET', undefined, signal);
+  const getNotebook = (id: string, signal?: AbortSignal) => resource<Notebook>(`/api/notebooks/${encodeURIComponent(id)}`, 'GET', undefined, signal);
+  const createNotebook = (input: NotebookContent) => resource<Notebook>('/api/notebooks', 'POST', input);
+  const updateNotebook = (id: string, input: NotebookContent & { version: number }) => resource<Notebook>(`/api/notebooks/${encodeURIComponent(id)}`, 'PATCH', input);
+  const deleteNotebook = (id: string) => resource<{ deleted: boolean }>(`/api/notebooks/${encodeURIComponent(id)}`, 'DELETE');
+  const runNotebook = (id: string, parameters: Record<string, string | number>, cellId?: string) => resource<NotebookRun>(`/api/notebooks/${encodeURIComponent(id)}/run`, 'POST', { parameters, ...(cellId ? { cellId } : {}) });
+  const notebookDatasets = (signal?: AbortSignal) => resource<{ datasets: NotebookDataset[] }>('/api/notebooks/datasets', 'GET', undefined, signal);
+  const notebookRuns = (id: string, signal?: AbortSignal) => resource<{ runs: NotebookRun[] }>(`/api/notebooks/${encodeURIComponent(id)}/runs`, 'GET', undefined, signal);
+  const snapshotNotebookCell = (id: string, cellId: string) => resource<NotebookSnapshot>(`/api/notebooks/${encodeURIComponent(id)}/cells/${encodeURIComponent(cellId)}/snapshot`, 'POST', {});
   const listInputTables = () => resource<{ tables: InputTableSummary[] }>('/api/input-tables');
   const getInputTable = (id: string) => resource<InputTableFull>(`/api/input-tables/${encodeURIComponent(id)}`);
   const createInputTable = (body: { name: string; boundDatasetId?: string | null; columns: InputColumn[]; editors?: string[] }) => resource<InputTableFull>('/api/input-tables', 'POST', body);
@@ -560,6 +570,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     enroll, acceptEnrollment, login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob,
     listPrepTemplates, proposePrepTemplate, publishPrepTemplate, createFromPrepTemplate, promoteCalculation, metricDatasets, listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
+    listNotebooks, getNotebook, createNotebook, updateNotebook, deleteNotebook, runNotebook, notebookDatasets, notebookRuns, snapshotNotebookCell,
     listInputTables, getInputTable, createInputTable, updateInputTable, deleteInputTable, setInputTableEditors, addInputTableRow, updateInputTableRow, deleteInputTableRow, getInputTableAudit,
     queryDataset,
     getAnalysisDefinition: (id: string, signal?: AbortSignal) => getDefinition('analysis', id, signal),

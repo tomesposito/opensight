@@ -1,3 +1,5 @@
+import { BlazeTable, blazeLimits } from './blaze.js';
+import { streamLocalSource, resolveSecurity, type PrepSource, type PrepMemoryTable } from '@opensight/query-engine';
 import { metricQuery, metricDefinition, type MetricLookup } from './metric-consumption.js';
 import { validateParameters } from '@opensight/query-engine/parameters';
 import type { IncomingMessage } from 'node:http';
@@ -139,6 +141,20 @@ export class SalesQuery {
       }
     }
     return undefined;
+  }
+
+  notebookSource(identity?: Identity): PrepSource {
+    const schema = this.securitySchema();
+    const resolved = this.security ? resolveSecurity(this.security.context(identity), schema.columns, schema.localData.dataSetArn) : undefined;
+    if (schema.localData.security.dataset === 'protected' && !resolved?.protected) throw new SecurityError(403, 'NOTEBOOK_DATASET_ACCESS_DENIED', 'Protected dataset requires an active policy.');
+    const columns = schema.columns.filter(c => !resolved?.deniedColumns.includes(c.name)).map(c => ({ name: c.name, type: c.type }));
+    if (!columns.length) throw new SecurityError(403, 'NOTEBOOK_DATASET_ACCESS_DENIED', 'No permitted columns.');
+    return { id: 'sales', table: 'sales', connectorId: 'file', security: 'unrestricted', columns };
+  }
+  async notebookTable(identity?: Identity): Promise<PrepMemoryTable> {
+    const source = this.notebookSource(identity), limits = blazeLimits(), table = new BlazeTable(limits);
+    await streamLocalSource(this.metadata, { dataRoot: this.dataRoot }, this.security?.context(identity), limits, table);
+    return { source, rowCount: table.rowCount, value: table.value };
   }
 
   async execute(body: QueryBody, identity?: Identity) {

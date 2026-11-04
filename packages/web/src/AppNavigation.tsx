@@ -52,6 +52,7 @@ function NavigationIcon({ name }: { name: string }) {
     'My stuff': 'M4 4v16M9 4v16M14 6l5-1 3 14-5 1z',
     Analyses: 'M3 20h18M5 16V9h3v7m4 0V4h3v12m4 0v-5h3v5',
     Dashboards: 'M3 4h18v16H3zM3 9h18M9 9v11',
+    Notebooks: 'M4 3h16v18H4zM8 3v18M11 8h6m-6 4h6m-6 4h4',
     Data: 'M3 6c0-5 18-5 18 0s-18 5-18 0v12c0 5 18 5 18 0V6M3 12c0 5 18 5 18 0',
     'My folders': 'M3 6h7l3 3h8v11H3z',
     'Shared folders': 'M3 6h7l3 3h8v11H3zM8 15h8m-3-3 3 3-3 3',

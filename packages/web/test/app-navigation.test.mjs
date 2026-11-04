@@ -124,7 +124,7 @@ test('rail preserves reference order, groups Admin under More, and puts Recents 
   const navigation = () => ui.root.findByType(AppNavigation);
   const rail = () => navigation().findByProps({ id: 'product-navigation' });
   const product = rail().findByProps({ 'aria-label': 'Product' });
-  assert.deepEqual(product.findAllByType('a').map(link => link.children.at(-1)), ['My stuff', 'Analyses', 'Dashboards', 'Data', 'My folders', 'Shared folders', 'Ideas']);
+  assert.deepEqual(product.findAllByType('a').map(link => link.children.at(-1)), ['My stuff', 'Analyses', 'Dashboards', 'Data', 'Notebooks', 'My folders', 'Shared folders', 'Ideas']);
   assert.equal(product.findAllByType('button')[0].props['aria-label'], 'Search');
   assert.equal(rail().children.at(-1).props['aria-label'], 'Recents');
   assert.equal(rail().findByProps({ id: 'more-navigation' }).props.hidden, true);

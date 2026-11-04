@@ -12,6 +12,8 @@ import { LocalDashboards } from './local-dashboards.js';
 import { V1Routes } from './v1-routes.js';
 import { LocalAnalyses } from './local-analyses.js';
 import { PrepRoutes, type PrepPostgresBinding } from './prep-routes.js';
+import { NotebookRoutes } from './notebook-routes.js';
+import { NotebookStore } from './notebooks.js';
 import { InputTableRoutes } from './input-table-routes.js';
 import { InputTableStore } from './input-tables.js';
 import { ConnectorRoutes } from './connector-routes.js';
@@ -26,7 +28,7 @@ import { namespaceRoute, scopePath } from './namespace-routes.js';
 import { SecurityService, SecurityError, type SecurityOptions } from './security.js';
 import { realpath, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, relative } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { DefinitionStore, RESOURCE_ID } from './store.js';
 import { hasCapability, QueryEngineError } from '@opensight/query-engine';
@@ -50,6 +52,8 @@ export interface ApiOptions {
   prepStorePath?: string;
   /** Issue #161: governed input tables store; omit for ephemeral library use. */
   inputTableStorePath?: string;
+  /** Local/organization notebook assets, runs and snapshots. */
+  notebookStorePath?: string;
   prepPostgresBindings?: readonly PrepPostgresBinding[];
   ai?: AIOptions;
   analytics?: Analytics;
@@ -126,6 +130,22 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   });
   prepRoutes.inputTableSources = identity => inputTables.prepSourcesFor(identity);
   prepRoutes.inputTableTables = identity => inputTables.prepTablesFor(identity);
+  const notebooks = new NotebookRoutes(await NotebookStore.load(options.notebookStorePath), {
+    security, localIdentity,
+    accessStamp: identity => createHash('sha256').update(JSON.stringify(security ? { role: security.user(identity).role, context: security.context(identity) } : identity)).digest('hex'),
+    sources: async identity => {
+      if (security) security.user(identity);
+      const sources = await prepRoutes.notebookSources(identity);
+      const query = localIdentity ? sales : namespaceQueries.get(identity.namespaceId);
+      if (query) try { sources.push(query.notebookSource(identity)); } catch { /* No permitted fixture source for this caller. */ }
+      return sources;
+    },
+    table: async (identity, ref) => {
+      if (security) security.user(identity);
+      const query = localIdentity ? sales : namespaceQueries.get(identity.namespaceId);
+      return ref === 'sales' && query ? query.notebookTable(identity) : prepRoutes.notebookTable(identity, ref);
+    },
+  });
   const metricAssets = (identity: Identity) => {
     const ns = identity.namespaceId, local = !security;
     return new LocalAssets(local ? store : namespaceStores.get(ns), prepRoutes, identity, async () => { if (security) security.user(identity); }, organization,
@@ -200,6 +220,9 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
         const root = namespaceId === 'default' ? options.dataRoot : options.namespaceDataRoots?.[namespaceId];
         const analyses = new LocalAnalyses(scopedStore, scopedSales, prepRoutes, v1Identity, recheck, organization, root, !!options.security?.storePath);
         await v1.local(request, response, path, analyses, new LocalDashboards(analyses, scopedStore, scopedSales, prepRoutes, v1Identity, recheck, organization, root, !!options.security?.storePath), new LocalAssets(scopedStore, prepRoutes, v1Identity, recheck, organization, root, !!options.security?.storePath, scopedSales)); return;
+      }
+      if (/^\/api\/notebooks(?:\/|$)/.test(path)) {
+        await notebooks.route(request, response, path, query, localIdentity ?? identity); return;
       }
       if (path.startsWith('/api/input-tables')) {
         if (!localIdentity && (!security || !identity)) throw new SecurityError(503, 'SECURITY_NOT_CONFIGURED', 'Needs hosted API with authentication configured');

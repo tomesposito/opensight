@@ -1,6 +1,7 @@
 import { allowed, type Access } from './access.js';
 
 export const pages = {
+  notebooks: { path: '/notebooks', section: 'Notebooks', title: 'Notebooks' },
   metric: { path: '/metrics', section: 'Data', title: 'Governed metric' },
   ideas: { path: '/ideas', section: 'Ideas', title: 'Ideas' },
   home: { path: '/home', section: 'Home', title: 'Home' },
@@ -22,14 +23,14 @@ export const pages = {
   api: { path: '/admin/developer/api', section: 'Admin', title: 'API definition preview' },
 } as const;
 export type Page = keyof typeof pages;
-export type AppRoute = { page: Page; metricId?: string; dashboardId?: string; draftId?: string; newAnalysis?: boolean; createDataset?: boolean; sourceId?: string; datasetId?: string; baseDatasetId?: string; ideaSurface?: string };
+export type AppRoute = { page: Page; notebookId?: string; metricId?: string; dashboardId?: string; draftId?: string; newAnalysis?: boolean; createDataset?: boolean; sourceId?: string; datasetId?: string; baseDatasetId?: string; ideaSurface?: string };
 export const productSections = [
   { title: 'My stuff', page: 'my-stuff' },
   { title: 'Analyses', page: 'analyses' }, { title: 'Dashboards', page: 'dashboards' },
-  { title: 'Data', page: 'data' },
+  { title: 'Data', page: 'data' }, { title: 'Notebooks', page: 'notebooks' },
   { title: 'My folders', page: 'my-folders' }, { title: 'Shared folders', page: 'shared-folders' },
 ] as const;
-export const dataPages: Page[] = ['data', 'data-prep', 'data-sources'];
+export const dataPages: Page[] = ['data', 'data-prep', 'data-sources', 'notebooks'];
 export const adminPages: Page[] = ['security', 'organization', 'automation', 'ai-settings', 'users'];
 export const developerPages: Page[] = ['fixtures', 'api'];
 
@@ -41,6 +42,7 @@ export function recordRecentPage(recents: readonly Page[], page: Page | undefine
 }
 
 export function visiblePage(access: Access, page: Page): boolean {
+  if (page === 'notebooks') return true;
   if (page === 'dashboards') return access.mode !== 'demo';
   if (page === 'analyses' || page === 'author' || dataPages.includes(page)) return allowed(access, 'build');
   if (page === 'ai-settings' || page === 'users') return access.mode === 'hosted' && allowed(access, 'admin');
@@ -56,6 +58,7 @@ export function routeProblem(access: Access, page: Page): string | undefined {
     : 'SECURITY_BUILD_REQUIRED: Author access required.';
 }
 export function routeHash(route: AppRoute): string {
+  if (route.page === 'notebooks' && route.notebookId) return `#/notebooks/${encodeURIComponent(route.notebookId)}`;
   if (route.page === 'metric' && route.metricId) return `#/metrics/${encodeURIComponent(route.metricId)}`;
   if (route.page === 'ideas' && route.ideaSurface) return `#/ideas/from/${encodeURIComponent(route.ideaSurface)}`;
   if (route.page === 'dashboards' && route.dashboardId) return `#/dashboards/${encodeURIComponent(route.dashboardId)}`;
@@ -74,6 +77,8 @@ export function resetRouteScroll(scope?: { scrollTo?: (x: number, y: number) => 
   scope?.scrollTo?.(0, 0);
 }
 export function parseRoute(hash: string): AppRoute | undefined {
+  const notebook = /^#\/notebooks\/([A-Za-z0-9_-]{1,128})$/.exec(hash);
+  if (notebook) return { page: 'notebooks', notebookId: notebook[1] };
   const metric = /^#\/metrics\/([A-Za-z0-9_-]{1,512})$/.exec(hash);
   if (metric) return { page: 'metric', metricId: metric[1] };
   const idea = /^#\/ideas\/from\/([A-Za-z0-9_-]{1,80})$/.exec(hash);

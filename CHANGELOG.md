@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- SQL notebooks on the local/organization API: author markdown, SQL and shared-compiler visuals, publish parameterized apps that run with each viewer’s data permissions, and save private dataset snapshots with visible as-of times. Includes named SQL/security errors and run history; hosted notebooks and dashboard snapshot consumption remain follow-ons (#164).
+
 - Shared metric digest lists: owners/admins choose workspace members, receive one message per period computed from their intersected row and column access, preview withheld/empty results, and stop the whole list with one-click unsubscribe. Removed or de-authorized recipients are dropped at delivery (#162).
 
 - Governed metric email digests: self-subscribe weekly or daily, compare completed periods, inspect deterministic dimension changes, drill back into the metric, and unsubscribe in one click. Hosted delivery rechecks recipient permissions and deduplicates each subscription/period. (#162).
