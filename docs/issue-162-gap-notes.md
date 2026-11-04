@@ -1,23 +1,30 @@
 # Issue #162 — metric digest gap notes
 
-## Product decision follow-up (issue comment draft)
+## Shared destination resolution — 2026-11-04
 
-The approved IDD allows shared email lists but requires authorization for every
-recipient at delivery. Existing OpenSight identities represent personal
-workspace members; there is no verified shared destination or membership
-registry. Please decide the authoritative list-membership source and the rule
-for combining recipients' different RLS views into one shared message. Until
-then, the owner/admin gate is enforced and shared destinations fail with
-`DIGEST_SHARED_DESTINATION_UNRESOLVED`. The run brief explicitly directs stopping
-that part and shipping the remainder when a new product decision is required.
-No issue comment was sent: this build permits no network access or publishing.
+Tom's issue comments 6617287095 (2026-11-03) and 6619715093 resolved the
+previous question: build shared lists in #162, use the existing active workspace
+identity registry, and compute one digest using the intersection of all remaining
+recipients' row and column access. [D-90](idd/D-90-shared-metric-digests.md)
+records that confirmed decision. `DIGEST_SHARED_DESTINATION_UNRESOLVED` is replaced
+by explicit member selection and delivery-time recipient resolution.
+
+Shared requests contain 1–50 unique member IDs, never email destinations.
+Creation retains the owner/admin gate and creator execution authorization.
+Delivery drops inactive or de-authorized recipients, fails closed when none
+remain, ANDs effective row predicates, unions denied columns, withholds restricted
+dimension drivers, and explicitly reports an empty intersection without values.
+Single-node and serverless workers use one durable delivery and one shared
+computation per period. Preview uses that same recipient resolution. SMTP
+handoff rechecks the rendered audience/revision snapshot; later changes abort
+instead of sending a stale message. Unsubscribe stops the whole shared list.
 
 Slack connections do not exist in this workspace implementation. Slack delivery,
 threshold/anomaly alerts and AI explanations remain outside this slice.
 
 ## Data-access boundary
 
-Subscriptions grant no source or recipe access. Readers can subscribe when the
+Personal subscriptions grant no source or recipe access. Readers can subscribe when the
 existing bound query path is executable as that reader. A published metric's
 metadata visibility alone does not make another author's source or prepared
 recipe executable. Protected source preparation remains refused by the existing
@@ -90,4 +97,74 @@ or horizontal overflow. The existing README media checkpoint remains current.
 
 Full-suite output is `/tmp/issue162-final-test-unrestricted.log`; focused tests,
 browser logs, the demo build log and captures are under `/tmp/issue162-*`.
-Shared destinations remain deferred for the product decision described above.
+That verification covered the original personal slice; shared destinations are now implemented as described above.
+
+## Shared implementation verification
+
+The shared path preserves the owner-bound execution model. Recipient checks cover
+active identity/membership, metric and dataset visibility, stored folder/dataset
+grants, principal/group-resolved source plus dataset policies, and measure query
+planning under each effective policy. Full per-recipient execution of another
+owner's source is unavailable. Prepared sources must be unprotected under the
+existing preparation rules. This limitation is explicit in `metric-digests.md`;
+metadata visibility is not described as proof of independent source execution.
+
+New integration cases exercise real contained queries, differing and disjoint
+principal policies, source/dataset intersections, owner restrictions, denied date
+and dimension columns, measure revocation, removed members, changed addresses,
+all-recipient failure, retries, cancellation, unsubscribe, and serverless
+receipts. The legacy grant-revocation test changes persisted grants in its
+synthetic fixture because legacy dataset writes have no grant editor.
+
+The hosted browser fixture now enrolls a second active member through the real
+invitation and authentication flow. Acceptance covers the member picker, ID-only
+shared creation, shared preview, desktop/mobile layouts and whole-list
+unsubscribe in addition to the existing personal flow. UI tests also cover
+honest member-list errors, the owner/admin refusal, and the empty-intersection
+preview.
+
+README tour inspection: `capture-readme-tour.mjs` shows the static Metrics tab's
+API-required disclosure and never opens Subscribe. The shared picker cannot
+appear in those frames. Per this build brief, README media is not refreshed.
+No new dependency, AWS call, push or `SOLUTION_DESIGN.md` edit is included.
+
+Final shared browser acceptance passed with zero page errors and zero external
+requests at 1440px and 390px. Screenshot review caught member checkboxes wrapping
+onto the preceding recipient's line; each member now occupies its own aligned
+row with wrapping text. Final captures have no horizontal overflow. Compared
+against the existing Data workspace and local
+`lookfeel-references/qs-2026/qs-data-landing.jpg`: navigation, tabs and compact
+controls are retained. No supplied shared-digest reference exists, so visual
+fidelity remains unmeasured. No unresolved issue-specific visual defect remains;
+no remote issue was filed under the no-network/no-push build constraint.
+
+The static artifact was rebuilt with `packages/web/scripts/build-demo.mjs`, then
+the brief's `build-demo-shim.mjs` regenerated its local goal-file copy. Chromium
+verified the rebuilt static Metrics tab's API-required disclosure with zero
+page errors, external requests or horizontal overflow. This is a local static
+demo, not a deployed server. Logs and screenshots are under
+`/tmp/issue162-shared-*`.
+
+## Final shared-destination verification — 2026-11-04
+
+The mandatory root command
+`OPENSIGHT_CHROMIUM=/home/hatch/workspace/tools/chromium-wrapper.sh npm test`
+exited **0**: **4,634 passed / 0 failed / 36 skipped / 0 cancelled**.
+This comprises 4,602 passing Node tests plus 32 passing Python SDK tests.
+All skips require live PostgreSQL: 35 need `DATABASE_URL` and one needs a
+configured TLS PostgreSQL instance. The API suite passed 1,024 tests with 34
+skips; query-engine passed 569 with 2 skips; web passed 2,470; final root
+conformance/documentation checks passed 102.
+
+Focused digest verification passed all 31 tests. A subsequent focused check
+passed the added strict destination-shape and COUNT empty-intersection cases;
+the full suite then verified those final cases again. The four digest UI tests
+passed, and the final hosted browser acceptance and static-demo checks passed
+with zero page errors or external requests. Final browser captures include the
+corrected member-row layout at 1440px and 390px.
+
+Full-suite evidence: `/tmp/issue162-shared-full-suite.log`. Browser evidence:
+`/tmp/issue162-shared-browser.log`, `/tmp/issue162-shared-static-check.log` and
+`/tmp/issue162-shared-captures/`. Demo build/shim logs use the same prefix.
+Verification required local listener/worker/browser execution outside the
+restricted sandbox; it used synthetic data, stub mail and no external requests.
