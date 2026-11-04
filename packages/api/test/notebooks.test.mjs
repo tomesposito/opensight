@@ -70,7 +70,7 @@ test('notebooks: model validation refuses invalid cells, limits, fields and defa
     { cells: [{ id: 'p', kind: 'python', text: 'print(1)' }] }, { cells: [sql('SELECT 1', ['sales', 'SALES'])] },
     { parameters: [{ name: 'bad-name', type: 'string' }] }, { parameters: [{ name: 'x', type: 'number', default: '1' }] },
     { parameters: [{ name: 'x', type: 'date', default: '2026-02-30' }] }, { parameters: [{ name: 'x', type: 'string' }, { name: 'x', type: 'string' }] },
-    { published: 'yes' }, { ownerId: 'admin' },
+    { published: 'yes' }, { published: null }, { cells: null }, { parameters: null }, { ownerId: 'admin' },
   ]) {
     const result = await call('/api/notebooks', 'POST', { name: 'Bad', ...extra });
     assert.equal(result.status, 400, JSON.stringify(extra)); assert.match(result.body.errorCode, /^NOTEBOOK_/);
@@ -85,7 +85,7 @@ test('notebooks: fixture execution, typed bindings, injection stays data, result
   assert.equal(r.results[1].sourceCellId, 'sql1'); assert.equal(r.results[1].error, undefined);
   assert.ok(Number.isFinite(Date.parse(r.results[0].executedAt))); assert.ok(r.results[0].elapsedMs >= 0);
   assert.deepEqual((await run(call, n, { parameters: { region: "East' OR true --" } })).results[0].data.rows, []);
-  for (const parameters of [{ unknown: 1 }, { minimum: '2' }, { day: '2026-02-30' }, { minimum: [2] }]) {
+  for (const parameters of [null, { unknown: 1 }, { minimum: '2' }, { day: '2026-02-30' }, { minimum: [2] }]) {
     const result = await call(`${path(n)}/run`, 'POST', { parameters }); assert.equal(result.status, 400); assert.match(result.body.errorCode, /^NOTEBOOK_/);
   }
   const missing = await create(call, { parameters: [{ name: 'missing', type: 'string' }] });
@@ -167,5 +167,32 @@ test('notebooks: retention, persistence, delete cascades, corrupt JSON and state
   const third = await api(t, { notebookStorePath: storePath }); assert.equal((await third(`${path(n)}/runs`)).status, 404);
   for (const content of ['{', JSON.stringify({ version: 1, notebooks: [{ id: 'broken' }], runs: [], snapshots: [] }), JSON.stringify({ version: 1, notebooks: [], runs: [], snapshots: [], injected: true })]) {
     await writeFile(storePath, content); await assert.rejects(() => api(t, { notebookStorePath: storePath }), /NOTEBOOK_STORE_CORRUPT/);
+  }
+});
+
+test('notebooks: saved results and snapshots cannot replay an earlier security policy', async t => {
+  const call = await api(t), n = await create(call, { published: true, cells: [sql('SELECT * FROM sales')] });
+  await run(call, n);
+  const saved = await call(`${path(n)}/cells/sql1/snapshot`, 'POST', {}); assert.equal(saved.status, 201);
+  const policy = await call('/api/datasets/sales/row-rules/east', 'PUT', { principals: [{ type: 'user', id: 'author' }], predicate: { column: 'region', operator: 'eq', value: 'East' } }, 'admin');
+  assert.equal(policy.status, 200);
+  assert.equal((await call(path(n))).body.snapshots.length, 0);
+  assert.equal((await call(`${path(n)}/runs`)).body.runs[0].resultsRedacted, true);
+  assert.equal((await call(`${path(n)}/cells/sql1/snapshot`, 'POST', {})).body.errorCode, 'NOTEBOOK_DATASET_ACCESS_DENIED');
+  const next = await run(call, n); assert.ok(next.results[0].data.rows.every(r => r.region === 'East'));
+  assert.equal((await call(`${path(n)}/cells/sql1/snapshot`, 'POST', {}, 'reader')).body.errorCode, 'NOTEBOOK_AUTHOR_REQUIRED');
+});
+test('notebooks: load rejects missing required content and corrupted result state', async () => {
+  const { validateNotebookState } = await import('../dist/notebooks.js');
+  const n = { id: 'n', namespaceId: 'default', ownerId: 'author', name: 'n', published: false, parameters: [], cells: [sql()], version: 1, createdAt: '2026-11-04T00:00:00Z', updatedAt: '2026-11-04T00:00:00Z' };
+  for (const key of ['published', 'cells', 'parameters']) {
+    const partial = { ...n }; delete partial[key];
+    assert.throws(() => validateNotebookState({ version: 1, notebooks: [partial], runs: [], snapshots: [] }), /NOTEBOOK_STORE_CORRUPT/);
+  }
+  const result = { cellId: 'sql1', kind: 'sql', executedAt: n.createdAt, elapsedMs: 1, datasetRefs: ['sales'], data: { columns: [{ name: 'x', type: 'INTEGER' }], rows: [{ x: 1 }], rowCount: 1, truncated: false } };
+  const state = { version: 1, notebooks: [n], snapshots: [], runs: [{ id: 'r', namespaceId: 'default', notebookId: 'n', notebookVersion: 1, executedBy: 'author', executedAt: n.createdAt, accessStamp: 'stamp', results: [result] }] };
+  assert.equal(validateNotebookState(state).runs.length, 1);
+  for (const change of [r => { r.kind = 'markdown'; }, r => { r.data.rowCount = 2; }, r => { r.data.rows[0].x = {}; }, r => { r.error = { code: 'NOTEBOOK_ERROR', message: 'failed' }; }]) {
+    const copy = structuredClone(state); change(copy.runs[0].results[0]); assert.throws(() => validateNotebookState(copy), /NOTEBOOK_STORE_CORRUPT/);
   }
 });

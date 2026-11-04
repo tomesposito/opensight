@@ -43,3 +43,7 @@ for (const [sql, code] of [
 ]) test(`notebook SQL safety: ${sql}`, async () => {
   await assert.rejects(() => run(sql), e => { assert.equal(e.code, code); return true; });
 });
+test('notebook SQL: expensive read-only queries are interrupted at the existing execution deadline', async () => {
+  const many = { ...table, rowCount: 10_000, value: (r, c) => c ? r + 1 : 'row' };
+  await assert.rejects(() => executeNotebookSql('SELECT SUM(a.amount % (b.amount + c.amount + 1)) AS total FROM data a CROSS JOIN data b CROSS JOIN data c', ['data'], {}, [many], 2), e => e.code === 'NOTEBOOK_SQL_TIMEOUT');
+});

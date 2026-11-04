@@ -21,7 +21,9 @@ const tableTypes = new Set(['BASE_TABLE', 'JOIN', 'SUBQUERY', 'EMPTY']);
 /** Parse without preparing/binding user SQL: preparation can itself evaluate table functions. */
 async function validateSql(connection: DuckDBConnection, sql: string, refs: readonly string[], bindings: Readonly<Record<string, string | number>>) {
   if (!sql.trim() || sql.length > 10_000 || sql.includes('\0')) fail('NOTEBOOK_SQL_INVALID', 'SQL must be 1–10000 characters without NUL.');
-  let ast: unknown; let serialized = ''; 
+  const leading = sql.replace(/^(?:\s+|--[^\r\n]*(?:\r?\n|$)|\/\*[\s\S]*?\*\/)+/, '');
+  if (!/^(SELECT|WITH)\b/i.test(leading)) fail('NOTEBOOK_SQL_READ_ONLY_REQUIRED', 'Only SELECT or WITH … SELECT is allowed.');
+  let ast: unknown; let serialized = '';
   try {
     // DuckDB's serializer requires a constant VARCHAR. quoteLiteral is the existing
     // engine literal encoder; user bindings are separately passed to the driver.

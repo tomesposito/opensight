@@ -2617,3 +2617,9 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .notebook-cell .chart { min-height: 280px; }
 .notebook-history { margin: 20px 0; }
 @media (max-width: 680px) { .notebooks-page { padding: 12px; } .notebook-list { overflow: auto; } .notebook-chart-fields label { max-width: 100%; } }
+.notebooks-page button { border: 1px solid #b8c5d1; border-radius: 3px; background: #fff; color: #203755; padding: 6px 12px; cursor: pointer; }
+.notebooks-page button:hover:not(:disabled) { background: #edf4ff; border-color: #6b96d0; }
+.notebooks-page button:disabled { opacity: .5; cursor: default; }
+.notebooks-page button.data-primary { background: #2860a4; border-color: #2860a4; color: #fff; }
+.notebooks-page label:has(> input[type="checkbox"]) { flex-direction: row; align-items: center; }
+.notebooks-page p, .notebooks-page code { overflow-wrap: anywhere; }

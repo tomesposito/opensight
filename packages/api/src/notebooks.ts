@@ -73,7 +73,8 @@ function refs(raw: unknown): string[] {
   return values;
 }
 export function notebookBindings(parameters: readonly NotebookParameter[], raw: unknown = {}, requireValues = true): Record<string, string | number> {
-  const input = notebookObject(raw, parameters.map(p => p.name));
+  let input: Record<string, unknown>;
+  try { input = notebookObject(raw, parameters.map(p => p.name)); } catch { return notebookFail('NOTEBOOK_PARAMETER_INVALID', 'Bindings must contain only declared parameter names.'); }
   const values = Object.fromEntries(parameters.map(p => [p.name, Object.hasOwn(input, p.name) ? [input[p.name]] : p.default !== undefined ? [p.default] : []]));
   try {
     validateParameters(parameters.map(p => ({ name: p.name, type: p.type === 'date' ? 'datetime' : p.type, multiple: false })), values);
@@ -83,15 +84,15 @@ export function notebookBindings(parameters: readonly NotebookParameter[], raw: 
 }
 export function validateNotebookContent(raw: unknown): Pick<Notebook, 'name' | 'published' | 'parameters' | 'cells'> {
   const o = notebookObject(raw, ['name', 'published', 'parameters', 'cells']);
-  const name = text(o.name, 120), published = boolean(o.published ?? false);
-  const parameters = array(o.parameters ?? [], 200).map(v => {
+  const name = text(o.name, 120), published = boolean(o.published === undefined ? false : o.published);
+  const parameters = array(o.parameters === undefined ? [] : o.parameters, 200).map(v => {
     const p = notebookObject(v, ['name', 'type', 'default']);
     if (!['string', 'number', 'date'].includes(String(p.type))) notebookFail('NOTEBOOK_PARAMETER_INVALID', 'Expected string, number or date.');
     return { name: text(p.name, 128), type: p.type as NotebookParameter['type'], ...(p.default === undefined ? {} : { default: p.default as string | number }) };
   });
   notebookBindings(parameters, {}, false);
   const seen = new Set<string>(), sql = new Set<string>();
-  const cells = array(o.cells ?? [], NOTEBOOK_MAX_CELLS).map((v): NotebookCell => {
+  const cells = array(o.cells === undefined ? [] : o.cells, NOTEBOOK_MAX_CELLS).map((v): NotebookCell => {
     const c = notebookObject(v, ['id', 'kind', ...(typeof v === 'object' && v !== null && 'kind' in v && v.kind === 'visual' ? ['sourceCellId', 'chart'] : typeof v === 'object' && v !== null && 'kind' in v && v.kind === 'sql' ? ['text', 'datasetRefs'] : ['text'])]);
     const cellId = id(c.id);
     if (seen.has(cellId)) notebookFail('NOTEBOOK_DUPLICATE_CELL', 'Cell IDs must be unique.');
@@ -140,6 +141,7 @@ export function validateNotebookState(raw: unknown): NotebookState {
     const unique = (value: unknown) => { const key = id(value); if (ids.has(key)) notebookFail('NOTEBOOK_DUPLICATE_ID', 'Duplicate store ID.'); ids.add(key); return key; };
     const notebooks = array(s.notebooks, 1000).map(v => {
       const n = notebookObject(v, ['id', 'namespaceId', 'ownerId', 'name', 'published', 'parameters', 'cells', 'version', 'createdAt', 'updatedAt']);
+      if (n.published === undefined || n.cells === undefined || n.parameters === undefined) notebookFail('NOTEBOOK_INVALID_BODY', 'Persisted notebook content is incomplete.');
       return { id: unique(n.id), namespaceId: id(n.namespaceId), ownerId: text(n.ownerId, 512), ...validateNotebookContent({ name: n.name, published: n.published, parameters: n.parameters, cells: n.cells }), version: integer(n.version, 1), createdAt: stamp(n.createdAt), updatedAt: stamp(n.updatedAt) };
     });
     const scope = (notebookId: unknown, namespaceId: unknown): string => {
@@ -154,7 +156,7 @@ export function validateNotebookState(raw: unknown): NotebookState {
         if (!['sql', 'markdown', 'visual'].includes(String(c.kind))) notebookFail('NOTEBOOK_INVALID_RESULT', 'Invalid cell kind.');
         const cellId = id(c.cellId); if (cellIds.has(cellId)) notebookFail('NOTEBOOK_INVALID_RESULT', 'Duplicate result.'); cellIds.add(cellId);
         const error = c.error === undefined ? undefined : notebookObject(c.error, ['code', 'message']);
-        if (error && c.data !== undefined || c.kind === 'sql' && !error && c.data === undefined) notebookFail('NOTEBOOK_INVALID_RESULT', 'Invalid result state.');
+        if (error && c.data !== undefined || c.kind === 'sql' && !error && c.data === undefined || c.kind !== 'sql' && c.data !== undefined || c.kind !== 'visual' && c.sourceCellId !== undefined) notebookFail('NOTEBOOK_INVALID_RESULT', 'Invalid result state.');
         return { cellId, kind: c.kind as NotebookCell['kind'], executedAt: stamp(c.executedAt), elapsedMs: integer(c.elapsedMs, 0), datasetRefs: refs(c.datasetRefs), ...(c.data === undefined ? {} : { data: data(c.data) }), ...(c.sourceCellId === undefined ? {} : { sourceCellId: id(c.sourceCellId) }), ...(error ? { error: { code: text(error.code, 128), message: text(error.message, 1000) } } : {}) };
       });
       return { id: unique(r.id), notebookId: scope(r.notebookId, r.namespaceId), namespaceId: id(r.namespaceId), executedBy: text(r.executedBy, 512), notebookVersion: integer(r.notebookVersion, 1), executedAt: stamp(r.executedAt), accessStamp: text(r.accessStamp, 128), results };

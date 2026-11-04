@@ -52,7 +52,7 @@ export class NotebookRoutes {
     return available;
   }
   private async execute(p: NotebookPrincipal, n: Notebook, raw: Record<string, unknown>): Promise<NotebookRun> {
-    const bindings = notebookBindings(n.parameters, raw.parameters ?? {});
+    const bindings = notebookBindings(n.parameters, raw.parameters === undefined ? {} : raw.parameters);
     if (raw.cellId !== undefined && (typeof raw.cellId !== 'string' || !n.cells.some(c => c.id === raw.cellId))) notebookFail('NOTEBOOK_CELL_NOT_FOUND', 'Cell not found.', 404);
     // One bounded notebook execution per local process, like the prep materializer.
     if (this.busy) notebookFail('NOTEBOOK_BUSY', 'Another notebook is running; retry shortly.', 409);
@@ -95,6 +95,7 @@ export class NotebookRoutes {
       for (const result of run.results) if (result.sourceCellId && run.results.find(r => r.cellId === result.sourceCellId)?.error) result.error = { code: 'NOTEBOOK_DEPENDENCY_FAILED', message: 'The source SQL cell failed.' };
       await this.store.change(draft => {
         this.find(this.principal(p), n.id, false, draft);
+        if (this.deps.accessStamp(p) !== run.accessStamp) throw denial();
         draft.runs.push(run);
         const retained = draft.runs.filter(r => r.notebookId === n.id).slice(-NOTEBOOK_RUN_RETENTION);
         draft.runs = draft.runs.filter(r => r.notebookId !== n.id || retained.includes(r));
@@ -151,6 +152,8 @@ export class NotebookRoutes {
         const snapshot: NotebookSnapshot = { ...result.data, id: `snapshot-${randomUUID()}`, notebookId: id, cellId, runId: run.id, namespaceId: p.namespaceId, ownerId: p.userId, asOf: result.executedAt, datasetRefs: result.datasetRefs, accessStamp: run.accessStamp };
         await this.store.change(draft => {
           const current = this.find(this.principal(p), id, false, draft);
+          if (!notebookAuthor(this.principal(p))) notebookFail('NOTEBOOK_AUTHOR_REQUIRED', 'Author capability required.', 403);
+          if (this.deps.accessStamp(p) !== run.accessStamp) throw denial();
           if (current.version !== n.version) notebookFail('NOTEBOOK_VERSION_CONFLICT', 'Notebook changed; rerun before saving.', 409);
           if (draft.snapshots.filter(s => s.notebookId === id).length >= NOTEBOOK_SNAPSHOT_LIMIT) notebookFail('NOTEBOOK_SNAPSHOT_LIMIT_EXCEEDED', 'At most 100 snapshots per notebook.', 409);
           draft.snapshots.push(snapshot);
@@ -172,7 +175,7 @@ export class NotebookRoutes {
         const current = this.find(this.principal(p), id, true, draft);
         if (!canEditNotebook(this.principal(p), current)) notebookFail('NOTEBOOK_EDIT_REQUIRED', 'Author and edit permission required.', 403);
         if (raw.version !== current.version) notebookFail('NOTEBOOK_VERSION_CONFLICT', 'Reload the notebook before saving.', 409);
-        Object.assign(current, validateNotebookContent({ name: raw.name ?? current.name, published: raw.published === undefined ? current.published : raw.published, parameters: raw.parameters === undefined ? current.parameters : raw.parameters, cells: raw.cells === undefined ? current.cells : raw.cells }), { version: current.version + 1, updatedAt: new Date().toISOString() });
+        Object.assign(current, validateNotebookContent({ name: raw.name === undefined ? current.name : raw.name, published: raw.published === undefined ? current.published : raw.published, parameters: raw.parameters === undefined ? current.parameters : raw.parameters, cells: raw.cells === undefined ? current.cells : raw.cells }), { version: current.version + 1, updatedAt: new Date().toISOString() });
         return current;
       });
       send(response, 200, await this.full(p, updated));

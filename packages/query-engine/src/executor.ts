@@ -39,6 +39,7 @@ export async function refreshLocal(request: PlanRequest, options: ExecuteOptions
 async function runLocal(request: PlanRequest, options: ExecuteOptions, refresh: boolean): Promise<QueryResult> {
   const plan = planVisual(request);
   if (refresh && (plan.securityProtected || plan.localData.security.dataset === 'protected')) fail('SECURITY_REJECTED', '$.security', 'protected dataset refresh requires a scoped materialization implementation');
+  string(options?.dataRoot, '$.options.dataRoot');
   const policy = validateLiveCache(options?.liveCache);
   if (refresh) policy?.cache.invalidate(liveDatasetCachePrefix(plan.localData.dataSetArn));
   const cache = !refresh && request.security === undefined && !plan.securityProtected ? policy : undefined;
