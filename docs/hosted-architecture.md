@@ -783,6 +783,7 @@ Headless API decision register (issue #95):
 | [D-38](idd/D-38-dashboard-publish-semantics.md) | Dashboard publish semantics | ✅ Immutable versioned definition, live data; publish authorization remains with the dashboards slice |
 | [D-39](idd/D-39-headless-analysis-authoring.md) | Analysis authoring verbs and behavior | 🚧 Analyses implementation waits for the [slice proposal](headless-v1-analyses.md#product-questions-requiring-answers): granularity/names, access, concurrency, dataset binding and incomplete drafts |
 | [D-90](idd/D-90-shared-metric-digests.md) | Shared metric digest destinations | ✅ Explicit active members, strictest-recipient intersection, one shared message and whole-list unsubscribe (#162) |
+| [D-91](itd/D-91-notebook-sql-boundary.md) | Local notebook SQL boundary | ✅ DuckDB AST validation, caller-governed materialization and isolated read-only execution (#164) |
 
 SR0 implementation decision register (issue #81; proposals, no AWS authorization):
 
