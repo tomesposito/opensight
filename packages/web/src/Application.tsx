@@ -1,3 +1,4 @@
+import { Notebooks } from './Notebooks.js';
 import { MetricDetail } from './MetricSubscriptions.js';
 import { Ideas } from './Ideas.js';
 import { PublishedDashboard } from './PublishedDashboard.js';
@@ -76,6 +77,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
       case 'home': if (access.mode === 'hosted') return <section className="home-page" aria-label="Home"><HostedDashboards home client={api} navigate={navigate} /></section>;
       return <section className="home-page" aria-label="Home">{access.mode === 'local' && !sampleLoaded ? <LocalEmptyState onSources={() => navigate({ page: 'data-sources' })} onSample={() => setSampleLoaded(true)} /> : sample ? <Dashboard key="sample" fixture={sample} sample /> : <p role="status">The sample dashboard is not included in this build. Ask the operator to restore the pinned sales sample.</p>}</section>;
       case 'dashboards': return access.mode === 'hosted' && route.dashboardId ? <PublishedDashboard key={route.dashboardId} id={route.dashboardId} client={api} navigate={navigate} /> : <Dashboards navigate={navigate} client={api} />;
+      case 'notebooks': return <Notebooks key={route.notebookId ?? 'list'} id={route.notebookId} client={connected ? api : undefined} onOpen={notebookId => navigate({ page: 'notebooks', ...(notebookId ? { notebookId } : {}) })} />;
       case 'metric': return <MetricDetail key={route.metricId} id={route.metricId ?? ''} client={access.mode === 'hosted' ? api : undefined} />;
       case 'ideas': return <Ideas client={access.mode === 'hosted' ? api : undefined} surface={route.ideaSurface ?? 'ideas'} />;
       case 'my-stuff': return <MyStuff recentPages={recentPages} navigate={navigate} />;

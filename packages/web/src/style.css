@@ -2586,3 +2586,34 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .input-table-create label, .input-table-editors label { display: grid; gap: 4px; margin: 8px 0; max-width: 420px; }
 .input-table-column { align-items: end; display: flex; flex-wrap: wrap; gap: 12px; }
 .input-tables td input, .input-tables td select { max-width: 180px; width: 100%; }
+
+/* Issue #164: compact notebook authoring and viewer-permissioned apps. */
+.notebooks-page { max-width: 1280px; margin: 0 auto; padding: 24px; font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.notebooks-heading, .notebook-toolbar, .notebook-cell > header, .notebook-parameter-editor, .notebook-chart-fields { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.notebooks-heading, .notebook-cell > header { justify-content: space-between; }
+.notebooks-heading h1 { margin: 0; font-size: 24px; }
+.notebooks-page h2 { font-size: 13px; margin: 0 0 8px; }
+.notebooks-page p { line-height: 1.5; }
+.notebooks-page .data-card { padding: 16px; margin: 12px 0; }
+.notebooks-page label { display: inline-flex; flex-direction: column; gap: 4px; margin: 4px 8px 4px 0; }
+.notebooks-page input, .notebooks-page select, .notebooks-page textarea, .notebooks-page button { font: inherit; }
+.notebooks-page input, .notebooks-page select, .notebooks-page textarea { padding: 6px 8px; border: 1px solid var(--chrome-border, #bcc5ce); border-radius: 3px; color: inherit; background: var(--chrome-surface, #fff); }
+.notebooks-page input[type="checkbox"] { width: auto; }
+.notebook-cell > label { display: flex; margin-right: 0; }
+.notebook-cell textarea { width: 100%; box-sizing: border-box; min-height: 112px; resize: vertical; font-family: monospace; }
+.notebook-cell fieldset { border: 1px solid var(--chrome-border, #d6dce4); margin: 8px 0; padding: 8px; }
+.notebook-cell fieldset label { flex-direction: row; align-items: center; display: flex; flex-wrap: wrap; overflow-wrap: anywhere; }
+.notebook-cell fieldset small { color: #526171; }
+.notebook-toolbar { padding: 8px 0; }
+.notebook-toolbar button, .notebook-cell header button { margin-right: 4px; }
+.notebook-markdown { white-space: pre-wrap; overflow-wrap: anywhere; }
+.notebook-error { color: #a92424; background: #fff3f2; border-left: 3px solid #c13939; padding: 12px; overflow-wrap: anywhere; }
+.notebook-list table, .notebook-result table { border-collapse: collapse; width: 100%; text-align: left; }
+.notebook-list th, .notebook-list td, .notebook-result th, .notebook-result td { padding: 8px; border-bottom: 1px solid var(--chrome-border, #e1e5ea); }
+.notebook-table-scroll { overflow: auto; max-height: 420px; }
+.notebook-table-scroll th { position: sticky; top: 0; background: var(--chrome-surface, #fff); }
+.notebook-result nav { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+.notebook-cell .visual-card { min-height: 340px; }
+.notebook-cell .chart { min-height: 280px; }
+.notebook-history { margin: 20px 0; }
+@media (max-width: 680px) { .notebooks-page { padding: 12px; } .notebook-list { overflow: auto; } .notebook-chart-fields label { max-width: 100%; } }
