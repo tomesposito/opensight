@@ -59,3 +59,35 @@ palette workflow: 253 frames at 960×600 and 10fps, with zero page errors or
 external requests. The static demo is a local preview, not a
 deployed server. No unresolved issue-specific visual defect remains; no remote
 issue was filed. Captures and logs are under `/tmp/issue162-*`.
+
+## Final verification after reboot — 2026-11-04
+
+Resumed at `145cd208` with a clean working tree. All five implementation items
+and the README media refresh were already checkpointed; the remaining work was
+independent final verification. No further implementation changes were needed.
+
+The full root command
+`OPENSIGHT_CHROMIUM=/home/hatch/workspace/tools/chromium-wrapper.sh npm test`
+exited successfully: **4,621 passed / 0 failed / 36 skipped**. This includes
+4,589 passing Node tests and 32 passing Python SDK tests. All 36 skips require
+live PostgreSQL; none were cancelled. The API suite contributed 1,013 passes
+and 34 skips, the query-engine suite 569 passes and 2 skips, the web suite
+2,468 passes, and the final root conformance/documentation checks 102 passes.
+The separate focused digest run also passed all 20 tests.
+
+The initial restricted-sandbox attempt could not start test loopback listeners
+or contained workers and hit a Node runtime assertion. The successful run used
+execution permissions for those local test processes and the existing Chromium
+launcher. Verification used synthetic fixtures and stub transports.
+
+The hosted browser acceptance check passed again with zero page errors and zero
+external requests. Its desktop preview capture is byte-for-byte identical to
+`docs/images/metric-digest-preview.png`; the 390px mobile capture has no
+horizontal overflow. The static demo was rebuilt with
+`node packages/web/scripts/build-demo.mjs` and checked in Chromium: its Metrics
+tab retains the API-required disclosure, with no page errors, external requests
+or horizontal overflow. The existing README media checkpoint remains current.
+
+Full-suite output is `/tmp/issue162-final-test-unrestricted.log`; focused tests,
+browser logs, the demo build log and captures are under `/tmp/issue162-*`.
+Shared destinations remain deferred for the product decision described above.
