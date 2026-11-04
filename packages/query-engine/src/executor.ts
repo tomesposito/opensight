@@ -1,7 +1,11 @@
 import { evaluateSqlPlan } from './evaluate.js';
 import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
-import { DuckDBInstance } from '@duckdb/node-api';
+import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api';
+import { bindMetadata } from './metadata.js';
+import { resolveSecurity, type SecurityContext } from './security.js';
+import { planSourceRead } from './source-read.js';
+import { streamDuckDbPlan, type PrepReadLimits, type PrepSink } from './prep-stream.js';
 import { planVisual } from './planner.js';
 import { liveDatasetCachePrefix, liveProvenance, liveResultCacheKey, validateLiveCache } from './live-performance.js';
 import type { ColumnType, ExecuteOptions, PlanRequest, QueryResult, ResultValue } from './types.js';
@@ -35,7 +39,6 @@ export async function refreshLocal(request: PlanRequest, options: ExecuteOptions
 async function runLocal(request: PlanRequest, options: ExecuteOptions, refresh: boolean): Promise<QueryResult> {
   const plan = planVisual(request);
   if (refresh && (plan.securityProtected || plan.localData.security.dataset === 'protected')) fail('SECURITY_REJECTED', '$.security', 'protected dataset refresh requires a scoped materialization implementation');
-  const rootInput = string(options?.dataRoot, '$.options.dataRoot');
   const policy = validateLiveCache(options?.liveCache);
   if (refresh) policy?.cache.invalidate(liveDatasetCachePrefix(plan.localData.dataSetArn));
   const cache = !refresh && request.security === undefined && !plan.securityProtected ? policy : undefined;
@@ -46,10 +49,24 @@ async function runLocal(request: PlanRequest, options: ExecuteOptions, refresh: 
   // Capture the fill before any await: an invalidation (including refresh)
   // landing while this query runs must keep its rows out of the cache.
   const fill = cache?.cache.beginFill(key);
+  return withLocalTable(bindMetadata(request.dataSet, request.dataSource, request.localData, request.security !== undefined), options, async connection => {
+      const reader = await connection.runAndReadAll(refresh ? `SELECT COUNT(*) AS rows FROM ${q(plan.tableName)}` : plan.sql, refresh ? [] : [...plan.parameters]);
+      const names = reader.columnNames();
+      const rows = reader.getRows().map((values) => Object.fromEntries(names.map((name, i) => [name, resultValue(values[i])])));
+      const resultRows = !refresh && plan.postProcess ? evaluateSqlPlan(plan, rows) : rows;
+      // Cache SQL rows: post-processing is not represented in the SQL cache key.
+      cache?.cache.set(key, rows, cache.ttlMs, fill);
+      return { plan, rows: resultRows, provenance: liveProvenance(plan) };
+  });
+}
+
+/** Shared trusted CSV ingestion for visual queries and governed notebook materialization. */
+async function withLocalTable<T>(metadata: ReturnType<typeof bindMetadata>, options: ExecuteOptions, run: (connection: DuckDBConnection) => Promise<T>): Promise<T> {
+  const rootInput = string(options?.dataRoot, '$.options.dataRoot');
   let csvPath: string;
   try {
     const root = await realpath(rootInput);
-    csvPath = await realpath(resolve(root, plan.localData.csv));
+    csvPath = await realpath(resolve(root, metadata.localData.csv));
     const child = relative(root, csvPath);
     if (!child || isAbsolute(child) || child === '..' || child.startsWith('../') || child.startsWith('..\\') || !(await stat(csvPath)).isFile()) {
       fail('LOCAL_DATA_ERROR', '$.localData.csv', 'CSV must be a regular file inside dataRoot');
@@ -71,26 +88,20 @@ async function runLocal(request: PlanRequest, options: ExecuteOptions, refresh: 
       await connection.run("SET TimeZone = 'UTC'");
       const header = await connection.runAndReadAll(
         "SELECT * FROM read_csv($1, header = true, delim = ',', all_varchar = true, sample_size = -1) LIMIT 0", [csvPath]);
-      if (JSON.stringify(header.columnNames()) !== JSON.stringify(plan.sourceColumns.map((c) => c.name))) {
+      if (JSON.stringify(header.columnNames()) !== JSON.stringify(metadata.columns.map((c) => c.name))) {
         fail('LOCAL_DATA_ERROR', '$.localData.csv', 'CSV header must exactly match the declared column order and names');
       }
-      const columns = plan.sourceColumns.map((c) => `${quoteLiteral(c.name)}: ${quoteLiteral(sqlTypes[c.type])}`).join(', ');
-      await connection.run(`CREATE TABLE ${q(plan.tableName)} AS SELECT * FROM read_csv($1, header = true, auto_detect = false, delim = ',', columns = {${columns}}, nullstr = '', timestampformat = '%Y-%m-%d')`, [csvPath]);
+      const columns = metadata.columns.map((c) => `${quoteLiteral(c.name)}: ${quoteLiteral(sqlTypes[c.type])}`).join(', ');
+      await connection.run(`CREATE TABLE ${q(metadata.tableName)} AS SELECT * FROM read_csv($1, header = true, auto_detect = false, delim = ',', columns = {${columns}}, nullstr = '', timestampformat = '%Y-%m-%d')`, [csvPath]);
       // A local DECIMAL is deliberately DOUBLE; do not let NaN/Infinity disappear into an aggregate.
-      const finiteChecks = plan.sourceColumns.filter((c) => c.type === 'DECIMAL').map((c) => `NOT isfinite(${q(c.name)})`);
+      const finiteChecks = metadata.columns.filter((c) => c.type === 'DECIMAL').map((c) => `NOT isfinite(${q(c.name)})`);
       if (finiteChecks.length) {
-        const invalid = await connection.runAndReadAll(`SELECT COUNT(*) AS invalid FROM ${q(plan.tableName)} WHERE ${finiteChecks.join(' OR ')}`);
+        const invalid = await connection.runAndReadAll(`SELECT COUNT(*) AS invalid FROM ${q(metadata.tableName)} WHERE ${finiteChecks.join(' OR ')}`);
         if (invalid.getRows()[0]?.[0] !== 0n) fail('LOCAL_DATA_ERROR', '$.localData.csv', 'nonfinite numeric cells are unsupported');
       }
       // Only generated SQL runs after materialization; disable all further external reads.
       await connection.run('SET enable_external_access = false');
-      const reader = await connection.runAndReadAll(refresh ? `SELECT COUNT(*) AS rows FROM ${q(plan.tableName)}` : plan.sql, refresh ? [] : [...plan.parameters]);
-      const names = reader.columnNames();
-      const rows = reader.getRows().map((values) => Object.fromEntries(names.map((name, i) => [name, resultValue(values[i])])));
-      const resultRows = !refresh && plan.postProcess ? evaluateSqlPlan(plan, rows) : rows;
-      // Cache SQL rows: post-processing is not represented in the SQL cache key.
-      cache?.cache.set(key, rows, cache.ttlMs, fill);
-      return { plan, rows: resultRows, provenance: liveProvenance(plan) };
+      return await run(connection);
     } finally {
       connection.closeSync();
     }
@@ -100,4 +111,15 @@ async function runLocal(request: PlanRequest, options: ExecuteOptions, refresh: 
   } finally {
     instance.closeSync();
   }
+}
+
+/** Materialize caller-permitted columns and rows through the shared security compiler. */
+export async function streamLocalSource(metadata: Pick<PlanRequest, 'dataSet' | 'dataSource' | 'localData'>, options: ExecuteOptions, security: SecurityContext | undefined, limits: PrepReadLimits, sink: PrepSink): Promise<void> {
+  const bound = bindMetadata(metadata.dataSet, metadata.dataSource, metadata.localData, security !== undefined);
+  const resolved = security ? resolveSecurity(security, bound.columns, bound.localData.dataSetArn) : undefined;
+  if (bound.localData.security.dataset === 'protected' && !resolved?.protected) fail('SECURITY_REJECTED', '$.security', 'Protected dataset requires an active policy');
+  const context: SecurityContext = security ?? { namespaceId: 'local', userId: 'local', users: [{ id: 'local', namespaceId: 'local' }], groups: [], policy: { namespaceId: 'local', dataSetArn: bound.localData.dataSetArn, rowLevel: false, rowRules: [] } };
+  const source = { id: 'sales', table: bound.tableName, connectorId: 'file' as const, security: 'unrestricted' as const, columns: bound.columns.map(c => ({ name: c.name, type: c.type })) };
+  const plan = planSourceRead({ source, security: context, columns: bound.columns.filter(c => !resolved?.deniedColumns.includes(c.name)).map(c => c.name) }, limits, 'duckdb');
+  await withLocalTable(bound, options, connection => streamDuckDbPlan(connection, plan, limits, sink));
 }

@@ -258,6 +258,35 @@ export class PrepRoutes {
     const sources = binding ? this.bindings.filter(b => this.owned(identity, b) && b.config.connectionEnv === binding.config.connectionEnv).map(b => b.source) : all.filter(s => s.connectorId === 'file');
     return { sources, binding, dialect: binding ? 'postgres' as const : 'duckdb' as const };
   }
+  /** Notebook SQL never reaches connectors directly: only these caller-owned inputs. */
+  async notebookSources(identity: Identity): Promise<PrepSource[]> {
+    const sources = (await this.sources(identity)).filter(s => s.security === 'unrestricted');
+    for (const dataset of this.datasets(identity)) {
+      try { sources.push({ id: `prepared-${dataset.id}`, table: `prepared-${dataset.id}`, connectorId: 'file', security: 'unrestricted', columns: await this.analysisSchema(identity, dataset.id) }); }
+      catch { /* A protected/unresolved dependency is not an accessible dataset. */ }
+    }
+    return sources;
+  }
+  async notebookTable(identity: Identity, ref: string): Promise<PrepMemoryTable> {
+    const source = (await this.notebookSources(identity)).find(s => s.id === ref);
+    if (!source) throw new SecurityError(403, 'NOTEBOOK_DATASET_ACCESS_DENIED', 'Dataset is unavailable to the executing identity.');
+    const use = (table: BlazeTable): PrepMemoryTable => {
+      const rows = table.rows();
+      return { source: { ...source, table: ref, columns: table.columns }, rowCount: rows.length, value: (r, c) => rows[r]![table.columns[c]!.name]! };
+    };
+    if (ref.startsWith('prepared-') && this.datasets(identity).some(d => `prepared-${d.id}` === ref)) {
+      const id = ref.slice('prepared-'.length);
+      if (this.blaze.status(this.key(identity, id)).mode === 'BLAZE') return use(this.blaze.read(this.key(identity, id)).table);
+      this.requireDirect(identity, id);
+      return this.blaze.transient(table => this.materialize(identity, id, table), use);
+    }
+    const pipeline: PrepPipeline = { version: 1, input: ref, steps: [] };
+    const context = await this.context(identity, ref, this.datasets(identity));
+    return this.blaze.transient(async table => {
+      if (context.binding) await streamPrepPostgres(pipeline, context.sources, context.binding.config, {}, this.blaze.limits, table);
+      else await this.connectors.streamPrep(identity, pipeline, {}, this.blaze.limits, table, (this.inputTableTables?.(identity) ?? []).filter(t => t.source.id === ref));
+    }, use);
+  }
   /** Schema-only admission under the existing owner-private prep resolver. */
   async analysisSchema(identity: Identity, id: string) {
     const entry = this.find(identity, id), datasets = this.datasets(identity);

@@ -2,7 +2,7 @@
 export { planVisual } from './planner.js';
 export { LiveResultCache, liveDatasetCachePrefix } from './live-performance.js';
 export type { AggregateTableDeclaration, LiveCachePolicy, CachedLiveResult, LiveCacheFillToken } from './live-performance.js';
-export { executeLocal, refreshLocal } from './executor.js';
+export { executeLocal, refreshLocal, streamLocalSource } from './executor.js';
 export { executePostgres } from './postgres-executor.js';
 export { QueryEngineError } from './validation.js';
 export type { ErrorCode } from './validation.js';
@@ -48,3 +48,5 @@ export type { SourceRead, SourceConnection } from './source-read.js';
 export { aggregateValue } from './aggregate.js';
 export { relativeDifference, formatNumber, shiftDate, resultDate, groupedPeriodDate } from './numeric-summary.js';
 export * from './governed-metrics.js';
+
+export { executeNotebookSql, NotebookSqlError, NOTEBOOK_EXECUTION_MS, NOTEBOOK_RESULT_BYTES } from './notebook-sql.js';
