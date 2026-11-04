@@ -1,4 +1,4 @@
-import { occurrenceTime, deliveryKey } from './digest-delivery.js';
+import { occurrenceTime, deliveryKey, deliveryRecipients } from './digest-delivery.js';
 import { checksum } from './metadata-operator.js';
 import { MetadataError } from './metadata-db.js';
 import { MailError, type MailMessage, type MailTransport } from './mail.js';
@@ -73,12 +73,16 @@ export class JobRunner {
       const context = await this.store.context(run, run.ownerId);
       await this.store.metadata.usage?.consume(this.store.metadata, context, 'computeAttempts');
       this.executor.begin(context, () => this.store.recheck(run));
-      const result = await this.executor.execute(context, run.spec, this.store.clock());
+      let result: { triggered?: boolean };
+      if (run.spec.kind === 'digest' && run.spec.destination === 'shared') {
+        if (!this.executor.authorizeSharedDigest) throw new MetadataError('DIGEST_SHARED_RESOLVER_REQUIRED', 503);
+        await this.executor.authorizeSharedDigest(context, run.spec, this.store); result = {};
+      } else result = await this.executor.execute(context, run.spec, this.store.clock());
       await this.store.db.transaction(async c => {
         const job = await this.store.checkRun(c, run), now = this.store.clock().toISOString();
         const notify = run.spec.kind === 'digest' || run.spec.kind === 'report' || run.spec.kind === 'alert' && result.triggered && job.alertState !== 'triggered';
         if (run.spec.kind === 'alert') await c.query(`UPDATE h7_jobs SET alert_state = ? WHERE ${scoped} AND job_id = ?`, [result.triggered ? 'triggered' : 'ok', ...scopeArgs(run), run.jobId]);
-        if (notify && run.spec.kind !== 'refresh') for (const recipient of run.spec.recipients) {
+        if (notify && run.spec.kind !== 'refresh') for (const recipient of deliveryRecipients(run.spec)) {
           const key = deliveryKey(run, recipient);
           await c.query(`INSERT INTO h7_deliveries (tenant_id, namespace_id, delivery_id, job_id, occurrence_id, recipient_id, state, next_attempt) VALUES (?,?,?,?,?,?,'pending',?)
             ON CONFLICT (tenant_id, namespace_id, occurrence_id, recipient_id) DO NOTHING`, [...scopeArgs(run), key, run.jobId, run.id, recipient, now]);
@@ -122,28 +126,40 @@ export class JobRunner {
         const claimed = await this.store.db.transaction(c => c.query(`UPDATE h7_deliveries SET state = 'sending', attempts = attempts + 1 WHERE ${scoped} AND delivery_id = ? AND state = 'pending' RETURNING delivery_id`, [...scopeArgs(run), id]));
         if (!claimed.length) continue;
         const owner = await this.store.context(run, run.ownerId);
-        this.executor.begin(owner, verify); await this.executor.authorize(owner, run.spec);
-        const recipient = await this.store.context(run, String(d.recipient_id));
-        this.executor.begin(recipient, verify); await this.executor.authorize(recipient, run.spec);
-        if (!d.message) await this.store.metadata.usage?.consume(this.store.metadata, recipient, 'computeAttempts');
-        const rendered = d.message && run.spec.kind !== 'digest' ? JSON.parse(String(d.message)) as Pick<MailMessage, 'subject' | 'html'> : await this.executor.render(recipient, run.spec, occurrenceTime(run), run.jobId);
-        const message = await this.store.db.transaction(async c => {
-          await this.store.checkRun(c, run); const user = await member(c, run, recipient.userId);
-          await c.query(`UPDATE h7_deliveries SET message = ? WHERE ${scoped} AND delivery_id = ? AND state = 'sending'`, [run.spec.kind === 'digest' ? null : JSON.stringify(rendered), ...scopeArgs(run), id]);
-          return { ...rendered, to: [user.email], dedupeKey: id };
-        });
-        await verify();
-        try { await this.mail.send(message, async () => {
-          if (run.spec.kind === 'digest') {
-            this.executor.begin(owner, verify); await this.executor.authorize(owner, run.spec);
-            this.executor.begin(recipient, verify); await this.executor.authorize(recipient, run.spec);
-            await this.executor.verifyDelivery?.(recipient);
-            const current = await this.store.db.transaction(c => member(c, run, recipient.userId));
-            if (current.email !== message.to[0]) throw new MetadataError('JOB_AUTHORIZATION_REVISED', 403);
-          }
+        if (run.spec.kind === 'digest' && run.spec.destination === 'shared') {
+          if (!this.executor.renderSharedDigest) throw new MetadataError('DIGEST_SHARED_RESOLVER_REQUIRED', 503);
+          this.executor.begin(owner, verify);
+          await this.store.metadata.usage?.consume(this.store.metadata, owner, 'computeAttempts');
+          const shared = await this.executor.renderSharedDigest(owner, run.spec, occurrenceTime(run), run.jobId, this.store);
           await verify();
-        }); }
-        catch (error) { if (!(error instanceof Error && 'code' in error)) throw new MailError('SMTP_SEND_FAILED'); throw error; }
+          try { await this.mail.send({ ...shared.message, dedupeKey: id }, async () => {
+            await shared.verify(); await this.executor.verifyDelivery?.(owner); await verify();
+          }); }
+          catch (error) { if (!(error instanceof Error && 'code' in error)) throw new MailError('SMTP_SEND_FAILED'); throw error; }
+        } else {
+          this.executor.begin(owner, verify); await this.executor.authorize(owner, run.spec);
+          const recipient = await this.store.context(run, String(d.recipient_id));
+          this.executor.begin(recipient, verify); await this.executor.authorize(recipient, run.spec);
+          if (!d.message) await this.store.metadata.usage?.consume(this.store.metadata, recipient, 'computeAttempts');
+          const rendered = d.message && run.spec.kind !== 'digest' ? JSON.parse(String(d.message)) as Pick<MailMessage, 'subject' | 'html'> : await this.executor.render(recipient, run.spec, occurrenceTime(run), run.jobId);
+          const message = await this.store.db.transaction(async c => {
+            await this.store.checkRun(c, run); const user = await member(c, run, recipient.userId);
+            await c.query(`UPDATE h7_deliveries SET message = ? WHERE ${scoped} AND delivery_id = ? AND state = 'sending'`, [run.spec.kind === 'digest' ? null : JSON.stringify(rendered), ...scopeArgs(run), id]);
+            return { ...rendered, to: [user.email], dedupeKey: id };
+          });
+          await verify();
+          try { await this.mail.send(message, async () => {
+            if (run.spec.kind === 'digest') {
+              this.executor.begin(owner, verify); await this.executor.authorize(owner, run.spec);
+              this.executor.begin(recipient, verify); await this.executor.authorize(recipient, run.spec);
+              await this.executor.verifyDelivery?.(recipient);
+              const current = await this.store.db.transaction(c => member(c, run, recipient.userId));
+              if (current.email !== message.to[0]) throw new MetadataError('JOB_AUTHORIZATION_REVISED', 403);
+            }
+            await verify();
+          }); }
+          catch (error) { if (!(error instanceof Error && 'code' in error)) throw new MailError('SMTP_SEND_FAILED'); throw error; }
+        }
         accepted = true;
         await this.store.db.transaction(c => c.query(`UPDATE h7_deliveries SET state = 'sent', sent_at = ?, error_code = NULL, message = NULL WHERE ${scoped} AND delivery_id = ?`, [this.store.clock().toISOString(), ...scopeArgs(run), id]));
       } catch (error) {

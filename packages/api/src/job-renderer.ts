@@ -1,3 +1,6 @@
+import type { DigestSpec } from './digest-model.js';
+import type { JobStore } from './job-store.js';
+import type { DigestResult } from './digest-computation.js';
 import { DigestComputation, digestMessage } from './digest-computation.js';
 import { planPreparedVisual } from '@opensight/query-engine';
 import { compileVisual } from '@opensight/web/compiler';
@@ -18,6 +21,8 @@ export interface JobExecutor {
   execute(context: TenantContext, spec: JobSpec, now: Date): Promise<{ triggered?: boolean }>;
   render(context: TenantContext, spec: JobSpec, now: Date, jobId?: string): Promise<Pick<MailMessage, 'subject' | 'html'>>;
   begin(context: TenantContext, recheck: () => Promise<void>): void;
+  authorizeSharedDigest?(context: TenantContext, spec: DigestSpec, store: JobStore): Promise<void>;
+  renderSharedDigest?(context: TenantContext, spec: DigestSpec, now: Date, jobId: string, store: JobStore): Promise<{ message: Omit<MailMessage, 'dedupeKey'>; verify: () => Promise<void> }>;
   verifyDelivery?(context: TenantContext): Promise<void>;
 }
 /** Reuse the dataset-bound reader, with recipient identities and H3/H4 gates.
@@ -95,15 +100,25 @@ export class JobRenderer implements JobExecutor {
     }
     return {};
   }
+  async authorizeSharedDigest(context: TenantContext, spec: DigestSpec, store: JobStore) {
+    await new DigestComputation(this.data, store).authorizeShared(context, spec);
+  }
+  async renderSharedDigest(context: TenantContext, spec: DigestSpec, now: Date, jobId: string, store: JobStore) {
+    const { result, to, verify } = await new DigestComputation(this.data, store).sharedDelivery(context, spec, now);
+    return { message: { ...this.digestMail(context, spec, result, jobId), to }, verify };
+  }
+  private digestMail(context: TenantContext, spec: DigestSpec, result: DigestResult, jobId?: string) {
+    if (!this.origin || !jobId) throw new MetadataError('DIGEST_ORIGIN_REQUIRED', 503);
+    const url = new URL(this.origin);
+    if (url.origin !== this.origin || url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) throw new MetadataError('DIGEST_ORIGIN_REQUIRED', 503);
+    const unsubscribe = `${this.origin}/api/api/v1/metric-unsubscribe/${[context.tenantId, context.namespaceId, jobId, spec.unsubscribeToken].map(encodeURIComponent).join('/')}`;
+    return digestMessage(result, `${this.origin}/#/metrics/${encodeURIComponent(spec.metricId)}`, unsubscribe);
+  }
   async render(context: TenantContext, spec: JobSpec, now: Date, jobId?: string): Promise<Pick<MailMessage, 'subject' | 'html'>> {
     await this.authorize(context, spec);
     if (spec.kind === 'digest') {
-      if (!this.origin || !jobId) throw new MetadataError('DIGEST_ORIGIN_REQUIRED', 503);
-      const url = new URL(this.origin);
-      if (url.origin !== this.origin || url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))) throw new MetadataError('DIGEST_ORIGIN_REQUIRED', 503);
       const result = await new DigestComputation(this.data).compute(context, spec, now);
-      const unsubscribe = `${this.origin}/api/api/v1/metric-unsubscribe/${[context.tenantId, context.namespaceId, jobId, spec.unsubscribeToken].map(encodeURIComponent).join('/')}`;
-      return digestMessage(result, `${this.origin}/#/metrics/${encodeURIComponent(spec.metricId)}`, unsubscribe);
+      return this.digestMail(context, spec, result, jobId);
     }
     if (spec.kind === 'refresh') throw new MetadataError('JOB_DELIVERY_INVALID', 422);
     if (spec.kind === 'alert') {

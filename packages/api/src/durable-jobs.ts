@@ -1,4 +1,4 @@
-import { occurrenceTime, deliveryKey } from './digest-delivery.js';
+import { occurrenceTime, deliveryKey, deliveryRecipients } from './digest-delivery.js';
 import { MetadataError, type SqlConnection, type SqlRow } from './metadata-db.js';
 import { checksum } from './metadata-operator.js';
 import { DurableExecution, type ExecutionEvent, type ExecutionHandle } from './durable-execution.js';
@@ -9,7 +9,7 @@ import { lockTenant, member, readJob, readOccurrence, scoped, scopeArgs, type Oc
 import { hasCapability, isRole, type Role } from '@opensight/query-engine';
 import { jobDueEvent, jobExecutionEvent } from './job-dispatch.js';
 import { nextRun } from './schedule.js';
-import { MailError, type MailTransport } from './mail.js';
+import { MailError, type MailTransport, type MailMessage } from './mail.js';
 import { currentAuthority } from './serverless-authority.js';
 
 /** One source-bound record per invocation; no tick, scan, global reset or timer. */
@@ -102,12 +102,16 @@ export class DurableJobs {
     this.executor.begin(owner, verify);
     if (run.spec.kind !== 'refresh') await this.store.metadata.usage?.consume(this.store.metadata, owner, 'computeAttempts');
     // SR2's data adapter accounts/admit/fences actual native work, including refresh.
-    const result = await this.executor.execute(owner, run.spec, this.store.clock());
+    let result: { triggered?: boolean };
+    if (run.spec.kind === 'digest' && run.spec.destination === 'shared') {
+      if (!this.executor.authorizeSharedDigest) throw new MetadataError('DIGEST_SHARED_RESOLVER_REQUIRED', 503);
+      await this.executor.authorizeSharedDigest(owner, run.spec, this.store); result = {};
+    } else result = await this.executor.execute(owner, run.spec, this.store.clock());
     await this.execution.complete(handle, async (c, now) => {
       const job = await this.store.checkRun(c, run), events: EventInput[] = [];
       const notify = run.spec.kind === 'digest' || run.spec.kind === 'report' || run.spec.kind === 'alert' && result.triggered && job.alertState !== 'triggered';
       if (run.spec.kind === 'alert') await c.query(`UPDATE h7_jobs SET alert_state = ? WHERE ${scoped} AND job_id = ?`, [result.triggered ? 'triggered' : 'ok', ...scopeArgs(run), run.jobId]);
-      if (notify && run.spec.kind !== 'refresh') for (const recipient of run.spec.recipients) {
+      if (notify && run.spec.kind !== 'refresh') for (const recipient of deliveryRecipients(run.spec)) {
         const id = deliveryKey(run, recipient);
         await c.query(`INSERT INTO h7_deliveries (tenant_id, namespace_id, delivery_id, job_id, occurrence_id, recipient_id, state, next_attempt) VALUES (?,?,?,?,?,?,'pending',?) ON CONFLICT (tenant_id, namespace_id, occurrence_id, recipient_id) DO NOTHING`,
           [...scopeArgs(run), id, run.jobId, run.id, recipient, new Date(now).toISOString()]);
@@ -132,30 +136,40 @@ export class DurableJobs {
     const verify = async (): Promise<void> => this.execution.checked(handle, async c => {
       await this.store.checkRun(c, run);
       const recipient = await member(c, run, String(delivery.recipient_id));
-      if (address !== undefined && recipient.email !== address) throw new MetadataError('JOB_AUTHORIZATION_REVISED', 403);
+      if (!(run.spec.kind === 'digest' && run.spec.destination === 'shared') && address !== undefined && recipient.email !== address) throw new MetadataError('JOB_AUTHORIZATION_REVISED', 403);
       const row = (await c.query(`SELECT state FROM h7_deliveries WHERE ${scoped} AND delivery_id = ?`, [...scopeArgs(run), handle.event.aggregateId]))[0];
       if (!row || !['pending', 'sending'].includes(String(row.state))) throw new MetadataError('JOB_CANCELLED', 403);
       address ??= recipient.email;
     });
     await verify();
     const owner = await this.store.context(run, run.ownerId);
-    this.executor.begin(owner, verify); await this.executor.authorize(owner, run.spec);
-    const recipient = await this.store.context(run, String(delivery.recipient_id));
-    this.executor.begin(recipient, verify); await this.executor.authorize(recipient, run.spec);
-    await this.store.metadata.usage?.consume(this.store.metadata, recipient, 'computeAttempts');
-    const rendered = await this.executor.render(recipient, run.spec, occurrenceTime(run), run.jobId);
+    let message: MailMessage, authorize: () => Promise<void>;
+    if (run.spec.kind === 'digest' && run.spec.destination === 'shared') {
+      if (!this.executor.renderSharedDigest) throw new MetadataError('DIGEST_SHARED_RESOLVER_REQUIRED', 503);
+      this.executor.begin(owner, verify);
+      await this.store.metadata.usage?.consume(this.store.metadata, owner, 'computeAttempts');
+      const delivery = await this.executor.renderSharedDigest(owner, run.spec, occurrenceTime(run), run.jobId, this.store);
+      message = { ...delivery.message, dedupeKey: handle.event.aggregateId };
+      authorize = async () => { await delivery.verify(); await this.executor.verifyDelivery?.(owner); await verify(); };
+    } else {
+      this.executor.begin(owner, verify); await this.executor.authorize(owner, run.spec);
+      const recipient = await this.store.context(run, String(delivery.recipient_id));
+      this.executor.begin(recipient, verify); await this.executor.authorize(recipient, run.spec);
+      await this.store.metadata.usage?.consume(this.store.metadata, recipient, 'computeAttempts');
+      const rendered = await this.executor.render(recipient, run.spec, occurrenceTime(run), run.jobId);
+      message = { ...rendered, to: [address!], dedupeKey: handle.event.aggregateId };
+      authorize = async () => {
+        this.executor.begin(owner, verify); await this.executor.authorize(owner, run.spec);
+        this.executor.begin(recipient, verify); await this.executor.authorize(recipient, run.spec);
+        await this.executor.verifyDelivery?.(recipient); await verify();
+      };
+    }
     await this.execution.checked(handle, async c => {
       await this.store.checkRun(c, run);
       await c.query(`UPDATE h7_deliveries SET state = 'sending', attempts = attempts + 1, message = NULL WHERE ${scoped} AND delivery_id = ?`, [...scopeArgs(run), handle.event.aggregateId]);
     });
     await this.execution.sending(handle); sending();
-    await this.mail.send({ ...rendered, to: [address!], dedupeKey: handle.event.aggregateId }, async () => {
-      // Full source/RLS/CLS authorization followed by the SQL linearization check.
-      this.executor.begin(owner, verify); await this.executor.authorize(owner, run.spec);
-      this.executor.begin(recipient, verify); await this.executor.authorize(recipient, run.spec);
-      await this.executor.verifyDelivery?.(recipient);
-      await verify();
-    });
+    await this.mail.send(message, authorize);
     accepted();
     await this.execution.complete(handle, async (c, now) => {
       // Record an already accepted effect even if permission changed after DATA.
@@ -192,7 +206,10 @@ export class DurableJobs {
     } else {
       const { run, delivery } = await this.store.db.transaction(c => this.runRow(c, event));
       await this.executor.authorize(await this.store.context(run, run.ownerId), run.spec);
-      if (delivery) await this.executor.authorize(await this.store.context(run, String(delivery.recipient_id)), run.spec);
+      if (run.spec.kind === 'digest' && run.spec.destination === 'shared') {
+        if (!this.executor.authorizeSharedDigest) throw new MetadataError('DIGEST_SHARED_RESOLVER_REQUIRED', 503);
+        await this.executor.authorizeSharedDigest(await this.store.context(run, run.ownerId), run.spec, this.store);
+      } else if (delivery) await this.executor.authorize(await this.store.context(run, String(delivery.recipient_id)), run.spec);
     }
     await this.execution.replay(envelope, async c => {
       if (this.store.metadata.usage) {

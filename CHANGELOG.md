@@ -13,7 +13,9 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
-- Governed metric email digests: self-subscribe weekly or daily, compare completed periods, inspect deterministic dimension changes, drill back into the metric, and unsubscribe in one click. Hosted delivery rechecks recipient permissions and deduplicates each subscription/period. Shared email lists fail closed pending verified membership semantics (#162).
+- Shared metric digest lists: owners/admins choose workspace members, receive one message per period computed from their intersected row and column access, preview withheld/empty results, and stop the whole list with one-click unsubscribe. Removed or de-authorized recipients are dropped at delivery (#162).
+
+- Governed metric email digests: self-subscribe weekly or daily, compare completed periods, inspect deterministic dimension changes, drill back into the metric, and unsubscribe in one click. Hosted delivery rechecks recipient permissions and deduplicates each subscription/period. (#162).
 
 - Stripe billing for the hosted tiers: the operator can generate a Stripe-hosted payment link for a tenant's tier (Light $29/mo, Regular $99/mo, Heavy $399/mo), and a signature-verified webhook applies subscription state to the tenant's entitlement tier exactly once, with every change in the operator audit trail. Past-due subscriptions pause the tenant's hosted access after Stripe's retries run out — data retained, no automatic downgrade — until an admin pays in Stripe or explicitly drops the tenant to Free. Billing is disabled unless the full Stripe configuration is present in the environment; no card data ever touches OpenSight (#194).
 

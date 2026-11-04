@@ -23,7 +23,7 @@ export async function digestRoute(request: IncomingMessage, response: ServerResp
     const job = await store.jobs.get(context, preview[1]!);
     if (job.spec.kind !== 'digest' || job.spec.subscriberId !== context.userId) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
     await data.sources.metadata.usage?.consume(data.sources.metadata, context, 'computeAttempts');
-    send(response, 200, await new DigestComputation(data).compute(context, job.spec, store.jobs.clock())); return;
+    send(response, 200, await new DigestComputation(data, store.jobs).compute(context, job.spec, store.jobs.clock())); return;
   }
   const remove = new RegExp(`^/api/v1/metric-subscriptions/(${id})$`).exec(path);
   if (!remove) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
