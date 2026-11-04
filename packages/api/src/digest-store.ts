@@ -1,17 +1,17 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { digestInput, newDigest } from './digest-model.js';
 import { JobStore } from './job-store.js';
-import { cancelJob, scoped, scopeArgs, type Job } from './job-schema.js';
+import { cancelJob, member, scoped, scopeArgs, type Job } from './job-schema.js';
 import { MetadataError, missing } from './metadata-db.js';
 import type { TenantContext } from './metadata.js';
 import { MetricCatalog, metricRecord } from './metric-model.js';
-import { object, identifier, type Scope } from './metadata-resources.js';
+import { identifier, type Scope } from './metadata-resources.js';
 import type { JobExecutor } from './job-renderer.js';
 
 export function digestView(job: Job) {
   if (job.spec.kind !== 'digest') return missing();
   const { metricId, subscriberId, cadence, timeColumn, dimensions } = job.spec;
-  return { id: job.id, metricId, subscriberId, cadence, timeColumn, dimensions, destination: { kind: 'self' }, stopped: job.stopped, nextRun: job.nextRun };
+  return { id: job.id, metricId, subscriberId, cadence, timeColumn, dimensions, destination: job.spec.destination === 'shared' ? { kind: 'shared', recipients: job.spec.recipients } : { kind: 'self' }, stopped: job.stopped, nextRun: job.nextRun };
 }
 export class DigestStore {
   constructor(readonly jobs: JobStore, readonly executor: JobExecutor) {}
@@ -20,17 +20,20 @@ export class DigestStore {
     await this.jobs.metadata.assetTransaction(context, false, a => {
       const catalog = new MetricCatalog(a), record = metricRecord(catalog.get(metricId));
       if (record.publishedVersion === null) throw new MetadataError('METRIC_NOT_PUBLISHED', 409);
-      if (input.destination !== undefined) {
-        const destination = object(input.destination);
-        if (destination.kind !== 'self') {
-          if (a.user().body.role !== 'administrator' && record.createdBy !== context.userId) throw new MetadataError('DIGEST_SHARED_FORBIDDEN', 403);
-          // The IDD requires checking every list recipient. No verified shared
-          // destination registry exists yet; an arbitrary address is not authority.
-          throw new MetadataError('DIGEST_SHARED_DESTINATION_UNRESOLVED', 422);
-        }
-        object(destination, ['kind']);
-      }
+      if (input.destination.kind === 'shared' && a.user().body.role !== 'administrator' && record.createdBy !== context.userId) throw new MetadataError('DIGEST_SHARED_FORBIDDEN', 403);
     });
+    if (input.destination.kind === 'shared') {
+      const ids = input.destination.recipientIds;
+      await this.jobs.checked(context, async c => {
+        for (const id of ids) {
+          try { await member(c, context, id); }
+          catch (e) {
+            if (e instanceof MetadataError && e.code === 'JOB_PRINCIPAL_UNAVAILABLE') throw new MetadataError('DIGEST_SHARED_RECIPIENT_INVALID', 422);
+            throw e;
+          }
+        }
+      });
+    }
     const spec = newDigest(metricId, context.userId, raw);
     return digestView(await this.jobs.put(context, `digest-${randomUUID()}`, spec, 0, (c, s) => this.executor.authorize(c, s)));
   }

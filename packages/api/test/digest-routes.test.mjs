@@ -45,3 +45,15 @@ test('digest routes are honest on local API and explicitly enabled on the server
   assert.equal(serverlessDataPath(internal), true); assert.equal(publicPath(`/api${internal}`), internal);
   assert.deepEqual(serverlessV1Methods(internal), ['GET', 'POST']);
 });
+
+test('digest HTTP shared creation accepts member IDs only and exposes no addresses', async t => {
+  const f = await seed(t), base = '/api/v1/metrics/revenue/subscriptions';
+  const input = { ...digestInput, destination: { kind: 'shared', recipientIds: [f.identity.userId] } };
+  const sub = good(await f.request(base, { method: 'POST', body: input }), 201);
+  assert.deepEqual(sub.destination, { kind: 'shared', recipients: [f.identity.userId] });
+  assert.doesNotMatch(JSON.stringify(sub), /@|unsubscribeToken/);
+  for (const recipientIds of [['unknown'], ['team@example.test']]) {
+    const reply = await f.request(base, { method: 'POST', body: { ...input, destination: { kind: 'shared', recipientIds } } });
+    assert.equal(reply.status, 422); assert.equal(reply.body.errorCode, 'DIGEST_SHARED_RECIPIENT_INVALID');
+  }
+});
