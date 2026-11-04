@@ -1,0 +1,171 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createApiServer, emptySecurityState, StubMailTransport } from '@opensight/api';
+const root = fileURLToPath(new URL('../../../fixtures/', import.meta.url));
+
+async function api(t, options = {}, configure = () => {}) {
+  const state = emptySecurityState();
+  state.namespaces.push({ id: 'other', name: 'Other' });
+  state.users = [
+    { id: 'author', name: 'Author', namespaceId: 'default', role: 'author' },
+    { id: 'other-author', name: 'Other author', namespaceId: 'default', role: 'author' },
+    { id: 'reader', name: 'Reader', namespaceId: 'default', role: 'reader' },
+    { id: 'admin', name: 'Admin', namespaceId: 'default', role: 'administrator' },
+    { id: 'author', name: 'Author', namespaceId: 'other', role: 'author' },
+  ];
+  configure(state);
+  const server = await createApiServer({ dataRoot: root, mailTransport: new StubMailTransport(), ...options, security: { initialState: state, authenticate: r => {
+    const id = r.headers.authorization?.replace('Bearer ', '');
+    return id === 'tenant-author' ? { namespaceId: 'other', userId: 'author' } : ['author', 'other-author', 'reader', 'admin'].includes(id) ? { namespaceId: 'default', userId: id } : undefined;
+  } } });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => { server.close(); server.closeAllConnections(); });
+  return async (path, method = 'GET', body, user = 'author') => {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}${path}`, { method, headers: { 'Content-Type': 'application/json', ...(user ? { Authorization: `Bearer ${user}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    return { status: response.status, body: await response.json() };
+  };
+}
+
+const sql = (text = 'SELECT region, SUM(revenue) AS total FROM sales GROUP BY region ORDER BY region', datasetRefs = ['sales'], id = 'sql1') => ({ id, kind: 'sql', text, datasetRefs });
+const visual = { id: 'chart', kind: 'visual', sourceCellId: 'sql1', chart: { type: 'bar', dimension: 'region', measure: 'total', aggregation: 'SUM' } };
+async function create(call, extra = {}, user = 'author') {
+  const response = await call('/api/notebooks', 'POST', { name: 'Notebook', cells: [sql(), visual], ...extra }, user);
+  assert.equal(response.status, 201, JSON.stringify(response.body)); return response.body;
+}
+const path = n => `/api/notebooks/${n.id}`;
+async function run(call, n, body = {}, user = 'author') {
+  const response = await call(`${path(n)}/run`, 'POST', body, user);
+  assert.equal(response.status, 200, JSON.stringify(response.body)); return response.body;
+}
+test('notebooks: CRUD, author and manage permissions, namespace isolation and versions', async t => {
+  const call = await api(t), n = await create(call);
+  assert.equal(n.ownerId, 'author'); assert.equal(n.canEdit, true);
+  assert.equal((await call('/api/notebooks')).body.notebooks.length, 1);
+  assert.equal((await call('/api/notebooks', 'GET', undefined, 'reader')).body.notebooks.length, 0);
+  assert.equal((await call('/api/notebooks', 'POST', { name: 'Reader' }, 'reader')).body.errorCode, 'NOTEBOOK_AUTHOR_REQUIRED');
+  for (const user of ['reader', 'other-author', 'tenant-author']) assert.equal((await call(path(n), 'GET', undefined, user)).status, 404);
+  const published = await call(path(n), 'PATCH', { published: true, version: n.version });
+  assert.equal(published.status, 200); assert.equal(published.body.version, 2);
+  assert.equal((await call(path(n), 'PATCH', { name: 'Stale', version: 1 })).body.errorCode, 'NOTEBOOK_VERSION_CONFLICT');
+  for (const user of ['reader', 'other-author']) {
+    assert.equal((await call(path(n), 'GET', undefined, user)).status, 200);
+    assert.equal((await call(path(n), 'PATCH', { name: 'Hijack', version: 2 }, user)).body.errorCode, 'NOTEBOOK_EDIT_REQUIRED');
+    assert.equal((await call(path(n), 'DELETE', undefined, user)).body.errorCode, 'NOTEBOOK_MANAGE_REQUIRED');
+  }
+  for (const suffix of ['', '/runs', '/run', '/cells/sql1/snapshot']) assert.equal((await call(path(n) + suffix, suffix === '/run' || suffix.endsWith('/snapshot') ? 'POST' : 'GET', suffix === '/run' || suffix.endsWith('/snapshot') ? {} : undefined, 'tenant-author')).status, 404);
+  assert.equal((await call(path(n), 'PATCH', { name: 'Managed', version: 2 }, 'admin')).status, 200);
+  assert.equal((await call(path(n), 'DELETE', undefined, 'admin')).status, 200);
+  assert.equal((await call(path(n))).status, 404);
+});
+test('notebooks: model validation refuses invalid cells, limits, fields and defaults', async t => {
+  const call = await api(t);
+  for (const extra of [
+    { name: '' }, { name: 'x'.repeat(121) }, { cells: Array.from({ length: 101 }, (_, i) => ({ id: `c${i}`, kind: 'markdown', text: '' })) },
+    { cells: [{ id: 'm', kind: 'markdown', text: 'x'.repeat(10001) }] }, { cells: [sql(), sql()] }, { cells: [visual, sql()] },
+    { cells: [{ id: 'p', kind: 'python', text: 'print(1)' }] }, { cells: [sql('SELECT 1', ['sales', 'SALES'])] },
+    { parameters: [{ name: 'bad-name', type: 'string' }] }, { parameters: [{ name: 'x', type: 'number', default: '1' }] },
+    { parameters: [{ name: 'x', type: 'date', default: '2026-02-30' }] }, { parameters: [{ name: 'x', type: 'string' }, { name: 'x', type: 'string' }] },
+    { published: 'yes' }, { ownerId: 'admin' },
+  ]) {
+    const result = await call('/api/notebooks', 'POST', { name: 'Bad', ...extra });
+    assert.equal(result.status, 400, JSON.stringify(extra)); assert.match(result.body.errorCode, /^NOTEBOOK_/);
+  }
+});
+test('notebooks: fixture execution, typed bindings, injection stays data, results and executing identity', async t => {
+  const call = await api(t), n = await create(call, { published: true, parameters: [{ name: 'minimum', type: 'number', default: 0 }, { name: 'region', type: 'string', default: 'East' }, { name: 'day', type: 'date', default: '2026-01-01' }], cells: [sql('SELECT region, SUM(revenue) AS total FROM sales WHERE revenue > $minimum AND region = $region GROUP BY region'), visual] });
+  const r = await run(call, n, {}, 'reader');
+  assert.equal(r.executedBy, 'reader'); assert.equal(r.notebookVersion, 1);
+  assert.ok(r.results[0].data.rowCount > 0, JSON.stringify(r));
+  assert.equal(r.results[0].data.rows[0].region, 'East');
+  assert.equal(r.results[1].sourceCellId, 'sql1'); assert.equal(r.results[1].error, undefined);
+  assert.ok(Number.isFinite(Date.parse(r.results[0].executedAt))); assert.ok(r.results[0].elapsedMs >= 0);
+  assert.deepEqual((await run(call, n, { parameters: { region: "East' OR true --" } })).results[0].data.rows, []);
+  for (const parameters of [{ unknown: 1 }, { minimum: '2' }, { day: '2026-02-30' }, { minimum: [2] }]) {
+    const result = await call(`${path(n)}/run`, 'POST', { parameters }); assert.equal(result.status, 400); assert.match(result.body.errorCode, /^NOTEBOOK_/);
+  }
+  const missing = await create(call, { parameters: [{ name: 'missing', type: 'string' }] });
+  assert.equal((await call(`${path(missing)}/run`, 'POST', {})).body.errorCode, 'NOTEBOOK_PARAMETER_INVALID');
+  assert.equal((await call(`${path(n)}/run`, 'POST', { cellId: 'missing' })).status, 404);
+  const single = await run(call, n, { cellId: 'sql1' }); assert.equal(single.results.length, 1);
+  assert.equal((await run(call, n, { cellId: 'chart' })).results[0].error.code, 'NOTEBOOK_DEPENDENCY_FAILED');
+  const history = (await call(`${path(n)}/runs`, 'GET', undefined, 'reader')).body.runs;
+  assert.ok(history.some(r => r.executedBy === 'reader' && r.results?.[0].data));
+  assert.ok(history.filter(r => r.executedBy !== 'reader').every(r => r.resultsRedacted && !r.results));
+});
+test('notebooks: every declared dataset is checked before SQL and dependent visuals fail visibly', async t => {
+  const call = await api(t);
+  const upload = await call('/api/uploads', 'POST', { config: { format: 'csv' }, base64: Buffer.from('region,amount\nEast,2\nWest,3\n').toString('base64') });
+  assert.equal(upload.status, 201);
+  const ref = upload.body.id, n = await create(call, { published: true, cells: [sql(`SELECT region, amount AS total FROM "${ref}"`, [ref, 'sales']), visual] });
+  assert.equal((await run(call, n)).results[0].data.rowCount, 2);
+  const denied = await run(call, n, {}, 'reader');
+  assert.equal(denied.results[0].error.code, 'NOTEBOOK_DATASET_ACCESS_DENIED'); assert.equal(denied.results[0].data, undefined);
+  assert.equal(denied.results[1].error.code, 'NOTEBOOK_DEPENDENCY_FAILED');
+  assert.ok(!(await call('/api/notebooks/datasets', 'GET', undefined, 'reader')).body.datasets.some(d => d.id === ref));
+});
+test('notebooks: shared fixture RLS and CLS narrow the actual materialized tables', async t => {
+  const call = await api(t, {}, state => {
+    state.datasets = [{ datasetId: 'sales', namespaceId: 'default', dataSetArn: 'arn:aws:quicksight:us-east-1:123456789012:dataset/renderable-sales', rowLevel: true,
+      rowRules: [{ id: 'east', principals: [{ type: 'user', id: 'reader' }], predicate: { column: 'region', operator: 'eq', value: 'East' } }, { id: 'all', principals: [{ type: 'user', id: 'author' }], predicate: { column: 'revenue', operator: 'gte', value: 0 } }],
+      protectedColumns: ['profit'], columnGrants: [{ id: 'profit-owner', column: 'profit', effect: 'allow', principals: [{ type: 'user', id: 'author' }] }] }];
+  });
+  const n = await create(call, { published: true, cells: [sql('SELECT * FROM sales')] });
+  const reader = (await run(call, n, {}, 'reader')).results[0];
+  assert.ok(reader.data.rowCount > 0); assert.ok(reader.data.rows.every(r => r.region === 'East'));
+  assert.ok(!reader.data.columns.some(c => c.name === 'profit'));
+  assert.ok((await run(call, n)).results[0].data.columns.some(c => c.name === 'profit'));
+  assert.equal((await run(call, n, {}, 'other-author')).results[0].error.code, 'NOTEBOOK_DATASET_ACCESS_DENIED');
+  const cls = await create(call, { published: true, cells: [sql('SELECT profit FROM sales')] });
+  const denied = (await run(call, cls, {}, 'reader')).results[0]; assert.equal(denied.data, undefined); assert.equal(denied.error.code, 'NOTEBOOK_SQL_EXECUTION_FAILED');
+});
+for (const [text, code] of [
+  ['SELECT 1; SELECT 2', 'NOTEBOOK_SQL_SINGLE_STATEMENT_REQUIRED'], ['INSERT INTO sales VALUES(1)', 'NOTEBOOK_SQL_READ_ONLY_REQUIRED'],
+  ['UPDATE sales SET revenue=0', 'NOTEBOOK_SQL_READ_ONLY_REQUIRED'], ['DELETE FROM sales', 'NOTEBOOK_SQL_READ_ONLY_REQUIRED'],
+  ['CREATE TABLE x(i INTEGER)', 'NOTEBOOK_SQL_READ_ONLY_REQUIRED'], ['PRAGMA version', 'NOTEBOOK_SQL_READ_ONLY_REQUIRED'],
+  ["ATTACH '/tmp/x' AS x", 'NOTEBOOK_SQL_READ_ONLY_REQUIRED'], ['SELECT * FROM missing', 'NOTEBOOK_SQL_UNDECLARED_TABLE'],
+  ['SELECT $undeclared', 'NOTEBOOK_SQL_PARAMETER_UNDECLARED'],
+]) test(`notebooks API SQL safety: ${text}`, async t => {
+  const call = await api(t), n = await create(call, { cells: [sql(text, [])] });
+  const result = (await run(call, n)).results[0]; assert.equal(result.error.code, code); assert.equal(result.data, undefined);
+});
+test('notebooks: row cap, snapshots as-of, source lineage and cross-notebook reuse', async t => {
+  const original = process.env.OPENSIGHT_BLAZE_MAX_ROWS; process.env.OPENSIGHT_BLAZE_MAX_ROWS = '2';
+  t.after(() => { if (original === undefined) delete process.env.OPENSIGHT_BLAZE_MAX_ROWS; else process.env.OPENSIGHT_BLAZE_MAX_ROWS = original; });
+  const call = await api(t);
+  const input = await call('/api/input-tables', 'POST', { name: 'Numbers', columns: [{ name: 'amount', type: 'number', required: true }] });
+  for (const amount of [1, 2]) await call(`/api/input-tables/${input.body.id}/rows`, 'POST', { values: { amount } });
+  const ref = `input-table-${input.body.id}`;
+  const n = await create(call, { published: true, cells: [sql(`SELECT a.amount FROM "${ref}" a CROSS JOIN "${ref}" b`, [ref])] });
+  assert.equal((await call(`${path(n)}/cells/sql1/snapshot`, 'POST', {})).body.errorCode, 'NOTEBOOK_RESULT_REQUIRED');
+  const r = await run(call, n); assert.equal(r.results[0].data.rowCount, 2); assert.equal(r.results[0].data.truncated, true);
+  const saved = await call(`${path(n)}/cells/sql1/snapshot`, 'POST', {}); assert.equal(saved.status, 201, JSON.stringify(saved.body));
+  assert.equal(saved.body.asOf, r.results[0].executedAt); assert.equal(saved.body.truncated, true);
+  assert.equal((await call(`${path(n)}/cells/sql1/snapshot`, 'POST', {}, 'other-author')).body.errorCode, 'NOTEBOOK_RESULT_REQUIRED');
+  const n2 = await create(call, { cells: [sql(`SELECT * FROM "${saved.body.id}"`, [saved.body.id])] });
+  assert.deepEqual((await run(call, n2)).results[0].data.rows, r.results[0].data.rows);
+  assert.equal((await call(path(n))).body.snapshots[0].asOf, saved.body.asOf);
+  assert.equal((await call(path(n), 'GET', undefined, 'reader')).body.snapshots.length, 0);
+  await call(`/api/input-tables/${input.body.id}`, 'DELETE');
+  assert.equal((await run(call, n2)).results[0].error.code, 'NOTEBOOK_DATASET_ACCESS_DENIED');
+  assert.ok((await call(`${path(n)}/runs`)).body.runs[0].resultsRedacted);
+});
+test('notebooks: retention, persistence, delete cascades, corrupt JSON and state fail closed', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'opensight-notebooks-')), storePath = join(dir, 'notebooks.json');
+  const call = await api(t, { notebookStorePath: storePath }), n = await create(call, { cells: [sql('SELECT 1 AS value', [])] });
+  for (let i = 0; i < 21; i++) await run(call, n);
+  const history = (await call(`${path(n)}/runs`)).body.runs; assert.equal(history.length, 20); assert.equal(history[0].executedBy, 'author');
+  await call(`${path(n)}/cells/sql1/snapshot`, 'POST', {});
+  const reloaded = await api(t, { notebookStorePath: storePath });
+  assert.equal((await reloaded(path(n))).body.snapshots.length, 1);
+  assert.equal((await reloaded(`${path(n)}/runs`)).body.runs.length, 20);
+  await reloaded(path(n), 'DELETE');
+  const third = await api(t, { notebookStorePath: storePath }); assert.equal((await third(`${path(n)}/runs`)).status, 404);
+  for (const content of ['{', JSON.stringify({ version: 1, notebooks: [{ id: 'broken' }], runs: [], snapshots: [] }), JSON.stringify({ version: 1, notebooks: [], runs: [], snapshots: [], injected: true })]) {
+    await writeFile(storePath, content); await assert.rejects(() => api(t, { notebookStorePath: storePath }), /NOTEBOOK_STORE_CORRUPT/);
+  }
+});
