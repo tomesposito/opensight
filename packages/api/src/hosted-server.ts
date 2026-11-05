@@ -151,7 +151,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   });
   if (!options.invocation) await initializeAnalytics(options.membershipDatabase);
   if (!options.invocation) await initializeAccessRequests(options.membershipDatabase);
-  if (!options.invocation) await initializeBilling(options.membershipDatabase);
+  if (!options.invocation && billingCfg) await initializeBilling(options.membershipDatabase);
   if (!options.invocation) await initializeIdeas(options.membershipDatabase);
   const analytics = options.analytics ?? new Analytics(new AnalyticsStore(options.membershipDatabase), {
     ...analyticsFromEnvironment(options.env), deliveryMode: options.invocation ? 'deferred' : 'inline',
