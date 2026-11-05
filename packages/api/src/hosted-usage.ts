@@ -177,6 +177,22 @@ export class HostedUsage {
     for (const scope of await this.billingScopes(tenantId)) records.push(await this.monthlyUsage(scope, period));
     return records;
   }
+  /** Current enforcement view: API/queries are daily caps, NLQ is monthly, storage a live gauge.
+   * Keep the durable monthly billing records unchanged; never present an unrolled snapshot as live usage. */
+  async operatorOverview(tenantId: string, period: string) {
+    const day = new Date(this.clock()).toISOString().slice(0, 10);
+    if (usageMonth(period) !== day.slice(0, 7)) return null;
+    const [scope] = await this.billingScopes(tenantId);
+    if (!scope) throw new MetadataError('TENANT_UNAVAILABLE', 403);
+    const quotas = this.entitlement(scope);
+    return this.db.transaction(async c => {
+      await this.billingScope(c, scope);
+      const rows = await c.query('SELECT metric, admitted FROM h8_usage WHERE tenant_id = ? AND namespace_id = ? AND period = ?', [scope.tenantId, scope.namespaceId, day]);
+      const count = (metric: string) => usageInteger(rows.find(row => row.metric === metric)?.admitted ?? 0);
+      return { day, period, apiCalls: count('apiCalls'), queries: count('computeAttempts'), storageBytes: await this.storageBytes(c, scope),
+        nlq: await this.monthlyAiCalls(c, scope, period), quotas: { apiCalls: quotas.apiCalls, queries: quotas.computeAttempts, storageBytes: quotas.storageBytes, nlq: quotas.aiCallsPerMonth ?? null } };
+    });
+  }
   /** Operator-triggered refresh; each scope commits independently and is safe to retry. */
   async rollupMonthlyUsageForPeriod(month: string, tenantId?: string): Promise<MonthlyUsage[]> {
     const period = usageMonth(month), records: MonthlyUsage[] = [];

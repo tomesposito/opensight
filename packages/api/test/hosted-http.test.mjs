@@ -86,7 +86,7 @@ test('H2 tenant administrators cannot provision or use operator credentials as t
   assert.equal((await request('/api/invitations', { method: 'PUT', headers: tenantHeaders, body: {} })).status, 405);
   assert.equal((await request('/api/users', { headers: tenantHeaders })).status, 200);
   assert.equal((await request('/api/session', { headers: operator })).status, 401);
-  assert.equal((await request(`/api/host/tenants/${f.tenant.tenantId}`, { headers: { ...operator, origin: f.config.origin } })).body.errorCode, 'OPERATOR_REQUIRED');
+  assert.equal((await request(`/api/host/tenants/${f.tenant.tenantId}`, { headers: { ...operator, origin: f.config.origin } })).status, 200);
 });
 test('H2 HTTP onboarding, enrollment, login, switching, logout and lifecycle gates compose end to end', async t => {
   const f = await database(t), env = configEnv(f.config), mail = new StubMailTransport(); let now = Math.floor(Date.now() / 30000) * 30000;
@@ -438,4 +438,56 @@ test('Issue #152: hosted session acceptance rejects forged identity, another use
     assert.equal((await request('/api/invitations/accept',{method:'POST',headers,body:{token,subject:f.email}})).body.errorCode,'FORGED_PRINCIPAL');
     assert.equal((await request('/api/invitations/accept',{method:'POST',body:{token}})).status,401);
   }
+});
+
+test('Issue 192 B: operator browser provisioning routes are narrowly allowed and always key-gated', async t => {
+  const f = await authFixture(t), { request, operator } = await serving(t, f), id = f.tenant.tenantId;
+  const origin = f.config.origin, key = { ...operator, origin }, session = await f.login();
+  const shapes = [
+    ['/api/host/tenants', 'GET'], ['/api/host/tenants', 'POST'], [`/api/host/tenants/${id}`, 'GET'], [`/api/host/tenants/${id}`, 'DELETE'],
+    ...['invitations', 'suspend', 'resume', 'billing/payment-link', 'billing/resolve'].map(s => [`/api/host/tenants/${id}/${s}`, 'POST']),
+    [`/api/host/tenants/${id}/billing`, 'GET'], [`/api/host/usage/2026-11/tenants/${id}`, 'GET'],
+  ];
+  for (const [path, method] of shapes) {
+    for (const headers of [{ origin }, { origin, authorization: 'Operator wrong' }, { origin, authorization: `Bearer ${session.token}` }, { origin, cookie: `session=${session.token}` }]) {
+      const denied = await request(path, { method, headers, ...(method === 'GET' ? {} : { body: {} }) });
+      assert.equal(denied.status, 403, path); assert.equal(denied.body.errorCode, 'OPERATOR_REQUIRED', path);
+    }
+    const allowed = await request(path, { method, headers: key, ...(method === 'GET' ? {} : { body: {} }) });
+    assert.notEqual(allowed.body.errorCode, 'OPERATOR_REQUIRED', path);
+  }
+  for (const [path, method] of [
+    ['/api/host/audit', 'GET'], ['/api/host/access-requests', 'GET'], ['/api/host/operations/known', 'GET'], ['/api/host/reference', 'GET'],
+    ['/api/host/usage/2026-11', 'GET'], [`/api/host/usage/2026-11/tenants/${id}`, 'POST'],
+    [`/api/host/tenants/${id}/suspend/extra`, 'POST'], [`/api/host/tenants/${id}/invitations/extra`, 'POST'],
+    [`/api/host/tenants/${id}/billing/payment-link/extra`, 'POST'], [`/api/host/tenants/${id}/billing`, 'DELETE'], ['/api/host/tenants', 'PUT'],
+  ]) assert.equal((await request(path, { method, headers: key, ...(method === 'GET' ? {} : { body: {} }) })).body.errorCode, 'OPERATOR_REQUIRED', path);
+  assert.equal((await request('/api/host/tenants', { headers: { ...key, origin: 'https://foreign.example' } })).body.errorCode, 'UNTRUSTED_ORIGIN');
+});
+
+test('Issue 192 B: list, detail, named validation, paid tier, membership counts and tombstones', async t => {
+  const f = await authFixture(t), { request, operator } = await serving(t, f), headers = { ...operator, origin: f.config.origin };
+  const create = input => request('/api/host/tenants', { method: 'POST', headers: { ...headers, 'idempotency-key': 'ui-create' }, body: input });
+  const input = { name: 'Namespace', displayName: 'Public workspace', slug: 'public', administrator: { name: 'Admin', email: 'ADMIN@example.test' } };
+  const bad = await create({ ...input, displayName: undefined });
+  assert.equal(bad.status, 400); assert.deepEqual(bad.body, { errorCode: 'METADATA_INVALID', field: 'displayName' });
+  const created = await create(input); assert.equal(created.status, 201); assert.equal(created.body.token, undefined);
+  const id = created.body.tenantId;
+  assert.equal((await create(input)).body.tenantId, id);
+  const detail = await request(`/api/host/tenants/${id}`, { headers });
+  assert.equal(detail.body.displayName, 'Public workspace'); assert.equal(detail.body.slug, 'public');
+  assert.equal(detail.body.createdOperationId, created.body.operationId);
+  let list = (await request('/api/host/tenants', { headers })).body.tenants;
+  let row = list.find(row => row.tenantId === id);
+  assert.equal(list.length, 2); assert.equal(row.tier, 'free'); assert.equal(row.memberCount, 1); assert.ok(Number.isFinite(Date.parse(row.createdAt)));
+  await f.db.transaction(c => c.query("INSERT INTO h9_billing (tenant_id,tier,access_state,updated_at) VALUES (?,'regular','active',?)", [id, new Date().toISOString()]));
+  await request(`/api/host/tenants/${id}/invitations`, { method: 'POST', headers: { ...headers, 'idempotency-key': 'ui-invite' }, body: { name: 'Reader', email: 'reader@example.test', role: 'reader' } });
+  row = (await request('/api/host/tenants', { headers })).body.tenants.find(row => row.tenantId === id);
+  assert.equal(row.tier, 'regular'); assert.equal(row.memberCount, 2);
+  await f.provisioning.transition('delete-ui', id, 'delete', detail.body.version);
+  const op = (await f.db.transaction(c => c.query("SELECT operation_id FROM h1_operations WHERE tenant_id = ? AND action = 'delete'", [id])))[0].operation_id;
+  await f.provisioning.operator.checkpoint(op, 'revoked', 'artifacts-removed'); await f.provisioning.operator.finishDeletion(op);
+  row = (await request('/api/host/tenants', { headers })).body.tenants.find(row => row.tenantId === id);
+  assert.equal(row.state, 'deleted'); assert.equal(row.memberCount, 0); assert.equal(row.slug, 'public');
+  assert.equal((await request(`/api/host/tenants/${id}`, { headers })).body.displayName, 'Public workspace');
 });

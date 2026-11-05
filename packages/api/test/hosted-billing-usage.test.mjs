@@ -339,3 +339,21 @@ test('live Postgres monthly billing serializes concurrent meters, preserves exac
       await assert.rejects(client.query('DELETE FROM h8_monthly_usage'), { code: '42501' });
     } finally { await client.query('RESET ROLE'); client.release(); }
   });
+
+test('Issue 192 B: operator overview matches daily enforcement, live storage and monthly NLQ quotas', async t => {
+  const f = await setup(t);
+  await daily(f.db, one, '2026-10-02', 'apiCalls', 100);
+  await daily(f.db, one, '2026-10-03', 'apiCalls', 7);
+  await daily(f.db, one, '2026-10-03', 'computeAttempts', 3);
+  await daily(f.db, one, '2026-10-02', 'aiCalls', 2);
+  await daily(f.db, one, '2026-10-03', 'aiCalls', 4);
+  await daily(f.db, two, '2026-10-03', 'aiCalls', 99);
+  const before = await counters(f.db), overview = await f.usage.operatorOverview(one.tenantId, month);
+  assert.equal(overview.apiCalls, 7); assert.equal(overview.queries, 3); assert.equal(overview.nlq, 6);
+  assert.equal(overview.day, '2026-10-03'); assert.equal(overview.quotas.apiCalls, f.usage.entitlement(one).apiCalls);
+  assert.equal(overview.storageBytes, await f.db.transaction(c => resourceBytes(c, one)));
+  assert.equal(await f.usage.operatorOverview(one.tenantId, '2026-09'), null);
+  f.usage.tierEntitlement = () => ({ apiCalls: 500, computeAttempts: 40, storageBytes: 9999, aiCallsPerMonth: 10 });
+  assert.deepEqual((await f.usage.operatorOverview(one.tenantId, month)).quotas, { apiCalls: 500, queries: 40, storageBytes: 9999, nlq: 10 });
+  assert.deepEqual(await counters(f.db), before);
+});
