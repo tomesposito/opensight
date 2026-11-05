@@ -1,3 +1,4 @@
+import { signConverse, type BedrockOptions } from './ai-bedrock.js';
 import { SecurityError } from './security.js';
 import { isObject } from './mapping.js';
 
@@ -35,7 +36,7 @@ abstract class HTTPAdapter implements ProviderAdapter {
   abstract complete(config: ProviderConfig, key: string, input: Completion): Promise<CompletionResult>;
   protected async post(url: string, headers: Record<string, string>, body: unknown): Promise<Record<string, unknown>> {
     try {
-      const response = await this.fetcher(url, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(20_000), headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
+      const response = await this.fetcher(url, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(20_000), headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
       if (!response.ok) {
         await response.body?.cancel();
         throw new AIError(502, response.status === 401 || response.status === 403 ? 'AI_AUTH_FAILED' : response.status === 429 ? 'AI_RATE_LIMITED' : 'AI_PROVIDER_FAILED', 'Provider connection failed; check configuration and account access');
@@ -91,9 +92,29 @@ class AnthropicAdapter extends HTTPAdapter {
     return result(this.text(Array.isArray(raw.content) ? raw.content.flatMap(c => isObject(c) && c.type === 'text' && typeof c.text === 'string' ? [c.text] : []).join('\n') : undefined), usageTokens(raw, 'input_tokens', 'output_tokens'));
   }
 }
-class BedrockAdapter implements ProviderAdapter {
-  async complete(): Promise<never> { throw new AIError(409, 'AI_BEDROCK_APPROVAL_REQUIRED', 'Bedrock needs explicit approval; live AWS calls are disabled'); }
+class BedrockAdapter extends HTTPAdapter {
+  constructor(fetcher: typeof fetch, private readonly options?: BedrockOptions) { super(fetcher); }
+  async complete(config: ProviderConfig, _key: string, input: Completion): Promise<CompletionResult> {
+    if (!this.options) throw new AIError(409, 'AI_BEDROCK_APPROVAL_REQUIRED', 'Bedrock requires managed deployment configuration');
+    const body = { system: [{ text: input.system }], messages: [{ role: 'user', content: [{ text: input.prompt }] }], inferenceConfig: { maxTokens: input.maxTokens ?? 2048 } };
+    try {
+      const signed = signConverse(this.options.region, config.model, JSON.stringify(body), await this.options.credentials(), this.options.clock?.());
+      const raw = await this.post(signed.url, signed.headers, body);
+      const message = isObject(raw.output) && isObject(raw.output.message) ? raw.output.message : undefined;
+      return result(this.text(Array.isArray(message?.content) ? message.content.flatMap(c => isObject(c) && typeof c.text === 'string' ? [c.text] : []).join('\n') : undefined), usageTokens(raw, 'inputTokens', 'outputTokens'));
+    } catch (error) {
+      if (error instanceof AIError && ['AI_AUTH_FAILED', 'AI_RATE_LIMITED', 'AI_INVALID_RESPONSE'].includes(error.code)) throw error;
+      throw new AIError(502, 'AI_PROVIDER_FAILED', 'Managed provider connection failed');
+    }
+  }
 }
-export function providerAdapters(fetcher: typeof fetch = globalThis.fetch): Readonly<Record<AIProvider, ProviderAdapter>> {
-  return { openai: new OpenAIAdapter(fetcher), anthropic: new AnthropicAdapter(fetcher), 'openai-compatible': new CompatibleAdapter(fetcher), bedrock: new BedrockAdapter() };
+/** Never selectable by a tenant; hosted deployment validation gates this test seam. */
+class StubAdapter implements ProviderAdapter {
+  async complete(_config: ProviderConfig, _key: string, input: Completion): Promise<CompletionResult> {
+    if (input.prompt === 'Connection test') return { text: 'OK', tokens: 1 };
+    return { text: JSON.stringify({ question: 'sum revenue by region' }), tokens: 12 };
+  }
+}
+export function providerAdapters(fetcher: typeof fetch = globalThis.fetch, bedrock?: BedrockOptions): Readonly<Record<AIProvider, ProviderAdapter> & { stub: ProviderAdapter }> {
+  return { openai: new OpenAIAdapter(fetcher), anthropic: new AnthropicAdapter(fetcher), 'openai-compatible': new CompatibleAdapter(fetcher), bedrock: new BedrockAdapter(fetcher, bedrock), stub: new StubAdapter() };
 }
