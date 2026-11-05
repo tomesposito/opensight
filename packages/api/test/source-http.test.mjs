@@ -57,7 +57,11 @@ test('H3 HTTP durable source lifecycle, policy gates, uploads, owner prep and un
   assert.equal((await call('/api/namespaces/foreign/sources', 'GET', undefined, token)).body.errorCode, 'RESOURCE_NOT_FOUND');
   assert.equal((await call('/api/sources/foreign', 'GET', undefined, token)).body.errorCode, 'RESOURCE_NOT_FOUND');
   assert.equal((await call('/api/automation-status', 'GET', undefined, token)).body.persistence, 'durable');
-  for (const path of ['/api/assets', '/api/o/generate', '/embed/foreign']) assert.equal((await call(path, 'GET', undefined, token)).body.errorCode, 'HOSTED_CAPABILITY_UNAVAILABLE');
+  for (const path of ['/api/assets', '/embed/foreign']) assert.equal((await call(path, 'GET', undefined, token)).body.errorCode, 'HOSTED_CAPABILITY_UNAVAILABLE');
+  const ai = await call('/api/o/status', 'GET', undefined, token);
+  assert.equal(ai.status, 200); assert.equal(ai.body.mode, 'off'); assert.equal(ai.body.configured, false);
+  assert.equal((await call('/api/o/generate', 'GET', undefined, token)).status, 405);
+  assert.equal((await call('/api/o/generate', 'POST', { question: 'sum amount', datasetId: 'private' }, token)).body.errorCode, 'AI_NOT_CONFIGURED');
   for (const changes of [{ secretId: 'foreign' }, { tenantId: 'foreign' }, { policy: undefined }, { credentials: { ...raw.credentials, host: 'unapproved.example' } }]) {
     r = await call('/api/sources/invalid', 'PUT', { ...raw, ...changes }, token); assert.ok(r.status >= 400); assert.equal(JSON.stringify(r.body).includes(raw.credentials.password), false);
   }
