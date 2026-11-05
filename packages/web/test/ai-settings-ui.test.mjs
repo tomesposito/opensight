@@ -59,3 +59,22 @@ test('analytics toggle loads the server preference and saves the off switch; fai
   await act(() => renderer.root.findByProps({ type: 'checkbox' }).props.onChange({ target: { checked: true } }));
   assert.match(JSON.stringify(renderer.toJSON()), /Save failed/); assert.equal(renderer.root.findByProps({ type: 'checkbox' }).props.checked, false);
 });
+
+test('#190 hosted managed, BYO and off modes save explicitly; managed requires no key', async t => {
+  const before = globalThis.IS_REACT_ACT_ENVIRONMENT; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let renderer; const calls = [];
+  const config = { ...initial, provider: 'bedrock', model: 'managed-model', configured: true, state: 'configured', mode: 'managed', managedAvailable: true, keyStorage: 'encrypted-metadata', credits: { period: '2026-11', remaining: 10, limit: 10, used: 0, resetsAt: '2026-12-01T00:00:00Z' } };
+  const client = { async getAnalyticsConfig() { return { configured: false, defaultEnabled: false }; }, async getAIConfig() { return config; }, async saveAIConfig(value) { calls.push(value); return { ...config, ...value }; }, async testAIConnection() {} };
+  await act(() => { renderer = create(createElement(AccessProvider, { access: access('administrator') }, createElement(AISettings, { client }))); });
+  t.after(async () => { await act(() => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = before; });
+  assert.equal(renderer.root.findByProps({ value: 'managed', type: 'radio' }).props.checked, true);
+  assert.equal(renderer.root.findAllByProps({ type: 'password' }).length, 0);
+  await act(() => renderer.root.findByProps({ value: 'off', type: 'radio' }).props.onChange());
+  await act(() => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.deepEqual(calls[0], { mode: 'off' });
+  await act(() => renderer.root.findByProps({ value: 'byo', type: 'radio' }).props.onChange());
+  await act(() => renderer.root.findByProps({ maxLength: 256 }).props.onChange({ target: { value: 'own-model' } }));
+  await act(() => renderer.root.findAllByType('form')[0].props.onSubmit({ preventDefault() {} }));
+  assert.deepEqual(calls[1], { mode: 'byo', provider: 'openai', model: 'own-model' });
+  assert.equal(renderer.root.findByProps({ value: 'bedrock', disabled: true }).type, 'option');
+});

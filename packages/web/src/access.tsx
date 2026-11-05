@@ -1,5 +1,5 @@
 import type { AIStatus, createApiClient } from './api-client.js';
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import { hasCapability, type Capability, type Role } from '@opensight/query-engine/browser';
 export interface Session {
   id: string; namespaceId: string; tenantId?: string; name: string; role: Role;
@@ -18,11 +18,16 @@ export function useAI() {
   const access = useAccess(), client = access.aiClient;
   const enabled = access.mode === 'hosted' && allowed(access, 'ai');
   const [status, setStatus] = useState<AIStatus>({ configured: false, state: 'not-configured' });
-  useEffect(() => {
-    let active = true;
-    setStatus({ configured: false, state: 'not-configured' });
-    if (enabled && client) void client.getAIStatus().then(value => { if (active) setStatus(value); }).catch(() => { if (active) setStatus({ configured: false, state: 'not-configured' }); });
-    return () => { active = false; };
+  const epoch = useRef(0);
+  const refresh = useCallback(async () => {
+    const current = epoch.current;
+    if (!enabled || !client) return;
+    try { const value = await client.getAIStatus(); if (current === epoch.current) setStatus(value); }
+    catch { if (current === epoch.current) setStatus({ configured: false, state: 'not-configured' }); }
   }, [enabled, client]);
-  return { ...status, available: enabled && !!client && status.configured, client: enabled ? client : undefined };
+  useEffect(() => {
+    epoch.current++; setStatus({ configured: false, state: 'not-configured' }); void refresh();
+    return () => { epoch.current++; };
+  }, [refresh]);
+  return { ...status, refresh, available: enabled && !!client && status.configured, client: enabled ? client : undefined };
 }

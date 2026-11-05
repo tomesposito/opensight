@@ -2623,3 +2623,16 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .notebooks-page button.data-primary { background: #2860a4; border-color: #2860a4; color: #fff; }
 .notebooks-page label:has(> input[type="checkbox"]) { flex-direction: row; align-items: center; }
 .notebooks-page p, .notebooks-page code { overflow-wrap: anywhere; }
+
+/* Hosted Ask O credit and mode states (#190). */
+.o-managed-label { color: var(--muted); font-size: 11px; }
+.o-credits { display: flex; align-items: center; gap: 8px; padding: 8px; background: #eff6ff; color: #15283d; border-radius: 4px; font-size: 12px; }
+.o-credits progress { flex: 1; min-width: 30px; height: 6px; accent-color: #3b82f6; }
+.o-credits.empty { background: #fff7e6; }
+.o-credit-limit { padding: 12px; border: 1px solid #e8c475; border-radius: 4px; background: #fffaf0; color: #40341b; }
+.o-credit-limit h3 { margin: 0 0 8px; font-size: 13px; }
+.o-credit-limit p { margin: 8px 0 0; font-size: 12px; }
+.ai-mode-options { border: 0; padding: 0; margin: 16px 0; }
+.admin-settings .ai-mode-option { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0; padding: 12px; border: 1px solid var(--border); border-radius: 4px; }
+.ai-mode-option input { width: auto; margin-top: 2px; }
+.ai-mode-option small { display: block; margin-top: 4px; line-height: 1.5; }

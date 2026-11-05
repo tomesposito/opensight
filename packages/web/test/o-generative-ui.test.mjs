@@ -63,3 +63,28 @@ test('plain authors keep only deterministic templates and cannot fetch AI config
   const renderer = await mount(t, createElement(BuildForMe, { fields: [], onInsert() {} }), context('author', aiClient));
   assert.equal(renderer.root.findByProps({ role: 'switch' }).props.disabled, true); assert.equal(calls, 0);
 });
+
+test('#190 exhaustion turns the switch off, shows balance/reset and keeps the standard interpreter usable', async t => {
+  let calls = 0;
+  const aiClient = { async getAIStatus() { return { configured: false, state: 'credit-limit', mode: 'managed', credits: { period: '2026-11', limit: 10, used: 10, remaining: 0, resetsAt: '2026-12-01T00:00:00Z' } }; }, async generateO() { calls++; throw Error('must not generate'); } };
+  const renderer = await mount(t, createElement(OEntry, { draft: emptyDraft() }), context('author_ai', aiClient));
+  assert.equal(renderer.root.findByProps({ role: 'switch' }).props.disabled, true);
+  assert.equal(renderer.root.findByProps({ role: 'switch' }).props.checked, false);
+  assert.match(JSON.stringify(renderer.toJSON()), /Monthly Ask O credits are used up/);
+  assert.match(JSON.stringify(renderer.toJSON()), /December 1/);
+  await act(() => renderer.root.findByProps({ id: 'o-question' }).props.onChange({ target: { value: 'sum revenue by region' } }));
+  await act(() => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.equal(renderer.root.findAllByProps({ className: 'o-answer' }).length, 1); assert.equal(calls, 0);
+});
+test('#190 last delivered answer remains visible as refreshed credits pause subsequent generations', async t => {
+  let calls = 0;
+  const aiClient = { async getAIStatus() { return { configured: calls === 0, state: calls ? 'credit-limit' : 'configured', mode: 'managed', credits: { period: '2026-11', limit: 1, used: calls, remaining: 1 - calls, resetsAt: '2026-12-01T00:00:00Z' } }; }, async generateO() { calls++; return answer(); } };
+  const renderer = await mount(t, createElement(OEntry, { draft: emptyDraft() }), context('author_ai', aiClient));
+  await act(() => renderer.root.findByProps({ role: 'switch' }).props.onChange({ target: { checked: true } }));
+  await act(() => renderer.root.findByProps({ id: 'o-question' }).props.onChange({ target: { value: 'sum revenue' } }));
+  await act(() => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.equal(renderer.root.findAllByProps({ className: 'o-answer' }).length, 1);
+  assert.equal(renderer.root.findByProps({ role: 'switch' }).props.checked, false);
+  await act(() => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.equal(calls, 1);
+});
