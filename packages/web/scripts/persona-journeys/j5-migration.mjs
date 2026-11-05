@@ -53,26 +53,12 @@ await runJourney('j5-migration', 'Admin + Author', async j => {
     await button(page, 'Assign revenue').click();
     const wells = await page.locator('.field-wells').innerText();
     assert.match(wells, /region/); assert.match(wells, /SUM\(revenue\)/);
-    // #191 (Option 2): retained, read-only properties (title,
-    // sortConfiguration, dataLabels.overlap) are preserved for export, not
-    // executed, so they no longer block the visual: after remap and
-    // assignment the card leaves the placeholder state and attempts a real
-    // data load. The populated render itself is still blocked one layer
-    // deeper — a sibling imported TableVisual's foreign measure column
-    // fails the sheet's live query planning — recorded as the
-    // imported-live-visual gap against #195.
-    await page.waitForFunction(() => {
-      const card = document.querySelector('.author-card');
-      return card && (card.querySelectorAll('.chart svg path[d]').length > 0 || /Unable to load data/.test(card.textContent ?? ''));
-    });
+    await page.waitForFunction(() => document.querySelectorAll('.author-card .chart svg path[d]').length > 0);
+    assert.ok(await page.locator('.author-card .chart svg path[d]').count(), 'The remapped imported pie renders populated');
     const card = await page.locator('.author-card').first().innerText();
     assert.doesNotMatch(card, /Unsupported features:/);
-    if (await page.locator('.author-card .chart svg path[d]').count()) {
-      return 'Remap binds the local sales dataset, manual assignment fills both wells (region, SUM(revenue)), and the imported pie renders populated: retained, read-only properties stay named in the dataset-binding disclosure but no longer block the visual (#191).';
-    }
-    assert.match(card, /unknown column: us_simpli-/);
-    j.gap('imported-live-visual', 'The imported asset renders at least one populated visual.', { reason: 'A sibling imported TableVisual in the same sheet carries a foreign measure column (us_simpli-country-…) that fails the sheet’s live query planning after remap; the #191 retained-properties block itself is gone. Tracked on #195.', actual: card });
-    return 'Remap binds the local sales dataset and manual assignment fills both wells (region, SUM(revenue)); the retained-properties placeholder is gone (#191), but the live render still fails on a sibling TableVisual’s foreign measure column — gap recorded against #195.';
+    assert.doesNotMatch(card, /unknown column/);
+    return 'Remap binds the local sales dataset, manual assignment fills both wells (region, SUM(revenue)), and the imported pie renders populated: retained, read-only properties stay named in the dataset-binding disclosure and foreign tooltip IDs stay out of the live query (#191, #195).';
   });
   await j.step('save-import', page, async () => {
     await button(page, 'Save draft').click(); await page.getByText('Draft saved on this device.', { exact: true }).waitFor();
