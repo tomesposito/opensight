@@ -57,6 +57,17 @@ export class HostedDashboards implements DashboardBackend {
     const ref = Object.values(v.datasetBindings)[0]!;
     return this.metadata.metricVocabulary(this.context, { ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: v.bindingOwnerId } : {}) });
   }
+  /** Schema admission follows the same frozen binding and reader identity as query(). */
+  async questionSchema(v: DashboardVersion) {
+    const dashboardId = this.publishedVersions.get(v);
+    if (!dashboardId) throw new MetadataError('DASHBOARD_DATASET_ACCESS_DENIED', 403);
+    await this.authorizeQuestion(dashboardId);
+    const entries = Object.entries(v.datasetBindings);
+    if (entries.length !== 1) throw new MetadataError('DASHBOARD_DATASET_UNSUPPORTED', 422);
+    const [identifier, binding] = entries[0]!;
+    if (binding.kind === 'prepared-dataset') return { columns: await this.routes.prep.readerDashboardSchema(this.context, v.bindingOwnerId, binding.id), deniedColumns: [] };
+    return (await this.analyses.resolve({ [identifier]: binding })).get(identifier)!;
+  }
   async query(v: DashboardVersion, definition: JsonObject, visualId: string) {
     const bindings = Object.values(v.datasetBindings);
     if (bindings.length !== 1) throw new MetadataError('DASHBOARD_DATASET_UNSUPPORTED', 422);
