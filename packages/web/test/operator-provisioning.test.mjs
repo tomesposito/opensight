@@ -105,8 +105,11 @@ test('192 C: detail shows inline usage and billing, link generation keeps tier, 
   } }), { tenantId: 'tenant-one' });
   await connect(ui); assert.match(ui.text(), /Workspace Admin/); assert.match(ui.text(), /operation-one/); assert.match(ui.text(), /Tenant usage/);
   assert.equal(ui.root.findAllByType('progress').length, 4);
+  let copied; Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { async writeText(value) { copied = value; } } });
+  t.after(() => { delete navigator.clipboard; });
   await change(field(ui, 'Payment link for tier'), 'heavy'); await submit(ui, 'Generate payment link');
   assert.match(ui.text(), /Regular · \$99\/mo/); assert.match(ui.text(), /Heavy plan starts when they pay/);
+  await click(button(ui, 'Copy link')); assert.equal(copied, 'https://billing.example.test/new'); assert.match(ui.text(), /Payment link copied/);
   await change(field(ui, 'Invite member — email'), 'reader@example.test'); await change(field(ui, 'Name'), 'Reader'); await change(field(ui, 'Role'), 'reader_ai'); await submit(ui, 'Invite member');
   assert.deepEqual(ui.calls.find(c => c.path.endsWith('/invitations')).input, { email: 'reader@example.test', name: 'Reader', role: 'reader_ai' }); assert.match(ui.text(), /Invitation emailed/);
   assert.equal(ui.root.findAllByType('input').some(n => /token/i.test(n.props.type ?? '')), false);

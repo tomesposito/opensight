@@ -2713,3 +2713,5 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
   .operator-field-grid, .operator-facts, .operator-usage, .operator-plans > div { grid-template-columns: 1fr; }
   .operator-toolbar { flex-wrap: wrap; }
 }
+
+.operator-tenants input, .operator-tenants select { font-weight: 400; }

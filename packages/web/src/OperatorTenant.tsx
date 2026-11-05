@@ -90,7 +90,7 @@ export function OperatorTenant({ tenantId, ...props }: OperatorProps & { tenantI
       <section className="operator-card"><h2>People</h2>
         {view.peopleError ? <p role="alert">People unavailable: {view.peopleError}</p> : <>
           {view.users?.filter(user => user.role === 'administrator').map(user => <p key={user.id}>{user.name} · Administrator · {user.status}</p>)}
-          <p>{view.users?.length ?? 0} members · Manage membership and removals in <a href="#operator-users">Tenant users</a>.</p>
+          <p>{view.users?.length ?? 0} {view.users?.length === 1 ? 'member' : 'members'} · Manage membership and removals in <a href="#operator-users">Tenant users</a>.</p>
         </>}
         {tenant.state === 'active' && <form aria-label="Invite member" onSubmit={event => { event.preventDefault(); void work.run(async () => {
           await operatorRequest(props, key)(`${path}/invitations`, 'POST', { email, name, role }, inviteKey);

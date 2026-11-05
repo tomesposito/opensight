@@ -58,7 +58,7 @@ export function OperatorTenants(props: OperatorProps) {
       {!tenants.length && <p>No tenants yet. Create the first tenant.</p>}
       <CreateTenant request={operatorRequest(props, key)} work={work} cancel={() => setCreating(false)} refresh={async () => { await load(key); }} />
     </> : <><h1>Operator · Tenants</h1><p>Every hosted workspace. Provisioning is manual: an operator approves each tenant.</p>
-      <p className="operator-connected">Connected. {tenants.length} tenants on this deployment.</p>
+      <p className="operator-connected">Connected. {tenants.length} {tenants.length === 1 ? 'tenant' : 'tenants'} on this deployment.</p>
       <div className="operator-toolbar"><label>Filter tenants<input type="search" placeholder="Name or slug" value={filter} onChange={event => setFilter(event.target.value)} /></label><button className="operator-primary" disabled={work.busy} onClick={() => setCreating(true)}>New tenant</button></div>
       <div className="operator-table-wrap"><table><thead><tr>{['Workspace', 'Slug', 'State', 'Plan', 'Members', 'Created'].map(label => <th key={label}>{label}</th>)}</tr></thead>
         <tbody>{tenants.filter(tenant => `${tenant.displayName ?? tenant.tenantId} ${tenant.slug ?? ''}`.toLowerCase().includes(filter.toLowerCase())).map(tenant => <tr key={tenant.tenantId} className={tenant.state === 'deleted' ? 'deleted' : ''} onClick={() => { window.location.hash = `operator-tenant/${tenant.tenantId}`; }}>
