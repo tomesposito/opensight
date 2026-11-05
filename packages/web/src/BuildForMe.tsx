@@ -19,7 +19,7 @@ export function BuildForMe({ dataset, fields, onInsert }: { dataset?: AuthorData
     if (!generative || ai.state === 'credit-limit') { setResult(suggestCalculation(question, dataFields(fields, dataset))); return; }
     if (!ai.available || !ai.client) return;
     setPending(true);
-    try { const value = await ai.client.generateCalculation({ question, calculatedFields: fields, ...(dataset ? { datasetId: dataset.id } : {}) }); if (current === revision.current) setResult(value); }
+    try { const value = await ai.client.generateCalculation({ question, calculatedFields: fields, ...(ai.mode && dataset ? { datasetId: dataset.id } : {}) }); if (current === revision.current) setResult(value); }
     catch (e) { if (current === revision.current) setRequestError(e instanceof Error ? e.message : String(e)); }
     finally { if (current === revision.current) setPending(false); void ai.refresh(); }
   };

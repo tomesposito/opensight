@@ -19,6 +19,23 @@ async function mount(t, component, access) {
 const status = { configured: true, state: 'configured' };
 const answer = () => interpretQuestion('sum revenue', dataFields([]));
 
+for (const mode of [undefined, 'byo']) test(`#190 ${mode ? 'hosted' : 'legacy single-node'} generation sends its supported dataset scope`, async t => {
+  const requests = [], dataset = { id: 'orders', name: 'Orders', columns: [{ name: 'revenue', type: 'DECIMAL' }] };
+  const aiClient = { async getAIStatus() { return { ...status, ...(mode ? { mode } : {}) }; },
+    async generateO(body) { requests.push(body); return answer(); },
+    async generateCalculation(body) { requests.push(body); return { suggestion: { name: 'Double', expression: '{revenue} * 2', role: 'measure', explanation: 'Double revenue.' } }; } };
+  const renderer = await mount(t, createElement('div', null,
+    createElement(OEntry, { draft: { ...emptyDraft(), dataset } }),
+    createElement(BuildForMe, { dataset, fields: [], onInsert() {} })), context('author_ai', aiClient));
+  const o = renderer.root.findByType(OEntry), calculation = renderer.root.findByType(BuildForMe);
+  for (const section of [o, calculation]) await act(() => section.findByProps({ role: 'switch' }).props.onChange({ target: { checked: true } }));
+  await act(() => o.findByProps({ id: 'o-question' }).props.onChange({ target: { value: 'sum revenue' } }));
+  await act(() => o.findByType('form').props.onSubmit({ preventDefault() {} }));
+  await act(() => calculation.findByProps({ maxLength: 2000 }).props.onChange({ target: { value: 'Double revenue' } }));
+  await act(() => calculation.findAllByType('button').find(b => b.props.children === 'Suggest expression').props.onClick());
+  assert.deepEqual(requests, ['sum revenue', 'Double revenue'].map(question => ({ question, calculatedFields: [], ...(mode ? { datasetId: 'orders' } : {}) })));
+});
+
 test('generative O enables with configured provider, submits server request and ignores stale responses', async t => {
   let resolve; const requests = [];
   const aiClient = { async getAIStatus() { return status; }, generateO(body) { requests.push(body); return new Promise(r => { resolve = r; }); } };

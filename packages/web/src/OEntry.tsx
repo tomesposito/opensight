@@ -62,7 +62,7 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
     if (!ai.available || !ai.client) return;
     setPending(true);
     try {
-      const result = await ai.client.generateO({ question, calculatedFields: draft.calculatedFields, ...(dashboardId ? { dashboardId } : draft.dataset ? { datasetId: draft.dataset.id } : {}) });
+      const result = await ai.client.generateO({ question, calculatedFields: draft.calculatedFields, ...(dashboardId ? { dashboardId } : ai.mode && draft.dataset ? { datasetId: draft.dataset.id } : {}) });
       if (current === revision.current) setAnswer({ schema, result, generated: true });
     } catch (e) { if (current === revision.current) setError(e instanceof Error ? e.message : String(e)); }
     finally { if (current === revision.current) setPending(false); void ai.refresh(); }
