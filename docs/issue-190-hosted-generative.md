@@ -39,7 +39,8 @@ details. The static demo remains a local fixture preview, not a deployed server.
 
 ## Verification
 
-The final full root `npm test` run exited zero: **4,741 passed / 0 failed /
+The full root `npm test` run repeated after the VM reboot exited zero:
+**4,741 passed / 0 failed /
 36 skipped**, comprising 4,709 passing Node tests and 32 passing Python SDK
 tests. All 36 skips require live PostgreSQL (34 API and two query-engine cases).
 There were no cancellations or TODOs.
@@ -62,15 +63,20 @@ There were no cancellations or TODOs.
 The root command is `npm test`, with `TMPDIR=/tmp` and `OPENSIGHT_CHROMIUM`
 pointing to the installed headless Chromium shell. Local HTTP and worker tests
 run with socket/process permissions. The final log is
-`/tmp/issue-190-npm-test.log`; exact package totals are retained in
-`/tmp/issue-190-test-counts.json`.
+`/tmp/issue-190-resume-npm-test.log`; exact package totals are retained in
+`/tmp/issue-190-resume-test-counts.json`. Recovery started from the clean
+`88d7a384` checkpoint. All A–G implementation commits were retained unchanged;
+no implementation corrections were needed during this verification.
 
-The J4 reader journey passed **14 steps / 0 failed / 0 gaps**. Its
+The J4 reader journey also passed again after the reboot:
+**14 steps / 0 failed / 0 gaps**. Its
 `ai-answer-environment` step requires a real generated interpretation and reader
 query result (east 40 / west 20), a rendered chart, grounding and a one-credit
 debit. The exhausted-credit step confirms that standard questions still render.
 The runner now rejects an environment gap in place of the required AI answer.
-There were no browser errors, external requests or transport errors.
+There were no browser errors, external requests or transport errors. The fresh
+result and captures are in `/tmp/issue-190-resume-persona/`, with the runner log
+at `/tmp/issue-190-resume-j4.log`.
 
 A focused admin browser check passed both its settings and browser-health steps,
 including a managed connection test with zero credit consumption. The last
