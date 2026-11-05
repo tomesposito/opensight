@@ -58,7 +58,7 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
   const hasDateDimension = interpretation ? interpretation.dimensions.some(name => { const f = stepFields.find(x => x.name === name); return !!f && datetime(f); }) : false;
   const submit = async () => {
     const current = ++revision.current; setSelected(0); setEdited(undefined); setAdded(''); setError(''); setAnswer(undefined); setExecutedMetrics(undefined);
-    if (!generative || ai.state === 'credit-limit') { setAnswer({ schema, result: interpretQuestion(question, oVocabulary(draft.calculatedFields, draft.dataset)) }); return; }
+    if (!generative || !ai.available) { setAnswer({ schema, result: interpretQuestion(question, oVocabulary(draft.calculatedFields, draft.dataset)) }); return; }
     if (!ai.available || !ai.client) return;
     setPending(true);
     try {
