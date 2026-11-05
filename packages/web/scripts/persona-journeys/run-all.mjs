@@ -38,6 +38,7 @@ for (const [journey, persona] of journeys) {
     result = { journey, persona, steps: [{ name: 'missing-or-invalid-result', status: 'fail', detail: error.message }], screenshots: [] };
   }
   if (journey === 'j4-reader-daily' && !result.steps.some(s => s.name === 'ai-answer-environment' && s.status === 'pass')) result.steps.push({ name: 'grounded-ai-answer-required', status: 'fail', detail: 'J4 must deliver the grounded answer through the explicit test stub; an environment gap is not acceptable.' });
+  if (journey === 'j7-operator' && !result.steps.some(s => s.name === 'provisioning-ui' && s.status === 'pass')) result.steps.push({ name: 'operator-provisioning-required', status: 'fail', detail: 'J7 must provision through the operator UI; a provisioning gap is no longer acceptable.' });
   if (exit.code !== 0 && !result.steps.some(s => s.status === 'fail')) result.steps.push({ name: 'child-process', status: 'fail', detail: exit });
   // Keep the individual result consistent with the aggregate, including crashes.
   await writeFile(path, JSON.stringify(result, null, 2) + '\n');

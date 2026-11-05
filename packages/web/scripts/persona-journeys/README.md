@@ -70,7 +70,7 @@ These builds and the suite require no external network access.
 | j4-reader-daily | Reader AI | Hosted Orders analysis, provider disclosure, reader navigation, available controls and geometry |
 | j5-migration | Admin + Author | Real .qs import/report, exported ZIP members, saved imported asset |
 | j6-self-host | Self-Hoster | Empty states, explicit sample opt-in, full API/Vite restart, durable CSV rows, no phone-home |
-| j7-operator | Operator | Real provisioning API, operator user list, browser admin enrollment and sign-in, removal confirmed by API/database |
+| j7-operator | Operator | Operator UI provisioning, list/create/detail screenshots and inline usage, operator user list, browser admin enrollment and sign-in, removal confirmed by API/database |
 | j8-embedding | Embedder (future) | Four offline preview states, branding, honest lack of active session |
 
 **Gaps are product findings, not test bugs.** They must state what was expected
