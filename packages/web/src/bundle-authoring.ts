@@ -81,7 +81,7 @@ function importTooltipExtras(value: unknown): Map<string, { label?: string; aggr
   return result;
 }
 /** Import the Interactions-tab tooltip detail; invalid values keep model defaults (fail-closed). */
-function importTooltipDetail(tooltip: Obj, wellFields: readonly string[]): Partial<Pick<AuthorVisual, 'tooltipType' | 'tooltipTitleType' | 'tooltipAggregations' | 'tooltipHiddenFields' | 'tooltipExtraFields'>> {
+function importTooltipDetail(tooltip: Obj, wellFields: ReadonlyMap<string, string>): Partial<Pick<AuthorVisual, 'tooltipType' | 'tooltipTitleType' | 'tooltipAggregations' | 'tooltipHiddenFields' | 'tooltipExtraFields'>> {
   const detail: Partial<Pick<AuthorVisual, 'tooltipType' | 'tooltipTitleType' | 'tooltipAggregations' | 'tooltipHiddenFields' | 'tooltipExtraFields'>> = {};
   const selected = tooltip.selectedTooltipType;
   if (selected !== undefined) {
@@ -122,20 +122,23 @@ function importTooltipDetail(tooltip: Obj, wellFields: readonly string[]): Parti
       if (o.visibility !== 'VISIBLE' && o.visibility !== 'HIDDEN') return {};
       parsed.push({ fieldId: o.fieldId, visible: o.visibility === 'VISIBLE' });
     }
-    detail.tooltipHiddenFields = parsed.filter(i => !i.visible).map(i => i.fieldId);
-    // Visible tooltip fields outside the visual's wells are added dataset fields (measures only;
-    // dimensions would change the visual's grain and are refused when added through the UI).
-    // The OpenSight extension annotates label/aggregation; foreign bundles without it get SUM defaults.
-    // Hidden non-well fields stay out (reported as retained, read-only by the differences check).
     const annotated = importTooltipExtras(fieldBased.opensightTooltipExtras);
     if (annotated === undefined) return {};
+    const hidden = new Set<string>();
+    const wellNames = new Set(wellFields.values());
     const extras: TooltipExtraField[] = [];
     for (const item of parsed) {
-      if (item.visible && !wellFields.includes(item.fieldId)) {
+      const columnName = wellFields.get(item.fieldId);
+      if (columnName !== undefined) {
+        if (!item.visible) hidden.add(columnName);
+      } else if (item.visible && !wellNames.has(item.fieldId) && !extras.some(e => e.field === item.fieldId)) {
+        // Only OpenSight annotations identify executable extra measures. Unknown
+        // foreign references remain retained/read-only through differences().
         const annotation = annotated.get(item.fieldId);
-        extras.push({ field: item.fieldId, ...(annotation?.label ? { label: annotation.label } : {}), aggregation: annotation?.aggregation ?? 'SUM' });
+        if (annotation) extras.push({ field: item.fieldId, ...annotation });
       }
     }
+    detail.tooltipHiddenFields = [...hidden];
     if (extras.length) detail.tooltipExtraFields = extras;
   }
   return detail;
@@ -148,6 +151,14 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     try { projectedBody = projectInsightBody(body); normalizeVisual('bundle', { insightVisual: body }); validInsight = true; } catch { /* The compiler below supplies the named import-report error. */ }
   }
   const config = obj(projectedBody.chartConfiguration), outer = obj(config.fieldWells);
+  const wellFields = new Map<string, string>();
+  const collectWellFields = (value: unknown): void => {
+    if (Array.isArray(value)) { value.forEach(collectWellFields); return; }
+    const field = obj(value), column = obj(field.column);
+    if (typeof field.fieldId === 'string' && typeof column.columnName === 'string') wellFields.set(field.fieldId, column.columnName);
+    Object.values(field).forEach(collectWellFields);
+  };
+  collectWellFields(outer);
   let kind = Object.hasOwn(kinds, variant) ? kinds[variant]! : 'bar';
   if (kind === 'bar' && config.barsArrangement === 'STACKED_PERCENT') kind = 'bar100';
   if (kind === 'line' && config.type === 'AREA') kind = 'area';
@@ -219,7 +230,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     donut: kind === 'pie' && ['SMALL', 'MEDIUM', 'LARGE'].includes(string(obj(obj(config.donutOptions).arcOptions).arcThickness)),
     legend: obj(config.legend).visibility !== 'HIDDEN', labels: obj(config.dataLabels).visibility === 'VISIBLE' || kind === 'pie' && obj(config.dataLabels).visibility === undefined,
     tooltipVisible: obj(config.tooltip).tooltipVisibility !== 'HIDDEN',
-    ...(tooltipDetailKinds(kind) ? importTooltipDetail(obj(config.tooltip), [...rows, ...columns, ...measures]) : {}),
+    ...(tooltipDetailKinds(kind) ? importTooltipDetail(obj(config.tooltip), wellFields) : {}),
     horizontal: config.orientation === 'HORIZONTAL', stacked: config.barsArrangement === 'STACKED',
     totals: (kind === 'pivot' ? obj(total.rowTotalOptions) : total).totalsVisibility === 'VISIBLE',
     subtotals: (kind === 'pivot' ? obj(total.rowSubtotalOptions) : obj(config.opensightSubtotalOptions)).totalsVisibility === 'VISIBLE',

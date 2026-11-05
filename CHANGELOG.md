@@ -152,6 +152,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Imported visuals' tooltip field references no longer leak foreign QuickSight field IDs into live queries after remap; unresolvable tooltip references stay retained/read-only for export (#195).
+
 - Imported visuals whose only issues are retained, read-only properties now render once remapped to a local dataset with their wells assigned: the retained properties stay named in the import report and are preserved verbatim on export, but are not executed. Unsupported visual types, filter-group and calculated-field issues, and compile errors still block rendering (#191).
 
 - Serverless responses complete after persisting opt-in analytics events, without waiting for PostHog delivery; a durable outbox retries pending copies while respecting tenant opt-out (#175).

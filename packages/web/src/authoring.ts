@@ -853,12 +853,17 @@ export function remapVisual(visual: AuthorVisual): AuthorVisual {
   const rows = match(visual.rows, 'dimension'), columns = match(visual.columns, 'dimension').filter(n => !rows.includes(n));
   const dimension = grouped(visual.kind) ? rows[0] ?? null : match(visual.dimension ? [visual.dimension] : [], 'dimension')[0] ?? null;
   const measures = match(visual.measures, 'measure');
+  const tooltipExtraFields = visual.tooltipExtraFields.flatMap(extra => match([extra.field], 'measure').map(field => ({ ...extra, field })));
+  const tooltipHiddenFields = [...new Set(visual.tooltipHiddenFields.flatMap(name => {
+    const field = SALES_FIELDS.find(f => f.name.toLowerCase() === name.toLowerCase());
+    return field ? [field.name] : [];
+  }))];
   const filters = visual.filters.flatMap(f => {
     const field = SALES_FIELDS.find(c => (f.parameterName || c.type === 'STRING') && c.name.toLowerCase() === f.columnName.toLowerCase());
     if (!field) { missing.add(f.columnName); return []; }
     return [{ ...f, columnName: field.name }];
   });
-  return { ...visual, rows, columns, dimension, measures, filters, imported: { ...visual.imported, local: true, remapped: true, unmappedFields: [...missing] } };
+  return { ...visual, rows, columns, dimension, measures, tooltipExtraFields, tooltipHiddenFields, filters, imported: { ...visual.imported, local: true, remapped: true, unmappedFields: [...missing] } };
 }
 export function authorVisualProblem(visual: AuthorVisual): string | undefined {
   if (visual.imported) {
