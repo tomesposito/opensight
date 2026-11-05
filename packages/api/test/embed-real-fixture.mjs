@@ -19,7 +19,7 @@ export async function realEmbedFixture(db, dialect, origin, parentOrigin) {
   await initializeMetadata(db, dialect); await initializeAuth(db); await db.transaction(c => initializeAudit(c)); await migrateBudgets(db, budgetConfig, 'frozen');
   const env = { ...environment(), OPENSIGHT_PUBLIC_ORIGIN: origin, OPENSIGHT_SESSION_SECONDS: '36000' }, config = hostedConfig(env);
   const mail = new StubMailTransport(), auth = await HostedAuth.create(db, config), provisioning = new HostedProvisioning(db, config, mail), metadata = new TenantMetadata(db, db);
-  const tenant = await provisioning.provision('embed-browser', { name: 'Synthetic embed tenant', administrator: { email: 'embed-admin@example.test', name: 'Embed administrator' } });
+  const tenant = await provisioning.provision('embed-browser', { name: 'Synthetic embed tenant', displayName: 'Synthetic embed tenant', administrator: { email: 'embed-admin@example.test', name: 'Embed administrator' } });
   const enroll = async email => {
     const invitation = mail.messages.at(-1).html.match(/<code>([^<]+)<\/code>/)[1], password = randomBytes(24).toString('base64');
     const enrollment = await auth.enroll(invitation, password, 'local'), secret = decode32(enrollment.secret);

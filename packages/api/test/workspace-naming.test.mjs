@@ -7,7 +7,7 @@ import { SqliteMetadataDatabase } from '../dist/metadata-db.js';
 import { initializeMetadata, ensureTenantNaming } from '../dist/metadata-schema.js';
 import { deriveWorkspaceSlug } from '../dist/workspace-naming.js';
 
-const input = (name, slug) => ({ name, ...(slug === undefined ? {} : { slug }), administrator: { email: 'admin@example.test', name: 'Administrator' } });
+const input = (name, slug) => ({ name, displayName: name, ...(slug === undefined ? {} : { slug }), administrator: { email: 'admin@example.test', name: 'Administrator' } });
 async function setup(t) {
   const f = await database(t), mail = new StubMailTransport();
   return { ...f, mail, provision: new HostedProvisioning(f.db, f.config, mail) };
@@ -91,4 +91,23 @@ test('Issue #146 item 2: invitation uses the workspace name, escapes labels, and
     assert.ok(f.mail.messages.at(-1).html.includes(`<p>Tenant: ${op.tenantId}</p>`));
     assert.doesNotMatch(f.mail.messages.at(-1).html, /Workspace:/);
   }
+});
+
+test('Issue 192 A: display name is required, independently validated and used for slug and invitation', async t => {
+  const f = await setup(t), raw = { ...input('Internal namespace'), displayName: 'Public & <Workspace>' };
+  const op = await f.provision.provision('split', raw), row = await tenant(f.db, op.tenantId);
+  assert.equal(row.display_name, raw.displayName); assert.equal(row.slug, 'public-workspace');
+  assert.equal((await f.db.transaction(c => c.query('SELECT name FROM h1_namespaces WHERE namespace_id = ?', [op.namespaceId])))[0].name, raw.name);
+  assert.match(f.mail.messages[0].html, /Workspace: Public &amp; &lt;Workspace&gt;/);
+  assert.deepEqual(await f.provision.provision('split', raw), op);
+  await assert.rejects(f.provision.provision('split', { ...raw, displayName: 'Changed' }), { code: 'OPERATION_ID_REUSED' });
+  const before = await counts(f.db);
+  for (const displayName of [undefined, null, 12, '', '  ', 'bad\nname', 'bad\x7fname', 'bad\x85name', 'x'.repeat(513)]) {
+    await assert.rejects(f.provision.provision('bad-display', { ...raw, displayName }), error => {
+      assert.equal(error.code, 'METADATA_INVALID'); assert.equal(error.status, 400);
+      assert.equal(error.detail.field, 'displayName'); return true;
+    });
+  }
+  assert.deepEqual(await counts(f.db), before);
+  await f.provision.provision('max-display', { ...raw, displayName: 'x'.repeat(512) });
 });

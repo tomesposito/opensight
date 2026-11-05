@@ -171,7 +171,7 @@ test('H5 HTTP config enforces If-Match, admin scope, exact browser origin and na
 
 test('H5 tenant membership and policy responses never expose foreign configuration or asset owners', async t => {
   const f = await fixture(t);
-  const other = await f.provisioning.provision('h5-other', { name: 'Other tenant', administrator: { email: 'other@example.test', name: 'Other' } });
+  const other = await f.provisioning.provision('h5-other', { name: 'Other tenant', displayName: 'Other tenant', administrator: { email: 'other@example.test', name: 'Other' } });
   const raw = policyInput(f.tenant.tenantId); raw.tenants.push({ tenantId: other.tenantId, allowedParentOrigins: ['https://private.example'], embedOriginIds: ['canonical'], maxSessionSeconds: 99 });
   raw.assets.push({ id: 'private', tenantId: other.tenantId, kind: 'logo', pngBase64: png() });
   const service = new HostedEmbedding(f.db, f.metadata, parsePolicy(raw));

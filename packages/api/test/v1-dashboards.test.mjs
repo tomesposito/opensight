@@ -366,7 +366,7 @@ test('v1 dashboards local prepared: same-ID administrator data cannot substitute
 test('v1 dashboards: tenant boundaries apply to versions, shares, queries, exports and publication retries', async t => {
   const f = await hosted(t); good(await f.request(analyses, { method: 'POST', body: input() }), 201);
   const id = good(await publish(f, 'analysis', undefined, { 'Idempotency-Key': 'tenant-publish' }), 201).body.DashboardId;
-  const tenant = await f.provisioning.provision('dashboards-other-tenant', { ...f.input, name: 'Other tenant' });
+  const tenant = await f.provisioning.provision('dashboards-other-tenant', { ...f.input, name: 'Other tenant', displayName: 'Other tenant' });
   const invitation = f.mail.messages.at(-1).html.match(/<code>([^<]+)<\/code>/)[1];
   await f.auth.accept(invitation, f.password, f.code(), 'local'); f.advance();
   const token = (await f.auth.login(f.email, f.password, f.code(), tenant.tenantId, 'local')).token; f.advance();

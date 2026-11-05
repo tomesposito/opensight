@@ -92,7 +92,7 @@ test('H2 HTTP onboarding, enrollment, login, switching, logout and lifecycle gat
   const f = await database(t), env = configEnv(f.config), mail = new StubMailTransport(); let now = Math.floor(Date.now() / 30000) * 30000;
   const auth = await HostedAuth.create(f.db, f.config, () => now);
   const { request, operator } = await serving(t, { ...f, auth, mail });
-  const input = { name: 'Tenant', administrator: { email: 'http@example.test', name: 'Synthetic administrator' } };
+  const input = { name: 'Tenant', displayName: 'Tenant', administrator: { email: 'http@example.test', name: 'Synthetic administrator' } };
   let result = await request('/api/host/tenants', { method: 'POST', headers: { ...operator, 'idempotency-key': 'onboard-http' }, body: input });
   assert.equal(result.status, 201); const tenant = result.body;
   assert.equal((await request('/api/host/tenants', { method: 'POST', headers: { ...operator, 'idempotency-key': 'onboard-http' }, body: input })).body.tenantId, tenant.tenantId);
@@ -267,7 +267,7 @@ test('Issue 150: all non-admin roles and unauthenticated callers are refused ten
 
 test('Issue 150: tenant invitation and user routes fail closed across tenants and forged scope inputs', async t => {
   const f = await authFixture(t), { request } = await serving(t, f);
-  const other = await f.provisioning.provision('other-tenant', { name: 'Other workspace', administrator: { email: 'other-admin@example.test', name: 'Other administrator' } });
+  const other = await f.provisioning.provision('other-tenant', { name: 'Other workspace', displayName: 'Other workspace', administrator: { email: 'other-admin@example.test', name: 'Other administrator' } });
   await f.provisioning.inviteMember('other-invite', other.tenantId, { email: 'other-reader@example.test', name: 'Other reader', role: 'reader' });
   const [foreign] = await f.db.transaction(c => c.query('SELECT invitation_id, token_secret FROM h2_invitations WHERE tenant_id = ? AND accepted = 0 ORDER BY invitation_id', [other.tenantId]));
   const headers = { authorization: `Bearer ${(await f.login()).token}` }, input = { email: 'scoped@example.test', name: 'Scoped', role: 'reader_ai' };
@@ -368,7 +368,7 @@ test('#91 hosted invocation exposes only the approved quota explanation after au
 
 test('Issue #146 items 1/3/4: operator slug input and session workspace labels travel over HTTP', async t => {
   const f = await authFixture(t), { request, operator } = await serving(t, f);
-  const created = await request('/api/host/tenants', { method: 'POST', headers: { ...operator, 'idempotency-key': 'named-http' }, body: { ...f.input, name: 'HTTP name', slug: 'explicit-http' } });
+  const created = await request('/api/host/tenants', { method: 'POST', headers: { ...operator, 'idempotency-key': 'named-http' }, body: { ...f.input, name: 'HTTP name', displayName: 'HTTP name', slug: 'explicit-http' } });
   assert.equal(created.status, 201);
   assert.equal((await f.db.transaction(c => c.query('SELECT slug FROM h1_tenants WHERE tenant_id = ?', [created.body.tenantId])))[0].slug, 'explicit-http');
   const session = await f.login(), headers = { authorization: `Bearer ${session.token}` };
@@ -381,7 +381,7 @@ test('Issue #146 items 1/3/4: operator slug input and session workspace labels t
 
 test('Issue #146 item 3: HTTP selection uses the login boundary and completes through invocation gating', async t => {
   const f = await authFixture(t);
-  const second = await f.provisioning.provision('http-second', { ...f.input, name: 'Second HTTP workspace' });
+  const second = await f.provisioning.provision('http-second', { ...f.input, name: 'Second HTTP workspace', displayName: 'Second HTTP workspace' });
   const invite = f.mail.messages.at(-1).html.match(/<code>([^<]+)<\/code>/)[1];
   await f.auth.accept(invite, f.password, f.code(), 'local'); f.advance();
   // Initialize auxiliary schemas, then exercise the serverless invocation boundary.
@@ -409,7 +409,7 @@ test('Issue #146 item 3: HTTP selection uses the login boundary and completes th
 test('Issue #152: an MFA session accepts its own second workspace invitation once, without resetting credentials or issuing a session', async t => {
   const f = await authFixture(t), login = await f.login(), { request } = await serving(t, f);
   const headers = {authorization:`Bearer ${login.token}`};
-  const other = await f.provisioning.provision('browser-second', {name:'Second workspace',administrator:{email:f.email,name:'Existing admin'}});
+  const other = await f.provisioning.provision('browser-second', {name:'Second workspace', displayName: 'Second workspace',administrator:{email:f.email,name:'Existing admin'}});
   const token = f.mail.messages.at(-1).html.match(/<code>([^<]+)<\/code>/)[1];
   const before = await f.db.transaction(c=>c.query('SELECT password_hash, totp_secret, last_step FROM h2_identities'));
   assert.deepEqual(await f.auth.enroll(token,f.password,'local'),{enrollmentRequired:false});
@@ -428,7 +428,7 @@ test('Issue #152: hosted session acceptance rejects forged identity, another use
   const f = await authFixture(t), login = await f.login(), { request } = await serving(t, f);
   const headers = {authorization:`Bearer ${login.token}`};
   for (const state of ['foreign','expired','revoked','suspended']) {
-    const other = await f.provisioning.provision(`accept-${state}`,{name:`Workspace ${state}`,administrator:{email:state==='foreign'?'foreign@example.test':f.email,name:'Admin'}});
+    const other = await f.provisioning.provision(`accept-${state}`,{name:`Workspace ${state}`, displayName: `Workspace ${state}`,administrator:{email:state==='foreign'?'foreign@example.test':f.email,name:'Admin'}});
     const token=f.mail.messages.at(-1).html.match(/<code>([^<]+)<\/code>/)[1];
     if(state==='expired'||state==='revoked') await f.db.transaction(c=>c.query('UPDATE h2_invitations SET expires_at = ? WHERE tenant_id = ?',[state==='revoked'?0:f.clock()-1,other.tenantId]));
     if(state==='suspended') await f.provisioning.transition('suspend-accept',other.tenantId,'suspend',2);

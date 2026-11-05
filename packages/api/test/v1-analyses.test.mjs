@@ -248,7 +248,7 @@ async function member(f, role = 'author') {
   await f.renew(); return m;
 }
 async function otherTenant(f) {
-  const tenant = await f.provisioning.provision('analysis-other-tenant', { ...f.input, name: 'Other tenant' });
+  const tenant = await f.provisioning.provision('analysis-other-tenant', { ...f.input, name: 'Other tenant', displayName: 'Other tenant' });
   const invitation = f.mail.messages.at(-1).html.match(/<code>([^<]+)<\/code>/)[1];
   await f.auth.accept(invitation, f.password, f.code(), 'local'); f.advance();
   const session = await f.auth.login(f.email, f.password, f.code(), tenant.tenantId, 'local'); f.advance(); return session.token;

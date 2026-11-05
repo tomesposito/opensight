@@ -4,7 +4,7 @@ import { assert, button, enrollInBrowser, invitationFrom, launchBrowser, runJour
 await runJourney('j7-operator', 'Operator', async j => {
   const stack = await startHostedStack(); j.cleanup(stack.stop);
   const operator = `Operator ${stack.fixture.hostedConfig.operatorKey.toString('base64url')}`;
-  const created = await stack.request('/api/host/tenants', 'POST', { name: 'Journey operator workspace', slug: 'journey-operator', administrator: { email: 'operator-admin@example.test', name: 'Provisioned admin' } }, operator);
+  const created = await stack.request('/api/host/tenants', 'POST', { name: 'Journey operator workspace', displayName: 'Journey operator workspace', slug: 'journey-operator', administrator: { email: 'operator-admin@example.test', name: 'Provisioned admin' } }, operator);
   assert.equal(created.status, 201); assert.equal(created.body.state, 'active');
   const tenant = created.body, invitation = invitationFrom(stack);
   assert.match(stack.mail.messages.at(-1).html, /Workspace: Journey operator workspace/);

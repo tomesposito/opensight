@@ -29,7 +29,7 @@ test('H2 live Postgres: private credentials, concurrent onboarding/MFA/switch, c
   const config = hostedConfig(environment()), mail = new StubMailTransport(); let now = 1800000000000;
   const provisioning = new HostedProvisioning(db, config, mail, () => now), auth = await HostedAuth.create(db, config, () => now);
   const second = await HostedAuth.create(new PostgresMetadataDatabase(adminPool), config, () => now);
-  const input = { name: 'PG tenant', administrator: { email: 'postgres@example.test', name: 'Synthetic user' } };
+  const input = { name: 'PG tenant', displayName: 'PG tenant', administrator: { email: 'postgres@example.test', name: 'Synthetic user' } };
   const operations = await Promise.all([provisioning.provision('concurrent', input), provisioning.provision('concurrent', input)]);
   assert.deepEqual(operations[0], operations[1]); const tenant = operations[0];
   assert.equal((await adminPool.query('SELECT * FROM h1_tenants')).rows.length, 1); assert.equal((await adminPool.query('SELECT * FROM h2_memberships')).rows.length, 1);
@@ -74,7 +74,7 @@ test('Issue 150 live Postgres: revocation between invitation lookup and tenant l
   await initializeMetadata(db, 'postgres'); await initializeAuth(db); await db.transaction(c => initializeAudit(c));
   const config = hostedConfig(environment()), mail = new StubMailTransport(), now = 1800000000000;
   const provisioning = new HostedProvisioning(db, config, mail, () => now), auth = await HostedAuth.create(db, config, () => now);
-  const tenant = await provisioning.provision('race-workspace', { name: 'Race workspace', administrator: { email: 'race-admin@example.test', name: 'Admin' } });
+  const tenant = await provisioning.provision('race-workspace', { name: 'Race workspace', displayName: 'Race workspace', administrator: { email: 'race-admin@example.test', name: 'Admin' } });
   const token = mail.messages[0].html.match(/<code>([^<]+)<\/code>/)[1], password = randomBytes(24).toString('base64');
   const enrollment = await auth.enroll(token, password, 'local');
   await auth.accept(token, password, totp(decode32(enrollment.secret), Math.floor(now / 30000)), 'local');

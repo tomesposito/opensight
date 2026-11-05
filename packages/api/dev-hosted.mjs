@@ -152,7 +152,7 @@ async function main() {
     const mail = { configured: true, async send(message) { sent.push(message); } };
     const provisioning = new HostedProvisioning(db, config, mail);
     const auth = await HostedAuth.create(db, config);
-    const result = await provisioning.provision('dev-hosted', { name: env.OPENSIGHT_DEV_TENANT, administrator: { email: env.OPENSIGHT_DEV_EMAIL, name: env.OPENSIGHT_DEV_NAME } });
+    const result = await provisioning.provision('dev-hosted', { name: env.OPENSIGHT_DEV_TENANT, displayName: env.OPENSIGHT_DEV_TENANT, administrator: { email: env.OPENSIGHT_DEV_EMAIL, name: env.OPENSIGHT_DEV_NAME } });
     tenantId = result.tenantId;
     const invitation = sent[0].html.match(/<code>([^<]+)<\/code>/)[1];
     const enrollment = await auth.enroll(invitation, env.OPENSIGHT_DEV_PASSWORD, 'local');

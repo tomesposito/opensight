@@ -41,7 +41,7 @@ export async function authFixture(t) {
   const clock = () => now, advance = (ms = 30000) => { now += ms; };
   const auth = await HostedAuth.create(f.db, f.config, clock), provisioning = new HostedProvisioning(f.db, f.config, mail, clock);
   const email = 'invited@example.test', password = randomBytes(24).toString('base64');
-  const input = { name: 'Synthetic tenant', administrator: { email, name: 'Invited administrator' } };
+  const input = { name: 'Synthetic tenant', displayName: 'Synthetic tenant', administrator: { email, name: 'Invited administrator' } };
   const tenant = await provisioning.provision('onboard-one', input);
   const invitation = mail.messages[0].html.match(/<code>([^<]+)<\/code>/)[1];
   const enrollment = await auth.enroll(invitation, password, 'local');

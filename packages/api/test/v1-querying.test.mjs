@@ -282,7 +282,7 @@ async function otherMember(f) {
   await f.renew(); return session.token;
 }
 async function otherTenant(f) {
-  const other = await f.provisioning.provision('other-tenant', { ...f.input, name: 'Other tenant' });
+  const other = await f.provisioning.provision('other-tenant', { ...f.input, name: 'Other tenant', displayName: 'Other tenant' });
   const invitation = f.mail.messages.at(-1).html.match(/<code>([^<]+)<\/code>/)[1];
   await f.auth.accept(invitation, f.password, f.code(), 'local'); f.advance();
   const session = await f.auth.login(f.email, f.password, f.code(), other.tenantId, 'local'); f.advance();
@@ -297,7 +297,7 @@ test('v1 querying: dataset and replay data cannot cross owner or tenant boundari
 
 test('v1 querying: one tenant exhausting receipts does not block a second tenant', async t => {
   const f = await fixture(t, { OPENSIGHT_RETRY_CACHE_PER_TENANT_MAX_ENTRIES: '1' });
-  const tenant = await f.provisioning.provision('budget-tenant', { ...f.input, name: 'Other tenant' });
+  const tenant = await f.provisioning.provision('budget-tenant', { ...f.input, name: 'Other tenant', displayName: 'Other tenant' });
   const invitation = f.mail.messages.at(-1).html.match(/<code>([^<]+)<\/code>/)[1];
   await f.auth.accept(invitation, f.password, f.code(), 'local'); f.advance();
   let token;

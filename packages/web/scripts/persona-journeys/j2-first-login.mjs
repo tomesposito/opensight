@@ -4,7 +4,7 @@ import { assert, button, enrollInBrowser, invitationFrom, launchBrowser, navigat
 await runJourney('j2-first-login', 'Workspace Admin', async j => {
   const stack = await startHostedStack({ invitationSeconds: 604800 }); j.cleanup(stack.stop);
   const email = 'acme-admin@example.test';
-  const tenant = await stack.fixture.provisioning.provision(randomUUID(), { name: 'Acme Analytics', administrator: { email, name: 'Acme admin' } });
+  const tenant = await stack.fixture.provisioning.provision(randomUUID(), { name: 'Acme Analytics', displayName: 'Acme Analytics', administrator: { email, name: 'Acme admin' } });
   const invitation = invitationFrom(stack);
   assert.match(stack.mail.messages.at(-1).html, /Workspace: Acme Analytics/);
   const browser = await launchBrowser(j), page = await browser.page(stack);
@@ -78,7 +78,7 @@ await runJourney('j2-first-login', 'Workspace Admin', async j => {
     assert.doesNotMatch(await readerPage.locator('.account-menu').innerText(), /Acme admin/);
     return 'Browser enrollment and real SignIn establish the reader session in a separate context; author navigation remains unavailable.';
   });
-  const second = await stack.fixture.provisioning.provision(randomUUID(), { name: 'Acme Research', administrator: { email, name: 'Acme admin' } });
+  const second = await stack.fixture.provisioning.provision(randomUUID(), { name: 'Acme Research', displayName: 'Acme Research', administrator: { email, name: 'Acme admin' } });
   tenantIds.push(second.tenantId);
   const accepted = await stack.request('/api/auth/accept', 'POST', { invitationToken: invitationFrom(stack), password: admin.password, code: await admin.code() });
   assert.equal(accepted.status, 200);

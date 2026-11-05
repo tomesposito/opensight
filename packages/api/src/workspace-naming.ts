@@ -16,7 +16,7 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export function parseWorkspaceSlug(raw: unknown): string | null {
   if (raw === undefined) return null;
   if (typeof raw !== 'string' || raw.length > WORKSPACE_SLUG_MAX || !SLUG_PATTERN.test(raw)) {
-    throw new MetadataError('METADATA_INVALID', 400);
+    throw new MetadataError('METADATA_INVALID', 400, { field: 'slug' });
   }
   return raw;
 }
