@@ -34,7 +34,8 @@ ignored `.opensight/`. The CLI creates its database with private permissions.
 Terminate TLS at a trusted reverse proxy, preserve the configured public Host,
 and restrict access to the backend listener. Forwarded host headers are rejected;
 they never select identity or tenant. Browser Origin, when present, must exactly
-match the configured origin. Operator requests must have no browser Origin.
+match the configured origin. Operator requests reject browser Origin except for
+the explicitly allowed operator UI routes described below.
 
 Library users initialize H1 metadata and call `createBuiltinHostedServer` with
 durable membership and tenant databases. `createHostedApiServer` requires an
@@ -58,8 +59,10 @@ including administrators, cannot use the operator plane or create namespaces.
   no control characters); `name` remains the namespace name. Optional `slug`
   must match `^[a-z0-9]+(?:-[a-z0-9]+)*$`, up to 64 characters. Omission derives
   it from the display name; a name with no ASCII letters/digits has a null slug.
-  Slug collisions return `TENANT_SLUG_CONFLICT` (409). A rejected creation has
-  no tenant and does not reserve the form's idempotency key.
+  Slug collisions return `TENANT_SLUG_CONFLICT` (409). Validation, slug-conflict
+  and unconfigured-mail failures create no tenant and do not reserve the form's
+  idempotency key. Delivery failures after reservation remain retryable with the
+  same key and payload, as described below.
 - `GET /api/host/tenants`: lists display name, slug, lifecycle state, billing
   tier (absent/null is Free), nonremoved member count and creation time from
   the retained provisioning audit entry (unknown for unaudited legacy rows).
