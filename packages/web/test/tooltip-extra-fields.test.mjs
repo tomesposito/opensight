@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { activeSheet, authorReducer, emptyDraft, validateDraft, parseDraft, serializeVisual, tooltipExtraFieldsValid } from '../build/test/authoring.js';
 import { buildAuthorVisual, buildAuthorPreview } from '../build/test/author-preview.js';
 import { compileVisual } from '../build/test/compiler.js';
-import { importBundle, downloadBundleBytes } from '../build/test/bundle-authoring.js';
+import { importBundle, exportBundle, downloadBundleBytes } from '../build/test/bundle-authoring.js';
 import { buildAuthorQuery } from '../build/test/author-query.js';
 import { executeFixtureQuery } from '../build/test/fixture-query.js';
 import { parseQsBundle } from '@opensight/bundle-parser';
@@ -93,14 +93,16 @@ test('bundle round trip preserves extra fields with label and aggregation', asyn
   assert.deepEqual(activeSheet(draft).visuals[0].imported.issues, []);
 });
 
-test('imported foreign tooltip fields without the extension become extras with SUM defaults', async () => {
+test('imported foreign tooltip fields without the extension stay retained and do not execute', async () => {
   const edited = { ...add('bar'), sheets: [{ ...add('bar').sheets[0], visuals: [detailed(bar())] }] };
   const bundle = await parseQsBundle(await downloadBundleBytes(edited));
   // Simulate a foreign QuickSight bundle: extra tooltip field, no OpenSight extension.
   const visual = Object.values(bundle.members[0].resource.definition.sheets[0].visuals[0])[0];
   visual.chartConfiguration.tooltip.fieldBasedTooltip.tooltipFields.push({ fieldTooltipItem: { fieldId: 'profit', visibility: 'VISIBLE' } });
   const draft = importBundle(bundle);
-  assert.deepEqual(activeSheet(draft).visuals[0].tooltipExtraFields, [{ field: 'profit', aggregation: 'SUM' }]);
+  assert.deepEqual(activeSheet(draft).visuals[0].tooltipExtraFields, []);
+  assert.ok(activeSheet(draft).visuals[0].imported.issues.some(issue => issue.includes('tooltipFields[2]') && issue.endsWith('(retained, read-only)')));
+  assert.deepEqual(exportBundle(draft), bundle);
 });
 
 test('malformed extras extension keeps tooltip defaults on import and fails closed in the compiler', async () => {
