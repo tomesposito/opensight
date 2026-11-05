@@ -122,3 +122,12 @@ test('Issue 192 A/C: fixing a rejected slug can reuse the form session key witho
   await assert.rejects(f.provision.provision('form-session', input('New', 'changed-again')), { code: 'OPERATION_ID_REUSED' });
   assert.equal(f.mail.messages.length, 2);
 });
+
+
+test('Issue 192 A: missing mail configuration creates no partial tenant or reservation', async t => {
+  const f = await setup(t), before = await counts(f.db);
+  const provisioning = new HostedProvisioning(f.db, f.config, { configured: false, async send() { assert.fail('mail must not run'); } });
+  await assert.rejects(provisioning.provision('no-mail', input('Mail required')), { code: 'SMTP_NOT_CONFIGURED', status: 503 });
+  assert.deepEqual(await counts(f.db), before);
+  assert.deepEqual(await f.db.transaction(c => c.query('SELECT * FROM h2_requests')), []);
+});
