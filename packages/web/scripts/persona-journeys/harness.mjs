@@ -50,7 +50,7 @@ export async function startLocalStack(dataRoot) {
   stack.stop = async () => { await stack.vite?.close(); await close(stack.api); };
   await stack.start(); return stack;
 }
-export async function startHostedStack({ invitationSeconds } = {}) {
+export async function startHostedStack({ invitationSeconds, aiStub = false } = {}) {
   await temporaryRoot().then(p => rm(p, { recursive: true })); // Set SQLite's disk-backed TMPDIR before importing fixtures.
   const [{ Pool }, { PostgresMetadataDatabase }, { realEmbedFixture }, { serverEnvironment }, hosted] = await Promise.all([
     import('pg'), import('../../../api/dist/metadata-db.js'), import('../../../api/test/embed-real-fixture.mjs'),
@@ -71,8 +71,11 @@ export async function startHostedStack({ invitationSeconds } = {}) {
     await pool.query(`CREATE SCHEMA ${schema}`);
     stack.fixture = await realEmbedFixture(db, 'postgres', origin, 'https://product.example');
     stack.mail = stack.fixture.mail;
+    if (aiStub) { const { initializeUsage } = await import('../../../api/dist/hosted-usage.js'); await initializeUsage(db); }
     stack.api = await hosted.createHostedApiServer({ membershipDatabase: db, tenantDatabase: db, builtinAuth: stack.fixture.auth,
       security: { authenticate: stack.fixture.auth.authenticate }, env: { ...serverEnvironment(stack.fixture),
+        ...(aiStub ? { NODE_ENV: 'test', OPENSIGHT_AI_MANAGED: 'stub', OPENSIGHT_AI_TEST_STUB: '1', OPENSIGHT_REFERENCE: 'single-node', OPENSIGHT_REFERENCE_LOCATION: 'persona',
+          OPENSIGHT_ENTITLEMENTS: JSON.stringify({ defaults: { apiCalls: 10000, storageBytes: 10000000, computeAttempts: 1000, aiCallsPerMonth: 10, aiSpendCapCents: 1000, aiCostCentsPerMillionTokens: 1000 }, tenants: {} }) } : {}),
         ...(invitationSeconds === undefined ? {} : { OPENSIGHT_INVITATION_SECONDS: String(invitationSeconds) }) }, mailTransport: stack.mail });
     stack.apiTransport = await listen(stack.api);
     stack.vite = await viteServer(); stack.transport = `http://127.0.0.1:${stack.vite.httpServer.address().port}`;
