@@ -46,6 +46,9 @@ import { Scheduler } from './schedule.js';
 import { hostedReadiness } from './hosted-health.js';
 import { HostedUsage, usageMonth } from './hosted-usage.js';
 import { billingConfig, HostedBilling, httpStripeClient, initializeBilling, parseStripeEvent, readRawBody, verifyStripeSignature, type StripeFetcher } from './hosted-billing.js';
+import { HostedAI } from './hosted-ai.js';
+import type { HostedAIOptions } from './hosted-ai-settings.js';
+import { AIError } from './ai-providers.js';
 import type { AiMeter } from './ai-settings.js';
 import { appendOperatorAudit, readOperatorAudit } from './operator-audit.js';
 import { referenceConfig, referenceDisclosure, assertReferenceSurfaces } from './single-node-config.js';
@@ -71,6 +74,7 @@ export async function dispatchHostedRequest(server: Server, request: IncomingMes
 
 export interface HostedInvocationAdapters {
   data: HostedDataRoutes;
+  ai?: HostedAI;
   embedContent: EmbedContent;
   jobs?: JobStore;
   mail?: MailTransport;
@@ -95,6 +99,8 @@ export interface HostedServerOptions {
   mailTransport?: MailTransport;
   /** Test seam for the Stripe REST client (issue #194); production uses fetch. */
   stripeFetcher?: StripeFetcher;
+  /** Provider transport seam; tests never call a live model. */
+  ai?: HostedAIOptions;
   analytics?: Analytics;
   /** Invocation mode never runs DDL, activates keys, recovers jobs or starts interval work. */
   invocation?: { signal: AbortSignal; usage?: HostedUsage; compose?(metadata: TenantMetadata, budgets: TenantBudgets, auth?: HostedAuth, aiMeter?: AiMeter, analytics?: Analytics): HostedInvocationAdapters };
@@ -159,6 +165,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const invocation = options.invocation?.compose?.(metadata, budgets, options.builtinAuth, usage?.aiMeter(), analytics);
   const jobs = invocation?.jobs ?? new JobStore(options.membershipDatabase, metadata);
   const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets, undefined, undefined, analytics), jobs);
+  const ai = invocation?.ai ?? new HostedAI(data, config.encryptionKey.toString('base64'), options.env ?? process.env, usage?.aiMeter(), options.ai);
   const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets, undefined, undefined, analytics));
   const mail = invocation?.mail ?? options.mailTransport ?? smtpFromEnvironment(options.env);
   // Stripe billing (issue #194) composes on the single-node hosted server;
@@ -520,15 +527,16 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         await metadata.revisions(context);
       };
       if (await invocation?.route(request, response, path, context, recheck)) return;
+      if (await ai.route(request, response, path, context, recheck)) return;
       if (await data.route(request, response, path, context, recheck)) return;
       if (await v1.route(request, response, path, context, recheck)) return;
       throw new MetadataError('HOSTED_CAPABILITY_UNAVAILABLE', 503);
     })().catch((error: unknown) => {
       errors++; request.resume();
       const dataError = error instanceof QueryEngineError || error instanceof PrepError || error instanceof UploadError || error instanceof BlazeError;
-      const status = dataError ? 422 : error instanceof MetadataError || error instanceof RequestError ? error.status : 500;
+      const status = dataError ? 422 : error instanceof MetadataError || error instanceof RequestError || error instanceof SecurityError ? error.status : 500;
       const errorCode = dataError ? error.code : error instanceof MetadataError || error instanceof SecurityError ? error.code : error instanceof RequestError ? 'HOSTED_REQUEST_INVALID' : 'HOSTED_INTERNAL_ERROR';
-      const quotaMessage = publicQuotaMessage(error);
+      const quotaMessage = error instanceof AIError ? error.message : publicQuotaMessage(error);
       send(response, status, { errorCode, ...(quotaMessage === undefined ? {} : { Message: quotaMessage }) });
     }).finally(async () => { active.delete(work); await egressSettle?.(); });
     active.add(work);

@@ -138,7 +138,9 @@ export function resourceLinks(key: ResourceKey, raw: JsonObject): ResourceKey[] 
       break;
     }
     case 'ai-config': {
-      object(body, ['provider', 'model', 'baseUrl', 'secretId']);
+      object(body, ['mode', 'provider', 'model', 'baseUrl', 'secretId']);
+      if (body.mode !== undefined && !['managed', 'byo', 'off'].includes(String(body.mode))) invalidMetadata();
+      if (body.provider === undefined && ['managed', 'off'].includes(String(body.mode))) { if (Object.keys(body).length !== 1) invalidMetadata(); break; }
       if (!['openai', 'anthropic', 'openai-compatible', 'bedrock'].includes(String(body.provider))) invalidMetadata(); label(body.model);
       if (body.baseUrl !== undefined) {
         const u = new URL(label(body.baseUrl)); if (u.protocol !== 'https:' || u.username || u.password || u.search || u.hash) invalidMetadata();
