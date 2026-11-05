@@ -38,12 +38,13 @@ export class HostedProvisioning {
   constructor(private readonly database: Database, private readonly config: HostedConfig, private readonly mail: MailTransport, private readonly clock = Date.now, private readonly jobs?: JobOwnership, private readonly analytics = disabledAnalytics, private readonly invitationDispatch?: InvitationDispatch) {
     this.operator = new MetadataOperator(database);
   }
+  private async reserveIn(c: SqlConnection, operationId: string, hash: string): Promise<void> {
+    await c.query('INSERT INTO h2_requests VALUES (?,?) ON CONFLICT (operation_id) DO NOTHING', [operationId, hash]);
+    const prior = (await c.query('SELECT request_hash FROM h2_requests WHERE operation_id = ?', [operationId]))[0]!;
+    if (prior.request_hash !== hash) throw new MetadataError('OPERATION_ID_REUSED');
+  }
   private async reserve(operationId: string, hash: string): Promise<void> {
-    await this.database.transaction(async c => {
-      await c.query('INSERT INTO h2_requests VALUES (?,?) ON CONFLICT (operation_id) DO NOTHING', [operationId, hash]);
-      const prior = (await c.query('SELECT request_hash FROM h2_requests WHERE operation_id = ?', [operationId]))[0]!;
-      if (prior.request_hash !== hash) throw new MetadataError('OPERATION_ID_REUSED');
-    });
+    await this.database.transaction(c => this.reserveIn(c, operationId, hash));
   }
   async transition(key: string, tenantId: string, action: 'suspend' | 'resume' | 'delete', expectedVersion: number): Promise<TenantOperation> {
     identifier(tenantId);
@@ -67,8 +68,10 @@ export class HostedProvisioning {
     const input = { name, displayName, slug, administrator: { email: normalizedEmail(raw.administrator.email), name: label(raw.administrator.name, 'administrator.name') } };
     const operationId = operatorOperationId(key), hash = checksum({ action: 'onboard', input });
     if (!this.mail.configured) throw new MetadataError('SMTP_NOT_CONFIGURED', 503);
-    await this.reserve(operationId, hash);
     await this.database.transaction(async c => {
+      // A validation/slug conflict creates nothing and leaves the form session retryable.
+      // A committed tenant (including a later mail failure) retains the input checksum.
+      await this.reserveIn(c, operationId, hash);
       await c.query('UPDATE h2_control SET id = id WHERE id = 1');
       const prior = (await c.query('SELECT * FROM h2_onboarding WHERE operation_id = ?', [operationId]))[0];
       if (prior) { if (prior.request_hash !== hash) throw new MetadataError('OPERATION_ID_REUSED'); return; }

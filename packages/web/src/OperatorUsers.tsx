@@ -1,3 +1,4 @@
+import { OperatorNav } from './operator-provisioning.js';
 import { useState } from 'react';
 
 export interface RemovalPreview { userId: string; preview: string; status: string; jobs: { id: string; kind: string; enabled: boolean }[]; candidates: { id: string; name: string }[] }
@@ -31,7 +32,7 @@ export function OperatorUsers({ baseUrl = '/api', fetcher = fetch }: { baseUrl?:
     if (!response.ok) throw new Error(result.errorCode ?? 'Request failed'); return result;
   };
   const run = async (action: () => Promise<void>) => { setBusy(true); setError(''); setMessage(''); try { await action(); } catch (e) { setError(e instanceof Error ? e.message : 'Request failed'); } finally { setBusy(false); } };
-  return <main className="admin-settings"><nav aria-label="Operator"><a href="#operator-users" aria-current="page">Tenant users</a> · <a href="#operator-ideas">Ideas</a></nav><h1>Operator · User removal</h1><p>Manage membership in one tenant. Transfer or stop a user's schedules when removing access.</p>
+  return <main className="admin-settings"><OperatorNav current="users" /><h1>Operator · User removal</h1><p>Manage membership in one tenant. Transfer or stop a user's schedules when removing access.</p>
     <form aria-label="Operator connection" onSubmit={e => { e.preventDefault(); void run(async () => { const conn = { tenant, key }; const users = await request<OperatorUser[]>(conn); setConnection(conn); setUsers(users); setPreview(undefined); setKey(''); }); }}>
       <label>Tenant ID<input required value={tenant} onChange={e => setTenant(e.target.value)} disabled={busy} /></label>
       <label>Operator credential<input type="password" required autoComplete="off" value={key} onChange={e => setKey(e.target.value)} disabled={busy} /></label>

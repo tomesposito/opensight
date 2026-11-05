@@ -111,3 +111,14 @@ test('Issue 192 A: display name is required, independently validated and used fo
   assert.deepEqual(await counts(f.db), before);
   await f.provision.provision('max-display', { ...raw, displayName: 'x'.repeat(512) });
 });
+
+
+test('Issue 192 A/C: fixing a rejected slug can reuse the form session key without weakening committed deduplication', async t => {
+  const f = await setup(t);
+  await f.provision.provision('existing', input('Existing', 'taken'));
+  await assert.rejects(f.provision.provision('form-session', input('New', 'taken')), { code: 'TENANT_SLUG_CONFLICT' });
+  const created = await f.provision.provision('form-session', input('New', 'available'));
+  assert.deepEqual(await f.provision.provision('form-session', input('New', 'available')), created);
+  await assert.rejects(f.provision.provision('form-session', input('New', 'changed-again')), { code: 'OPERATION_ID_REUSED' });
+  assert.equal(f.mail.messages.length, 2);
+});
