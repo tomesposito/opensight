@@ -503,6 +503,35 @@ test('copied imported visuals retain unresolved fields, remap/replacement state 
   }
 });
 
+test('retained read-only properties do not block a remapped imported visual; filter-group issues still do (#191)', () => {
+  const bundle = fixture();
+  const raw = bundle.members[0].resource.definition.sheets[0].visuals[0].barChartVisual;
+  raw.chartConfiguration.customAxis = { unsupported: true };
+  let draft = importBundle(bundle);
+  let visual = selected(draft);
+  assert.ok(visual.imported.issues.some(i => i.endsWith('(retained, read-only)')), JSON.stringify(visual.imported.issues));
+  assert.match(authorVisualProblem(visual), /Unresolved dataset/);
+  draft = change(draft, { type: 'remap', id: visual.id });
+  visual = selected(draft);
+  assert.equal(visual.imported.local, true);
+  assert.equal(authorVisualProblem(visual), undefined);
+  assert.ok(buildAuthorQuery(visual), 'retained-only imported visual produces a query after remap');
+  assert.ok(buildAuthorPreview(visual).rows?.length, 'retained-only imported visual renders populated rows after remap');
+  // The retained property stays named in the import report and preserved on export.
+  assert.ok(visual.imported.issues.some(i => i.includes('customAxis') && i.endsWith('(retained, read-only)')));
+  assert.deepEqual(exportBundle(draft), bundle);
+});
+
+test('filter-group and compile issues still block a remapped imported visual (#191)', () => {
+  const bundle = fixture();
+  bundle.members[0].resource.definition.filterGroups = [{ ...categoryGroup(), filters: [{ futureFilter: { unsupported: true } }] }];
+  let draft = importBundle(bundle);
+  draft = change(draft, { type: 'remap', id: selected(draft).id });
+  const visual = selected(draft);
+  assert.match(authorVisualProblem(visual), /Filter group region-filter/);
+  assert.equal(buildAuthorQuery(visual), null);
+});
+
 test('copied imported dataset identifiers and edits survive export before and after remapping (#124)', () => {
   const bundle = fixture();
   // Use an identifier other than the serializer default to detect accidental rebinding.

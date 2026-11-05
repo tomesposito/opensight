@@ -863,7 +863,14 @@ export function remapVisual(visual: AuthorVisual): AuthorVisual {
 export function authorVisualProblem(visual: AuthorVisual): string | undefined {
   if (visual.imported) {
     if (!visual.imported.local) return `Unresolved dataset: ${visual.imported.dataSets.map(d => d.arn ?? d.identifier).join(', ') || 'no dataset binding'}`;
-    const issues = visual.imported.replaced ? visual.imported.issues.filter(i => i.startsWith('Filter group ') || i.startsWith('Calculated field ')) : visual.imported.issues;
+    // Retained, read-only properties are preserved verbatim for export and
+    // named in the import report, but they are not executed — so they do not
+    // block a supported visual once it is bound locally (#191, Option 2).
+    // Filter-group and calculated-field issues block even when they arrive
+    // as retained differences, as do unsupported visual types, compile
+    // errors and every other non-retained issue (fail closed).
+    const blocking = (i: string): boolean => i.startsWith('Filter group ') || i.startsWith('Calculated field ') || !i.endsWith('(retained, read-only)');
+    const issues = visual.imported.replaced ? visual.imported.issues.filter(i => i.startsWith('Filter group ') || i.startsWith('Calculated field ')) : visual.imported.issues.filter(blocking);
     if (issues.length) return `Unsupported features: ${issues.join('; ')}`;
   }
   if (visual.smallMultiples?.length) {

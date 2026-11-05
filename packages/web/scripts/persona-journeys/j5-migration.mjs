@@ -29,9 +29,12 @@ await runJourney('j5-migration', 'Admin + Author', async j => {
     const visuals = page.locator('.author-card .chart svg');
     if (await visuals.count()) assert.ok(await visuals.locator('path[d]').count(), 'Imported chart has drawable content');
     else {
+      // Expected pre-remap state: the sanitized bundle refers to an
+      // unconfigured Athena dataset, so the card shows the unresolved-dataset
+      // placeholder until the remap step below binds the local dataset. The
+      // imported-live-visual expectation is asserted after remap (#191).
       const actual = await page.locator('.author-card').allTextContents();
       assert.match(actual.join('\n'), /unresolved|unavailable|No data|Unable to load|not found|not supported/i);
-      j.gap('imported-live-visual', 'The imported asset renders at least one populated visual.', { reason: 'This sanitized bundle contains definitions only, referring to an unconfigured Athena dataset; no source rows are included.', actual });
     }
   });
   await j.step('remap-and-assign', page, async () => {
@@ -46,9 +49,16 @@ await runJourney('j5-migration', 'Admin + Author', async j => {
     await button(page, 'Assign revenue').click();
     const wells = await page.locator('.field-wells').innerText();
     assert.match(wells, /region/); assert.match(wells, /SUM\(revenue\)/);
+    // #191 (Option 2): retained, read-only properties (title,
+    // sortConfiguration, dataLabels.overlap) are preserved for export, not
+    // executed, so they no longer block rendering — with the dataset
+    // remapped and both wells assigned, the imported visual renders
+    // populated. This closes the imported-live-visual gap.
+    await page.waitForFunction(() => document.querySelectorAll('.author-card .chart svg path[d]').length > 0);
     const card = await page.locator('.author-card').first().innerText();
-    assert.match(card, /Unsupported features: .*\(retained, read-only\)/);
-    return 'Remap binds the local sales dataset and manual assignment fills both wells (region, SUM(revenue)), but the card still shows the placeholder: retained, read-only properties (title, sortConfiguration, dataLabels.overlap) block rendering per docs/bundle-roundtrip.md, so the imported-live-visual gap stays open for a product decision (evidence on issue #191).';
+    assert.doesNotMatch(card, /Unsupported features:/);
+    assert.ok(await page.locator('.author-card .chart svg path[d]').count(), 'Imported chart has drawable content after remap');
+    return 'Remap binds the local sales dataset, manual assignment fills both wells (region, SUM(revenue)), and the imported pie now renders populated: retained, read-only properties stay named in the dataset-binding disclosure but no longer block the visual (#191).';
   });
   await j.step('save-import', page, async () => {
     await button(page, 'Save draft').click(); await page.getByText('Draft saved on this device.', { exact: true }).waitFor();
