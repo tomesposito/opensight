@@ -1,10 +1,14 @@
 import { execFileSync } from 'node:child_process';
-import { readFile, rm, stat } from 'node:fs/promises';
+import { cp, readFile, rm, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { assert, button, launchBrowser, navigate, output, repo, runJourney, startLocalStack, temporaryRoot } from './harness.mjs';
 
 await runJourney('j5-migration', 'Admin + Author', async j => {
   const root = await temporaryRoot(); j.cleanup(() => rm(root, { recursive: true, force: true }));
+  // The remap target is the local sales dataset: seed the stack's data root
+  // with the renderable-sales fixture (same setup as j3) so the sales CSV
+  // binding the remap points at actually resolves in this stack.
+  await cp(resolve(repo, 'fixtures/renderable-sales'), resolve(root, 'renderable-sales'), { recursive: true });
   const stack = await startLocalStack(root); j.cleanup(stack.stop);
   const browser = await launchBrowser(j), page = await browser.page(stack);
   let title;
@@ -51,14 +55,24 @@ await runJourney('j5-migration', 'Admin + Author', async j => {
     assert.match(wells, /region/); assert.match(wells, /SUM\(revenue\)/);
     // #191 (Option 2): retained, read-only properties (title,
     // sortConfiguration, dataLabels.overlap) are preserved for export, not
-    // executed, so they no longer block rendering — with the dataset
-    // remapped and both wells assigned, the imported visual renders
-    // populated. This closes the imported-live-visual gap.
-    await page.waitForFunction(() => document.querySelectorAll('.author-card .chart svg path[d]').length > 0);
+    // executed, so they no longer block the visual: after remap and
+    // assignment the card leaves the placeholder state and attempts a real
+    // data load. The populated render itself is still blocked one layer
+    // deeper — a sibling imported TableVisual's foreign measure column
+    // fails the sheet's live query planning — recorded as the
+    // imported-live-visual gap against #195.
+    await page.waitForFunction(() => {
+      const card = document.querySelector('.author-card');
+      return card && (card.querySelectorAll('.chart svg path[d]').length > 0 || /Unable to load data/.test(card.textContent ?? ''));
+    });
     const card = await page.locator('.author-card').first().innerText();
     assert.doesNotMatch(card, /Unsupported features:/);
-    assert.ok(await page.locator('.author-card .chart svg path[d]').count(), 'Imported chart has drawable content after remap');
-    return 'Remap binds the local sales dataset, manual assignment fills both wells (region, SUM(revenue)), and the imported pie now renders populated: retained, read-only properties stay named in the dataset-binding disclosure but no longer block the visual (#191).';
+    if (await page.locator('.author-card .chart svg path[d]').count()) {
+      return 'Remap binds the local sales dataset, manual assignment fills both wells (region, SUM(revenue)), and the imported pie renders populated: retained, read-only properties stay named in the dataset-binding disclosure but no longer block the visual (#191).';
+    }
+    assert.match(card, /unknown column: us_simpli-/);
+    j.gap('imported-live-visual', 'The imported asset renders at least one populated visual.', { reason: 'A sibling imported TableVisual in the same sheet carries a foreign measure column (us_simpli-country-…) that fails the sheet’s live query planning after remap; the #191 retained-properties block itself is gone. Tracked on #195.', actual: card });
+    return 'Remap binds the local sales dataset and manual assignment fills both wells (region, SUM(revenue)); the retained-properties placeholder is gone (#191), but the live render still fails on a sibling TableVisual’s foreign measure column — gap recorded against #195.';
   });
   await j.step('save-import', page, async () => {
     await button(page, 'Save draft').click(); await page.getByText('Draft saved on this device.', { exact: true }).waitFor();
