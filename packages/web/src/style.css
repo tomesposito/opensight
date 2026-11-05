@@ -2632,7 +2632,8 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .o-credit-limit { padding: 12px; border: 1px solid #e8c475; border-radius: 4px; background: #fffaf0; color: #40341b; }
 .o-credit-limit h3 { margin: 0 0 8px; font-size: 13px; }
 .o-credit-limit p { margin: 8px 0 0; font-size: 12px; }
-.ai-mode-options { border: 0; padding: 0; margin: 16px 0; }
-.admin-settings .ai-mode-option { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0; padding: 12px; border: 1px solid var(--border); border-radius: 4px; }
-.ai-mode-option input { width: auto; margin-top: 2px; }
+.ai-mode-options { flex: 1 1 100%; border: 0; padding: 0; margin: 16px 0; }
+.admin-settings .ai-mode-option { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0; padding: 12px; border: 1px solid var(--border, #c5d2e6); border-radius: 4px; background: #fff; }
+.admin-settings .ai-mode-option:has(input:checked) { border-color: #3b82f6; background: #f4f8ff; }
+.admin-settings .ai-mode-option input { flex: none; width: auto; margin-top: 2px; }
 .ai-mode-option small { display: block; margin-top: 4px; line-height: 1.5; }
