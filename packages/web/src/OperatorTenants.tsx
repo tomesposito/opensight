@@ -54,11 +54,12 @@ export function OperatorTenants(props: OperatorProps) {
   const work = useOperatorWork();
   const load = async (credential: string) => { const result = await operatorRequest(props, credential)<{ tenants: TenantSummary[] }>('tenants'); setTenants(result.tenants); return result.tenants.length; };
   return <OperatorFrame connected={key !== undefined} title="Operator · Tenants" work={work} connect={async credential => { const count = await load(credential); setCreating(count === 0); setKey(credential); }} disconnect={() => { setKey(undefined); setTenants([]); setCreating(false); setFilter(''); work.setError(''); work.setMessage('Disconnected.'); }}>
-    {key !== undefined && (creating || !tenants.length ? <>
+    {key !== undefined && (creating ? <>
       {!tenants.length && <p>No tenants yet. Create the first tenant.</p>}
       <CreateTenant request={operatorRequest(props, key)} work={work} cancel={() => setCreating(false)} refresh={async () => { await load(key); }} />
     </> : <><h1>Operator · Tenants</h1><p>Every hosted workspace. Provisioning is manual: an operator approves each tenant.</p>
       <p className="operator-connected">Connected. {tenants.length} {tenants.length === 1 ? 'tenant' : 'tenants'} on this deployment.</p>
+      {!tenants.length && <p>No tenants yet. Create the first tenant.</p>}
       <div className="operator-toolbar"><label>Filter tenants<input type="search" placeholder="Name or slug" value={filter} onChange={event => setFilter(event.target.value)} /></label><button className="operator-primary" disabled={work.busy} onClick={() => setCreating(true)}>New tenant</button></div>
       <div className="operator-table-wrap"><table><thead><tr>{['Workspace', 'Slug', 'State', 'Plan', 'Members', 'Created'].map(label => <th key={label}>{label}</th>)}</tr></thead>
         <tbody>{tenants.filter(tenant => `${tenant.displayName ?? tenant.tenantId} ${tenant.slug ?? ''}`.toLowerCase().includes(filter.toLowerCase())).map(tenant => <tr key={tenant.tenantId} className={tenant.state === 'deleted' ? 'deleted' : ''} onClick={() => { window.location.hash = `operator-tenant/${tenant.tenantId}`; }}>

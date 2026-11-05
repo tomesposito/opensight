@@ -82,6 +82,19 @@ test('192 C: creation errors preserve values, name fields, and reuse the same id
   const keys = ui.calls.filter(call => call.method === 'POST').map(call => call.headers['Idempotency-Key']); assert.equal(new Set(keys).size, 1);
 });
 
+test('192 C: cancelling first-tenant creation returns to the empty list and ends the form session', async t => {
+  const ui = await mount(t, OperatorTenants, call => call.method === 'GET' ? response({ tenants: [] }) : failure('SMTP_NOT_CONFIGURED', 503));
+  await connect(ui); await formValues(ui); await submit(ui, 'Create tenant');
+  const previousKey = ui.calls.find(call => call.method === 'POST').headers['Idempotency-Key'];
+  await click(button(ui, 'Cancel'));
+  assert.equal(ui.root.findAllByProps({ 'aria-label': 'Create tenant' }).length, 0);
+  assert.match(ui.text(), /No tenants yet\. Create the first tenant\./);
+  await click(button(ui, 'New tenant'));
+  assert.equal(field(ui, 'Workspace display name').props.value, '');
+  await formValues(ui); await submit(ui, 'Create tenant');
+  assert.notEqual(ui.calls.filter(call => call.method === 'POST').at(-1).headers['Idempotency-Key'], previousKey);
+});
+
 test('192 C: in-flight submits cannot create twice; unconfigured billing preserves successful creation', async t => {
   let finish;
   const ui = await mount(t, OperatorTenants, call => call.method === 'GET' ? response({ tenants: [] }) : call.path === 'tenants' ? new Promise(resolve => { finish = resolve; }) : failure('RESOURCE_NOT_FOUND', 404));
