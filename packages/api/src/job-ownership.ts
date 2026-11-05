@@ -35,7 +35,10 @@ export class JobOwnership {
   }
   async users(tenantId: string) {
     return this.store.db.transaction(async c => {
-      const s = await this.scope(c, tenantId); await lockTenant(c, s);
+      const s = await this.scope(c, tenantId);
+      // Operator inspection remains available while suspended. Mutation/preview
+      // paths still require active admission via lockTenant.
+      if (!(await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state IN ('active','suspended','provisioning') RETURNING tenant_id", [tenantId])).length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
       const rows = await c.query(`SELECT m.user_id, m.status, u.body FROM h2_memberships m JOIN h1_resources u ON u.tenant_id = m.tenant_id AND u.namespace_id = m.namespace_id AND u.kind = 'user' AND u.owner_id = '' AND u.resource_id = m.user_id
         WHERE m.tenant_id = ? AND m.namespace_id = ? AND m.status <> 'removed' ORDER BY m.user_id`, scopeArgs(s));
       return rows.map(r => ({ id: String(r.user_id), status: String(r.status), ...object(JSON.parse(String(r.body))) }));

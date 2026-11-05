@@ -491,3 +491,16 @@ test('Issue 192 B: list, detail, named validation, paid tier, membership counts 
   assert.equal(row.state, 'deleted'); assert.equal(row.memberCount, 0); assert.equal(row.slug, 'public');
   assert.equal((await request(`/api/host/tenants/${id}`, { headers })).body.displayName, 'Public workspace');
 });
+
+
+test('Issue 192 B: suspended tenant people remain inspectable but invitations and removal fail closed', async t => {
+  const f = await authFixture(t), { request, operator } = await serving(t, f), id = f.tenant.tenantId;
+  const headers = { ...operator, origin: f.config.origin, 'idempotency-key': 'suspended-invite' };
+  await f.provisioning.transition('suspend-inspect', id, 'suspend', 2);
+  const users = await request(`/api/host/tenants/${id}/users`, { headers });
+  assert.equal(users.status, 200); assert.equal(users.body.length, 1);
+  const invite = await request(`/api/host/tenants/${id}/invitations`, { method: 'POST', headers, body: { name: 'Reader', email: 'reader@example.test', role: 'reader' } });
+  assert.equal(invite.body.errorCode, 'TENANT_UNAVAILABLE');
+  const remove = await request(`/api/host/tenants/${id}/users/${users.body[0].id}`, { method: 'DELETE', headers, body: {} });
+  assert.equal(remove.body.errorCode, 'TENANT_UNAVAILABLE');
+});
