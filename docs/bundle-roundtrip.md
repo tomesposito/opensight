@@ -50,8 +50,11 @@ Remapping adds a declaration using the reserved
 identifier `opensight_local_sales` and the same example sales ARN emitted by v1.
 A conflicting existing identifier blocks export. The original declarations and
 dependency resources are retained. The exact example sales ARN is the local
-binding marker when reading OpenSight exports. Unsupported visual semantics still
-show a placeholder after remapping. Parameter-free offline previews retain v1's fixed sample limits. Sheets with
+binding marker when reading OpenSight exports. Retained, read-only properties —
+the unmodeled properties named in the import report — are preserved for export
+and do not block a supported visual once it has been remapped and its wells are
+assigned (#191); unsupported visual types, filter-group and calculated-field
+issues, and compile errors still show a placeholder after remapping. Parameter-free offline previews retain v1's fixed sample limits. Sheets with
 parameters recompute pinned sales rows locally; API mode queries the local CSV.
 If an imported dataset dependency has the same ID as the example sales dataset,
 it stays unresolved until explicitly remapped. The reserved local identifier
