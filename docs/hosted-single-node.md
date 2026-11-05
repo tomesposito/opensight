@@ -223,7 +223,7 @@ also apply to the stored serverless entitlements snapshot. See
 | Storage | Exact sum of UTF-8 bytes of serialized `h1_resources.body` within a tenant | Logical current occupancy, including encrypted source/upload payload envelopes and base64 overhead. Growing writes above the ceiling roll back metadata, links, secrets and revisions together. Shrinking/deleting data remains possible after a limit reduction. Every committed tenant resource write emits the resulting byte gauge. |
 | Compute | One admitted execution attempt of a manual source/prepared refresh, an H7 refresh/report/alert occurrence, or a recipient rendering attempt | Exact count of admissions per UTC day, **not** CPU time, row count or cost. A report may use one execution attempt plus one per rendered recipient. Retries/restarts doing new work count again; reuse of a saved delivery message does not render or consume another attempt. A scheduled refresh is not double-counted by the underlying refresh path. |
 | Egress | Actual response body bytes of authenticated tenant API responses on the hosted path | Durable daily byte counters summed per UTC calendar month. When the entitlement sets `egressBytes`, a pre-routing check denies with `USAGE_LIMIT_EXCEEDED` (429) once the month's recorded bytes reach the cap; the response that crosses the cap is admitted and recorded, the next request is denied, and denials record no admitted bytes. Absent a cap, egress is metered only. Operator/health and pre-auth responses are not counted; embed-session responses are not counted in this slice. |
-| AI | `aiCalls`: successful provider completions; `aiTokens`: reported input + output tokens, or a marked deterministic estimate | Durable UTC daily totals. A configured positive rate and recorded spend at/above the cap deny the next call with `AI_SPEND_CAP_EXCEEDED` (429). At the threshold, the charge commits with a durable intent to deliver one `ai.spend.warning` per tenant/day. Audit delivery retries on later admission/recording and can never erase or block the charge; undelivered warnings stay pending until the audit store recovers. Requires the AI meter composition described in the linked guide; the hosted server does not currently expose generative O/admin AI routes. |
+| AI | `aiCalls`: validated managed answers delivered to the caller; `aiTokens`: reported input + output tokens, or a marked deterministic estimate | Durable UTC daily totals. A configured positive rate and recorded spend at/above the cap deny the next call with `AI_SPEND_CAP_EXCEEDED` (429). At the threshold, the charge commits with a durable intent to deliver one `ai.spend.warning` per tenant/day. Audit delivery retries on later admission/recording and can never erase or block the charge; undelivered warnings stay pending until the audit store recovers. Hosted generative O/admin AI routes are available (#190). Managed generations additionally require `aiCallsPerMonth` and stop at `AI_CREDITS_EXHAUSTED` (429). BYO and admin connection tests do not consume credits; failed/invalid answers are not charged. |
 
 API/compute use atomic per-tenant locked counters and `h8_usage_events`, with
 UUID, tenant/namespace, UTC timestamp, metric, `call`/`attempt` unit, amount `1`
@@ -443,3 +443,41 @@ Docker/Compose was unavailable in the build environment, so container image
 build/start was not exercised. The native reference CLI and the real PostgreSQL
 wiring were exercised. No AWS calls, image pulls, deployment, push, merge, issue
 closure, static-demo rebuild or screenshot capture was performed.
+
+
+## Hosted generative Ask O (#190)
+
+The operator enables managed AI using `OPENSIGHT_AI_MANAGED=bedrock`,
+`OPENSIGHT_AI_BEDROCK_MODEL` and `AWS_REGION`. Model changes need environment
+configuration and a restart, with no rebuild. Credentials resolve from the
+operator's AWS identity/standard credential chain and are never tenant settings.
+No AWS calls are made by builds or tests. Bedrock is unavailable as a tenant BYO
+provider (`AI_BEDROCK_APPROVAL_REQUIRED`).
+
+Managed is the default when enabled by the deployment. Each tenant also needs an
+`aiCallsPerMonth` entitlement: D-82 Free **10**, Light **50**, Regular **500**, Heavy
+**3000**. Set the field in `OPENSIGHT_ENTITLEMENTS` and, when billing is enabled,
+the corresponding `OPENSIGHT_BILLING_TIER_ENTITLEMENTS` records. Its absence gives
+no managed allowance. The existing per-tier `aiSpendCapCents` and token price
+remain the daily cost backstop. Credits reset at the UTC month boundary; current
+month AI counter rows survive daily retention so retention cannot refill credits.
+
+Admins use AI provider settings to select managed, their own provider, or off.
+BYO supports OpenAI, Anthropic and an OpenAI-compatible HTTPS endpoint selected by
+`OPENSIGHT_AI_COMPATIBLE_URL`. Its key is encrypted with the existing hosted
+metadata encryption key and tenant/namespace-bound AAD v2, and is write-only in
+the UI/API (`hasKey` only). Switching provider/endpoint invalidates the previous
+key binding. A connection test never consumes credits. No provider configured
+means the standard interpreter remains available and no model is contacted.
+
+The status route includes mode, availability, and monthly credit balance. Each
+validated `/api/o/generate` or `/api/o/calculation` answer commits exactly one
+managed credit; provider failures, invalid responses, unsupported grammar and
+PII/CLS/quota denials do not. `/api/o/query` follows the published dashboard's
+binding and caller identity. Reader AI requires dashboard scope; calculation
+suggestions additionally require build capability. Post-provider scope checks
+prevent a revoked permission from releasing or charging an answer.
+
+The explicit test-only configuration `OPENSIGHT_AI_MANAGED=stub`, `NODE_ENV=test`,
+`OPENSIGHT_AI_TEST_STUB=1` powers J4's grounded answer assertion. It is rejected
+outside test contexts. It is not a production provider or a demo simulation.
