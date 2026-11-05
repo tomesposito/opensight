@@ -119,7 +119,11 @@ test('unknown wells, non-SUM aggregation, targets and date granularities are exp
   const draft = importBundle(bundle), report = JSON.stringify(draft.bundle.report);
   for (const name of ['AVG', 'colors', 'calculatedMeasureField']) assert.ok(report.includes(name), name);
   assert.deepEqual(exportBundle(draft), bundle);
-  assert.equal(buildAuthorQuery(selected(change(draft, { type: 'remap', id: selected(draft).id }))), null);
+  // #191 Option 2: these are all retained, read-only differences — reported
+  // above and preserved on export, but not executed, so after remap the
+  // visual queries with its projected wells (region, SUM(revenue)).
+  assert.deepEqual(buildAuthorQuery(selected(change(draft, { type: 'remap', id: selected(draft).id }))),
+    { dimensions: [{ fieldId: 'region', columnName: 'region' }], measures: [{ fieldId: 'revenue', columnName: 'revenue', aggregation: 'SUM' }], filters: [] });
 });
 
 test('unresolved binding never queries or borrows fixed sales rows and exposes a remap action', () => {
@@ -519,7 +523,8 @@ test('retained read-only properties do not block a remapped imported visual; fil
   assert.ok(buildAuthorPreview(visual).rows?.length, 'retained-only imported visual renders populated rows after remap');
   // The retained property stays named in the import report and preserved on export.
   assert.ok(visual.imported.issues.some(i => i.includes('customAxis') && i.endsWith('(retained, read-only)')));
-  assert.deepEqual(exportBundle(draft), bundle);
+  const exported = exportBundle(draft);
+  assert.deepEqual(exported.members[0].resource.definition.sheets[0].visuals[0].barChartVisual.chartConfiguration.customAxis, { unsupported: true });
 });
 
 test('filter-group and compile issues still block a remapped imported visual (#191)', () => {
@@ -765,7 +770,9 @@ test('choosing the current visual type does not discard unsupported imported sem
   draft = change(draft, { type: 'kind', kind: 'bar' });
   assert.deepEqual(exportBundle(draft), bundle);
   draft = change(draft, { type: 'remap', id: selected(draft).id });
-  assert.equal(buildAuthorQuery(selected(draft)), null);
+  // The AVG aggregation stays retained in the export above; under #191
+  // Option 2 it no longer blocks the remapped visual's query.
+  assert.ok(buildAuthorQuery(selected(draft)));
 });
 
 test('editing a free-form layout replaces the layout variant and retains the original snapshot', () => {
