@@ -10,12 +10,13 @@ export function AISettings({ client }: { client: Client }) {
 }
 function SettingsForm({ client }: { client: Client }) {
   const [config, setConfig] = useState<AIConfig>();
+  const [mode, setMode] = useState<NonNullable<AIConfig['mode']>>('off');
   const [provider, setProvider] = useState<AIConfig['provider']>('openai');
   const [model, setModel] = useState(''), [baseUrl, setBaseUrl] = useState(''), [key, setKey] = useState('');
   const [message, setMessage] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   useEffect(() => {
     let active = true;
-    void client.getAIConfig().then(value => { if (active) { setConfig(value); setProvider(value.provider ?? 'openai'); setModel(value.model); setBaseUrl(value.baseUrl ?? value.compatibleBaseUrls[0] ?? ''); } }).catch(e => { if (active) setError(String(e)); });
+    void client.getAIConfig().then(value => { if (active) { setConfig(value); setMode(value.mode ?? 'byo'); setProvider(value.provider === 'bedrock' && value.mode === 'managed' ? 'openai' : value.provider ?? 'openai'); setModel(value.mode === 'managed' ? '' : value.model); setBaseUrl(value.baseUrl ?? value.compatibleBaseUrls[0] ?? ''); } }).catch(e => { if (active) setError(String(e)); });
     return () => { active = false; };
   }, [client]);
   const run = async (action: () => Promise<AIConfig | void>, success: string) => {
@@ -24,29 +25,35 @@ function SettingsForm({ client }: { client: Client }) {
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); setKey(''); }
   };
-  const dirty = provider !== config?.provider || model !== config?.model || provider === 'openai-compatible' && baseUrl !== config?.baseUrl;
+  const byo = !config?.mode || mode === 'byo';
+  const dirty = !!config?.mode && mode !== config.mode || byo && (provider !== config?.provider || model !== config?.model || provider === 'openai-compatible' && baseUrl !== config?.baseUrl);
   return <section className="admin-settings" aria-labelledby="ai-settings-title">
     <h1 id="ai-settings-title">AI provider settings</h1>
-    <p>Configure O generative answers and AI Build for me for this namespace.</p>
+    <p>Controls generative Ask O answers for this workspace. Only workspace admins see this page.</p>
     {!config && !error && <p role="status">Loading settings…</p>}
-    <form onSubmit={e => { e.preventDefault(); void run(() => client.saveAIConfig({ provider, model, ...(provider === 'openai-compatible' ? { baseUrl } : {}) }), 'Provider and model saved.'); }}>
-      <label>AI provider<select aria-label="AI provider" value={provider ?? 'openai'} onChange={e => { setProvider(e.target.value as AIConfig['provider']); setKey(''); }} disabled={busy}>
-        <option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="openai-compatible">OpenAI-compatible</option><option value="bedrock">Amazon Bedrock — needs approval</option>
+    <form onSubmit={e => { e.preventDefault(); void run(() => client.saveAIConfig({ ...(config?.mode ? { mode } : {}), ...(byo ? { provider, model, ...(provider === 'openai-compatible' ? { baseUrl } : {}) } : {}) }), 'Provider and model saved.'); }}>
+      {config?.mode && <fieldset className="ai-mode-options"><legend>How Ask O gets its AI</legend><p>Pick one source. Switching takes effect on the next question; answers already given are not affected.</p>
+        <label className="ai-mode-option"><input type="radio" name="ai-mode" value="managed" checked={mode === 'managed'} disabled={busy || !config.managedAvailable} onChange={() => setMode('managed')} /><span>Managed by OpenSight<small>Runs on OpenSight's own AI (Amazon Bedrock) and uses this workspace's monthly Ask O credits{config.credits?.limit != null ? ` — ${config.credits.remaining} of ${config.credits.limit} left` : ''}. No key to configure. When the credits run out, generative answers pause and the standard interpreter keeps working.</small>{!config.managedAvailable && <small>Managed AI is unavailable for this workspace.</small>}</span></label>
+        <label className="ai-mode-option"><input type="radio" name="ai-mode" value="byo" checked={mode === 'byo'} disabled={busy} onChange={() => setMode('byo')} /><span>Your own AI provider<small>Connect a provider your workspace already pays for. Questions are answered by that provider and billed to your account with them — OpenSight credits are not used. Your key is stored encrypted on the server and is never shown again.</small></span></label>
+        <label className="ai-mode-option"><input type="radio" name="ai-mode" value="off" checked={mode === 'off'} disabled={busy} onChange={() => setMode('off')} /><span>Off<small>No generative answers. Ask O keeps working with the standard interpreter, which answers from the built-in grammar without AI.</small></span></label>
+      </fieldset>}
+      {byo && <><label>AI provider<select aria-label="AI provider" value={provider ?? 'openai'} onChange={e => { setProvider(e.target.value as AIConfig['provider']); setKey(''); }} disabled={busy}>
+        <option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="openai-compatible">OpenAI-compatible</option><option value="bedrock" disabled={!!config?.mode}>{config?.mode ? 'Amazon Bedrock — managed only' : 'Amazon Bedrock — needs approval'}</option>
       </select></label>
       <label>Model ID<input required maxLength={256} value={model} onChange={e => setModel(e.target.value)} disabled={busy} /></label>
       {provider === 'openai-compatible' && <label>Server-approved endpoint<select aria-label="Server-approved endpoint" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} disabled={busy} required><option value="">Choose endpoint</option>{config?.compatibleBaseUrls.map(url => <option key={url}>{url}</option>)}</select></label>}
       {provider === 'bedrock' && <p role="status">AI_BEDROCK_APPROVAL_REQUIRED: Bedrock needs explicit approval. Live AWS calls are disabled.</p>}
-      <button type="submit" disabled={busy || !config}>Save provider and model</button>
+      </>}<button type="submit" disabled={busy || !config}>{config?.mode ? 'Save mode & provider' : 'Save provider and model'}</button>
     </form>
     {config && <>
       <p role="status">{config.state} · API key {config.hasKey ? 'stored (hidden)' : 'not configured'} · {config.keyStorage === 'ephemeral' ? 'Settings reset on server restart' : 'Encrypted server storage'}</p>
-      <form onSubmit={e => { e.preventDefault(); const value = key; setKey(''); void run(() => client.saveAIKey(value), 'API key saved on the server.'); }}>
+      {byo && <form onSubmit={e => { e.preventDefault(); const value = key; setKey(''); void run(() => client.saveAIKey(value), 'API key saved on the server.'); }}>
         <label>Replace API key<input type="password" autoComplete="new-password" value={key} maxLength={4096} onChange={e => setKey(e.target.value)} disabled={busy || !config.canSaveKey || dirty || provider === 'bedrock'} /></label>
         <button type="submit" disabled={busy || !key || !config.canSaveKey || dirty || provider === 'bedrock'}>Save API key</button>
-      </form>
+      </form>}
       {!config.canSaveKey && <p>Key entry needs secure storage configured on the hosted server. An administrator can also configure the key through server environment variables.</p>}
       {dirty && <p>Save provider and model before replacing the key or testing the connection.</p>}
-      <button type="button" disabled={busy || dirty || !config.configured} onClick={() => void run(async () => { await client.testAIConnection(); }, 'Connection succeeded.')}>Test connection</button>
+      <button type="button" disabled={busy || dirty || !(config.configured || config.mode === 'managed' && config.managedAvailable)} onClick={() => void run(async () => { await client.testAIConnection(); }, 'Connection succeeded.')}>Test connection</button>
     </>}
     <AnalyticsSettings client={client} />
     {busy && <p role="status">Working…</p>}{message && <p role="status">{message}</p>}{error && <p role="alert">{error}</p>}

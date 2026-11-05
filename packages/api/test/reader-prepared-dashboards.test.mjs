@@ -151,3 +151,16 @@ test('Issue 155: unsupported or cyclic stored recipe shapes fail with the dashbo
     await assert.rejects(f.query(), denied);
   }
 });
+
+test('Issue 190: Ask O schema follows the authorized dashboard recipe and reader leaves', async t => {
+  const f = await fixture(t);
+  const context = await f.login('admin');
+  await f.metadata.put(context, { kind: 'user', id: 'other' }, { name: 'Reader AI', role: 'reader_ai' }, 2);
+  const backend = await f.backend(), v = dashboardVersion(await backend.get('daily'));
+  assert.deepEqual((await backend.questionSchema(v)).columns.map(c => c.name), ['amount']);
+  await assert.rejects(backend.questionSchema(structuredClone(v)), denied);
+  const missing = await fixture(t, { missingRight: true });
+  await missing.metadata.put(await missing.login(), { kind: 'user', id: 'other' }, { name: 'Reader AI', role: 'reader_ai' }, 2);
+  const b = await missing.backend();
+  await assert.rejects(b.questionSchema(dashboardVersion(await b.get('daily'))));
+});

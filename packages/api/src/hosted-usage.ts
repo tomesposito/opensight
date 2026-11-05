@@ -12,6 +12,8 @@ export interface Entitlement {
   egressBytes?: number;
   /** Optional AI spend cap in cents per UTC day. Absent = no cap (metering still records). */
   aiSpendCapCents?: number;
+  /** Successful managed answers per UTC month. Absent = managed unavailable. */
+  aiCallsPerMonth?: number;
   /** Warning threshold as a percentage of the cap, 0-100. Default 80 when a cap is set. */
   aiWarnPct?: number;
   /** Operator price in cents per million tokens. Default 0 = spend tracking disabled, request counts still metered. */
@@ -44,10 +46,11 @@ export function entitlementConfig(raw: string | undefined): Entitlements {
   try {
     const input = object(JSON.parse(raw!), ['defaults', 'tenants']);
     const limits = (raw: unknown): Entitlement => {
-      const r = object(raw, ['apiCalls', 'storageBytes', 'computeAttempts', 'egressBytes', 'aiSpendCapCents', 'aiWarnPct', 'aiCostCentsPerMillionTokens']);
+      const r = object(raw, ['apiCalls', 'storageBytes', 'computeAttempts', 'egressBytes', 'aiSpendCapCents', 'aiCallsPerMonth', 'aiWarnPct', 'aiCostCentsPerMillionTokens']);
       for (const k of ['apiCalls', 'storageBytes', 'computeAttempts']) if (!Number.isSafeInteger(r[k]) || Number(r[k]) < 0) throw Error();
       const out: Entitlement = { apiCalls: Number(r.apiCalls), storageBytes: Number(r.storageBytes), computeAttempts: Number(r.computeAttempts) };
       if (r.egressBytes !== undefined) { if (!Number.isSafeInteger(r.egressBytes) || Number(r.egressBytes) < 0) throw Error(); out.egressBytes = Number(r.egressBytes); }
+      if (r.aiCallsPerMonth !== undefined) { if (!Number.isSafeInteger(r.aiCallsPerMonth) || Number(r.aiCallsPerMonth) < 0) throw Error(); out.aiCallsPerMonth = Number(r.aiCallsPerMonth); }
       if (r.aiSpendCapCents !== undefined) { if (!Number.isSafeInteger(r.aiSpendCapCents) || Number(r.aiSpendCapCents) < 0) throw Error(); out.aiSpendCapCents = Number(r.aiSpendCapCents); }
       if (r.aiWarnPct !== undefined) { if (!Number.isSafeInteger(r.aiWarnPct) || Number(r.aiWarnPct) < 0 || Number(r.aiWarnPct) > 100) throw Error(); out.aiWarnPct = Number(r.aiWarnPct); }
       if (r.aiCostCentsPerMillionTokens !== undefined) { if (!Number.isSafeInteger(r.aiCostCentsPerMillionTokens) || Number(r.aiCostCentsPerMillionTokens) < 0) throw Error(); out.aiCostCentsPerMillionTokens = Number(r.aiCostCentsPerMillionTokens); }
@@ -305,6 +308,33 @@ export class HostedUsage {
       return delivered;
     });
   }
+  private async monthlyAiCalls(c: SqlConnection, scope: Scope, period: string): Promise<number> {
+    const rows = await c.query("SELECT admitted FROM h8_usage WHERE tenant_id = ? AND namespace_id = ? AND period >= ? AND period <= ? AND metric = 'aiCalls'",
+      [scope.tenantId, scope.namespaceId, `${period}-01`, `${period}-31`]);
+    return rows.reduce((total, row) => usageInteger(total + usageInteger(row.admitted)), 0);
+  }
+  async aiCredits(scope: Scope) {
+    const period = new Date(this.clock()).toISOString().slice(0, 7), limit = this.entitlement(scope).aiCallsPerMonth ?? null;
+    const used = await this.db.transaction(async c => { await this.billingScope(c, scope); return this.monthlyAiCalls(c, scope, period); });
+    const reset = new Date(`${period}-01T00:00:00Z`); reset.setUTCMonth(reset.getUTCMonth() + 1);
+    return { period, limit, used, remaining: limit === null ? 0 : Math.max(0, limit - used), resetsAt: reset.toISOString() };
+  }
+  private async denyAi(c: SqlConnection, scope: Scope, now: string): Promise<void> {
+    const args = [scope.tenantId, scope.namespaceId, now.slice(0, 10), 'aiCalls'];
+    await c.query('INSERT INTO h8_usage VALUES (?,?,?,?,0,0) ON CONFLICT (tenant_id, namespace_id, period, metric) DO NOTHING', args);
+    await c.query('UPDATE h8_usage SET denied = denied + 1 WHERE tenant_id = ? AND namespace_id = ? AND period = ? AND metric = ?', args);
+    await c.query('INSERT INTO h8_usage_events VALUES (?,?,?,?,?,?,?,?)', [randomUUID(), scope.tenantId, scope.namespaceId, now, 'aiCalls', 'call', 1, 'denied']);
+  }
+  private async creditGate(c: SqlConnection, scope: Scope, now: string): Promise<boolean> {
+    const limit = this.entitlement(scope).aiCallsPerMonth;
+    if (limit === undefined) throw new MetadataError('AI_MANAGED_UNAVAILABLE', 503);
+    if (await this.monthlyAiCalls(c, scope, now.slice(0, 7)) < limit) return true;
+    await this.denyAi(c, scope, now); return false;
+  }
+  async checkAiCredits(scope: Scope): Promise<void> {
+    const allowed = await this.db.transaction(async c => { await this.lockAiScope(c, scope); return this.creditGate(c, scope, new Date(this.clock()).toISOString()); });
+    if (!allowed) throw new MetadataError('AI_CREDITS_EXHAUSTED', 429);
+  }
   /** Current durable AI usage snapshot for a tenant scope (today's UTC period). */
   async aiUsage(scope: Scope): Promise<{ tenantId: string; namespaceId: string; period: string; aiCalls: number; aiTokens: number; spendCents: number; capCents?: number; warnPct: number }> {
     const entitlement = this.entitlement(scope), period = new Date(this.clock()).toISOString().slice(0, 10);
@@ -346,12 +376,13 @@ export class HostedUsage {
    * intent commits with the charge. Audit delivery is retried independently.
    * Warning-intent storage failure never rolls back the charge (see below).
    */
-  async recordAiUsage(scope: Scope, tokens: number, estimated = false): Promise<{ aiCalls: number; aiTokens: number; spendCents: number; warned: boolean }> {
+  async recordAiUsage(scope: Scope, tokens: number, estimated = false, managed = false): Promise<{ aiCalls: number; aiTokens: number; spendCents: number; warned: boolean }> {
     if (!Number.isSafeInteger(tokens) || tokens < 0) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
     const entitlement = this.entitlement(scope), now = new Date(this.clock()).toISOString(), period = now.slice(0, 10);
     const recorded = await this.db.transaction(async c => {
       await this.lockAiScope(c, scope);
       const after = await this.aiCountIn(c, scope, period, 'aiTokens') + tokens;
+      if (managed && !await this.creditGate(c, scope, now)) return undefined;
       const aiCalls = await this.aiCountIn(c, scope, period, 'aiCalls') + 1;
       if (!Number.isSafeInteger(after) || !Number.isSafeInteger(aiCalls)) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
       for (const [metric, amount, unit] of [['aiCalls', 1, 'call'], ['aiTokens', tokens, estimated ? 'estimated-token' : 'token']] as const) {
@@ -399,6 +430,7 @@ export class HostedUsage {
       }
       return { aiCalls, aiTokens: after, spendCents };
     }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
+    if (!recorded) throw new MetadataError('AI_CREDITS_EXHAUSTED', 429);
     let warned = false;
     try { warned = (await this.deliverAiWarnings(scope)).has(period); } catch { /* The charge is committed; retain the warning for retry. */ }
     return { ...recorded, warned };
@@ -417,7 +449,9 @@ export class HostedUsage {
       }
     };
     return {
-      check: async namespaceId => { await this.checkAiSpend(await resolveScope(namespaceId)); },
+      check: async (namespaceId, managed) => { const scope = await resolveScope(namespaceId); if (managed) await this.checkAiCredits(scope); await this.checkAiSpend(scope); },
+      credits: async namespaceId => this.aiCredits(await resolveScope(namespaceId)),
+      commit: async (namespaceId, tokens, estimated) => { await this.recordAiUsage(await resolveScope(namespaceId), tokens, estimated, true); },
       record: async (namespaceId, tokens, estimated) => { await this.recordAiUsage(await resolveScope(namespaceId), tokens, estimated); },
     };
   }

@@ -69,14 +69,14 @@ export interface Invitation { id: string; namespaceId: string; name: string; rol
 export interface TenantJob { id: string; ownerId: string; version: number; spec: { kind: 'refresh' | 'report' | 'alert' | 'digest'; enabled: boolean }; stopped: boolean; nextRun: string | null }
 export interface JobHistory { id: string; state: string; errorCode: string | null; createdAt: string; finishedAt: string | null }
 export interface JobDelivery { delivery_id: string; recipient_id: string; state: string; attempts: number; error_code: string | null }
-export interface AIStatus { configured: boolean; state: 'configured' | 'not-configured' | 'needs-approval' }
-export interface ORequest { question: string; dashboardId?: string; calculatedFields?: readonly CalculatedField[] }
+export interface AICredits { period: string; limit: number | null; used: number; remaining: number; resetsAt: string }
+export interface AIStatus { configured: boolean; state: 'configured' | 'not-configured' | 'needs-approval' | 'credit-limit'; mode?: 'managed' | 'byo' | 'off'; credits?: AICredits | null; managedAvailable?: boolean }
+export interface ORequest { question: string; dashboardId?: string; datasetId?: string; calculatedFields?: readonly CalculatedField[] }
 export interface AnalyticsConfig { enabled: boolean; override: boolean | null; defaultEnabled: boolean; configured: boolean }
-export interface AIConfig {
+export interface AIConfig extends AIStatus {
   provider: 'openai' | 'anthropic' | 'openai-compatible' | 'bedrock' | null;
   model: string; baseUrl?: string; hasKey: boolean; configured: boolean;
-  state: 'configured' | 'not-configured' | 'needs-approval';
-  keyStorage: 'ephemeral' | 'encrypted-file'; canSaveKey: boolean; compatibleBaseUrls: string[];
+  keyStorage: 'ephemeral' | 'encrypted-file' | 'encrypted-metadata'; canSaveKey: boolean; compatibleBaseUrls: string[];
 }
 
 export interface LoginInput { email: string; password: string; code: string }
@@ -384,7 +384,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   const getAnalyticsConfig = () => resource<AnalyticsConfig>('/api/admin/analytics');
   const saveAnalyticsConfig = (enabled: boolean) => resource<AnalyticsConfig>('/api/admin/analytics', 'POST', { enabled });
   const getAIConfig = () => resource<AIConfig>('/api/admin/ai');
-  const saveAIConfig = (config: Pick<AIConfig, 'provider' | 'model' | 'baseUrl'>) => resource<AIConfig>('/api/admin/ai', 'POST', config);
+  const saveAIConfig = (config: Partial<Pick<AIConfig, 'provider' | 'model' | 'baseUrl' | 'mode'>>) => resource<AIConfig>('/api/admin/ai', 'POST', config);
   const saveAIKey = (key: string) => resource<AIConfig>('/api/admin/ai/key', 'POST', { key });
   const testAIConnection = () => resource<{ ok: true }>('/api/admin/ai/test', 'POST', {});
   async function getSession(signal?: AbortSignal): Promise<Session> {

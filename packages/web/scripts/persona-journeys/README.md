@@ -83,8 +83,8 @@ source initially denies access, then a trusted fixture policy update grants
 access and the published recipe returns filtered reader rows (issue #155).
 The allowed case requires 200 with the expected rows; 403 is a passing assertion
 only in the explicit denied case, never a substitute for the allowed case. J2
-asserts a true empty hosted home. The AI answer is environment-limited because the
-fixture has no provider; live embedding remains a future journey. The generated
+asserts a true empty hosted home. J4 now verifies a grounded AI answer using its
+explicit test-only managed provider; live embedding remains a future journey. The generated
 report is the authoritative record for the latest run.
 
 Where the brief's labels differ, scripts follow the current UI and describe
@@ -98,3 +98,10 @@ J4 copies the actual `hostedDataFixture` rows and recipe into its PostgreSQL
 tenant, then uses real hosted HTTP handlers and built-in-auth fixture tokens.
 It does not synthesize session/data responses. A persistent local draft is
 reported as a draft; it is never counted as a published dashboard.
+
+
+Issue #190: J4 starts the hosted stack with `aiStub: true`, ten monthly credits,
+and the test-only provider gate. `ai-answer-environment` must pass with a grounded
+answer and reader-owned result rows. The runner rejects an environment gap for
+that step. Other journeys keep their existing provider configuration. All model
+responses are deterministic; no live provider or AWS access is needed.

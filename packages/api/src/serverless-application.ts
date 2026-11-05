@@ -1,3 +1,5 @@
+import { HostedAI } from './hosted-ai.js';
+import type { AiMeter } from './ai-settings.js';
 import { unsubscribePath } from './digest-routes.js';
 import { disabledAnalytics } from './analytics.js';
 import { createBuiltinHostedServer, type HostedInvocationAdapters } from './hosted-server.js';
@@ -54,7 +56,7 @@ export async function serverlessUsage(database: Database, deployment: string): P
 /** Literal supported data routes. Legacy base64 uploads remain gated. */
 export function serverlessDataPath(raw: string): boolean {
   const path = raw.replace(/^\/api\/namespaces\/[A-Za-z0-9_-]+\//, '/api/');
-  return !!unsubscribePath(path) || !!serverlessV1Methods(path) || path === '/api/admin/analytics' || /^\/api\/(?:session|namespaces|users|groups|connectors|sources|prep-sources|prep-datasets)$/.test(path)
+  return /^\/api\/(?:o\/(?:status|generate|calculation|query)|admin\/ai(?:\/(?:key|test))?)$/.test(path) || !!unsubscribePath(path) || !!serverlessV1Methods(path) || path === '/api/admin/analytics' || /^\/api\/(?:session|namespaces|users|groups|connectors|sources|prep-sources|prep-datasets)$/.test(path)
     || /^\/api\/(?:automation-status|job-recipients|jobs(?:\/[A-Za-z0-9_-]{1,512}(?:\/(?:runs|deliveries))?)?)$/.test(path)
     || /^\/api\/sources\/[A-Za-z0-9_-]+(?:\/(?:bind|rotate|preview|rows|output|query|refresh|policy))?$/.test(path)
     || /^\/api\/(?:ai\/sources(?:\/[A-Za-z0-9_-]+\/schema)?|prep-datasets\/import)$/.test(path)
@@ -65,7 +67,7 @@ export function serverlessDataPath(raw: string): boolean {
     || /^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(path);
 }
 export function serverlessAdapters(database: Database, metadata: TenantMetadata, budgets: TenantBudgets, aws: InvocationAws,
-  env: NodeJS.ProcessEnv, auth?: HostedAuth, analytics = disabledAnalytics): HostedInvocationAdapters {
+  env: NodeJS.ProcessEnv, auth?: HostedAuth, analytics = disabledAnalytics, aiMeter?: AiMeter): HostedInvocationAdapters {
   const deployment = deploymentId(env), config = hostedConfig(env), bucket = env.OPENSIGHT_ARTIFACT_BUCKET;
   if (!bucket) throw new MetadataError('ARTIFACT_CONFIG_INVALID', 503);
   const coordinator = new DurableCoordinator(database, metadata, deployment), manifests = new ManifestStore(coordinator);
@@ -86,7 +88,8 @@ export function serverlessAdapters(database: Database, metadata: TenantMetadata,
   });
   const embedContent = new EmbedContent(new HostedData(embedSources, undefined, budgets, work.cache, work, analytics));
   const uploadService = new DurableUploads(metadata, dispatch, ledger, new UploadObjects(aws, bucket)), uploads = new DurableUploadRoutes(uploadService);
-  return { data, embedContent, jobs, mail: serverlessMail(aws, env), allows: serverlessDataPath, capabilities: { directUploads: { version: 1, maxBytes: 8 * 1024 * 1024 }, resultChunks: { version: 1, maxBytes: 1024 * 1024, maxResultBytes: budgets.config.node.resultBytes }, controlJsonBytes: 1024 * 1024 },
+  const ai = new HostedAI(data, config.encryptionKey.toString('base64'), env, aiMeter);
+  return { data, ai, embedContent, jobs, mail: serverlessMail(aws, env), allows: serverlessDataPath, capabilities: { directUploads: { version: 1, maxBytes: 8 * 1024 * 1024 }, resultChunks: { version: 1, maxBytes: 1024 * 1024, maxResultBytes: budgets.config.node.resultBytes }, controlJsonBytes: 1024 * 1024 },
     v1: context => new DurableV1(database, metadata, context, deployment, env, database.dialect ?? 'postgres'),
     invitations: new DurableInvitations(dispatch, metadata, config, serverlessMail(aws, env)),
     resultMaxBytes: budgets.config.node.resultBytes,
@@ -113,5 +116,5 @@ export function serverlessAdapters(database: Database, metadata: TenantMetadata,
 export async function createServerlessApplication(db: InvocationDatabases, scope: InvocationScope, env: NodeJS.ProcessEnv) {
   const aws = new InvocationAws(scope, env), usage = await serverlessUsage(db.membership, deploymentId(env));
   return createBuiltinHostedServer({ membershipDatabase: db.membership, tenantDatabase: db.tenant, env,
-    invocation: { signal: scope.signal, usage, compose: (metadata, budgets, auth, _aiMeter, analytics) => serverlessAdapters(db.membership, metadata, budgets, aws, env, auth, analytics) } });
+    invocation: { signal: scope.signal, usage, compose: (metadata, budgets, auth, aiMeter, analytics) => serverlessAdapters(db.membership, metadata, budgets, aws, env, auth, analytics, aiMeter) } });
 }

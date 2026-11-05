@@ -39,7 +39,8 @@ operator measurements; there is no new tenant-accessible metrics endpoint.
 | Upload parsing | Admission before parsing; disposable process; cancellation checked before the atomic source/secret write |
 | File intake and IPC table construction | Bounded row/cell/byte accounting with cooperative yields every 256 rows |
 | Discovery and AI schema | Existing H3 metadata-only authorization; no worker execution |
-| Generative AI execution, hosted scheduled reports/alerts/refresh and legacy query/embed routes | Still unavailable in hosted mode; cannot reach fixture executors or ownerless schedulers |
+| Generative AI | Hosted Ask O uses deployment-managed Bedrock or a tenant BYO provider. Managed requests check monthly credits and the existing daily spend cap before transport; only validated, delivered answers consume credits (#190). Schema admission and result queries use the same tenant security and contained execution as dashboards. |
+| Hosted scheduled reports/alerts/refresh and legacy query/embed routes | See the current hosted automation and embedding guides for their explicit routes; fixture executors and ownerless schedulers remain inaccessible. |
 
 The fixture server's DuckDB/PostgreSQL/MySQL executors and legacy scheduler remain
 separate from the hosted router. H4 does not turn those development paths into
@@ -142,3 +143,34 @@ workload measurements. Exceeding a regression trigger calls for investigation,
 a narrower admitted envelope or stronger worker placement. HQ-8 owns production
 ceilings, acceptable latency, admission shares and isolation class; HQ-14 owns
 product tiers. None are decided by this slice.
+
+
+## Hosted Ask O (#190)
+
+The hosted single-node and serverless dispatchers serve `/api/o/status`,
+`/api/o/generate`, `/api/o/calculation`, `/api/o/query` and admin-only
+`/api/admin/ai`, `/api/admin/ai/key`, `/api/admin/ai/test`. Reader AI questions
+must name an accessible published dashboard; its frozen binding resolves schema
+and executes results using the reader's source permissions. Column denial is
+applied before prompt construction, and scope is checked again after provider I/O.
+
+Enable managed mode with `OPENSIGHT_AI_MANAGED=bedrock`,
+`OPENSIGHT_AI_BEDROCK_MODEL=<model id>` and `AWS_REGION`. This becomes the default
+for tenants without an explicit mode; the AWS identity belongs to the deployment.
+A missing `aiCallsPerMonth` entitlement leaves managed AI unavailable. The D-82
+monthly allowances are Free 10, Light 50, Regular 500 and Heavy 3000; configure
+these through `OPENSIGHT_ENTITLEMENTS` or `OPENSIGHT_BILLING_TIER_ENTITLEMENTS`.
+Retain `aiSpendCapCents` and `aiCostCentsPerMillionTokens` per tier as the existing
+daily cost backstop. One successful generate or calculation uses one credit.
+Failures, invalid/unsupported answers, security denials and connection tests use
+none. The commit rechecks the monthly limit atomically, including concurrent calls.
+
+Tenant admins can select managed, BYO or off. BYO keys use the existing encrypted
+metadata secret path and consume no OpenSight credits. Compatible providers must
+use the deployment's `OPENSIGHT_AI_COMPATIBLE_URL` allowlist. No configured source
+means no provider calls and the standard interpreter remains available. Exhausted
+credits pause generative mode and display the UTC month balance and reset date.
+
+`OPENSIGHT_AI_MANAGED=stub` requires both `NODE_ENV=test` and
+`OPENSIGHT_AI_TEST_STUB=1`; production configuration rejects it. The J4 persona
+fixture uses this deterministic provider and never contacts a live model.

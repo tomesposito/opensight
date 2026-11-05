@@ -25,7 +25,7 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
     return client.queryO(query, dashboardId, signal);
   } } : undefined, [access.mode, client, dashboardId, draft.dataset]);
   const [question, setQuestion] = useState('');
-  const [answer, setAnswer] = useState<{ result: InterpretationResult; schema: string }>();
+  const [answer, setAnswer] = useState<{ result: InterpretationResult; schema: string; generated?: boolean }>();
   const [selected, setSelected] = useState(0);
   const [edited, setEdited] = useState<Interpretation>();
   const [added, setAdded] = useState('');
@@ -58,14 +58,14 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
   const hasDateDimension = interpretation ? interpretation.dimensions.some(name => { const f = stepFields.find(x => x.name === name); return !!f && datetime(f); }) : false;
   const submit = async () => {
     const current = ++revision.current; setSelected(0); setEdited(undefined); setAdded(''); setError(''); setAnswer(undefined); setExecutedMetrics(undefined);
-    if (!generative) { setAnswer({ schema, result: interpretQuestion(question, oVocabulary(draft.calculatedFields, draft.dataset)) }); return; }
+    if (!generative || !ai.available) { setAnswer({ schema, result: interpretQuestion(question, oVocabulary(draft.calculatedFields, draft.dataset)) }); return; }
     if (!ai.available || !ai.client) return;
     setPending(true);
     try {
-      const result = await ai.client.generateO({ question, calculatedFields: draft.calculatedFields, ...(dashboardId ? { dashboardId } : {}) });
-      if (current === revision.current) setAnswer({ schema, result });
+      const result = await ai.client.generateO({ question, calculatedFields: draft.calculatedFields, ...(dashboardId ? { dashboardId } : ai.mode && draft.dataset ? { datasetId: draft.dataset.id } : {}) });
+      if (current === revision.current) setAnswer({ schema, result, generated: true });
     } catch (e) { if (current === revision.current) setError(e instanceof Error ? e.message : String(e)); }
-    finally { if (current === revision.current) setPending(false); }
+    finally { if (current === revision.current) setPending(false); void ai.refresh(); }
   };
   const bar = <form className="o-bar" onSubmit={e => { e.preventDefault(); void submit(); }}>
       {renderBar && <span className="o-mark" aria-hidden="true">O</span>}
@@ -77,8 +77,8 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
     {renderBar?.(bar)}
     <section className={`o-entry${renderBar ? ' o-entry-toolbar' : ''}`} aria-label="Ask a question">
     {!renderBar && bar}
-    <span className="o-local-label">{generative ? 'AI interpretation · Review before use' : 'Local deterministic interpreter · No AI'}</span>
-    <OModeNotice available={ai.available} state={ai.state} checked={generative} onChange={value => { revision.current++; setGenerative(value); setAnswer(undefined); setError(''); }} />
+    <span className="o-local-label">{(result ? answer?.generated : generative && ai.available) ? 'AI interpretation · Review before use' : ai.state === 'credit-limit' ? 'Standard interpreter · No AI' : 'Local deterministic interpreter · No AI'}</span>
+    <OModeNotice available={ai.available} state={ai.state} mode={ai.mode} credits={ai.credits} checked={generative} onChange={value => { revision.current++; setGenerative(value); setAnswer(undefined); setError(''); }} />
     {pending && <p role="status">Asking configured provider…</p>}{error && <p role="alert">{error}</p>}
     {result && <div className="o-answer">
       <div className="o-answer-actions"><strong>Interpreted question</strong><button type="button" onClick={() => setAnswer(undefined)}>Close answer</button></div>

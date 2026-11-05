@@ -19,6 +19,23 @@ async function mount(t, component, access) {
 const status = { configured: true, state: 'configured' };
 const answer = () => interpretQuestion('sum revenue', dataFields([]));
 
+for (const mode of [undefined, 'byo']) test(`#190 ${mode ? 'hosted' : 'legacy single-node'} generation sends its supported dataset scope`, async t => {
+  const requests = [], dataset = { id: 'orders', name: 'Orders', columns: [{ name: 'revenue', type: 'DECIMAL' }] };
+  const aiClient = { async getAIStatus() { return { ...status, ...(mode ? { mode } : {}) }; },
+    async generateO(body) { requests.push(body); return answer(); },
+    async generateCalculation(body) { requests.push(body); return { suggestion: { name: 'Double', expression: '{revenue} * 2', role: 'measure', explanation: 'Double revenue.' } }; } };
+  const renderer = await mount(t, createElement('div', null,
+    createElement(OEntry, { draft: { ...emptyDraft(), dataset } }),
+    createElement(BuildForMe, { dataset, fields: [], onInsert() {} })), context('author_ai', aiClient));
+  const o = renderer.root.findByType(OEntry), calculation = renderer.root.findByType(BuildForMe);
+  for (const section of [o, calculation]) await act(() => section.findByProps({ role: 'switch' }).props.onChange({ target: { checked: true } }));
+  await act(() => o.findByProps({ id: 'o-question' }).props.onChange({ target: { value: 'sum revenue' } }));
+  await act(() => o.findByType('form').props.onSubmit({ preventDefault() {} }));
+  await act(() => calculation.findByProps({ maxLength: 2000 }).props.onChange({ target: { value: 'Double revenue' } }));
+  await act(() => calculation.findAllByType('button').find(b => b.props.children === 'Suggest expression').props.onClick());
+  assert.deepEqual(requests, ['sum revenue', 'Double revenue'].map(question => ({ question, calculatedFields: [], ...(mode ? { datasetId: 'orders' } : {}) })));
+});
+
 test('generative O enables with configured provider, submits server request and ignores stale responses', async t => {
   let resolve; const requests = [];
   const aiClient = { async getAIStatus() { return status; }, generateO(body) { requests.push(body); return new Promise(r => { resolve = r; }); } };
@@ -62,4 +79,31 @@ test('plain authors keep only deterministic templates and cannot fetch AI config
   const aiClient = { async getAIStatus() { calls++; return status; } };
   const renderer = await mount(t, createElement(BuildForMe, { fields: [], onInsert() {} }), context('author', aiClient));
   assert.equal(renderer.root.findByProps({ role: 'switch' }).props.disabled, true); assert.equal(calls, 0);
+});
+
+test('#190 exhaustion turns the switch off, shows balance/reset and keeps the standard interpreter usable', async t => {
+  let calls = 0;
+  const aiClient = { async getAIStatus() { return { configured: false, state: 'credit-limit', mode: 'managed', credits: { period: '2026-11', limit: 10, used: 10, remaining: 0, resetsAt: '2026-12-01T00:00:00Z' } }; }, async generateO() { calls++; throw Error('must not generate'); } };
+  const renderer = await mount(t, createElement(OEntry, { draft: emptyDraft() }), context('author_ai', aiClient));
+  assert.equal(renderer.root.findByProps({ role: 'switch' }).props.disabled, true);
+  assert.equal(renderer.root.findByProps({ role: 'switch' }).props.checked, false);
+  assert.match(JSON.stringify(renderer.toJSON()), /Monthly Ask O credits are used up/);
+  assert.match(JSON.stringify(renderer.toJSON()), /December 1/);
+  await act(() => renderer.root.findByProps({ id: 'o-question' }).props.onChange({ target: { value: 'sum revenue by region' } }));
+  await act(() => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.equal(renderer.root.findAllByProps({ className: 'o-answer' }).length, 1); assert.equal(calls, 0);
+});
+for (const paused of ['credit-limit', 'off']) test(`#190 last delivered answer remains visible when ${paused} pauses subsequent generations`, async t => {
+  let calls = 0;
+  const aiClient = { async getAIStatus() { return { configured: calls === 0, state: calls ? paused === 'off' ? 'not-configured' : 'credit-limit' : 'configured', mode: calls && paused === 'off' ? 'off' : 'managed', credits: { period: '2026-11', limit: 1, used: calls, remaining: 1 - calls, resetsAt: '2026-12-01T00:00:00Z' } }; }, async generateO() { calls++; return answer(); } };
+  const renderer = await mount(t, createElement(OEntry, { draft: emptyDraft() }), context('author_ai', aiClient));
+  await act(() => renderer.root.findByProps({ role: 'switch' }).props.onChange({ target: { checked: true } }));
+  await act(() => renderer.root.findByProps({ id: 'o-question' }).props.onChange({ target: { value: 'sum revenue' } }));
+  await act(() => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.equal(renderer.root.findAllByProps({ className: 'o-answer' }).length, 1);
+  assert.equal(renderer.root.findByProps({ role: 'switch' }).props.checked, false);
+  await act(() => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.equal(calls, 1);
+  assert.equal(renderer.root.findAllByProps({ className: 'o-answer' }).length, 1);
+  assert.match(JSON.stringify(renderer.toJSON()), /interpreter · No AI/);
 });

@@ -200,6 +200,11 @@ export class HostedPrep {
   /** D-85: only the authorized published-dashboard backend supplies recipeOwner.
    * Recompute even BLAZE/nested BLAZE recipes in request-local memory. No prepared
    * artifact read or write, and no publisher identity is used for leaf admission. */
+  async readerDashboardSchema(context: TenantContext, recipeOwner: string, id: string) {
+    const stored = await this.stored(context, id, recipeOwner), graph = await this.graph(context, id, stored.resource.opensightPrep!, recipeOwner);
+    await this.data.finish(context, graph.leaves, graph.revisions);
+    return this.plan(graph, id).columns;
+  }
   async readerDashboardVisual(context: TenantContext, recipeOwner: string, id: string, analysis: unknown, visualId: string, dataSetArn: string) {
     try {
       const stored = await this.stored(context, id, recipeOwner), graph = await this.graph(context, id, stored.resource.opensightPrep!, recipeOwner);

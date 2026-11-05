@@ -5,6 +5,8 @@ import { resolveSecurity, ExpressionBinder, parseExpression, QueryEngineError } 
 import { method, send } from './automation-routes.js';
 import { AIError } from './ai-providers.js';
 import { generativeInstructions, hasFieldNamePII, redactPII } from './ai-guard.js';
+import type { Completion } from './ai-providers.js';
+import type { PublishedMetric, InteractiveQuery } from '@opensight/query-engine';
 import type { AISettings } from './ai-settings.js';
 import { readBody, RequestError, type SalesQuery } from './query.js';
 import { record, invalid } from './schedule.js';
@@ -12,9 +14,14 @@ import type { Identity, SecurityService } from './security.js';
 import type { OrganizationService } from './organization.js';
 import { requireOScope } from './o-routes.js';
 
-async function schema(body: Record<string, unknown>, sales: SalesQuery, identity: Identity, security: SecurityService) {
-  const metadata = sales.securitySchema();
-  const policy = resolveSecurity(security.context(identity), metadata.columns, metadata.localData.dataSetArn);
+export interface GenerativeSchemaSource {
+  securitySchema(): Promise<{ columns: Parameters<typeof resolveSecurity>[1]; deniedColumns: readonly string[]; datasetId: string }>;
+  metricLookup(): Promise<readonly PublishedMetric[]>;
+  execute(query: InteractiveQuery): Promise<unknown>;
+}
+export interface DeliveredCompletion { text: string; commit(): Promise<void> }
+async function schema(body: Record<string, unknown>, source: GenerativeSchemaSource) {
+  const metadata = await source.securitySchema(), policy = { deniedColumns: metadata.deniedColumns };
   const raw = body.calculatedFields ?? [];
   if (!Array.isArray(raw) || raw.length > 100) invalid('$.calculatedFields', 'expected at most 100 calculations');
   const declarations = raw.map(value => {
@@ -24,9 +31,9 @@ async function schema(body: Record<string, unknown>, sales: SalesQuery, identity
     // rejects unsafe schema names outright — fail here with a clear 400
     // instead of spending a provider call on a request that cannot succeed.
     if (!c.name.trim() || /[{}\0]/.test(c.name)) invalid('$.calculatedFields', 'calculated field names must be nonempty and cannot contain braces');
-    return { Name: c.name, Expression: c.expression, DataSetIdentifier: 'sales' };
+    return { Name: c.name, Expression: c.expression, DataSetIdentifier: metadata.datasetId };
   });
-  const binder = new ExpressionBinder('sales', metadata.columns, declarations, [], {}, (name, path) => {
+  const binder = new ExpressionBinder(metadata.datasetId, metadata.columns, declarations, [], {}, (name, path) => {
     // #180: match missing-name binding failures before any provider call.
     if (policy.deniedColumns.includes(name)) throw new QueryEngineError('UNRESOLVED_BINDING', path, `unknown column: ${name}`);
   });
@@ -35,8 +42,8 @@ async function schema(body: Record<string, unknown>, sales: SalesQuery, identity
     const bound = binder.bind(c.Name, '$.calculatedFields');
     fields.push({ name: c.Name, type: bound.scalarType === 'number' ? 'DECIMAL' : bound.scalarType === 'datetime' ? 'DATETIME' : 'STRING' });
   }
-  const metrics = sales.metricLookup ? (await sales.metricLookup(identity)({ kind: 'dataset', id: 'sales' })).metrics : [];
-  return { fields: withGovernedMetrics(fields, 'sales', metrics.map(m => ({ ...m, datasetId: 'sales', state: 'published' }))), binder };
+  const metrics = await source.metricLookup();
+  return { fields: withGovernedMetrics(fields, metadata.datasetId, metrics.map(m => ({ ...m, datasetId: metadata.datasetId, state: 'published' }))), binder };
 }
 function providerObject(text: string, keys: string[]): Record<string, unknown> {
   try { return record(JSON.parse(text) as unknown, keys); }
@@ -52,31 +59,44 @@ export async function generativeRoute(request: IncomingMessage, response: Server
   if (calculation) security.require(identity, 'build');
   const body = record(await readBody(request), ['question', 'dashboardId', 'calculatedFields']);
   requireOScope(body, identity, security, organization, sales);
+  const source: GenerativeSchemaSource = {
+    securitySchema: async () => { const m = sales!.securitySchema(); return { columns: m.columns, deniedColumns: resolveSecurity(security.context(identity), m.columns, m.localData.dataSetArn).deniedColumns, datasetId: 'sales' }; },
+    metricLookup: async () => sales!.metricLookup ? (await sales!.metricLookup(identity)({ kind: 'dataset', id: 'sales' })).metrics : [],
+    execute: query => sales!.execute(query, identity),
+  };
+  const result = await generateAnswer(body, calculation, source, async input => ({ text: await ai.complete(identity.namespaceId, input), commit: async () => {} }), async () => {
+    requireOScope(body, identity, security, organization, sales); if (calculation) security.require(identity, 'build');
+  }, () => analytics.track({ tenantId: identity.namespaceId, namespaceId: identity.namespaceId }, { name: 'ask_o_asked', props: { count: 1 } }));
+  send(response, 200, result); return true;
+}
+/** Both planes share the guard, prompt, grammar and calculation validation. */
+export async function generateAnswer(body: Record<string, unknown>, calculation: boolean, source: GenerativeSchemaSource,
+  complete: (input: Completion) => Promise<DeliveredCompletion>, recheck: () => Promise<void>, onAsked: () => void = () => {}) {
   if (typeof body.question !== 'string' || !body.question.trim() || body.question.length > 2000) invalid('$.question', 'expected 1–2000 characters');
-  const before = await schema(body, sales!, identity, security);
+  const before = await schema(body, source);
   if (hasFieldNamePII(before.fields)) throw new AIError(400, 'AI_FIELD_NAME_PII', 'A field name matches a sensitive-data pattern. Rename the field before using generative AI.');
-  if (!calculation) analytics.track({ tenantId: identity.namespaceId, namespaceId: identity.namespaceId }, { name: 'ask_o_asked', props: { count: 1 } });
+  if (!calculation) onAsked();
   // Prompts are the one place user-influenced content meets the provider:
   // the question is PII-redacted, field names pass the shared PII guard,
   // and JSON strings plus system instructions pin content as data, never rules.
   const instructions = generativeInstructions(calculation);
-  const text = await ai.complete(identity.namespaceId, { system: instructions, prompt: JSON.stringify({ question: redactPII(body.question), fields: before.fields }) });
+  const completion = await complete( { system: instructions, prompt: JSON.stringify({ question: redactPII(body.question), fields: before.fields }) });
   // Authorization and policy changes during provider I/O must not release stale answers.
-  requireOScope(body, identity, security, organization, sales);
-  if (calculation) security.require(identity, 'build');
-  const current = await schema(body, sales!, identity, security);
+  await recheck();
+  const current = await schema(body, source);
   if (calculation) {
-    const result = providerObject(text, ['name', 'expression', 'role', 'explanation']);
+    const result = providerObject(completion.text, ['name', 'expression', 'role', 'explanation']);
     if (typeof result.name !== 'string' || !/^[A-Za-z_][A-Za-z0-9_ ]{0,127}$/.test(result.name) || current.fields.some(f => f.name.toLowerCase() === String(result.name).toLowerCase()) || typeof result.expression !== 'string' || typeof result.explanation !== 'string' || result.explanation.length > 2000 || !['measure', 'dimension'].includes(String(result.role))) throw new AIError(502, 'O_INVALID_PROVIDER_RESPONSE', 'Provider returned an invalid calculated field');
     const parsed = parseExpression(result.expression, '$.expression', { bind: (name, path) => current.binder.bind(name, path) });
     if (result.role === 'measure' && parsed.scalarType !== 'number') throw new AIError(502, 'O_INVALID_PROVIDER_RESPONSE', 'Measure expression must return a number');
-    send(response, 200, { suggestion: result });
+    await completion.commit();
+    return { suggestion: result };
   } else {
-    const value = providerObject(text, ['question']);
+    const value = providerObject(completion.text, ['question']);
     if (typeof value.question !== 'string' || !value.question.trim() || value.question.length > 2000) throw new AIError(422, 'O_UNSUPPORTED_QUESTION', 'Provider could not express this question in the supported O grammar');
     const result = interpretQuestion(value.question, current.fields);
     if (!result.interpretations.length || result.errors.some(e => e.code !== 'AMBIGUOUS_QUESTION')) throw new AIError(422, 'O_UNSUPPORTED_QUESTION', 'Provider returned an unsupported interpretation');
-    send(response, 200, result);
+    await completion.commit();
+    return result;
   }
-  return true;
 }

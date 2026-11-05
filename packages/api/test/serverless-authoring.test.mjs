@@ -6,7 +6,7 @@ import { coordinationFixture } from './coordination-helpers.mjs';
 import { migrateServerless } from '../dist/serverless-migration.js';
 import { createRuntime } from '../dist/runtime.js';
 import { createHostedApiServer } from '../dist/hosted-server.js';
-import { serverlessAdapters, serverlessDataPath } from '../dist/serverless-application.js';
+import { serverlessAdapters, serverlessDataPath, serverlessUsage } from '../dist/serverless-application.js';
 import { InvocationAws } from '../dist/runtime-aws.js';
 import { event, context, payload } from './runtime-helpers.mjs';
 import { adaptGatewayRequest } from '../dist/runtime-ingress.js';
@@ -36,9 +36,9 @@ async function fixture(t, overrides = {}) {
   const queries = [];
   const db = { dialect: 'sqlite', durable: true, transaction: (work, scope) => f.db.transaction(c => work({ query: (sql, values) => { queries.push(sql); return c.query(sql, values); } }), scope), close: async () => {} };
   const runtime = createRuntime(() => env, { databases: () => ({ membership: db, tenant: db }), readiness: async () => {},
-    application: (db, scope, env) => createHostedApiServer({ env, membershipDatabase: db.membership, tenantDatabase: db.tenant,
+    application: async (db, scope, env) => createHostedApiServer({ env, membershipDatabase: db.membership, tenantDatabase: db.tenant,
       security: { authenticate: async req => ['one', 'two'].includes(req.headers.authorization) ? { namespaceId: req.headers.authorization, userId: 'admin' } : undefined },
-      invocation: { signal: scope.signal, compose: (metadata, budgets, auth, _meter, analytics) => serverlessAdapters(db.membership, metadata, budgets, new InvocationAws(scope, env), env, auth, analytics) } }) });
+      invocation: { signal: scope.signal, ...(env.OPENSIGHT_AI_MANAGED ? { usage: await serverlessUsage(db.membership, 'test') } : {}), compose: (metadata, budgets, auth, meter, analytics) => serverlessAdapters(db.membership, metadata, budgets, new InvocationAws(scope, env), env, auth, analytics, meter) } }) });
   const code = (await readFile(new URL('../../../ops/serverless/edge-viewer.js', import.meta.url), 'utf8'))
     .replaceAll('__OPENSIGHT_HOST__', JSON.stringify('opensight.example')).replaceAll('__OPENSIGHT_ORIGIN__', JSON.stringify('https://opensight.example'));
   const sandbox = vm.createContext({ Buffer }); vm.runInContext(code, sandbox);
@@ -112,4 +112,23 @@ test('D-86 route and method grammar stays closed outside the tested authoring sl
     if (allowed.includes(method)) assert.equal(adaptGatewayRequest(event('/api' + path, method), runtimeEnv()).path, path);
     else assert.throws(() => adaptGatewayRequest(event('/api' + path, method), runtimeEnv()));
   }
+});
+
+
+test('#190 edge and serverless composition forward AI routes and commit managed credits', async t => {
+  const f = await fixture(t, { NODE_ENV: 'test', OPENSIGHT_AI_MANAGED: 'stub', OPENSIGHT_AI_TEST_STUB: '1',
+    OPENSIGHT_ENTITLEMENTS: JSON.stringify({ defaults: { apiCalls: 1000, storageBytes: 1000000, computeAttempts: 20, aiCallsPerMonth: 10 }, tenants: {} }) });
+  const { HostedData } = await import('../dist/hosted-data.js'), { HostedPrep } = await import('../dist/hosted-prep.js');
+  const { TenantBudgets } = await import('../dist/budgets.js');
+  const budgets = new TenantBudgets(f.budgets, c => f.metadata.assertContext(c)); t.after(() => budgets.shutdown());
+  const prep = new HostedPrep(new HostedData(f.sources, undefined, budgets));
+  await prep.save(f.contexts[0], 'sales', { name: 'Sales', expectedVersion: 0, pipeline: { version: 1, input: f.uploaded[0].id, steps: [{ id: 'rename', kind: 'rename', config: { column: 'amount', name: 'revenue' } }] } });
+  const status = await f.call('/api/o/status'); assert.equal(status.status, 200, JSON.stringify(status.body)); assert.equal(status.body.credits.remaining, 10);
+  const answer = await f.call('/api/o/generate', 'POST', { question: 'Which region drove revenue?', datasetId: 'sales' });
+  assert.equal(answer.status, 200, JSON.stringify(answer.body)); assert.equal(answer.body.interpretations[0].measure, 'revenue');
+  assert.equal((await f.call('/api/o/status')).body.credits.remaining, 9);
+  assert.equal((await f.call('/api/admin/ai/test', 'POST', {})).status, 200);
+  assert.equal((await f.call('/api/o/status')).body.credits.remaining, 9);
+  assert.equal((await f.call('/api/admin/ai', 'POST', { mode: 'off' })).status, 200);
+  assert.equal((await f.call('/api/o/status')).body.configured, false);
 });

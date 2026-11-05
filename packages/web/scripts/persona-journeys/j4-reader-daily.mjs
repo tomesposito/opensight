@@ -1,7 +1,7 @@
 import { assert, button, launchBrowser, navigate, runJourney, startHostedStack } from './harness.mjs';
 
 await runJourney('j4-reader-daily', 'Reader AI', async j => {
-  const stack = await startHostedStack(); j.cleanup(stack.stop);
+  const stack = await startHostedStack({ aiStub: true }); j.cleanup(stack.stop);
   const { hostedDataFixture } = await import('../../test/hosted-data-helpers.mjs');
   const { HostedData } = await import('../../../api/dist/hosted-data.js');
   const { HostedPrep } = await import('../../../api/dist/hosted-prep.js');
@@ -62,12 +62,13 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     assert.doesNotMatch(await author.locator('.toolbar-notice').innerText(), /Published with diagnostics/);
     return 'The editor saved a hosted analysis and the real v1 publish route returned version 1.';
   });
-  await j.step('provider-unconfigured', author, async () => {
+  await j.step('managed-provider-configured', author, async () => {
     await author.getByRole('button', { name: /^Ask a question about / }).click();
     await author.locator('.q-side-panel').waitFor();
-    assert.equal(await author.getByRole('switch', { name: 'Generative mode', exact: true }).isDisabled(), true);
-    const actual = await author.locator('.o-mode-notice').innerText(); assert.match(actual, /not configured/);
-    j.gap('ai-answer-environment', 'Ask O answers using a configured provider and traces the visible data.', `Environment-limited: no provider configured. Author panel says: ${actual}. No AI call is made.`);
+    await author.getByRole('switch', { name: 'Generative mode', exact: true }).waitFor();
+    await author.waitForFunction(() => !document.querySelector('[role="switch"]').disabled);
+    assert.match(await author.locator('.o-mode-notice').innerText(), /Managed AI/);
+    return 'The explicit test-only managed stub enables hosted Ask O with ten monthly credits and no live provider call.';
   });
   await j.step('admin-grants-dashboard', author, async () => {
     await navigate(author, 'my-stuff');
@@ -119,6 +120,7 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
   await page.context().setExtraHTTPHeaders({ Authorization: `Bearer ${(await f.reader.login()).token}` });
   await j.step('reader-filter', page, async () => {
     await page.reload(); await controls.waitFor();
+    await page.locator('.dashboard-grid .chart svg').first().waitFor({ timeout: 45000 });
     const response = page.waitForResponse(r => r.url().includes('/versions/1/visuals/') && r.url().endsWith('/query') && r.request().postDataJSON()?.controlValues?.['control-1']?.[0] === 'west');
     await controls.selectOption('west');
     const filtered = await response;
@@ -136,9 +138,25 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     const panel = page.locator('.q-side-panel'); await panel.waitFor();
     const after = await page.locator('.dashboard-grid').boundingBox(), box = await panel.boundingBox();
     assert.ok(after.width < before.width, 'Dashboard must narrow'); assert.ok(after.x + after.width <= box.x + 1, 'Dashboard must not overlap Ask O');
-    assert.match(await panel.locator('.o-mode-notice').innerText(), /not configured/);
-    assert.equal(await panel.getByRole('switch', { name: 'Generative mode', exact: true }).isDisabled(), true);
+    await page.waitForFunction(() => !document.querySelector('[role="switch"]').disabled);
+    assert.match(await panel.locator('.o-mode-notice').innerText(), /Managed AI/);
     return { before, after, panel: box };
+  });
+  await j.step('ai-answer-environment', page, async () => {
+    assert.equal(panelAvailable, true, 'Hosted reader Ask O must be available');
+    const panel = page.locator('.q-side-panel');
+    await panel.getByRole('switch', { name: 'Generative mode', exact: true }).check();
+    await panel.getByRole('searchbox', { name: 'Ask a question', exact: true }).fill('Which region drove revenue?');
+    const generated = page.waitForResponse(r => r.url().endsWith('/api/o/generate'));
+    const queried = page.waitForResponse(r => /\/api\/o\/query$|\/question$/.test(r.url()) && r.request().method() === 'POST');
+    await panel.getByRole('button', { name: 'Ask', exact: true }).click();
+    assert.equal((await generated).status(), 200);
+    const result = await queried; assert.equal(result.status(), 200);
+    assert.deepEqual((await result.json()).rows, [{ region: 'east', 'O sum revenue': 40 }, { region: 'west', 'O sum revenue': 20 }]);
+    await panel.locator('.o-result .chart svg').waitFor();
+    assert.match(await panel.locator('.o-grounding').first().innerText(), /Grounded in:.*revenue.*region/);
+    assert.match(await panel.locator('.o-credits').innerText(), /9 of 10 credits left/);
+    return 'The real hosted generate route returns a grounded interpretation; its query executes on reader-owned data and renders east 40 / west 20. One managed credit is committed. No live AI transport is used.';
   });
   await j.step('narrow-reader-with-panel', page, async () => {
     await page.setViewportSize({ width: 900, height: 1100 });
@@ -149,4 +167,38 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     else j.gap('narrow-reader-with-panel', 'At 900px with Ask O open, the second card starts below the first.', actual);
     return actual;
   });
+  await j.step('managed-credit-limit', page, async () => {
+    const { HostedUsage } = await import('../../../api/dist/hosted-usage.js');
+    const usage = new HostedUsage(f.db, { defaults: { apiCalls: 10000, storageBytes: 10000000, computeAttempts: 1000, aiCallsPerMonth: 10 }, tenants: {} });
+    // Seed the remainder of this synthetic workspace's allowance to inspect the limit UI.
+    for (let i = 0; i < 9; i++) await usage.recordAiUsage(await f.context(), 0);
+    await page.setViewportSize({ width: 1440, height: 1100 });
+    await page.getByRole('button', { name: 'Close Ask O', exact: true }).click(); await trigger.click();
+    const panel = page.locator('.q-side-panel');
+    await panel.getByText('Monthly Ask O credits are used up', { exact: true }).waitFor();
+    assert.equal(await panel.getByRole('switch', { name: 'Generative mode', exact: true }).isChecked(), false);
+    assert.equal(await panel.getByRole('switch', { name: 'Generative mode', exact: true }).isDisabled(), true);
+    assert.match(await panel.locator('.o-credits').innerText(), /0 of 10 credits left/);
+    await panel.getByRole('searchbox', { name: 'Ask a question', exact: true }).fill('sum revenue by region');
+    await panel.getByRole('button', { name: 'Ask', exact: true }).click(); await panel.locator('.o-result .chart svg').waitFor();
+    assert.match(await panel.innerText(), /Standard interpreter · No AI/);
+    return 'At zero credits the switch is off and disabled, the balance/reset are visible, and the standard interpreter still renders a result.';
+  });
+  await j.step('admin-ai-mode-settings', author, async () => {
+    // The fixture's source-policy update invalidates earlier bearer revisions.
+    await author.context().setExtraHTTPHeaders({ Authorization: `Bearer ${(await f.login()).token}` });
+    await author.goto(stack.origin); await author.locator('.app-shell').waitFor();
+    await navigate(author, 'ai-settings');
+    await author.getByRole('heading', { name: 'AI provider settings', exact: true }).waitFor();
+    await author.getByRole('radio', { name: /^Managed by OpenSight/ }).waitFor();
+    assert.equal(await author.getByRole('radio', { name: /^Managed by OpenSight/ }).isChecked(), true);
+    await author.getByRole('radio', { name: /^Your own AI provider/ }).check();
+    await author.getByRole('combobox', { name: 'AI provider', exact: true }).selectOption('anthropic');
+    await author.getByLabel('Model ID', { exact: true }).fill('persona-model');
+    await author.getByRole('button', { name: 'Save mode & provider', exact: true }).click();
+    await author.getByText('Provider and model saved.', { exact: true }).waitFor();
+    assert.equal(await author.getByLabel('Replace API key', { exact: true }).inputValue(), '');
+    return 'Admin settings start in managed mode and save a BYO provider/model without exposing or fabricating a stored key.';
+  });
+
 });

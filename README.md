@@ -314,14 +314,18 @@ The panel contains the interpreted question, chart preview and alternatives;
 Author also offers **ADD TO ANALYSIS**. Escape or Close returns focus to the
 trigger. A local deterministic
 interpreter queries the active dataset in the local workspace, including prepared
-CSV uploads. The static demo answers using synthetic rows. Administrators can
-configure a real AI provider
-(OpenAI, Anthropic, Bedrock, or a custom endpoint) for generative answers,
-gated by role.
+CSV uploads. The static demo answers using synthetic rows. Hosted workspaces
+support deployment-managed Bedrock with monthly credits, or an administrator's
+own OpenAI, Anthropic or allowlisted compatible provider. Generative answers are
+gated by role and grounded in the caller's authorized dataset. When credits run
+out, the standard interpreter remains available. See
+[hosted Ask O configuration](docs/issue-190-hosted-generative.md).
 
 ![Ask O in Author with field grounding, editable steps and a synthetic sales preview](docs/images/q-side-panel.png)
 
 ![O answer querying a locally uploaded CSV: North 6 and South 3](docs/images/o-answer.png)
+
+![Hosted reader Ask O with a grounded result and monthly credits, using local synthetic data and a test-only provider](docs/images/ask-o-managed.png)
 
 ### 👥 Built for teams
 
