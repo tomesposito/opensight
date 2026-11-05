@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Hosted operator provisioning pages for tenant lists, creation, billing links, inline usage, invitations and lifecycle management; separate required workspace display names from namespace names with validated unique slugs (#192).
+
 - Hosted generative Ask O with deployment-managed Bedrock and monthly usage credits, tenant-admin BYO AI settings with encrypted write-only keys, reader-scoped grounded result visuals, and a clear credit-limit fallback to the standard interpreter (#190).
 
 - SQL notebooks on the local/organization API: author markdown, SQL and shared-compiler visuals, publish parameterized apps that run with each viewer’s data permissions, and save private dataset snapshots with visible as-of times. Includes named SQL/security errors and run history; hosted notebooks and dashboard snapshot consumption remain follow-ons (#164).
