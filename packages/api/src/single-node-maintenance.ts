@@ -226,7 +226,8 @@ export class ReferenceMaintenance {
       const usageBefore = new Date(now - usageDays * 86400000).toISOString();
       // Monthly billing snapshots outlive daily retention; erase only with the tenant.
       await c.query('DELETE FROM h8_usage_events WHERE created_at < ?', [usageBefore]);
-      await c.query('DELETE FROM h8_usage WHERE period < ?', [usageBefore.slice(0, 10)]);
+      // The current month's AI rows are the credit ledger, even with short daily retention.
+      await c.query("DELETE FROM h8_usage WHERE period < ? AND (metric <> 'aiCalls' OR period < ?)", [usageBefore.slice(0, 10), new Date(now).toISOString().slice(0, 7) + '-01']);
       await c.query("DELETE FROM h1_outbox WHERE event_type LIKE 'usage.storage.bytes:%' AND created_at < ?", [usageBefore]);
       if (auditDays > 0) {
         const before = new Date(now - auditDays * 86400000).toISOString();

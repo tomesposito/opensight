@@ -118,3 +118,19 @@ test('#190 neither configured mode fails closed; explicit test stub returns a gr
   assert.throws(() => managedAI({ OPENSIGHT_AI_MANAGED: 'stub', NODE_ENV: 'production', OPENSIGHT_AI_TEST_STUB: '1' }), { code: 'AI_MANAGED_CONFIG_INVALID' });
   for (const path of ['/api/o/status', '/api/o/generate', '/api/o/calculation', '/api/o/query', '/api/admin/ai', '/api/admin/ai/key', '/api/admin/ai/test']) assert.equal(serverlessDataPath(path), true, path);
 });
+
+test('#190 hosted prompt merges only published governed vocabulary for the bound dataset', async t => {
+  const f = await fixture(t), at = '2026-11-05T00:00:00.000Z';
+  const definition = { name: 'Net sales', expression: '{revenue}', defaultAggregation: 'SUM', format: { style: 'number', decimalPlaces: 2 }, description: '', synonyms: ['turnover'] };
+  for (const [id, published] of [['net', true], ['draft', false]]) await f.metadata.put(await f.login(), { kind: 'metric', id }, {
+    dataset: { kind: 'prepared-dataset', id: 'sales', ownerId: 'admin' }, createdBy: 'admin', publishedVersion: published ? 1 : null,
+    versions: [{ version: 1, state: published ? 'published' : 'draft', actor: 'admin', at, definition: { ...definition, name: published ? 'Net sales' : 'Draft measure' } }],
+    audit: [{ action: published ? 'publish' : 'create', version: 1, actor: 'admin', at }],
+  });
+  f.setText('{"question":"sum turnover by region"}');
+  const answer = await f.api('/api/o/generate', ask); assert.equal(answer.status, 200, JSON.stringify(answer.body));
+  assert.equal(answer.body.interpretations[0].grounding.metricsUsed[0].id, 'net');
+  const prompt = JSON.parse(f.calls[0].body.messages[0].content[0].text);
+  assert.ok(prompt.fields.some(c => c.name === 'Net sales' && c.metric.id === 'net'));
+  assert.ok(!prompt.fields.some(c => c.name === 'Draft measure'));
+});

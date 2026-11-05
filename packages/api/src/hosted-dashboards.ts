@@ -65,7 +65,9 @@ export class HostedDashboards implements DashboardBackend {
     const entries = Object.entries(v.datasetBindings);
     if (entries.length !== 1) throw new MetadataError('DASHBOARD_DATASET_UNSUPPORTED', 422);
     const [identifier, binding] = entries[0]!;
-    if (binding.kind === 'prepared-dataset') return { columns: await this.routes.prep.readerDashboardSchema(this.context, v.bindingOwnerId, binding.id), deniedColumns: [] };
+    if (binding.kind === 'prepared-dataset') return { columns: v.bindingOwnerId === this.context.userId
+      ? (await this.routes.prep.describe(this.context, binding.id)).columns
+      : await this.routes.prep.readerDashboardSchema(this.context, v.bindingOwnerId, binding.id), deniedColumns: [] };
     return (await this.analyses.resolve({ [identifier]: binding })).get(identifier)!;
   }
   async query(v: DashboardVersion, definition: JsonObject, visualId: string) {

@@ -88,3 +88,13 @@ test('H8 backup authentication, maintenance gates and audit/usage retention fail
   await writeFile(join(f.backups, 'registry'), 'tampered');
   await assert.rejects(f.maintenance.backup(), { code: 'BACKUP_REGISTRY_INVALID' });
 });
+
+
+test('#190 retention preserves the current monthly managed credit ledger', async t => {
+  const f = await fixture(t);
+  await f.db.transaction(async c => {
+    for (const [day, metric] of [['2026-10-01', 'aiCalls'], ['2026-10-01', 'apiCalls'], ['2026-09-30', 'aiCalls']]) await c.query('INSERT INTO h8_usage VALUES (?,?,?,?,1,0)', ['tenant-one', 'one', day, metric]);
+  });
+  await f.maintenance.retain(0, 1, Date.UTC(2026, 9, 31));
+  assert.deepEqual((await f.db.transaction(c => c.query('SELECT period, metric FROM h8_usage'))).map(r => [r.period, r.metric]), [['2026-10-01', 'aiCalls']]);
+});
