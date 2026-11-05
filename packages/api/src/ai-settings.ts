@@ -16,7 +16,10 @@ import { AIError, PROVIDERS, estimateTokens, providerAdapters, type AIProvider, 
  * never denied by a spend cap.
  */
 export interface AiMeter {
-  check(namespaceId: string): Promise<void>;
+  check(namespaceId: string, managed?: boolean): Promise<void>;
+  /** Managed routes commit only after grammar validation and scope recheck. */
+  commit?(namespaceId: string, tokens: number, estimated: boolean): Promise<void>;
+  credits?(namespaceId: string): Promise<{ period: string; limit: number | null; used: number; remaining: number; resetsAt: string }>;
   record(namespaceId: string, tokens: number, estimated: boolean): Promise<void>;
 }
 function spendCapError(error: unknown): AIError | undefined {
@@ -48,18 +51,18 @@ export function aiFromEnvironment(env: NodeJS.ProcessEnv = process.env): AIOptio
     compatibleBaseUrls: env.OPENSIGHT_AI_COMPATIBLE_URL ? [env.OPENSIGHT_AI_COMPATIBLE_URL] : [],
     ...(provider ? { bootstrap: { provider: provider as AIProvider, model: env.OPENSIGHT_AI_MODEL ?? '', key: env.OPENSIGHT_AI_API_KEY, ...(provider === 'openai-compatible' ? { baseUrl: env.OPENSIGHT_AI_COMPATIBLE_URL } : {}) } } : {}) };
 }
-function endpoint(raw: unknown): string {
+export function aiEndpoint(raw: unknown): string {
   if (typeof raw !== 'string' || raw.length > 2048) invalid('$.baseUrl', 'expected a configured HTTPS endpoint');
   let url: URL; try { url = new URL(raw); } catch { return invalid('$.baseUrl', 'expected a configured HTTPS endpoint'); }
   if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || /(^|\.)(amazonaws\.com(?:\.cn)?|api\.aws|aws\.amazon\.com)$/.test(url.hostname)) invalid('$.baseUrl', 'expected a non-AWS HTTPS endpoint without credentials or query');
   return url.href.replace(/\/+$/, '');
 }
-function config(raw: unknown, allowed: readonly string[]): ProviderConfig {
+export function aiProviderConfig(raw: unknown, allowed: readonly string[]): ProviderConfig {
   const value = record(raw, ['provider', 'model', 'baseUrl']);
   if (!(PROVIDERS as readonly unknown[]).includes(value.provider)) invalid('$.provider', 'unsupported provider');
   if (typeof value.model !== 'string' || !value.model.trim() || value.model.length > 256 || /[\x00-\x1f]/.test(value.model)) invalid('$.model', 'expected a model ID');
   if (value.provider !== 'openai-compatible' && value.baseUrl !== undefined) invalid('$.baseUrl', 'only compatible providers accept a base URL');
-  const baseUrl = value.provider === 'openai-compatible' ? endpoint(value.baseUrl) : undefined;
+  const baseUrl = value.provider === 'openai-compatible' ? aiEndpoint(value.baseUrl) : undefined;
   if (baseUrl && !allowed.includes(baseUrl)) invalid('$.baseUrl', 'endpoint is not allowed by server configuration');
   return { provider: value.provider as AIProvider, model: value.model.trim(), ...(baseUrl ? { baseUrl } : {}) };
 }
@@ -69,7 +72,7 @@ export function validateAIState(raw: unknown, allowed: readonly string[] = []): 
   const configs = state.configs.map(raw => {
     const { namespaceId, encryptedKey, ...rest } = record(raw, ['namespaceId', 'provider', 'model', 'baseUrl', 'encryptedKey']);
     if (encryptedKey !== undefined && (typeof encryptedKey !== 'string' || encryptedKey.length > 16_000)) invalid('$.encryptedKey', 'invalid encrypted key');
-    return { namespaceId: id(namespaceId, '$.namespaceId'), ...config(rest, allowed), ...(encryptedKey ? { encryptedKey: encryptedKey as string } : {}) };
+    return { namespaceId: id(namespaceId, '$.namespaceId'), ...aiProviderConfig(rest, allowed), ...(encryptedKey ? { encryptedKey: encryptedKey as string } : {}) };
   });
   if (new Set(configs.map(c => c.namespaceId)).size !== configs.length) invalid('$', 'duplicate namespace configuration');
   return { version: 1, configs };
@@ -78,11 +81,11 @@ export class AISettings {
   private readonly adapters;
   private constructor(private readonly store: AutomationStore<State>, private readonly options: AIOptions, private readonly encryptionKey: Buffer | undefined, private readonly allowed: readonly string[]) { this.adapters = providerAdapters(options.fetcher); }
   static async load(options: AIOptions): Promise<AISettings> {
-    const allowed = (options.compatibleBaseUrls ?? []).map(endpoint);
+    const allowed = (options.compatibleBaseUrls ?? []).map(aiEndpoint);
     const encryptionKey = options.encryptionKey ? Buffer.from(options.encryptionKey, 'base64') : undefined;
     if (encryptionKey && (encryptionKey.length !== 32 || encryptionKey.toString('base64') !== options.encryptionKey)) throw new Error('OPENSIGHT_AI_ENCRYPTION_KEY must be 32 bytes encoded as base64');
     const validate = (raw: unknown): State => validateAIState(raw, allowed);
-    const bootstrap = options.bootstrap ? config((({ key, ...rest }) => rest)(options.bootstrap), allowed) : undefined;
+    const bootstrap = options.bootstrap ? aiProviderConfig((({ key, ...rest }) => rest)(options.bootstrap), allowed) : undefined;
     const store = await AutomationStore.load<State>({ version: 1, configs: bootstrap ? [{ namespaceId: 'default', ...bootstrap }] : [] }, options.storePath, validate);
     const service = new AISettings(store, options, encryptionKey, allowed);
     for (const saved of store.read().configs) if (saved.encryptedKey) service.decrypt(saved);
@@ -107,7 +110,7 @@ export class AISettings {
   private key(c: SavedConfig): string | undefined {
     if (c.encryptedKey) return this.decrypt(c);
     const b = this.options.bootstrap;
-    return c.namespaceId === 'default' && b?.provider === c.provider && (b.baseUrl ? endpoint(b.baseUrl) : undefined) === c.baseUrl ? b.key : undefined;
+    return c.namespaceId === 'default' && b?.provider === c.provider && (b.baseUrl ? aiEndpoint(b.baseUrl) : undefined) === c.baseUrl ? b.key : undefined;
   }
   private get(namespaceId: string): SavedConfig | undefined { return this.store.read().configs.find(c => c.namespaceId === namespaceId); }
   status(namespaceId: string) {
@@ -164,7 +167,7 @@ export class AISettings {
         if (current.provider === 'bedrock') throw new AIError(409, 'AI_BEDROCK_APPROVAL_REQUIRED', 'Bedrock needs explicit approval');
         current.encryptedKey = this.encrypt(body.key, current);
       } else {
-        const next = config(body, this.allowed);
+        const next = aiProviderConfig(body, this.allowed);
         if (current) {
           if (current.provider !== next.provider || current.baseUrl !== next.baseUrl) delete current.encryptedKey;
           delete current.baseUrl; Object.assign(current, next);
