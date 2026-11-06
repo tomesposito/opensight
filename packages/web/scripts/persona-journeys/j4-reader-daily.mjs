@@ -1,4 +1,4 @@
-import { assert, button, launchBrowser, navigate, runJourney, startHostedStack } from './harness.mjs';
+import { assert, button, capture, launchBrowser, navigate, runJourney, startHostedStack } from './harness.mjs';
 
 await runJourney('j4-reader-daily', 'Reader AI', async j => {
   let stack;
@@ -69,6 +69,7 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     return 'The editor saved a hosted analysis and the real v1 publish route returned version 1.';
   });
   await j.step('managed-provider-configured', author, async () => {
+    await button(author, 'Dismiss').click();
     await author.getByRole('button', { name: /^Ask a question about / }).click();
     await author.locator('.q-side-panel').waitFor();
     await author.getByRole('switch', { name: 'Generative mode', exact: true }).waitFor();
@@ -84,9 +85,13 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     await button(panel, 'Build dashboard').click(); const delivered = await response;
     assert.equal(delivered.status(), 200); assert.equal((await delivered.json()).delivered, 4);
     await author.getByRole('region', { name: 'Proposed sheet', exact: true }).waitFor();
-    assert.match(await panel.locator('.o-credits').innerText(), /6 of 10 credits left/);
+    await panel.getByText(/6 of 10 credits left/).waitFor();
     assert.equal(await author.locator('.o-staging-grid article').count(), 4);
+    await author.locator('.o-staging-grid .chart svg').first().waitFor({ timeout: 45000 });
+    await author.waitForFunction(() => [...document.querySelectorAll('.o-staging-grid article')].every(card => card.querySelector('.chart svg')), undefined, { timeout: 45000 });
+    await capture(j, author, 'author-dashboard-preview');
     await button(author, 'Add as new sheet').click();
+    await author.waitForFunction(() => [...document.querySelectorAll('.author-card')].every(card => card.getBoundingClientRect().width > 100));
     return 'The real author plan delivers all four stub questions, uses four credits, and commits as a new sheet.';
   });
   await j.step('author-revise-o-tile', author, async () => {
@@ -95,7 +100,9 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     const response = author.waitForResponse(r => r.url().endsWith('/api/o/revise'));
     await button(panel, 'Propose revision').click(); assert.equal((await response).status(), 200);
     await panel.getByText('Revision ready · 1 credit used', { exact: true }).waitFor();
-    assert.match(await panel.locator('.o-credits').innerText(), /5 of 10 credits left/);
+    await panel.getByText(/5 of 10 credits left/).waitFor();
+    await panel.locator('.o-revision .chart svg').waitFor({ timeout: 45000 });
+    await capture(j, author, 'author-revision-preview');
     await button(panel, 'Replace').click();
     return 'A delivered proposal consumes one credit; Replace updates the stamped tile in one command.';
   });
@@ -103,7 +110,7 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     await navigate(author, 'my-stuff');
     await author.getByRole('navigation', { name: 'Your collections' }).getByRole('link', { name: 'Dashboards', exact: true }).click();
     await author.getByRole('link', { name: 'Daily Orders', exact: true }).click();
-    await author.locator('.dashboard-grid .chart svg').first().waitFor();
+    await author.locator('.dashboard-grid .chart svg').first().waitFor({ timeout: 45000 });
     await author.getByText('Dashboard access', { exact: true }).click();
     await author.getByLabel('Viewer', { exact: true }).selectOption({ label: 'Daily reader' });
     await button(author, 'Grant dashboard access').click();

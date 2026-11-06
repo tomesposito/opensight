@@ -70,6 +70,14 @@ export async function startHostedStack({ invitationSeconds, aiStub = false, usag
   try {
     await pool.query(`CREATE SCHEMA ${schema}`);
     stack.fixture = await realEmbedFixture(db, 'postgres', origin, 'https://product.example');
+    if (aiStub) {
+      // The embed fixture's four-slot queue predates multi-tile author previews.
+      // Keep execution concurrency and monthly credits unchanged, but admit the
+      // eight-tile preview plus the existing sheet in this synthetic journey.
+      const { migrateBudgets } = await import('../../../api/dist/budget-store.js');
+      const { budgetConfig } = await import('../../../api/test/budget-helpers.mjs');
+      await migrateBudgets(db, { ...budgetConfig, node: { ...budgetConfig.node, queued: 24 }, defaults: { ...budgetConfig.defaults, queued: 12 } }, 'frozen');
+    }
     stack.mail = stack.fixture.mail;
     if (aiStub || usage) { const { initializeUsage } = await import('../../../api/dist/hosted-usage.js'); await initializeUsage(db); }
     stack.api = await hosted.createHostedApiServer({ membershipDatabase: db, tenantDatabase: db, builtinAuth: stack.fixture.auth,
