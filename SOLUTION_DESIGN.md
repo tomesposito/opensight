@@ -1309,6 +1309,14 @@ marketing host, with canonical trailing-slash redirects; retain host isolation,
 path rejection and app routes. Keep signup dark and all existing CTAs unchanged.
 Verify the actual CloudFront functions and served artifact digests after cutover.
 
+**Viewer rejection budget (frozen 2026-11-06, #199 release acceptance):**
+The generated CloudFront viewer must reject unsupported paths before scanning
+request headers, while preserving the shared path/header acceptance contract
+and uniform 403 denial. This avoids spending the regex instruction budget on
+large headers for requests that cannot be routed. Verify malformed paths,
+large headers, every supported route family and forbidden provenance in the
+actual CloudFront engine before deployment.
+
 **SR4c compatible release automation (frozen 2026-10-11):** The operator approved
 public isolated CI, immutable release artifacts, private manual deployment via
 dedicated OIDC roles, and an independently tested access shutoff. Implement
