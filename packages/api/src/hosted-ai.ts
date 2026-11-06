@@ -5,7 +5,7 @@ import { readBody, validateQuery } from './query.js';
 import { record, id } from './schedule.js';
 import { AIError } from './ai-providers.js';
 import { HostedAISettings, type HostedAIOptions } from './hosted-ai-settings.js';
-import { generateAnswer, type GenerativeSchemaSource } from './o-generative.js';
+import { generateAnswer, planAnswer, reviseAnswer, type GenerativeSchemaSource } from './o-generative.js';
 import { HostedDashboards } from './hosted-dashboards.js';
 import { HostedAnalyses } from './hosted-analyses.js';
 import { dashboardVersion } from './dashboard-model.js';
@@ -81,21 +81,22 @@ export class HostedAI {
       await recheck(); await this.require(context, 'admin');
       send(response, 200, await this.settings.summary(context)); return true;
     }
-    if (!['/api/o/status', '/api/o/generate', '/api/o/calculation', '/api/o/query'].includes(path)) return false;
+    if (!['/api/o/status', '/api/o/generate', '/api/o/calculation', '/api/o/query', '/api/o/plan', '/api/o/revise'].includes(path)) return false;
     await this.require(context, 'ai');
     if (path === '/api/o/status') { method(request, response, ['GET']); const result = await this.settings.status(context); await recheck(); send(response, 200, result); return true; }
     method(request, response, ['POST']);
     const calculation = path === '/api/o/calculation', query = path === '/api/o/query';
     if (calculation) await this.require(context, 'build');
-    const body = record(await readBody(request), query ? ['dashboardId', 'datasetId', 'query'] : ['question', 'dashboardId', 'datasetId', 'calculatedFields']);
+    const body = record(await readBody(request), query ? ['dashboardId', 'datasetId', 'query'] : ['question', 'dashboardId', 'datasetId', 'calculatedFields', ...(path === '/api/o/revise' ? ['currentQuestion'] : [])]);
     const source = await this.source(context, body, recheck), stamp = await this.metadata.revisions(context);
     const check = async () => { await recheck(); await this.require(context, 'ai'); if (calculation) await this.require(context, 'build'); await this.metadata.assertRevisions(context, stamp); await this.source(context, body, recheck); };
     if (query) {
       const result = await source.execute(validateQuery(body.query)); await check();
       const output = await this.routes.output(request, context, 200, result, check); send(response, output.status, output.body);
     } else {
-      const result = await generateAnswer(body, calculation, source, input => this.settings.complete(context, input), check,
-        () => this.routes.data.analytics.track(context, { name: 'ask_o_asked', props: { count: 1 } }));
+      const answer = path === '/api/o/plan' ? planAnswer : path === '/api/o/revise' ? reviseAnswer : (body: Record<string, unknown>, ...args: Parameters<typeof planAnswer> extends [unknown, ...infer Rest] ? Rest : never) => generateAnswer(body, calculation, ...args);
+      const result = await answer(body, source, input => this.settings.complete(context, input), check,
+        (count = 1) => this.routes.data.analytics.track(context, { name: 'ask_o_asked', props: { count } }));
       send(response, 200, result);
     }
     return true;

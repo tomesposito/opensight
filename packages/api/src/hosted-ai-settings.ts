@@ -106,10 +106,13 @@ export class HostedAISettings {
       adapter = this.adapters[config.provider];
     } else throw new AIError(503, 'AI_NOT_CONFIGURED', 'AI provider is not configured');
     const result = await adapter.complete(config, key, input);
+    // Token spend is an operator cost even when grammar/policy later rejects delivery.
+    // Count zero leaves the monthly delivered-answer allowance untouched.
+    if (!test && mode === 'managed') await this.meter!.commit!(context.namespaceId, result.tokens ?? estimateTokens(input.system, input.prompt, result.text), result.tokens === undefined, 0);
     let committed = false;
-    return { text: key ? result.text.split(key).join('[redacted]') : result.text, commit: async () => {
+    return { text: key ? result.text.split(key).join('[redacted]') : result.text, remaining: async () => mode === 'managed' ? (await this.meter!.credits!(context.namespaceId)).remaining : Infinity, commit: async (count = 1) => {
       if (committed || test || mode !== 'managed') return;
-      await this.meter!.commit!(context.namespaceId, result.tokens ?? estimateTokens(input.system, input.prompt, result.text), result.tokens === undefined);
+      await this.meter!.commit!(context.namespaceId, 0, false, count);
       committed = true;
     } };
   }

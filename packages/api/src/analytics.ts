@@ -32,7 +32,7 @@ export function validateAnalyticsEvent(raw: unknown): Pick<AnalyticsRow, 'name' 
   }
   if (name === 'data_source_connected' && keys(props, ['sourceType']) && props.sourceType === 'postgresql') return { name, props: { sourceType: 'postgresql' } };
   if (name === 'dashboard_saved' && keys(props, ['first']) && typeof props.first === 'boolean') return { name, props: { first: props.first } };
-  if (name === 'ask_o_asked' && keys(props, ['count']) && typeof props.count === 'number' && Number.isSafeInteger(props.count) && props.count > 0) return { name, props: { count: props.count } };
+  if (name === 'ask_o_asked' && keys(props, ['count']) && typeof props.count === 'number' && Number.isSafeInteger(props.count) && props.count >= 0) return { name, props: { count: props.count } };
 }
 export type AnalyticsTransport = (url: string, init: RequestInit) => Promise<{ ok: boolean }>;
 export interface AnalyticsOptions {

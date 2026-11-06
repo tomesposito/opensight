@@ -134,3 +134,29 @@ test('#190 hosted prompt merges only published governed vocabulary for the bound
   assert.ok(prompt.fields.some(c => c.name === 'Net sales' && c.metric.id === 'net'));
   assert.ok(!prompt.fields.some(c => c.name === 'Draft measure'));
 });
+
+test('#196 hosted plans charge per delivered tile, enforce remaining credit cap and revise once', async t => {
+  const f = await fixture(t, { entitlement: { aiCallsPerMonth: 4 } });
+  f.setText(JSON.stringify({ sheetTitle: 'Sales', questions: ['sum revenue', 'sum missing', 'sum revenue by region'] }));
+  const first = await f.api('/api/o/plan', { question: 'overview', datasetId: 'sales' });
+  assert.equal(first.status, 200, JSON.stringify(first)); assert.equal(first.body.delivered, 2);
+  assert.equal((await f.api('/api/o/status')).body.credits.used, 2);
+  f.setText(JSON.stringify({ question: 'sum revenue' }));
+  assert.equal((await f.api('/api/o/revise', { question: 'total', currentQuestion: 'sum revenue by region', datasetId: 'sales' })).status, 200);
+  assert.equal((await f.api('/api/o/status')).body.credits.used, 3);
+  f.setText(JSON.stringify({ questions: ['sum revenue', 'sum revenue by region'] }));
+  const last = await f.api('/api/o/plan', { question: 'overview', datasetId: 'sales' });
+  assert.deepEqual(last.body.tiles.map(t => t.status), ['ok', 'credit-limited']);
+  assert.equal((await f.api('/api/o/status')).body.credits.used, 4);
+  assert.equal((await f.api('/api/o/plan', { question: 'overview', datasetId: 'sales' })).body.errorCode, 'AI_CREDITS_EXHAUSTED');
+  for (const path of ['/api/o/plan', '/api/o/revise']) assert.equal(serverlessDataPath(path), true);
+});
+for (const path of ['/api/o/plan', '/api/o/revise']) test(`#196 hosted ${path} rechecks policy after I/O without charging`, async t => {
+  const f = await fixture(t); await f.role('author_ai');
+  let entered, release; const started = new Promise(r => { entered = r; }), waiting = new Promise(r => { release = r; });
+  f.pending(async () => { entered(); await waiting; });
+  f.setText(JSON.stringify(path.endsWith('plan') ? { questions: ['sum revenue'] } : { question: 'sum revenue' }));
+  const pending = f.api(path, { ...ask, ...(path.endsWith('revise') ? { currentQuestion: 'sum revenue' } : {}) }, 'other');
+  await started; await f.role('author'); release(); assert.equal((await pending).status, 403);
+  assert.equal((await f.api('/api/o/status')).body.credits.used, 0);
+});

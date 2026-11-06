@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Ask O dashboard plans and conversational tile revision API, with per-delivered-tile managed credits and shared field-security checks (#196).
+
 - Hosted operator provisioning pages for tenant lists, creation, billing links, inline usage, invitations and lifecycle management; separate required workspace display names from namespace names with validated unique slugs (#192).
 
 - Hosted generative Ask O with deployment-managed Bedrock and monthly usage credits, tenant-admin BYO AI settings with encrypted write-only keys, reader-scoped grounded result visuals, and a clear credit-limit fallback to the standard interpreter (#190).
