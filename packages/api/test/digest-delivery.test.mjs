@@ -8,6 +8,7 @@ import { DigestStore } from '../dist/digest-store.js';
 import { newDigest } from '../dist/digest-model.js';
 import { sr3Fixture } from './sr3-helpers.mjs';
 import { MailError } from '../dist/mail.js';
+import { MetadataError } from '../dist/metadata-db.js';
 const monday = Date.parse('2026-11-02T09:00:00Z');
 async function setup(t) {
   const time = { now: monday }, f = await digestFixture(t, undefined, undefined, () => new Date(time.now));
@@ -20,13 +21,41 @@ async function setup(t) {
 test('digests: real durable delivery sends once per subscription/period and contains links and governed values', async t => {
   const f = await setup(t), c = await f.login();
   const first = await f.store.enqueue(c, f.sub.id); await f.runner.tick();
+  // Same scheduler-driving as the second period below (#199): a load-cancelled
+  // attempt retries after its backoff, so tick until the period lands.
+  for (let retry = 0; f.mail.messages.length < 1 && retry < 5; retry++) { f.time.now += 70000; await f.runner.tick(); }
   assert.equal(f.mail.messages.length, 1, JSON.stringify(await f.store.history(c, f.sub.id)));
   const mail = f.mail.messages[0]; assert.deepEqual(mail.to, ['one-admin@example.test']); assert.match(mail.html, /Current: 35.00/); assert.match(mail.html, /east/);
   assert.match(mail.html, /https:\/\/example.test\/#\/metrics\/revenue/); assert.match(mail.html, /metric-unsubscribe\/tenant-one\/one\/digest-/);
   const repeated = await f.store.enqueue(c, f.sub.id); assert.equal(repeated.id, first.id);
   await f.runner.tick(); assert.equal(f.mail.messages.length, 1);
-  f.time.now += 7 * 86400000; await f.store.enqueue(c, f.sub.id); await f.runner.tick(); assert.equal(f.mail.messages.length, 2);
+  f.time.now += 7 * 86400000; await f.store.enqueue(c, f.sub.id); await f.runner.tick();
+  // A render segment cancelled by load (EXECUTION_CANCELLED) retries with
+  // durable backoff instead of cancelling the delivery (#199), so drive the
+  // runner like the production scheduler: advance past the backoff (1s-64s
+  // ladder) and tick again, bounded, until the second period lands.
+  for (let retry = 0; f.mail.messages.length < 2 && retry < 5; retry++) { f.time.now += 70000; await f.runner.tick(); }
+  assert.equal(f.mail.messages.length, 2, JSON.stringify(await f.store.history(c, f.sub.id)));
   assert.notEqual(f.mail.messages[0].dedupeKey, f.mail.messages[1].dedupeKey);
+  assert.ok((await f.store.history(c, f.sub.id)).every(o => o.state === 'succeeded'));
+  assert.ok((await f.store.deliveries(c, f.sub.id)).every(d => d.state === 'sent'));
+});
+
+test('digests: a load-cancelled delivery attempt retries with backoff instead of cancelling', async t => {
+  const f = await setup(t), c = await f.login();
+  const render = f.renderer.render.bind(f.renderer); let attempts = 0;
+  f.renderer.render = async (...args) => { if (++attempts === 1) throw new MetadataError('EXECUTION_CANCELLED', 409); return render(...args); };
+  await f.store.enqueue(c, f.sub.id); await f.runner.tick();
+  assert.equal(f.mail.messages.length, 0);
+  const pending = await f.store.deliveries(c, f.sub.id);
+  assert.equal(pending.length, 1); assert.equal(pending[0].state, 'pending'); assert.equal(pending[0].error_code, 'EXECUTION_CANCELLED');
+  f.time.now += 2000; await f.runner.tick();
+  // Later attempts can themselves be load-cancelled; keep driving the runner
+  // past each backoff until the delivery lands, as the scheduler would.
+  for (let retry = 0; f.mail.messages.length < 1 && retry < 5; retry++) { f.time.now += 70000; await f.runner.tick(); }
+  assert.equal(f.mail.messages.length, 1);
+  const sent = await f.store.deliveries(c, f.sub.id);
+  assert.equal(sent[0].state, 'sent'); assert.ok(sent[0].attempts >= 2);
 });
 
 test('digests: delayed execution uses the queued period and retry never reuses cached data', async t => {
