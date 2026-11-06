@@ -94,7 +94,7 @@ export class HostedProvisioning {
     });
     return this.completeProvision(operationId, input);
   }
-  private async deliver(invitationId: string): Promise<void> {
+  private async deliver(invitationId: string, tenantMail = false): Promise<void> {
     const row = (await this.database.transaction(c => c.query(`SELECT v.*, i.email, t.state, t.display_name FROM h2_invitations v
       JOIN h2_identities i ON i.subject = v.subject JOIN h1_tenants t ON t.tenant_id = v.tenant_id WHERE invitation_id = ?`, [invitationId])))[0];
     if (!row) missing();
@@ -103,7 +103,8 @@ export class HostedProvisioning {
     if (Number(row.expires_at) <= this.clock()) throw new MetadataError('INVITATION_EXPIRED', 409);
     const token = unseal(String(row.token_secret), this.config.encryptionKey, `invitation:${invitationId}`);
     // Delivery belongs to the identity flow, never to operator metadata responses.
-    await this.mail.send(invitationMessage(this.config.origin, String(row.tenant_id), row.display_name, String(row.email), token));
+    await this.mail.send({ ...invitationMessage(this.config.origin, String(row.tenant_id), row.display_name, String(row.email), token),
+      ...(tenantMail ? { tenantId: String(row.tenant_id), dedupeKey: invitationId } : {}) });
     await this.database.transaction(c => c.query('UPDATE h2_invitations SET delivered = 1 WHERE invitation_id = ?', [invitationId]));
   }
   private async completeProvision(operationId: string, input: Pick<OnboardingInput, 'administrator'>): Promise<TenantOperation> {
@@ -171,7 +172,7 @@ export class HostedProvisioning {
     };
     const invited = delivery && context ? await delivery.create(context, operationId, hash, work) : await this.database.transaction(work);
     if (invited) this.analytics.track(invited, { name: 'user_invited' });
-    if (!delivery) await this.deliver(operationId);
+    if (!delivery) await this.deliver(operationId, true);
     return invited;
   }
   /** Recheck admission under the same tenant lock used by acceptance/removal. */

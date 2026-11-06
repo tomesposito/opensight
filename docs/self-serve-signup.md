@@ -15,3 +15,11 @@ is 30 days from that deadline. Pauses and starts are operator-audited.
 There is no drop-to-Free route or operator action. Paused workspaces resolve
 through payment, data export or closure; erasure follows the existing D-84
 operator maintenance flow. Stored `free` values remain compatible.
+
+Tenant mail uses one transport wrapper and durable counters/receipt keys.
+Trial allowance is 25 recipients total (across month boundaries); paid monthly
+allowances are Light 500, Regular 5,000, Heavy 25,000, calendar UTC month.
+Legacy stored Free uses 100/month. A shared message counts every recipient.
+Quota errors are `EMAIL_LIMIT_EXCEEDED` (429). Retry keys do not spend twice;
+ambiguous send failures keep the reservation rather than risk exceeding the cap.
+Initial provisioning, verification and operator notifications do not count.

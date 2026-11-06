@@ -132,7 +132,7 @@ export class JobRunner {
           await this.store.metadata.usage?.consume(this.store.metadata, owner, 'computeAttempts');
           const shared = await this.executor.renderSharedDigest(owner, run.spec, occurrenceTime(run), run.jobId, this.store);
           await verify();
-          try { await this.mail.send({ ...shared.message, dedupeKey: id }, async () => {
+          try { await this.mail.send({ ...shared.message, tenantId: run.tenantId, dedupeKey: id }, async () => {
             await shared.verify(); await this.executor.verifyDelivery?.(owner); await verify();
           }); }
           catch (error) { if (!(error instanceof Error && 'code' in error)) throw new MailError('SMTP_SEND_FAILED'); throw error; }
@@ -148,7 +148,7 @@ export class JobRunner {
             return { ...rendered, to: [user.email], dedupeKey: id };
           });
           await verify();
-          try { await this.mail.send(message, async () => {
+          try { await this.mail.send({ ...message, tenantId: run.tenantId }, async () => {
             if (run.spec.kind === 'digest') {
               this.executor.begin(owner, verify); await this.executor.authorize(owner, run.spec);
               this.executor.begin(recipient, verify); await this.executor.authorize(recipient, run.spec);

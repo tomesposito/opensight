@@ -46,6 +46,7 @@ import { Scheduler } from './schedule.js';
 import { hostedReadiness } from './hosted-health.js';
 import { HostedUsage, usageMonth } from './hosted-usage.js';
 import { billingConfig, HostedBilling, httpStripeClient, initializeBilling, parseStripeEvent, readRawBody, verifyStripeSignature, type StripeFetcher } from './hosted-billing.js';
+import { initializeTenantMail, TenantMailTransport } from './hosted-mail.js';
 import { HostedAI } from './hosted-ai.js';
 import type { HostedAIOptions } from './hosted-ai-settings.js';
 import { AIError } from './ai-providers.js';
@@ -173,17 +174,19 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const billingService = !options.invocation && billingCfg ? new HostedBilling(options.membershipDatabase, billingCfg,
     { mail, notifyTo: accessNotifyTo, stripe: httpStripeClient(billingCfg.apiKey, options.stripeFetcher) }) : undefined;
   if (billingService) { await billingService.load(); if (usage) usage.tierEntitlement = tenantId => billingService.tierEntitlement(tenantId); }
+  if (billingService) await initializeTenantMail(options.membershipDatabase);
+  const tenantMail = billingService ? new TenantMailTransport(options.membershipDatabase, billingService, mail) : mail;
   if (!options.invocation) await initializeJobs(options.membershipDatabase);
   const unmigrated = await options.membershipDatabase.transaction(c => c.query(`SELECT j.resource_id FROM h1_resources j WHERE j.kind = 'job'
     AND NOT EXISTS (SELECT 1 FROM h7_migrations m WHERE m.tenant_id = j.tenant_id AND m.namespace_id = j.namespace_id)`));
   if (unmigrated.length) throw new MetadataError('JOB_MIGRATION_REQUIRED', 503);
-  const renderer = new JobRenderer(data.data, embedContent, config.origin), runner = new JobRunner(jobs, renderer, mail);
+  const renderer = new JobRenderer(data.data, embedContent, config.origin), runner = new JobRunner(jobs, renderer, tenantMail);
   const digests = new DigestStore(jobs, renderer);
   const v1 = new V1Routes(data, options.env ?? process.env, { invocation: !!options.invocation, analytics, durable: invocation?.v1, digests });
   const ownership = new JobOwnership(jobs, renderer), scheduler = new Scheduler(() => runner.tick());
   const sessions = new EmbedSessions(options.membershipDatabase, metadata, policy, embedSessionKey(options.env ?? process.env), (context, grant) => embedContent.authorize(context, grant));
   await sessions.initialize(!options.invocation);
-  const provisioning = new HostedProvisioning(options.membershipDatabase, config, mail, Date.now, ownership, analytics, invocation?.invitations);
+  const provisioning = new HostedProvisioning(options.membershipDatabase, config, tenantMail, Date.now, ownership, analytics, invocation?.invitations);
   // Prove that the durable H1/H2 schema is reachable before binding a socket.
   await options.membershipDatabase.transaction(async c => { await c.query('SELECT tenant_id FROM h1_tenants WHERE 1 = 0'); await c.query('SELECT subject FROM h2_memberships WHERE 1 = 0'); });
   await assertHostedSourcesReady(options.membershipDatabase);
