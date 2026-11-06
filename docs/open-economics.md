@@ -1,6 +1,6 @@
 # Open economics: the features that are never paywalled
 
-OpenSight is Apache-2.0 software. The hosted service charges for running it, not for unlocking it. Core governance — single sign-on, row-level security, the audit log, and basic embedding — stays in the open product and is never paywalled. Paid tiers buy higher usage quotas, support, and an SLA. Nothing else.
+OpenSight is Apache-2.0 software. The hosted service charges for running it, not for unlocking it. Core governance — single sign-on, row-level security, the audit log, and basic embedding — stays in the open product and is never paywalled. Paid tiers buy higher usage quotas and support. Nothing else.
 
 This page is the rule that binds future pricing and packaging work (issue #165). It sits on top of the earlier free-vs-paid decision (D-77) and the pricing model (D-78): tiers differ by quantity, never by which governance features a workspace gets.
 
