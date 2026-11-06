@@ -1277,6 +1277,21 @@ After reopening, retain captured submissions; acceptance failure closes admissio
 for forward reconciliation rather than restoring over new requests. See
 [D-89](docs/itd/D-89-access-request-maintenance.md).
 
+**Ideas and analytics maintenance (D-92, frozen 2026-11-06, #178, #189):**
+Extend the D-89 owner-only, same-epoch procedure from the exact access-request
+inventory to that inventory plus `-ideas-v1`. The only schema additions are an
+empty `h8_ideas` table and nullable `analytics_events.delivered_at`; preserve
+existing analytics rows with a null delivery marker and all other rows exactly.
+Bind both inventories, source releases, schema expectations and the unchanged
+object-cleanup protocol in the owner plan. Keep the full drain, pinned registered
+backup, exact future unclaimed cleanup/schedule checks, transactional migration,
+receipt replay, runtime-grant verification and watchdog requirements. Rehearse
+against the deployed schema, including existing access requests and analytics,
+with explicit drift/failure cases. No signup/billing rollout or new runtime
+configuration is included. After reopening, any failure requires forward
+reconciliation so captured ideas, access requests and analytics are retained.
+See [D-92](docs/itd/D-92-ideas-analytics-maintenance.md).
+
 **Access-request release packaging (frozen 2026-11-01, #176):** Include the
 marketing page's existing Apple touch icon in the bounded, attested frontend
 inventory. Verify that each local icon referenced by the marketing HTML is
