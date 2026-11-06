@@ -27,10 +27,9 @@ export class SignupOperator {
         SUM(CASE WHEN trial_started_at > ? THEN 1 ELSE 0 END) AS recent,
         SUM(CASE WHEN queued_at IS NOT NULL AND state = 'pending' THEN 1 ELSE 0 END) AS queued FROM h10_signups`, [today, cutoff]))[0]!;
       const paused = Number((await c.query('SELECT paused FROM h10_signup_settings WHERE id = 1'))[0]!.paused) === 1;
-      const convertedToday = Number((await c.query(`SELECT COUNT(DISTINCT tenant_id) AS count FROM h8_audit WHERE created_at >= ? AND action = 'billing.trial.converted'
-        AND tenant_id IN (SELECT tenant_id FROM h10_signups WHERE trial_started_at IS NOT NULL)
-        AND tenant_id IN (SELECT tenant_id FROM h9_billing WHERE tier IN ('light','regular','heavy'))`, [today]))[0]?.count ?? 0);
-      const expiredToday = Number((await c.query(`SELECT COUNT(*) AS count FROM h9_billing WHERE trial_ends_at IS NOT NULL AND pause_effective_at >= ? AND access_state = 'paused'`, [today]))[0]?.count ?? 0);
+      const convertedToday = Number((await c.query("SELECT COUNT(DISTINCT tenant_id) AS count FROM h8_audit WHERE created_at >= ? AND action = 'billing.trial.converted'", [today]))[0]?.count ?? 0);
+      const expiryEvents = await c.query("SELECT detail FROM h8_audit WHERE created_at >= ? AND action = 'billing.access.paused'", [today]);
+      const expiredToday = expiryEvents.filter(row => (JSON.parse(String(row.detail)) as { reason?: string }).reason === 'trial_expired').length;
       const trialsLast24h = Number(counts.recent ?? 0);
       const retentionDue = await c.query(`SELECT b.tenant_id, t.display_name, b.retention_due_at FROM h9_billing b JOIN h1_tenants t ON t.tenant_id = b.tenant_id
         WHERE b.access_state = 'paused' AND b.retention_due_at <= ? AND t.state NOT IN ('deleted','deleting') ORDER BY b.retention_due_at`, [new Date(this.clock()).toISOString()]);

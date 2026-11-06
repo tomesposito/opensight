@@ -152,3 +152,22 @@ test('197 durability: encrypted reference backup preserves trial, queue settings
   assert.deepEqual(await target.db.transaction(c => c.query('SELECT * FROM h10_signups')), await f.db.transaction(c => c.query('SELECT * FROM h10_signups')));
   assert.deepEqual(await target.db.transaction(c => c.query('SELECT * FROM h9_billing')), await f.db.transaction(c => c.query('SELECT * FROM h9_billing')));
 });
+
+test('197 operator: daily expired count survives same-day conversion', async t => {
+  const { SignupOperator } = await import('../dist/hosted-signup-operator.js');
+  const f = await fixture(t); let now = Date.UTC(2026, 10, 6);
+  const ops = new SignupOperator(f.db, f.signup, f.billing, () => now);
+  await f.signup.request(input(), 'ip'); const result = await f.signup.verify(token(f.mail));
+  f.advance(14 * 86400000); now += 14 * 86400000;
+  assert.equal((await ops.status()).expiredToday, 1);
+  await f.billing.handleEvent({ id: 'evt_funnel', type: 'customer.subscription.updated', object: { id: 'sub_funnel', status: 'active', metadata: { tenant_id: result.tenantId }, items: { data: [{ price: { id: 'pl' } }] } } });
+  const status = await ops.status(); assert.equal(status.expiredToday, 1); assert.equal(status.convertedToday, 1);
+});
+
+test('197 erasure inventory fails closed on permission errors for optional stores', async () => {
+  const { hasErasureTable } = await import('../dist/tenant-erasure.js');
+  await assert.rejects(hasErasureTable({ query: async sql => {
+    if (sql.startsWith('SELECT')) throw Object.assign(new Error('permission denied'), { code: '42501' });
+    return [];
+  } }, 'h10_signups'), { code: '42501' });
+});

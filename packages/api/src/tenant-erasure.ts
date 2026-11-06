@@ -7,7 +7,12 @@ export async function hasErasureTable(c: SqlConnection, table: string): Promise<
   await c.query('SAVEPOINT erasure_optional_table');
   let present = true;
   try { await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`); }
-  catch { present = false; await c.query('ROLLBACK TO SAVEPOINT erasure_optional_table'); }
+  catch (error) {
+    await c.query('ROLLBACK TO SAVEPOINT erasure_optional_table');
+    const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
+    if (code !== '42P01' && !(error instanceof Error && /no such table:/i.test(error.message))) throw error;
+    present = false;
+  }
   await c.query('RELEASE SAVEPOINT erasure_optional_table'); return present;
 }
 const signupScrub = "email <> '' OR display_name <> '' OR slug <> '' OR admin_name <> '' OR token_secret <> '' OR created_ip <> ''";

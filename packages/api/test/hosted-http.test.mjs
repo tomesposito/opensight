@@ -445,7 +445,7 @@ test('Issue 192 B: operator browser provisioning routes are narrowly allowed and
   const origin = f.config.origin, key = { ...operator, origin }, session = await f.login();
   const shapes = [
     ['/api/host/tenants', 'GET'], ['/api/host/tenants', 'POST'], [`/api/host/tenants/${id}`, 'GET'], [`/api/host/tenants/${id}`, 'DELETE'],
-    ...['invitations', 'suspend', 'resume', 'billing/payment-link', 'billing/resolve'].map(s => [`/api/host/tenants/${id}/${s}`, 'POST']),
+    ...['invitations', 'suspend', 'resume', 'billing/payment-link'].map(s => [`/api/host/tenants/${id}/${s}`, 'POST']),
     [`/api/host/tenants/${id}/billing`, 'GET'], [`/api/host/usage/2026-11/tenants/${id}`, 'GET'],
   ];
   for (const [path, method] of shapes) {
@@ -460,6 +460,7 @@ test('Issue 192 B: operator browser provisioning routes are narrowly allowed and
     ['/api/host/audit', 'GET'], ['/api/host/access-requests', 'GET'], ['/api/host/operations/known', 'GET'], ['/api/host/reference', 'GET'],
     ['/api/host/usage/2026-11', 'GET'], [`/api/host/usage/2026-11/tenants/${id}`, 'POST'],
     [`/api/host/tenants/${id}/suspend/extra`, 'POST'], [`/api/host/tenants/${id}/invitations/extra`, 'POST'],
+    [`/api/host/tenants/${id}/billing/resolve`, 'POST'],
     [`/api/host/tenants/${id}/billing/payment-link/extra`, 'POST'], [`/api/host/tenants/${id}/billing`, 'DELETE'], ['/api/host/tenants', 'PUT'],
   ]) assert.equal((await request(path, { method, headers: key, ...(method === 'GET' ? {} : { body: {} }) })).body.errorCode, 'OPERATOR_REQUIRED', path);
   assert.equal((await request('/api/host/tenants', { headers: { ...key, origin: 'https://foreign.example' } })).body.errorCode, 'UNTRUSTED_ORIGIN');
