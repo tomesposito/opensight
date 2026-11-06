@@ -29,7 +29,7 @@ test('Issue #63: one credential-free login establishes a verified session, every
     return Response.json([]);
   });
   const result = await client.login(credentials, true);
-  assert.deepEqual(result.session, {...identity, workspaceName: 'workspace', workspaceSlug: null});
+  assert.deepEqual(result.session, {...identity, workspaceName: 'workspace', billingPaused: false, trial: null, workspaceSlug: null});
   assert.equal('token' in result, false);
   await client.listUsers();
   await client.queryDataset('sample', { dimensions: [], measures: [] });
