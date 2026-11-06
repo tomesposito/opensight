@@ -395,6 +395,9 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   const saveAIConfig = (config: Partial<Pick<AIConfig, 'provider' | 'model' | 'baseUrl' | 'mode'>>) => resource<AIConfig>('/api/admin/ai', 'POST', config);
   const saveAIKey = (key: string) => resource<AIConfig>('/api/admin/ai/key', 'POST', { key });
   const testAIConnection = () => resource<{ ok: true }>('/api/admin/ai/test', 'POST', {});
+  const checkout = (tier: 'light' | 'regular' | 'heavy') => resource<{ url: string }>('/api/signup/checkout', 'POST', { tier });
+  const exportWorkspace = () => resource<unknown>('/api/workspace/export');
+  const closeWorkspace = (confirmTenantId: string) => resource<{ closed: boolean }>('/api/workspace/close', 'POST', { confirmTenantId });
   async function getSession(signal?: AbortSignal): Promise<Session> {
     const expected = generation;
     const response = await authenticatedFetch(`${base}/api/session`, { signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
@@ -417,6 +420,10 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     return {
       id: body.id, namespaceId: body.namespaceId, name: body.name, role: body.role,
       ...(tenantId ? { tenantId } : {}), ...(workspaceName ? { workspaceName } : {}),
+      billingPaused: body.billingPaused === true,
+      trial: body.trial && typeof body.trial === 'object' && typeof (body.trial as Record<string, unknown>).endsAt === 'string' && Number.isInteger((body.trial as Record<string, unknown>).daysRemaining)
+        ? body.trial as { endsAt: string; daysRemaining: number } : null,
+      ...(body.billing && typeof body.billing === 'object' ? { billing: body.billing as import('./TrialBilling.js').BillingState } : {}),
       workspaceSlug: typeof body.workspaceSlug === 'string' ? body.workspaceSlug : null,
     };
   }
@@ -575,7 +582,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     listDashboards, getPublishedDashboard, queryDashboardVisual,
     saveHostedAnalysis, publishAnalysis,
     onDemand, connect, subscribeAvailability,
-    enroll, acceptEnrollment, login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
+    checkout, exportWorkspace, closeWorkspace, enroll, acceptEnrollment, login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob,
     listPrepTemplates, proposePrepTemplate, publishPrepTemplate, createFromPrepTemplate, promoteCalculation, metricDatasets, listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, planO, reviseO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     listNotebooks, getNotebook, createNotebook, updateNotebook, deleteNotebook, runNotebook, notebookDatasets, notebookRuns, snapshotNotebookCell,

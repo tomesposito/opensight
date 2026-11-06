@@ -13,6 +13,16 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- An operator Signups panel with trial funnel counts, durable pause/resume, a rolling volume cap and verified queue, plus retention-due entry points into existing D-84 erasure; billing/mail/signup state participates in erasure and encrypted backups (#197).
+
+- An unlinked hosted signup page, session trial countdown, administrator tier checkout and paused-workspace payment/export/closure screens; stored `free` values display as Self-hosted in tier labels (#197).
+
+- Dark-by-default self-serve signup with email verification, existing idempotent provisioning, provider-aware email normalization, disposable-domain filtering, server-verified bot challenges and durable public rate limits (#197).
+
+- Tenant outbound mail now enforces 25 recipients over a trial and D-82 paid monthly allowances across invitations, reports, digests and alerts; operator mail is excluded (#197).
+
+- Hosted 14-day trial billing state, server-clock expiry and 30-day paused retention; payment, export and closure replace the drop-to-Free resolution (#197).
+
 - Ask O dashboard generation with a staged canvas, editable tiles and one-step sheet commit; conversational revision of stamped O tiles preserves presentation and custom titles. Managed credits charge per delivered tile or revision proposal (#196).
 
 - Hosted operator provisioning pages for tenant lists, creation, billing links, inline usage, invitations and lifecycle management; separate required workspace display names from namespace names with validated unique slugs (#192).

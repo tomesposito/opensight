@@ -6,40 +6,34 @@ import { appendOperatorAudit } from './operator-audit.js';
 import { entitlementConfig, type Entitlement } from './hosted-usage.js';
 import type { MailTransport } from './mail.js';
 
-/**
- * Stripe Billing for hosted tiers (issue #194, D-81). Operator payment links
- * plus webhook-driven entitlements; access stays request-only and
- * operator-provisioned (D-79) — there is no self-serve signup or checkout.
- *
- * Past-due rule (Tom, 2026-11-03, recorded on #194): when a subscription's
- * payment has failed past Stripe's own retries (subscription unpaid, or
- * cancelled at period end), the tenant's hosted access PAUSES — data is
- * retained, there is no automatic downgrade and no extra grace window.
- * Resolution is an admin action: pay in Stripe (the subscription returns to
- * active and the webhook restores the paid tier) or explicitly drop the
- * tenant to Free through the operator route. The operator is notified when
- * a tenant enters the paused state.
- */
+/** Hosted billing and 14-day trials (#194, #197). Paused workspaces retain
+ * data for 30 days; resolution is payment, export, or closure via D-84. */
 
 export const BILLING_TIERS = ['free', 'light', 'regular', 'heavy'] as const;
 export type BillingTier = typeof BILLING_TIERS[number];
 /** Decided flat monthly prices (D-78 amounts, 2026-10-28). Flat only: quotas
  * hard-stop overage, so there are no metered Stripe prices. */
 export const TIER_PRICE_CENTS: Readonly<Record<BillingTier, number>> = Object.freeze({ free: 0, light: 2900, regular: 9900, heavy: 39900 });
-const PAID_TIERS: readonly BillingTier[] = ['light', 'regular', 'heavy'];
+export const PAID_TIERS: readonly BillingTier[] = ['light', 'regular', 'heavy'];
+
+export const DAY_MS = 86_400_000;
+export const PAUSED_RESOLUTIONS = ['pay', 'export', 'close'] as const;
 
 export type BillingAccessState = 'active' | 'paused';
 export interface BillingRecord {
   tenantId: string; tier: BillingTier | null; subscriptionStatus: string | null;
   accessState: BillingAccessState; pauseEffectiveAt: string | null;
+  trialEndsAt: string | null; retentionDueAt: string | null;
   stripeCustomerId: string | null; stripeSubscriptionId: string | null; updatedAt: string;
 }
 export interface BillingConfig {
   apiKey: string; webhookSecret: string;
+  trialEntitlement?: Entitlement;
   priceIds: Readonly<Record<'light' | 'regular' | 'heavy', string>>;
   tierEntitlements: Readonly<Partial<Record<BillingTier, Entitlement>>>;
 }
 export interface StripeClient {
+  createCheckoutSession?(input: { priceId: string; tenantId: string; tier: BillingTier; origin: string }): Promise<{ id: string; url: string }>;
   createPaymentLink(input: { priceId: string; tenantId: string; tier: BillingTier }): Promise<{ id: string; url: string }>;
 }
 export type StripeFetcher = (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
@@ -48,6 +42,11 @@ function configInvalid(): never { throw new MetadataError('BILLING_CONFIG_INVALI
 function secretField(value: string | undefined): string {
   if (!value || value.length > 512 || /[\s\x00-\x1f]/.test(value)) configInvalid();
   return value!;
+}
+function trialEntitlement(raw: string | undefined): Entitlement | undefined {
+  if (raw === undefined) return undefined;
+  try { return tierEntitlements(JSON.stringify({ light: JSON.parse(raw) })).light; }
+  catch { configInvalid(); }
 }
 function tierEntitlements(raw: string | undefined): Partial<Record<BillingTier, Entitlement>> {
   if (raw === undefined) return {};
@@ -69,7 +68,7 @@ export function billingConfig(env: NodeJS.ProcessEnv = process.env): BillingConf
   const names = ['OPENSIGHT_STRIPE_SECRET_KEY', 'OPENSIGHT_STRIPE_WEBHOOK_SECRET', 'OPENSIGHT_STRIPE_PRICE_LIGHT', 'OPENSIGHT_STRIPE_PRICE_REGULAR', 'OPENSIGHT_STRIPE_PRICE_HEAVY'] as const;
   const present = names.filter(name => env[name] !== undefined && env[name] !== '');
   if (!present.length) {
-    if (env.OPENSIGHT_BILLING_TIER_ENTITLEMENTS !== undefined) configInvalid();
+    if (env.OPENSIGHT_BILLING_TIER_ENTITLEMENTS !== undefined || env.OPENSIGHT_TRIAL_ENTITLEMENT !== undefined) configInvalid();
     return undefined;
   }
   if (present.length !== names.length) configInvalid();
@@ -77,6 +76,7 @@ export function billingConfig(env: NodeJS.ProcessEnv = process.env): BillingConf
     apiKey: secretField(env.OPENSIGHT_STRIPE_SECRET_KEY), webhookSecret: secretField(env.OPENSIGHT_STRIPE_WEBHOOK_SECRET),
     priceIds: Object.freeze({ light: secretField(env.OPENSIGHT_STRIPE_PRICE_LIGHT), regular: secretField(env.OPENSIGHT_STRIPE_PRICE_REGULAR), heavy: secretField(env.OPENSIGHT_STRIPE_PRICE_HEAVY) }),
     tierEntitlements: Object.freeze(tierEntitlements(env.OPENSIGHT_BILLING_TIER_ENTITLEMENTS)),
+    trialEntitlement: trialEntitlement(env.OPENSIGHT_TRIAL_ENTITLEMENT),
   });
 }
 
@@ -85,6 +85,19 @@ export function billingConfig(env: NodeJS.ProcessEnv = process.env): BillingConf
  * payment page). The official SDK is deliberately not a dependency. */
 export function httpStripeClient(apiKey: string, fetcher: StripeFetcher = fetch as unknown as StripeFetcher): StripeClient {
   return {
+    async createCheckoutSession({ priceId, tenantId, tier, origin }) {
+      const form = new URLSearchParams({ mode: 'subscription', 'line_items[0][price]': priceId, 'line_items[0][quantity]': '1',
+        'metadata[tenant_id]': tenantId, 'metadata[tier]': tier,
+        'subscription_data[metadata][tenant_id]': tenantId, 'subscription_data[metadata][tier]': tier,
+        success_url: `${origin}/#/admin/billing`, cancel_url: `${origin}/#/admin/billing` });
+      try {
+        const response = await fetcher('https://api.stripe.com/v1/checkout/sessions', { method: 'POST',
+          headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/x-www-form-urlencoded' }, body: form.toString() });
+        const result = nested(await response.json());
+        if (!response.ok || typeof result.id !== 'string' || typeof result.url !== 'string' || !result.url.startsWith('https://checkout.stripe.com/')) throw new Error();
+        return { id: result.id, url: result.url };
+      } catch { throw new MetadataError('STRIPE_REQUEST_FAILED', 502); }
+    },
     async createPaymentLink({ priceId, tenantId, tier }) {
       const form = new URLSearchParams({
         'line_items[0][price]': priceId, 'line_items[0][quantity]': '1',
@@ -166,6 +179,15 @@ export async function initializeBilling(db: Database): Promise<void> {
       tenant_id TEXT PRIMARY KEY REFERENCES h1_tenants(tenant_id), tier TEXT, subscription_status TEXT,
       access_state TEXT NOT NULL DEFAULT 'active', pause_effective_at TEXT,
       stripe_customer_id TEXT, stripe_subscription_id TEXT, updated_at TEXT NOT NULL)`);
+    const columns = await c.query(db.dialect === 'postgres'
+      ? "SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'h9_billing'"
+      : 'PRAGMA table_info(h9_billing)');
+    for (const column of ['trial_ends_at', 'retention_due_at']) {
+      if (!columns.some(row => row.name === column)) await c.query(`ALTER TABLE h9_billing ADD COLUMN ${column} TEXT`);
+    }
+    for (const row of await c.query("SELECT tenant_id, pause_effective_at FROM h9_billing WHERE access_state = 'paused' AND pause_effective_at IS NOT NULL AND retention_due_at IS NULL")) {
+      await c.query('UPDATE h9_billing SET retention_due_at = ? WHERE tenant_id = ?', [new Date(Date.parse(String(row.pause_effective_at)) + 30 * DAY_MS).toISOString(), row.tenant_id!]);
+    }
     await c.query(`CREATE TABLE IF NOT EXISTS h9_billing_links (
       link_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES h1_tenants(tenant_id), tier TEXT NOT NULL, created_at TEXT NOT NULL)`);
     await c.query(`CREATE TABLE IF NOT EXISTS h9_billing_events (
@@ -182,6 +204,7 @@ function asRecord(row: Record<string, unknown> | undefined): BillingRecord | und
     pauseEffectiveAt: row.pause_effective_at === null ? null : String(row.pause_effective_at),
     stripeCustomerId: row.stripe_customer_id === null ? null : String(row.stripe_customer_id),
     stripeSubscriptionId: row.stripe_subscription_id === null ? null : String(row.stripe_subscription_id),
+    trialEndsAt: stringOrNull(row.trial_ends_at), retentionDueAt: stringOrNull(row.retention_due_at),
     updatedAt: String(row.updated_at),
   };
 }
@@ -199,7 +222,7 @@ function uniqueViolation(error: unknown): boolean {
 export interface BillingEventResult { duplicate: boolean; handled: boolean; tenantId: string | null; action: string }
 export interface HostedBillingOptions {
   mail?: MailTransport; notifyTo?: string | null;
-  stripe?: StripeClient; clock?: () => number;
+  stripe?: StripeClient; clock?: () => number; origin?: string;
 }
 
 /**
@@ -221,23 +244,76 @@ export class HostedBilling {
     const rows = await this.db.transaction(c => c.query('SELECT * FROM h9_billing'));
     this.records.clear();
     for (const row of rows) { const record = asRecord(row)!; this.records.set(record.tenantId, record); }
+    await this.expireTrials();
   }
-  /** Effective entitlement override for a billed tenant, when the operator
-   * configured an entitlement for the tenant's current tier. */
-  tierEntitlement(tenantId: string): Entitlement | undefined {
+  /** null explicitly denies fallback to deployment defaults; undefined preserves
+   * operator-created tenants without billing and legacy Free records. */
+  tierEntitlement(tenantId: string): Entitlement | null | undefined {
     const record = this.records.get(tenantId);
-    if (!record?.tier) return undefined;
-    return this.config.tierEntitlements[record.tier];
+    if (!record) return undefined;
+    if (record.tier && PAID_TIERS.includes(record.tier)) return this.config.tierEntitlements[record.tier] ?? null;
+    if (record.trialEndsAt) return Date.parse(record.trialEndsAt) > this.clock() ? this.config.trialEntitlement ?? null : null;
+    if (record.tier === 'free') return this.config.tierEntitlements.free;
+    return null;
+  }
+  trial(tenantId: string): { endsAt: string; daysRemaining: number } | null {
+    const record = this.records.get(tenantId);
+    if (!record?.trialEndsAt || record.tier && PAID_TIERS.includes(record.tier)) return null;
+    return { endsAt: record.trialEndsAt, daysRemaining: Math.max(0, Math.ceil((Date.parse(record.trialEndsAt) - this.clock()) / DAY_MS)) };
+  }
+  /** Also usable inside provisioning's transaction so tenant and trial commit together. */
+  async startTrialIn(c: SqlConnection, tenantId: string, provisionedAt = this.clock()): Promise<void> {
+    if (!this.config.trialEntitlement) throw new MetadataError('TRIAL_ENTITLEMENT_UNRESOLVED', 503);
+    const endsAt = new Date(provisionedAt + 14 * DAY_MS).toISOString();
+    const rows = await c.query(`INSERT INTO h9_billing (tenant_id, access_state, trial_ends_at, updated_at)
+      VALUES (?, 'active', ?, ?) ON CONFLICT (tenant_id) DO NOTHING RETURNING tenant_id`, [tenantId, endsAt, new Date(provisionedAt).toISOString()]);
+    if (rows.length) await appendOperatorAudit(c, { action: 'billing.trial.started', tenantId, detail: { trialEndsAt: endsAt } }, provisionedAt);
+  }
+  async startTrial(tenantId: string): Promise<void> {
+    await this.db.transaction(c => this.startTrialIn(c, identifier(tenantId)));
+    await this.load();
+  }
+  /** Lazy durable expiry uses the actual deadline, never the polling time. */
+  async expireTrials(): Promise<void> {
+    const expired = await this.db.transaction(async c => {
+      const rows = await c.query(`UPDATE h9_billing SET access_state = 'paused', pause_effective_at = trial_ends_at,
+        updated_at = ? WHERE trial_ends_at <= ? AND (tier IS NULL OR tier = 'free') AND access_state <> 'paused' RETURNING *`, [this.nowIso(), this.nowIso()]);
+      for (const row of rows) {
+        const retentionDueAt = new Date(Date.parse(String(row.trial_ends_at)) + 30 * DAY_MS).toISOString();
+        await c.query('UPDATE h9_billing SET retention_due_at = ? WHERE tenant_id = ?', [retentionDueAt, String(row.tenant_id)]);
+        row.retention_due_at = retentionDueAt;
+        await appendOperatorAudit(c, { action: 'billing.access.paused', tenantId: String(row.tenant_id),
+          detail: { reason: 'trial_expired', pauseEffectiveAt: row.trial_ends_at, retentionDueAt } }, Date.parse(String(row.trial_ends_at)));
+      }
+      return rows;
+    });
+    for (const row of expired) {
+      const record = asRecord(row)!; this.records.set(record.tenantId, record);
+      await this.notifyPause(record.tenantId, record.pauseEffectiveAt!, 'trial_expired');
+    }
+  }
+  private async notifyPause(tenantId: string, effectiveAt: string, reason: string): Promise<void> {
+    if (!this.options.mail?.configured || !this.options.notifyTo) return;
+    await this.options.mail.send({ to: [this.options.notifyTo], subject: `OpenSight billing: tenant ${tenantId} access paused`,
+      html: `<p>Tenant ${tenantId} entered the billing paused state (${reason}). Access pauses at ${effectiveAt}; data is retained for 30 days. Resolve by paying in Stripe, exporting data, or closing the workspace.</p>`,
+      dedupeKey: createHmac('sha256', 'billing-pause').update(`${tenantId}:${effectiveAt}`).digest('hex'),
+    }).catch(() => undefined);
   }
   /** The past-due gate: a paused tenant whose pause is in effect gets no
    * hosted access. Data is retained; only an admin resolution reopens it. */
   assertAccess(tenantId: string): void {
     const record = this.records.get(tenantId);
+    if (record?.trialEndsAt && (!record.tier || !PAID_TIERS.includes(record.tier)) && Date.parse(record.trialEndsAt) <= this.clock())
+      throw new MetadataError('TRIAL_EXPIRED', 403);
     if (record?.accessState === 'paused' && record.pauseEffectiveAt && Date.parse(record.pauseEffectiveAt) <= this.clock())
       throw new MetadataError('BILLING_ACCESS_PAUSED', 403);
   }
+  accessPaused(tenantId: string): boolean {
+    try { this.assertAccess(tenantId); return false; } catch (error) { if (error instanceof MetadataError && ['TRIAL_EXPIRED', 'BILLING_ACCESS_PAUSED'].includes(error.code)) return true; throw error; }
+  }
   async state(tenantId: string): Promise<BillingRecord | { tenantId: string; status: 'none' }> {
     identifier(tenantId);
+    await this.expireTrials();
     const record = await this.db.transaction(async c => asRecord((await c.query('SELECT * FROM h9_billing WHERE tenant_id = ?', [tenantId]))[0]));
     return record ?? { tenantId, status: 'none' };
   }
@@ -256,24 +332,17 @@ export class HostedBilling {
     });
     return { ...link, tier: paidTier };
   }
-  /** Admin resolution #2 from Tom's ruling: explicitly drop a paused tenant
-   * to Free. (Resolution #1 — paying in Stripe — arrives as a webhook when
-   * the subscription returns to active and restores the paid tier.) */
-  async resolveDropToFree(tenantId: string): Promise<BillingRecord> {
+  async createCheckoutSession(tenantId: string, tier: unknown): Promise<{ id: string; url: string }> {
     identifier(tenantId);
-    const updated = await this.db.transaction(async c => {
-      await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state <> 'deleted' RETURNING tenant_id", [tenantId]);
-      const record = asRecord((await c.query('SELECT * FROM h9_billing WHERE tenant_id = ?', [tenantId]))[0]);
-      if (!record) throw new MetadataError('BILLING_NOT_PAUSED', 409);
-      if (record.accessState !== 'paused') throw new MetadataError('BILLING_NOT_PAUSED', 409);
-      const next: BillingRecord = { ...record, tier: 'free', accessState: 'active', pauseEffectiveAt: null, updatedAt: this.nowIso() };
-      await c.query('UPDATE h9_billing SET tier = ?, access_state = ?, pause_effective_at = ?, updated_at = ? WHERE tenant_id = ?',
-        [next.tier, next.accessState, next.pauseEffectiveAt, next.updatedAt, tenantId]);
-      await appendOperatorAudit(c, { action: 'billing.access.restored', tenantId, detail: { via: 'drop_to_free', fromTier: record.tier, toTier: 'free', stripeEventId: null } }, this.clock());
-      return next;
-    });
-    this.records.set(tenantId, updated);
-    return updated;
+    if (typeof tier !== 'string' || !PAID_TIERS.includes(tier as BillingTier)) throw new MetadataError('BILLING_TIER_INVALID', 400);
+    if (!this.options.origin || !this.stripe.createCheckoutSession) throw new MetadataError('BILLING_CHECKOUT_UNAVAILABLE', 503);
+    if (!(await this.db.transaction(c => c.query("SELECT tenant_id FROM h1_tenants WHERE tenant_id = ? AND state = 'active'", [tenantId]))).length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
+    const record = await this.state(tenantId);
+    if (!('status' in record) && record.stripeSubscriptionId && !['canceled', 'incomplete_expired'].includes(record.subscriptionStatus ?? '')) throw new MetadataError('BILLING_SUBSCRIPTION_EXISTS', 409);
+    const paidTier = tier as 'light' | 'regular' | 'heavy';
+    const session = await this.stripe.createCheckoutSession({ tenantId, tier: paidTier, priceId: this.config.priceIds[paidTier], origin: this.options.origin });
+    await this.db.transaction(c => appendOperatorAudit(c, { action: 'billing.checkout.created', tenantId, subject: session.id, detail: { tier: paidTier } }, this.clock()));
+    return session;
   }
   private tierForPrice(priceId: string | null): BillingTier | undefined {
     if (!priceId) return undefined;
@@ -284,7 +353,7 @@ export class HostedBilling {
     const object = event.object;
     const metadata = nested(object.metadata);
     const metaTenant = stringOrNull(metadata.tenant_id);
-    if (metaTenant) { try { return { tenantId: identifier(metaTenant) }; } catch { /* fall through to durable bindings */ } }
+    if (metaTenant) { try { return { tenantId: identifier(metaTenant), ...(event.type === 'checkout.session.completed' && PAID_TIERS.includes(metadata.tier as BillingTier) ? { linkTier: metadata.tier as BillingTier } : {}) }; } catch { /* fall through to durable bindings */ } }
     const paymentLink = stringOrNull(object.payment_link);
     if (paymentLink) {
       const link = (await c.query('SELECT tenant_id, tier FROM h9_billing_links WHERE link_id = ?', [paymentLink]))[0];
@@ -331,13 +400,16 @@ export class HostedBilling {
         const { tenantId } = resolved;
         await c.query('UPDATE h9_billing_events SET tenant_id = ?, outcome = ? WHERE event_id = ?', [tenantId, 'applied', event.id]);
         const existing = asRecord((await c.query('SELECT * FROM h9_billing WHERE tenant_id = ?', [tenantId]))[0]);
-        const next: BillingRecord = existing ?? { tenantId, tier: null, subscriptionStatus: null, accessState: 'active', pauseEffectiveAt: null, stripeCustomerId: null, stripeSubscriptionId: null, updatedAt: this.nowIso() };
+        const next: BillingRecord = existing ? { ...existing } : { tenantId, trialEndsAt: null, retentionDueAt: null, tier: null, subscriptionStatus: null, accessState: 'active', pauseEffectiveAt: null, stripeCustomerId: null, stripeSubscriptionId: null, updatedAt: this.nowIso() };
         const object = event.object;
         let action = 'recorded';
         if (event.type === 'checkout.session.completed') {
           next.stripeCustomerId = stringOrNull(object.customer) ?? next.stripeCustomerId;
           next.stripeSubscriptionId = stringOrNull(object.subscription) ?? next.stripeSubscriptionId;
-          if (resolved.linkTier) next.tier = resolved.linkTier;
+          if (resolved.linkTier) {
+            next.tier = resolved.linkTier;
+            if (stringOrNull(nested(object.metadata).tier) && ['paid', 'no_payment_required'].includes(String(object.payment_status))) { next.accessState = 'active'; next.pauseEffectiveAt = null; }
+          }
           action = 'checkout_completed';
         } else if (event.type.startsWith('customer.subscription')) {
           const status = event.type === 'customer.subscription.deleted' ? 'canceled' : stringOrNull(object.status) ?? next.subscriptionStatus;
@@ -352,7 +424,7 @@ export class HostedBilling {
             next.accessState = 'active'; next.pauseEffectiveAt = null;
           } else if (status === 'unpaid' || status === 'incomplete_expired') {
             if (next.accessState !== 'paused') { action = 'access_paused'; pauseNotice = { tenantId, effectiveAt: this.nowIso(), reason: `subscription_${status}` }; }
-            next.accessState = 'paused'; next.pauseEffectiveAt = this.nowIso();
+            next.accessState = 'paused'; next.pauseEffectiveAt = next.pauseEffectiveAt && Date.parse(next.pauseEffectiveAt) <= this.clock() ? next.pauseEffectiveAt : this.nowIso();
           } else if (status === 'canceled') {
             const periodEnd = typeof object.current_period_end === 'number' && Number.isFinite(object.current_period_end) ? object.current_period_end * 1000 : null;
             const effective = periodEnd !== null && periodEnd > this.clock() ? new Date(periodEnd).toISOString() : this.nowIso();
@@ -373,12 +445,15 @@ export class HostedBilling {
           await c.query('UPDATE h9_billing_events SET outcome = ? WHERE event_id = ?', ['ignored', event.id]);
           return { duplicate: false, handled: false, tenantId, action: 'ignored' } satisfies BillingEventResult;
         }
+        if (next.tier && PAID_TIERS.includes(next.tier)) next.trialEndsAt = null;
+        next.retentionDueAt = next.pauseEffectiveAt ? new Date(Date.parse(next.pauseEffectiveAt) + 30 * DAY_MS).toISOString() : null;
         next.updatedAt = this.nowIso();
-        await c.query(`INSERT INTO h9_billing (tenant_id, tier, subscription_status, access_state, pause_effective_at, stripe_customer_id, stripe_subscription_id, updated_at)
-          VALUES (?,?,?,?,?,?,?,?) ON CONFLICT (tenant_id) DO UPDATE SET tier = excluded.tier, subscription_status = excluded.subscription_status,
+        await c.query(`INSERT INTO h9_billing (tenant_id, tier, subscription_status, access_state, pause_effective_at, stripe_customer_id, stripe_subscription_id, updated_at, trial_ends_at, retention_due_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (tenant_id) DO UPDATE SET tier = excluded.tier, subscription_status = excluded.subscription_status,
           access_state = excluded.access_state, pause_effective_at = excluded.pause_effective_at, stripe_customer_id = excluded.stripe_customer_id,
-          stripe_subscription_id = excluded.stripe_subscription_id, updated_at = excluded.updated_at`,
-        [next.tenantId, next.tier, next.subscriptionStatus, next.accessState, next.pauseEffectiveAt, next.stripeCustomerId, next.stripeSubscriptionId, next.updatedAt]);
+          stripe_subscription_id = excluded.stripe_subscription_id, updated_at = excluded.updated_at, trial_ends_at = excluded.trial_ends_at, retention_due_at = excluded.retention_due_at`,
+        [next.tenantId, next.tier, next.subscriptionStatus, next.accessState, next.pauseEffectiveAt, next.stripeCustomerId, next.stripeSubscriptionId, next.updatedAt, next.trialEndsAt, next.retentionDueAt]);
+        if (existing?.trialEndsAt && !next.trialEndsAt && next.tier && PAID_TIERS.includes(next.tier)) await appendOperatorAudit(c, { action: 'billing.trial.converted', tenantId, detail: { tier: next.tier, stripeEventId: event.id } }, this.clock());
         const changed = !existing || existing.tier !== next.tier || existing.accessState !== next.accessState || existing.subscriptionStatus !== next.subscriptionStatus;
         if (changed) await appendOperatorAudit(c, { action: 'billing.entitlement.changed', tenantId, subject: next.stripeSubscriptionId ?? undefined,
           detail: { stripeEventId: event.id, type: event.type, action, fromTier: existing?.tier ?? null, toTier: next.tier, subscriptionStatus: next.subscriptionStatus, accessState: next.accessState, pauseEffectiveAt: next.pauseEffectiveAt } }, this.clock());
@@ -393,15 +468,9 @@ export class HostedBilling {
       if (uniqueViolation(error)) return { duplicate: true, handled: false, tenantId: null, action: 'duplicate' };
       throw error;
     }
-    if (pauseNotice && this.options.mail?.configured && this.options.notifyTo) {
-      // Best-effort, after the pause is durable: a mail failure never rolls
-      // the pause back (same rule as access-request notification, #177).
+    if (pauseNotice) {
       const notice = pauseNotice as { tenantId: string; effectiveAt: string; reason: string };
-      await this.options.mail.send({
-        to: [this.options.notifyTo], subject: `OpenSight billing: tenant ${notice.tenantId} access paused`,
-        html: `<p>Tenant ${notice.tenantId} entered the billing paused state (${notice.reason}). Access pauses at ${notice.effectiveAt}; data is retained. Resolve by paying in Stripe or dropping the tenant to Free via the operator billing route.</p>`,
-        dedupeKey: `billing-paused:${notice.tenantId}:${notice.effectiveAt}`,
-      }).catch(() => undefined);
+      await this.notifyPause(notice.tenantId, notice.effectiveAt, notice.reason);
     }
     return result;
   }

@@ -62,7 +62,7 @@ export class HostedProvisioning {
     await c.query('INSERT INTO h2_invitations VALUES (?,?,?,?,?,?,0,0)', [operationId, subject, tenantId, digest(token), seal(token, this.config.encryptionKey, `invitation:${operationId}`), expiresAt]);
     return { id: operationId, token, expiresAt: new Date(expiresAt).toISOString() };
   }
-  async provision(key: string, raw: OnboardingInput): Promise<TenantOperation> {
+  async provision(key: string, raw: OnboardingInput, lifecycle?: { via: 'self_serve_signup'; beforeCreate(c: SqlConnection): Promise<void>; onCreated(c: SqlConnection, tenantId: string): Promise<void> }): Promise<TenantOperation> {
     const name = label(raw.name, 'name'), displayName = label(raw.displayName, 'displayName');
     const slug = parseWorkspaceSlug(raw.slug) ?? deriveWorkspaceSlug(displayName);
     const input = { name, displayName, slug, administrator: { email: normalizedEmail(raw.administrator.email), name: label(raw.administrator.name, 'administrator.name') } };
@@ -75,6 +75,7 @@ export class HostedProvisioning {
       await c.query('UPDATE h2_control SET id = id WHERE id = 1');
       const prior = (await c.query('SELECT * FROM h2_onboarding WHERE operation_id = ?', [operationId]))[0];
       if (prior) { if (prior.request_hash !== hash) throw new MetadataError('OPERATION_ID_REUSED'); return; }
+      await lifecycle?.beforeCreate(c);
       const tenantId = randomUUID(), namespaceId = randomUUID(), userId = randomUUID();
       const inserted = await c.query(`INSERT INTO h1_tenants (tenant_id,state,version,display_name,slug)
         VALUES (?,'provisioning',1,?,?) ON CONFLICT (slug) DO NOTHING RETURNING tenant_id`, [tenantId, input.displayName, input.slug]);
@@ -85,16 +86,17 @@ export class HostedProvisioning {
       await c.query("INSERT INTO h1_operations VALUES (?,?,?,'provision',?,'pending','created')", [operationId, tenantId, namespaceId, hash]);
       const invitation = await this.invite(c, operationId, tenantId, namespaceId, userId, input.administrator.email);
       await c.query('INSERT INTO h2_onboarding VALUES (?,?,?,?)', [operationId, hash, tenantId, invitation.id]);
+      await lifecycle?.onCreated(c, tenantId);
       await appendMetadataEvent(c, { tenantId, namespaceId }, 'tenant.provisioning');
       // The committed provisioning mutations are audited in the transaction that creates
       // them, so a later SMTP failure cannot leave them unaudited. Invitation tokens are
       // sealed in h2_invitations and mailed; only the recipient identity lands here.
-      await appendOperatorAudit(c, { action: 'tenant.provisioned', tenantId, subject: input.administrator.email, detail: { operationId, name: input.name, slug: input.slug } });
-      await appendOperatorAudit(c, { action: 'membership.invited', tenantId, subject: input.administrator.email, detail: { operationId, userId, role: 'administrator' } });
+      await appendOperatorAudit(c, { action: 'tenant.provisioned', tenantId, subject: input.administrator.email, detail: { operationId, name: input.name, slug: input.slug, ...(lifecycle ? { via: lifecycle.via } : {}) } });
+      await appendOperatorAudit(c, { action: 'membership.invited', tenantId, subject: input.administrator.email, detail: { operationId, userId, role: 'administrator', ...(lifecycle ? { via: lifecycle.via } : {}) } });
     });
     return this.completeProvision(operationId, input);
   }
-  private async deliver(invitationId: string): Promise<void> {
+  private async deliver(invitationId: string, tenantMail = false): Promise<void> {
     const row = (await this.database.transaction(c => c.query(`SELECT v.*, i.email, t.state, t.display_name FROM h2_invitations v
       JOIN h2_identities i ON i.subject = v.subject JOIN h1_tenants t ON t.tenant_id = v.tenant_id WHERE invitation_id = ?`, [invitationId])))[0];
     if (!row) missing();
@@ -103,7 +105,8 @@ export class HostedProvisioning {
     if (Number(row.expires_at) <= this.clock()) throw new MetadataError('INVITATION_EXPIRED', 409);
     const token = unseal(String(row.token_secret), this.config.encryptionKey, `invitation:${invitationId}`);
     // Delivery belongs to the identity flow, never to operator metadata responses.
-    await this.mail.send(invitationMessage(this.config.origin, String(row.tenant_id), row.display_name, String(row.email), token));
+    await this.mail.send({ ...invitationMessage(this.config.origin, String(row.tenant_id), row.display_name, String(row.email), token),
+      ...(tenantMail ? { tenantId: String(row.tenant_id), dedupeKey: invitationId } : {}) });
     await this.database.transaction(c => c.query('UPDATE h2_invitations SET delivered = 1 WHERE invitation_id = ?', [invitationId]));
   }
   private async completeProvision(operationId: string, input: Pick<OnboardingInput, 'administrator'>): Promise<TenantOperation> {
@@ -171,7 +174,7 @@ export class HostedProvisioning {
     };
     const invited = delivery && context ? await delivery.create(context, operationId, hash, work) : await this.database.transaction(work);
     if (invited) this.analytics.track(invited, { name: 'user_invited' });
-    if (!delivery) await this.deliver(operationId);
+    if (!delivery) await this.deliver(operationId, true);
     return invited;
   }
   /** Recheck admission under the same tenant lock used by acceptance/removal. */

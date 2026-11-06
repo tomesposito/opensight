@@ -1,6 +1,7 @@
 import { allowed, type Access } from './access.js';
 
 export const pages = {
+  billing: { path: '/admin/billing', section: 'Admin', title: 'Billing' },
   notebooks: { path: '/notebooks', section: 'Notebooks', title: 'Notebooks' },
   metric: { path: '/metrics', section: 'Data', title: 'Governed metric' },
   ideas: { path: '/ideas', section: 'Ideas', title: 'Ideas' },
@@ -31,7 +32,7 @@ export const productSections = [
   { title: 'My folders', page: 'my-folders' }, { title: 'Shared folders', page: 'shared-folders' },
 ] as const;
 export const dataPages: Page[] = ['data', 'data-prep', 'data-sources', 'notebooks'];
-export const adminPages: Page[] = ['security', 'organization', 'automation', 'ai-settings', 'users'];
+export const adminPages: Page[] = ['security', 'organization', 'automation', 'ai-settings', 'users', 'billing'];
 export const developerPages: Page[] = ['fixtures', 'api'];
 
 /** Session-only page history. Never retain a draft URL or imply asset activity. */
@@ -42,6 +43,7 @@ export function recordRecentPage(recents: readonly Page[], page: Page | undefine
 }
 
 export function visiblePage(access: Access, page: Page): boolean {
+  if (page === 'billing') return access.mode === 'hosted' && allowed(access, 'admin') && !!access.session?.billing;
   if (page === 'notebooks') return true;
   if (page === 'dashboards') return access.mode !== 'demo';
   if (page === 'analyses' || page === 'author' || dataPages.includes(page)) return allowed(access, 'build');
@@ -53,7 +55,7 @@ export function routeProblem(access: Access, page: Page): string | undefined {
   if (page === 'dashboards' && access.mode === 'demo') return 'Publishing dashboards needs a hosted API.';
   if (page === 'api' && access.mode === 'demo') return 'Needs hosted API · The fixture demo does not connect to the API.';
   if (visiblePage(access, page)) return;
-  return page === 'ai-settings' || page === 'users'
+  return page === 'ai-settings' || page === 'users' || page === 'billing'
     ? 'SECURITY_ADMIN_REQUIRED: Hosted administrator access required.'
     : 'SECURITY_BUILD_REQUIRED: Author access required.';
 }

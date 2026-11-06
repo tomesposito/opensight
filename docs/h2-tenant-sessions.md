@@ -64,7 +64,7 @@ including administrators, cannot use the operator plane or create namespaces.
   idempotency key. Delivery failures after reservation remain retryable with the
   same key and payload, as described below.
 - `GET /api/host/tenants`: lists display name, slug, lifecycle state, billing
-  tier (absent/null is Free), nonremoved member count and creation time from
+  tier (the legacy absent/null fallback remains the stored `free` value), nonremoved member count and creation time from
   the retained provisioning audit entry (unknown for unaudited legacy rows).
   Deleted tenants remain listed, with zero members.
 - `GET /api/host/operations/{operationId}` and `GET /api/host/tenants/{tenantId}`:
@@ -176,20 +176,19 @@ local artifact, not a deployed server.
 In the hosted app, open `#operator-tenants` to list/filter workspaces or create
 one. `#operator-tenant/<tenantId>` shows its overview, billing, inline usage,
 people and lifecycle controls. All operator pages link to Tenants, Tenant users
-and Ideas. These pages are absent from the offline demo.
+Ideas and Signups. These pages are absent from the offline demo.
 
 Each page requires the operator credential. It stays in component memory, clears
 on Disconnect/navigation, and is sent with `credentials: 'omit'`; no cookie or
 browser storage carries it. Trusted-Origin requests are allowed only for the
 existing ideas/users routes and the precise provisioning shapes and methods:
-list/create, detail/delete, invitations, suspend/resume, billing read/payment-link/
-resolve, and GET `/api/host/usage/<YYYY-MM>/tenants/<tenantId>`. Other host routes
+list/create, detail/delete, invitations, suspend/resume, billing read/payment-link, GET/PATCH `/api/host/signups`, and GET `/api/host/usage/<YYYY-MM>/tenants/<tenantId>`. Other host routes
 (including audit, operations, health and usage rollups) still reject Origin.
 Tenant sessions cannot use any of these operator routes.
 
-Creating always starts on Free. Selecting a paid plan generates a payment link
+Operator creation uses the existing configured quotas; it does not start a trial. Selecting a paid plan generates a payment link
 after creation; payment and the billing webhook change the tier. A billing 404
-shows a not-configured message and leaves the successful tenant on Free. Missing
+shows a not-configured message and leaves the successful tenant available with its operator configuration. Missing
 mail prevents creation with `SMTP_NOT_CONFIGURED`. Each create form session
 uses one idempotency key and disables submission while working. Invitations are
 emailed by the server; these operator pages never show invitation tokens.
@@ -203,9 +202,12 @@ configuration is shown explicitly, rather than as zero use.
 
 Suspend, Resume and Delete refetch the version immediately before submitting.
 A conflict refreshes the page data; `RESTORE_REVIEW_REQUIRED` remains explicit.
-Past-due billing resolution requires confirmation. Delete requires typing the
+Paused billing offers payment, export and closure; drop-to-Free is removed.
+Retention-due tenants have an entry point into the existing delete confirmation.
+Delete requires typing the
 slug (tenant ID for a legacy/null slug), revokes access and enters `deleting`.
 Deleting and deleted tenants are read-only; a completed deletion shows the
 retained tombstone. Full erasure is separate offline maintenance, audit entries
 are retained, and serverless object-store erasure remains unsupported and fails
-closed. There is no erasure, rename, impersonation or tenant-facing action here.
+closed. The retention entry point does not execute offline erasure. See
+[self-serve signup](self-serve-signup.md) for runtime signup controls and caps.

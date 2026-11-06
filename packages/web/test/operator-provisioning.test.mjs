@@ -67,7 +67,7 @@ test('192 C: create derives labels until edited, paid selection is a second requ
   const posts = ui.calls.filter(call => call.method === 'POST'); assert.equal(posts.length, 2);
   assert.deepEqual(posts[0].input, { displayName: 'Public', name: 'Internal', slug: 'custom', administrator: { name: 'Admin', email: 'admin@example.test' } });
   assert.deepEqual(posts[1].input, { tier: 'regular' }); assert.ok(posts[0].headers['Idempotency-Key']);
-  assert.match(ui.text(), /Tenant created on the Free plan/); assert.match(ui.text(), /Regular plan starts when they pay/); assert.ok(button(ui, 'Copy link'));
+  assert.match(ui.text(), /Tenant created with operator-configured quotas/); assert.match(ui.text(), /Regular plan starts when they pay/); assert.ok(button(ui, 'Copy link'));
   assert.ok(ui.root.findByProps({ href: '#operator-tenant/new-tenant' }));
 });
 
@@ -107,7 +107,7 @@ test('192 C: in-flight submits cannot create twice; unconfigured billing preserv
 
 test('192 C: Free creation makes no billing call and slug derivation matches D-83 boundaries', async t => {
   const ui = await mount(t, OperatorTenants, call => response(call.method === 'GET' ? { tenants: [] } : { tenantId: 'new' }));
-  await connect(ui); await formValues(ui); await submit(ui, 'Create tenant'); assert.match(ui.text(), /Tenant created on the Free plan/); assert.equal(ui.calls.some(call => call.path.includes('billing')), false);
+  await connect(ui); await formValues(ui); await submit(ui, 'Create tenant'); assert.match(ui.text(), /Tenant created with operator-configured quotas/); assert.equal(ui.calls.some(call => call.path.includes('billing')), false);
   for (const [name, slug] of [[' Sales & Ops! ', 'sales-ops'], ['東京', ''], ['A'.repeat(63) + ' !tail', 'a'.repeat(63)], ['A'.repeat(70), 'a'.repeat(64)]]) assert.equal(deriveTenantSlug(name), slug);
 });
 
@@ -129,15 +129,12 @@ test('192 C: detail shows inline usage and billing, link generation keeps tier, 
   await click(button(ui, 'Disconnect')); assert.equal(ui.root.findAllByType('progress').length, 0); assert.doesNotMatch(ui.text(), /Workspace Admin/);
 });
 
-test('192 C: billing 404 removes controls; past due drop-to-free needs confirmation', async t => {
+test('197: billing 404 removes controls; paused resolutions exclude drop-to-Free', async t => {
   const missing = await mount(t, OperatorTenant, detailHandler({ billing: null }), { tenantId: 'tenant-one' }); await connect(missing);
-  assert.match(missing.text(), /Billing is not configured/); assert.equal(button(missing, 'Generate payment link'), undefined); assert.ok(button(missing, 'Send invitation'));
-  let resolved = false;
-  const paused = await mount(t, OperatorTenant, detailHandler({ billing: { tier: 'regular', accessState: 'paused', subscriptionStatus: 'unpaid' }, extra: call => {
-    if (call.path.endsWith('/resolve')) { assert.deepEqual(call.input, { action: 'drop_to_free' }); resolved = true; return response({}); }
-  } }), { tenantId: 'tenant-one' }); await connect(paused); assert.match(paused.text(), /Access paused/);
-  await click(button(paused, 'Drop to Free…')); assert.equal(resolved, false); assert.ok(paused.root.findByProps({ role: 'dialog' }));
-  await click(button(paused, 'Confirm drop to Free')); assert.equal(resolved, true); assert.match(paused.text(), /Tenant dropped to Free/);
+  assert.equal(missing.root.findAllByType('button').some(b => b.children.join('').includes('Generate payment link')), false);
+  const paused = await mount(t, OperatorTenant, detailHandler({ billing: { tier: 'regular', accessState: 'paused', subscriptionStatus: 'unpaid' } }), { tenantId: 'tenant-one' }); await connect(paused);
+  assert.match(paused.text(), /paying in Stripe, exporting data, or closing the workspace/);
+  assert.doesNotMatch(paused.text(), /Drop to Free/);
 });
 
 test('192 C: lifecycle uses freshly read version; conflict refetches; restore-review refusal is explicit', async t => {

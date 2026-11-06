@@ -1,5 +1,22 @@
 import { MetadataError, type Database, type SqlConnection } from './metadata-db.js';
 
+
+// Additive hosted stores are optional on older and non-billing installations.
+export const optionalTenantDeletionTables = ['h9_billing_links', 'h9_billing_events', 'h9_billing', 'h10_mail_usage', 'h10_mail_receipts'] as const;
+export async function hasErasureTable(c: SqlConnection, table: string): Promise<boolean> {
+  await c.query('SAVEPOINT erasure_optional_table');
+  let present = true;
+  try { await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`); }
+  catch (error) {
+    await c.query('ROLLBACK TO SAVEPOINT erasure_optional_table');
+    const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
+    if (code !== '42P01' && !(error instanceof Error && /no such table:/i.test(error.message))) throw error;
+    present = false;
+  }
+  await c.query('RELEASE SAVEPOINT erasure_optional_table'); return present;
+}
+const signupScrub = "email <> '' OR display_name <> '' OR slug <> '' OR admin_name <> '' OR token_secret <> '' OR created_ip <> ''";
+
 export interface TenantDeletionOptions { dryRun?: boolean; confirmTenantId?: string }
 export interface ErasureCount {
   store: string;
@@ -37,6 +54,8 @@ export async function tenantDeletionInventory(c: SqlConnection, tenantId: string
       for (const row of rows) counts.push({ store: `${table}.${String(row.kind)}`, action: 'delete', count: Number(row.count) });
     } else counts.push({ store: table, action: 'delete', count: await erasureCount(c, table, 'tenant_id = ?', [tenantId]) });
   }
+  for (const table of optionalTenantDeletionTables) if (await hasErasureTable(c, table)) counts.push({ store: table, action: 'delete', count: await erasureCount(c, table, 'tenant_id = ?', [tenantId]) });
+  if (await hasErasureTable(c, 'h10_signups')) counts.push({ store: 'h10_signups', action: 'scrub', count: await erasureCount(c, 'h10_signups', `tenant_id = ? AND (${signupScrub})`, [tenantId]) });
   for (const table of ['h2_login_selections', 'h2_identities']) counts.push({ store: table, action: 'delete',
     count: await erasureCount(c, table, `subject IN (${exclusiveIdentities})`, [tenantId, tenantId]) });
   counts.push({ store: 'h2_memberships', action: 'delete', count: await erasureCount(c, 'h2_memberships', 'tenant_id = ?', [tenantId]) });
@@ -70,7 +89,7 @@ export async function assertReferenceErasureStores(db: Database): Promise<void> 
       }
     } else tables = (await c.query(`SELECT DISTINCT table_name FROM information_schema.columns
       WHERE table_schema = current_schema() AND (column_name IN ('tenant_id', 'namespace_id') OR substr(table_name, 1, 3) = 'sr_')`)).map(row => String(row.table_name));
-    const supported = new Set<string>([...tenantDeletionTables, 'h2_memberships', 'h1_namespaces', 'h1_tenants', 'h8_audit', 'h1_outbox', 'h1_operations', 'h1_revisions']);
+    const supported = new Set<string>([...tenantDeletionTables, ...optionalTenantDeletionTables, 'h10_signups', 'h2_memberships', 'h1_namespaces', 'h1_tenants', 'h8_audit', 'h1_outbox', 'h1_operations', 'h1_revisions']);
     const unsupported = tables.filter(table => !supported.has(table)).sort();
     if (unsupported.length) throw new MetadataError('TENANT_ERASURE_STORE_UNSUPPORTED', 503, { stores: unsupported });
     // A v4 source references external bytes even if its serverless schema is absent.
@@ -90,6 +109,9 @@ export async function purgeTenantRows(c: SqlConnection, tenantId: string): Promi
   // Capture exclusive subjects before deleting memberships, in the same transaction.
   const subjects = (await c.query(exclusiveIdentities, [tenantId, tenantId])).map(row => String(row.subject));
   for (const table of tenantDeletionTables) await c.query(`DELETE FROM ${table} WHERE tenant_id = ?`, [tenantId]);
+  for (const table of optionalTenantDeletionTables) if (await hasErasureTable(c, table)) await c.query(`DELETE FROM ${table} WHERE tenant_id = ?`, [tenantId]);
+  // Keep only the hashed one-trial identity and lifecycle facts; erase signup PII.
+  if (await hasErasureTable(c, 'h10_signups')) await c.query("UPDATE h10_signups SET email = '', display_name = '', slug = '', admin_name = '', token_secret = '', created_ip = '' WHERE tenant_id = ?", [tenantId]);
   for (const subject of subjects) await c.query('DELETE FROM h2_login_selections WHERE subject = ?', [subject]);
   await c.query('DELETE FROM h2_memberships WHERE tenant_id = ?', [tenantId]);
   for (const subject of subjects) await c.query('DELETE FROM h2_identities WHERE subject = ?', [subject]);

@@ -44,8 +44,12 @@ import { JobOwnership, disposition } from './job-ownership.js';
 import { jobRoute } from './job-routes.js';
 import { Scheduler } from './schedule.js';
 import { hostedReadiness } from './hosted-health.js';
-import { HostedUsage, usageMonth } from './hosted-usage.js';
+import { HostedUsage, usageMonth, initializeUsage, entitlementConfig } from './hosted-usage.js';
 import { billingConfig, HostedBilling, httpStripeClient, initializeBilling, parseStripeEvent, readRawBody, verifyStripeSignature, type StripeFetcher } from './hosted-billing.js';
+import { initializeTenantMail, TenantMailTransport } from './hosted-mail.js';
+import { SignupOperator } from './hosted-signup-operator.js';
+import { exportWorkspace } from './workspace-export.js';
+import { HostedSignup, initializeSignups, signupConfig, type ChallengeVerifier } from './hosted-signup.js';
 import { HostedAI } from './hosted-ai.js';
 import type { HostedAIOptions } from './hosted-ai-settings.js';
 import { AIError } from './ai-providers.js';
@@ -99,6 +103,8 @@ export interface HostedServerOptions {
   mailTransport?: MailTransport;
   /** Test seam for the Stripe REST client (issue #194); production uses fetch. */
   stripeFetcher?: StripeFetcher;
+  signupChallengeVerifier?: ChallengeVerifier;
+  clock?: () => number;
   /** Provider transport seam; tests never call a live model. */
   ai?: HostedAIOptions;
   analytics?: Analytics;
@@ -123,17 +129,19 @@ function boundary(request: IncomingMessage, origin: string): void {
     for (let i = 0; i < request.rawHeaders.length; i += 2) if (request.rawHeaders[i]!.toLowerCase() === header) count++;
     if (count > 1) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
   }
-  if (request.headers.host !== new URL(origin).host || request.url !== '/api/access-requests' && request.headers.origin !== undefined && request.headers.origin !== origin
+  if (request.headers.host !== new URL(origin).host || request.url !== '/api/access-requests' && !/^\/api\/signup(?:\/|$)/.test(request.url ?? '') && request.headers.origin !== undefined && request.headers.origin !== origin
     || request.headers.forwarded !== undefined || request.headers['x-forwarded-host'] !== undefined) throw new MetadataError(
       /^\/api\/(?:namespaces\/[^/]+\/)?embedding(?:\/|$)/.test(request.url ?? '') ? 'EMBED_ORIGIN_DENIED' : 'UNTRUSTED_ORIGIN', 403);
   if (forgedHeaders.some(h => request.headers[h] !== undefined)) throw new MetadataError('FORGED_PRINCIPAL', 403);
   if (['GET', 'HEAD'].includes(request.method ?? '') && (request.headers['transfer-encoding'] || request.headers['content-length'] && request.headers['content-length'] !== '0')) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
-  if (!request.url?.startsWith('/') || request.url.startsWith('//') || request.url.includes('?') || request.url.includes('#')) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
+  if (!request.url?.startsWith('/') || request.url.startsWith('//') || request.url.includes('?') && !request.url.startsWith('/api/signup/slug?') || request.url.includes('#')) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
 }
 
 /** Hosted tenant plane never exposes legacy fixture stores or ownerless schedulers. */
 export async function createHostedApiServer(options: HostedServerOptions): Promise<Server> {
   const config = hostedConfig(options.env);
+  const clock = options.clock ?? Date.now;
+  const signupCfg = signupConfig(options.env ?? process.env, config.origin, config.encryptionKey);
   const billingCfg = billingConfig(options.env ?? process.env);
   const accessRate = accessRequestRate(options.env ?? process.env);
   const accessNotifyTo = accessRequestNotifyTo(options.env ?? process.env);
@@ -142,7 +150,15 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const authenticate = options.security.authenticate;
   const reference = referenceConfig(options.env ?? process.env);
   if (options.invocation && reference) throw new MetadataError('SERVERLESS_REFERENCE_FORBIDDEN', 503);
-  const usage = reference ? new HostedUsage(options.membershipDatabase, reference.entitlements) : options.invocation?.usage;
+  // Enabling signup always composes quota enforcement, even outside reference
+  // mode. Existing unmetered operator tenants keep their prior unrestricted
+  // defaults; every trial/paid billing override still resolves fail-closed.
+  const signupUsage = !reference && signupCfg.enabled && !options.invocation;
+  if (signupUsage) await initializeUsage(options.membershipDatabase);
+  const signupDefaults = (options.env ?? process.env).OPENSIGHT_ENTITLEMENTS;
+  const usage = reference ? new HostedUsage(options.membershipDatabase, reference.entitlements, clock) : signupUsage
+    ? new HostedUsage(options.membershipDatabase, signupDefaults ? entitlementConfig(signupDefaults) : { defaults: { apiCalls: Number.MAX_SAFE_INTEGER, storageBytes: Number.MAX_SAFE_INTEGER, computeAttempts: Number.MAX_SAFE_INTEGER }, tenants: {} }, clock)
+    : options.invocation?.usage;
   if (reference) await options.membershipDatabase.transaction(async c => {
     for (const table of ['h8_usage', 'h8_monthly_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
     const r = (await c.query('SELECT version FROM h8_schema WHERE id = 1'))[0];
@@ -171,19 +187,25 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   // Stripe billing (issue #194) composes on the single-node hosted server;
   // invocation mode keeps /api/host closed, so billing stays out of it.
   const billingService = !options.invocation && billingCfg ? new HostedBilling(options.membershipDatabase, billingCfg,
-    { mail, notifyTo: accessNotifyTo, stripe: httpStripeClient(billingCfg.apiKey, options.stripeFetcher) }) : undefined;
+    { mail, clock, origin: config.origin, notifyTo: accessNotifyTo, stripe: httpStripeClient(billingCfg.apiKey, options.stripeFetcher) }) : undefined;
   if (billingService) { await billingService.load(); if (usage) usage.tierEntitlement = tenantId => billingService.tierEntitlement(tenantId); }
+  if (billingService) await initializeTenantMail(options.membershipDatabase);
+  const tenantMail = billingService ? new TenantMailTransport(options.membershipDatabase, billingService, mail) : mail;
   if (!options.invocation) await initializeJobs(options.membershipDatabase);
   const unmigrated = await options.membershipDatabase.transaction(c => c.query(`SELECT j.resource_id FROM h1_resources j WHERE j.kind = 'job'
     AND NOT EXISTS (SELECT 1 FROM h7_migrations m WHERE m.tenant_id = j.tenant_id AND m.namespace_id = j.namespace_id)`));
   if (unmigrated.length) throw new MetadataError('JOB_MIGRATION_REQUIRED', 503);
-  const renderer = new JobRenderer(data.data, embedContent, config.origin), runner = new JobRunner(jobs, renderer, mail);
+  const renderer = new JobRenderer(data.data, embedContent, config.origin), runner = new JobRunner(jobs, renderer, tenantMail);
   const digests = new DigestStore(jobs, renderer);
   const v1 = new V1Routes(data, options.env ?? process.env, { invocation: !!options.invocation, analytics, durable: invocation?.v1, digests });
   const ownership = new JobOwnership(jobs, renderer), scheduler = new Scheduler(() => runner.tick());
-  const sessions = new EmbedSessions(options.membershipDatabase, metadata, policy, embedSessionKey(options.env ?? process.env), (context, grant) => embedContent.authorize(context, grant));
+  const sessions = new EmbedSessions(options.membershipDatabase, metadata, policy, embedSessionKey(options.env ?? process.env), async (context, grant) => { await billingService?.expireTrials(); billingService?.assertAccess(context.tenantId); await embedContent.authorize(context, grant); });
   await sessions.initialize(!options.invocation);
-  const provisioning = new HostedProvisioning(options.membershipDatabase, config, mail, Date.now, ownership, analytics, invocation?.invitations);
+  const provisioning = new HostedProvisioning(options.membershipDatabase, config, tenantMail, clock, ownership, analytics, invocation?.invitations);
+  if (signupCfg.enabled && (!billingService || !billingCfg?.trialEntitlement || !mail.configured)) throw new MetadataError('SIGNUP_CONFIG_INVALID', 503);
+  if (billingService) await initializeSignups(options.membershipDatabase);
+  const signup = billingService ? new HostedSignup(options.membershipDatabase, provisioning, billingService, mail, signupCfg, options.signupChallengeVerifier, clock) : undefined;
+  const signupOperator = signup && billingService ? new SignupOperator(options.membershipDatabase, signup, billingService, clock) : undefined;
   // Prove that the durable H1/H2 schema is reachable before binding a socket.
   await options.membershipDatabase.transaction(async c => { await c.query('SELECT tenant_id FROM h1_tenants WHERE 1 = 0'); await c.query('SELECT subject FROM h2_memberships WHERE 1 = 0'); });
   await assertHostedSourcesReady(options.membershipDatabase);
@@ -196,13 +218,17 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
     if (request.headers.origin !== undefined || !request.headers.authorization?.startsWith('Operator ')
       || !equal(request.headers.authorization.slice(9), config.operatorKey.toString('base64url'))) throw new MetadataError('OPERATOR_REQUIRED', 403);
   };
+  let signupWork: Promise<void> | undefined;
+  const signupTimer = signupCfg.enabled && signupOperator ? setInterval(() => { signupWork ??= signupOperator.drain().catch(() => undefined).finally(() => { signupWork = undefined; }); }, 60_000) : undefined;
+  signupTimer?.unref();
+  if (signupCfg.enabled) await signupOperator?.drain();
   const handle = (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     requests++;
     let egressSettle: (() => Promise<void>) | undefined;
     const work = (async () => {
       boundary(request, config.origin);
       let path = request.url!;
-      if (path === '/api/access-requests' && request.headers.origin === 'https://getopensight.org') {
+      if ((path === '/api/access-requests' || path.startsWith('/api/signup')) && request.headers.origin === 'https://getopensight.org') {
         response.setHeader('Access-Control-Allow-Origin', 'https://getopensight.org');
         response.setHeader('Vary', 'Origin');
       }
@@ -220,7 +246,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         if (path === '/healthz') { send(response, 200, { alive: true }); return; }
         if (path === '/api/host/drain') {
           await body(request, []);
-          draining = true; scheduler.stop(); runner.stop();
+          draining = true; if (signupTimer) clearInterval(signupTimer); scheduler.stop(); runner.stop();
           send(response, 202, { state: 'draining' });
           setImmediate(() => { void drainHostedServer(server).catch(() => { console.error('DRAIN_FAILED'); }); }); return;
         }
@@ -234,6 +260,22 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         send(response, 200, { ready: true }); return;
       }
       if (draining) throw new MetadataError('SERVER_DRAINING', 503);
+      if (/^\/api\/signup(?:\/|$)/.test(path) && path !== '/api/signup/checkout') {
+        if (!signup || !signupCfg.enabled) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
+        if (request.headers.origin !== 'https://getopensight.org' && !(path === '/api/signup/verify' && request.headers.origin === config.origin)) throw new MetadataError('UNTRUSTED_ORIGIN', 403);
+        const url = new URL(path, config.origin), route = url.pathname;
+        const verb = route === '/api/signup/slug' ? 'GET' : 'POST';
+        if (!['/api/signup', '/api/signup/slug', '/api/signup/resend', '/api/signup/verify'].includes(route)) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
+        method(request, response, [verb, 'OPTIONS']);
+        if (request.method === 'OPTIONS') { response.writeHead(204, { 'Access-Control-Allow-Methods': verb, 'Access-Control-Allow-Headers': 'Content-Type' }); response.end(); return; }
+        const ip = request.socket.remoteAddress ?? 'unknown';
+        if (route === '/api/signup/slug') { send(response, 200, await signup.slug(url.searchParams.get('slug'), ip)); return; }
+        if (route === '/api/signup/verify') { const input = await body(request, ['token']); const result = await signup.verify(input.token); send(response, 'queued' in result ? 202 : 201, result); return; }
+        if (route === '/api/signup/resend') { const input = await body(request, ['email']); send(response, 202, await signup.resend(input.email, ip)); return; }
+        const input = await body(request, ['displayName', 'slug', 'adminName', 'adminEmail', 'challengeToken']);
+        send(response, 202, await signup.request(input, ip)); return;
+      }
+      if (path === '/api/signup/checkout' && (!signup || !signupCfg.enabled)) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
       if (path === '/api/access-requests') {
         method(request, response, ['POST', 'OPTIONS']);
         if (request.method === 'OPTIONS') {
@@ -269,12 +311,18 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         const authorization = request.headers.authorization;
         const browserIdeas = /^\/api\/host\/ideas(?:\/[A-Za-z0-9_-]+)?$/.test(path);
         const browserMembership = /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/users(?:\/[A-Za-z0-9_-]+)?$/.test(path);
-        const browserProvisioning = (path === '/api/host/tenants' && ['GET', 'POST'].includes(request.method ?? ''))
+        const browserProvisioning = path === '/api/host/signups' && ['GET', 'PATCH'].includes(request.method ?? '') || (path === '/api/host/tenants' && ['GET', 'POST'].includes(request.method ?? ''))
           || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+$/.test(path) && ['GET', 'DELETE'].includes(request.method ?? '')
-          || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/(?:invitations|suspend|resume|billing\/(?:payment-link|resolve))$/.test(path) && request.method === 'POST'
+          || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/(?:invitations|suspend|resume|billing\/(?:payment-link))$/.test(path) && request.method === 'POST'
           || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/billing$/.test(path) && request.method === 'GET'
           || /^\/api\/host\/usage\/[0-9]{4}-(?:0[1-9]|1[0-2])\/tenants\/[A-Za-z0-9_-]+$/.test(path) && request.method === 'GET';
         if (request.headers.origin !== undefined && !browserMembership && !browserIdeas && !browserProvisioning || !authorization?.startsWith('Operator ') || !equal(authorization.slice(9), config.operatorKey.toString('base64url'))) throw new MetadataError('OPERATOR_REQUIRED', 403);
+        if (path === '/api/host/signups') {
+          if (!signupOperator) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
+          method(request, response, ['GET', 'PATCH']);
+          if (request.method === 'GET') { send(response, 200, await signupOperator.status()); return; }
+          const input = await body(request, ['paused']); send(response, 200, await signupOperator.setPaused(input.paused)); return;
+        }
         if (path === '/api/host/ideas') {
           method(request, response, ['GET']);
           send(response, 200, { ideas: await listIdeas(options.membershipDatabase, { status: request.headers['idea-status'], tenantId: request.headers['idea-tenant'] }) }); return;
@@ -317,7 +365,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
           const records = request.method === 'POST' ? await usage.rollupMonthlyUsageForPeriod(period, tenantId) : await usage.monthlyUsageForPeriod(period, tenantId);
           send(response, 200, { period, records, ...(tenantId && request.method === 'GET' ? { overview: await usage.operatorOverview(tenantId, period) } : {}) }); return;
         }
-        const billingTenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)\/billing(?:\/(payment-link|resolve))?$/.exec(path);
+        const billingTenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)\/billing(?:\/(payment-link))?$/.exec(path);
         if (billingTenant) {
           if (!billingService) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
           const tenantId = identifier(billingTenant[1]), billingAction = billingTenant[2];
@@ -327,9 +375,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
             const input = await body(request, ['tier']);
             send(response, 201, await billingService.createPaymentLink(tenantId, input.tier)); return;
           }
-          const input = await body(request, ['action']);
-          if (input.action !== 'drop_to_free') throw new MetadataError('BILLING_ACTION_INVALID', 400);
-          send(response, 200, { billing: await billingService.resolveDropToFree(tenantId) }); return;
+
         }
         const tenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)(?:\/(suspend|resume|invitations|users)(?:\/([A-Za-z0-9_-]+))?)?$/.exec(path);
         if (tenant) {
@@ -399,15 +445,37 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       // Billing past-due gate (issue #194): a tenant paused for non-payment
       // gets no hosted access until an admin resolution reopens it. The
       // tenant's data is untouched; only access pauses.
-      billingService?.assertAccess(context.tenantId);
+      await billingService?.expireTrials();
+      const resolutionPath = !!billingService && ['/api/session', '/api/auth/logout', '/api/auth/switch', '/api/billing', '/api/signup/checkout', '/api/workspace/export', '/api/workspace/close'].includes(path);
+      if (billingService && resolutionPath) {
+        const user = await metadata.get(context, { kind: 'user', id: context.userId });
+        if (['/api/billing', '/api/signup/checkout', '/api/workspace/export', '/api/workspace/close'].includes(path)) {
+          if (!hasCapability(user.body.role as Parameters<typeof hasCapability>[0], 'admin')) throw new MetadataError('SECURITY_ADMIN_REQUIRED', 403);
+          if (path === '/api/billing') { method(request, response, ['GET']); send(response, 200, { billing: await billingService.state(context.tenantId), trial: billingService.trial(context.tenantId), checkoutEnabled: signupCfg.enabled }); return; }
+          if (path === '/api/signup/checkout') {
+            if (request.headers.origin !== config.origin) throw new MetadataError('UNTRUSTED_ORIGIN', 403);
+            method(request, response, ['POST']); const input = await body(request, ['tier']); send(response, 201, await billingService.createCheckoutSession(context.tenantId, input.tier)); return;
+          }
+          if (path === '/api/workspace/export') {
+            method(request, response, ['GET']);
+            send(response, 200, await exportWorkspace(metadata, data.data, context)); return;
+          }
+          method(request, response, ['POST']); const input = await body(request, ['confirmTenantId']);
+          if (input.confirmTenantId !== context.tenantId) throw new MetadataError('WORKSPACE_CONFIRMATION_REQUIRED', 400);
+          const tenant = await provisioning.operator.tenant(context.tenantId);
+          await provisioning.transition(`close-${context.tenantId}`, context.tenantId, 'delete', tenant.version);
+          send(response, 200, { closed: true, message: 'Workspace closed. Erasure follows the operator D-84 maintenance flow.' }); return;
+        }
+      }
+      if (!resolutionPath) billingService?.assertAccess(context.tenantId);
       // Egress gate before routing (and before the apiCalls charge): a denied
       // request is not routed, consumes no admitted egress, and its 429 body
       // is not counted. Embed routes above run before this boundary and are
       // not counted in this slice; operator/health/pre-auth routes have no
       // tenant context and are not counted either.
-      if (usage) await usage.checkEgress(context);
-      await usage?.consume(metadata, context, 'apiCalls');
-      if (usage) {
+      if (usage && !resolutionPath) await usage.checkEgress(context);
+      if (!resolutionPath) await usage?.consume(metadata, context, 'apiCalls');
+      if (usage && !resolutionPath) {
         const scope = { tenantId: context.tenantId, namespaceId: context.namespaceId };
         let bytes = 0, recording: Promise<void> | undefined;
         const startRecording = (): void => {
@@ -452,7 +520,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         const tenant = (await options.membershipDatabase.transaction(c => c.query('SELECT display_name, slug FROM h1_tenants WHERE tenant_id = ?', [context.tenantId])))[0];
         const workspaceName = workspaceLabel(tenant?.display_name, context.tenantId);
         const workspaceSlug = typeof tenant?.slug === 'string' ? tenant.slug : null;
-        send(response, 200, { id: user.id, namespaceId: context.namespaceId, tenantId: context.tenantId, workspaceName, workspaceSlug, ...user.body, ...(invocation ? { capabilities: invocation.capabilities } : {}) }); return;
+        send(response, 200, { id: user.id, namespaceId: context.namespaceId, tenantId: context.tenantId, workspaceName, workspaceSlug, ...user.body, trial: billingService?.trial(context.tenantId) ?? null, billingPaused: billingService?.accessPaused(context.tenantId) ?? false, ...(billingService ? { billing: await billingService.state(context.tenantId) } : {}), ...(invocation ? { capabilities: invocation.capabilities } : {}) }); return;
       }
       if (path === '/api/auth/switch' || path === '/api/auth/logout') {
         if (!options.builtinAuth) throw new MetadataError('BUILTIN_AUTH_UNAVAILABLE', 503);
@@ -559,10 +627,10 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
     expiryWork ??= expireUploads(options.membershipDatabase).catch(() => { /* Reads still fail closed on expiry. */ }).finally(() => { expiryWork = undefined; });
   }, 60000);
   if (!options.invocation) { await runner.recover(); server.once('listening', () => scheduler.start()); }
-  expiryTimer?.unref(); server.once('close', () => { v1.close(); clearInterval(expiryTimer); scheduler.stop(); budgets.close(); void analytics.close(); });
+  expiryTimer?.unref(); server.once('close', () => { if (signupTimer) clearInterval(signupTimer); v1.close(); clearInterval(expiryTimer); scheduler.stop(); budgets.close(); void analytics.close(); });
   drains.set(server, () => drain ??= (async () => {
-    draining = true; scheduler.stop(); runner.stop(); clearInterval(expiryTimer);
-    await Promise.all([...active]); await scheduler.idle(); await expiryWork; await analytics.close(); await budgets.shutdown();
+    draining = true; if (signupTimer) clearInterval(signupTimer); scheduler.stop(); runner.stop(); clearInterval(expiryTimer);
+    await Promise.all([...active]); await scheduler.idle(); await expiryWork; await signupWork; await analytics.close(); await budgets.shutdown();
     v1.close();
     if (reference) await options.membershipDatabase.transaction(c => appendOperatorAudit(c, { action: 'reference.drained' }));
     if (server.listening) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));

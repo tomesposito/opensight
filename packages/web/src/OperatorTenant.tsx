@@ -39,7 +39,7 @@ export function OperatorTenant({ tenantId, ...props }: OperatorProps & { tenantI
   const [tier, setTier] = useState<Tier>('regular'), [payment, setPayment] = useState<{ url: string; tier: Tier }>();
   const [email, setEmail] = useState(''), [name, setName] = useState(''), [role, setRole] = useState('reader');
   const [inviteKey, setInviteKey] = useState(() => crypto.randomUUID());
-  const [dialog, setDialog] = useState<'delete' | 'resolve'>(), [confirmation, setConfirmation] = useState('');
+  const [dialog, setDialog] = useState<'delete'>(), [confirmation, setConfirmation] = useState('');
   const work = useOperatorWork(), path = `tenants/${encodeURIComponent(tenantId)}`;
   const load = async (credential: string) => { const result = await readView(operatorRequest(props, credential), path, encodeURIComponent(tenantId)); setView(result); };
   const transition = (action: 'suspend' | 'resume' | 'delete') => void work.run(async () => {
@@ -79,7 +79,9 @@ export function OperatorTenant({ tenantId, ...props }: OperatorProps & { tenantI
       {!readOnly && <><section className="operator-card"><h2>Plan & billing</h2>
         {view.billingMissing ? <p>Billing is not configured on this deployment</p> : view.billingError ? <p role="alert">Billing unavailable: {view.billingError}</p> : view.billing && <>
           <dl className="operator-facts"><div><dt>Current tier</dt><dd>{tiers[view.billing.tier ?? 'free']}</dd></div><div><dt>Subscription status</dt><dd>{view.billing.subscriptionStatus ?? 'None'}</dd></div><div><dt>Access state</dt><dd>{view.billing.accessState ?? 'active'}</dd></div></dl>
-          {view.billing.accessState === 'paused' && <div className="operator-banner"><p>Access paused — past due. Paying in Stripe restores the paid tier automatically. Or resolve now by dropping the tenant to Free.</p><button disabled={work.busy} onClick={() => setDialog('resolve')}>Drop to Free…</button></div>}
+          {view.billing.retentionDueAt && <div className="operator-banner"><p>Retention due: {new Date(view.billing.retentionDueAt).toLocaleString('en-US', { timeZone: 'UTC' })} UTC</p>
+            {Date.parse(view.billing.retentionDueAt) <= Date.now() && <button disabled={work.busy} onClick={() => setDialog('delete')}>Start D-84 erasure…</button>}</div>}
+          {view.billing.accessState === 'paused'  && <div className="operator-banner"><p>Access paused. Resolve by paying in Stripe, exporting data, or closing the workspace. Data is retained for 30 days from the pause.</p></div>}
           <form aria-label="Generate payment link" onSubmit={event => { event.preventDefault(); void work.run(async () => {
             const result = await operatorRequest(props, key)<{ url: string }>(`${path}/billing/payment-link`, 'POST', { tier }); setPayment({ url: result.url, tier });
           }); }}><label>Payment link for tier<select value={tier} disabled={work.busy} onChange={event => setTier(event.target.value as Tier)}>{(['light', 'regular', 'heavy'] as const).map(value => <option value={value} key={value}>{tiers[value]}</option>)}</select></label><button className="operator-primary" disabled={work.busy}>Generate payment link</button></form>
@@ -112,9 +114,7 @@ export function OperatorTenant({ tenantId, ...props }: OperatorProps & { tenantI
         <label>Type the {tenant.slug ? 'slug' : 'tenant ID'} to confirm: {confirmValue}<input autoFocus value={confirmation} disabled={work.busy} onChange={event => setConfirmation(event.target.value)} /></label>
         <button disabled={work.busy || confirmation !== confirmValue} onClick={() => transition('delete')}>Delete tenant</button><button disabled={work.busy} onClick={() => setDialog(undefined)}>Cancel</button>
       </section>}
-      {!readOnly && dialog === 'resolve' && <section className="operator-card" role="dialog" aria-labelledby="resolve-billing-title"><h2 id="resolve-billing-title">Drop tenant to Free?</h2><p>This restores access with Free quotas. The paid tier ends.</p>
-        <button disabled={work.busy} onClick={() => void work.run(async () => { await operatorRequest(props, key)(`${path}/billing/resolve`, 'POST', { action: 'drop_to_free' }); setDialog(undefined); await load(key); work.setMessage('Tenant dropped to Free.'); })}>Confirm drop to Free</button><button disabled={work.busy} onClick={() => setDialog(undefined)}>Cancel</button>
-      </section>}
+
     </>}
   </OperatorFrame>;
 }
