@@ -50,6 +50,24 @@ test('#196 staged preview, edits, failed re-ask and discard never mutate the rea
   await act(() => nodeButton(f.preview, 'Discard proposed sheet').props.onClick());
   assert.equal(f.preview, null); assert.equal(f.actions.length, 0); assert.equal(JSON.stringify(f.draft), before);
 });
+test('#196 Keep/Remove stays in sync across canvas and panel; current-sheet commit excludes removed tiles', async t => {
+  const f = await mount(t); await build(f);
+  await act(() => f.renderer.root.findByProps({ 'aria-label': 'Remove tile 1' }).props.onClick());
+  assert.ok(nodeButton(f.preview, 'Keep'));
+  await act(() => nodeButton(f.preview, 'Keep').props.onClick());
+  assert.equal(f.renderer.root.findAllByProps({ 'aria-label': 'Remove tile 1' }).length, 1);
+  await act(() => f.renderer.root.findByProps({ 'aria-label': 'Remove tile 2' }).props.onClick());
+  await act(() => nodeButton(f.preview, 'Add to current sheet').props.onClick());
+  assert.equal(f.actions.length, 1); assert.deepEqual(f.actions[0].target, { kind: 'sheet', sheetId: activeSheet(f.draft).id });
+  assert.equal(f.actions[0].items.length, 1); assert.equal(f.actions[0].items[0].visual.kind, 'kpi');
+  assert.equal(activeSheet(f.draft).visuals.length, 0);
+});
+test('#196 BYO dashboard and revision controls omit credit copy', async t => {
+  const f = await mount(t, { draft: stamped(), status: { ...status, mode: 'byo' } });
+  await toggle(f); assert.ok(button(f.renderer, 'Propose revision')); assert.doesNotMatch(JSON.stringify(f.renderer.toJSON()), /credit/i);
+  await act(() => button(f.renderer, 'Build a dashboard').props.onClick());
+  assert.doesNotMatch(JSON.stringify(f.renderer.toJSON()), /credit/i);
+});
 test('#196 one commit carries final steps and only kept tiles; last-credit preview remains committable', async t => {
   let called = false;
   const f = await mount(t, { aiClient: { getAIStatus: async () => ({ ...status, configured: !called, state: called ? 'credit-limit' : 'configured' }), planO: async () => { called = true; return { sheetTitle: 'Sales', delivered: 1, tiles: [{ question: 'sum revenue', status: 'ok', result: result('sum revenue') }] }; } } });
@@ -61,7 +79,7 @@ test('#196 one commit carries final steps and only kept tiles; last-credit previ
   assert.equal(button(f.renderer, 'Propose revision'), undefined); // No dead affordance after the plan exhausted credits.
 
 });
-const stamped = () => authorReducer(emptyDraft(), { type: 'o-add', ...prepareOVisual(result('sum revenue by region').interpretations[0]) });
+function stamped() { return authorReducer(emptyDraft(), { type: 'o-add', ...prepareOVisual(result('sum revenue by region').interpretations[0]) }); }
 test('#196 revise proposal seeds from stamp, outlines target, allows edits and discards untouched', async t => {
   const draft = stamped(), f = await mount(t, { draft }), before = JSON.stringify(draft); await toggle(f);
   await act(() => f.renderer.root.findByProps({ 'aria-label': 'Tile follow-up' }).props.onChange({ target: { value: 'monthly' } }));
