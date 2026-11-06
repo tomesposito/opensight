@@ -1,22 +1,24 @@
+import { ORevision } from './ORevision.js';
 import { ODashboardBuilder } from './ODashboardBuilder.js';
 import { OSteps } from './OSteps.js';
 import { useAccess, allowed, useAI } from './access.js';
 import { useMemo, useState, useRef, useEffect, type Dispatch, type ReactNode } from 'react';
 import { describeInterpretation, interpretQuestion, type Interpretation, type InterpretationResult } from '@opensight/o-interpreter';
-import { type AuthorAction, type AuthorDraft } from './authoring.js';
+import { activeSheet, type AuthorAction, type AuthorDraft } from './authoring.js';
 import { prepareOVisual, oVocabulary } from './o-authoring.js';
 import { LiveAuthorVisual } from './LiveAuthorVisual.js';
 import type { AuthorRows, QueryClient } from './author-query.js';
 import { OModeNotice } from './OModeNotice.js';
 
-interface OEntryProps { draft: AuthorDraft; dispatch?: Dispatch<AuthorAction>; client?: QueryClient; dashboardId?: string; renderBar?: (bar: ReactNode) => ReactNode; onCanvasPreview?: (node: ReactNode) => void }
+interface OEntryProps { draft: AuthorDraft; dispatch?: Dispatch<AuthorAction>; client?: QueryClient; dashboardId?: string; renderBar?: (bar: ReactNode) => ReactNode; onCanvasPreview?: (node: ReactNode) => void; onRevisionPreview?: (id?: string) => void }
 export function OEntry(props: OEntryProps) {
   const access = useAccess();
   if (access.mode !== 'local' && !allowed(access, 'ai')) return <>{props.renderBar?.(null)}</>;
   return <OEntryContent {...props} />;
 }
-function OEntryContent({ draft, dispatch, client, renderBar, dashboardId, onCanvasPreview }: OEntryProps) {
+function OEntryContent({ draft, dispatch, client, renderBar, dashboardId, onCanvasPreview, onRevisionPreview }: OEntryProps) {
   const access = useAccess();
+  const sheet = activeSheet(draft), selectedVisual = sheet.visuals.find(v => v.id === sheet.selectedId);
   const ai = useAI();
   const [mode, setMode] = useState<'ask' | 'build'>('ask'), [extensionsUnavailable, setExtensionsUnavailable] = useState(false);
   const [generative, setGenerative] = useState(false), [pending, setPending] = useState(false), [error, setError] = useState('');
@@ -79,6 +81,7 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId, onCanv
     {mode === 'ask' && !renderBar && bar}
     <span className="o-local-label">{(result ? answer?.generated : generative && ai.available) ? 'AI interpretation · Review before use' : ai.state === 'credit-limit' ? 'Standard interpreter · No AI' : 'Local deterministic interpreter · No AI'}</span>
     <OModeNotice available={ai.available} state={ai.state} mode={ai.mode} credits={ai.credits} checked={generative} onChange={value => { revision.current++; setGenerative(value); if (!value) setMode('ask'); setAnswer(undefined); setError(''); }} />
+    {mode === 'ask' && dispatch && allowed(access, 'build') && generative && !extensionsUnavailable && (ai.available || ai.state === 'credit-limit') && selectedVisual && <ORevision visual={selectedVisual} draft={draft} dispatch={dispatch} client={previewClient} ai={ai} onPreview={onRevisionPreview} onUnavailable={() => { setExtensionsUnavailable(true); setError('Ask O tile revision is not configured on this server.'); }} />}
     {mode === 'build' && dispatch && <ODashboardBuilder draft={draft} dispatch={dispatch} client={previewClient} ai={ai} onCanvasPreview={onCanvasPreview} onUnavailable={() => { setExtensionsUnavailable(true); setMode('ask'); setError('Ask O dashboard generation is not configured on this server.'); }} />}
     {pending && <p role="status">Asking configured provider…</p>}{error && <p role="alert">{error}</p>}
     {mode === 'ask' && result && <div className="o-answer">

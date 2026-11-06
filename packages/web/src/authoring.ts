@@ -1,4 +1,4 @@
-import { validOProvenance, type OProvenance } from './o-provenance.js';
+import { validOProvenance, oTitle, type OProvenance } from './o-provenance.js';
 import { metricColumn, type PublishedMetric } from '@opensight/query-engine/browser';
 import { metricFormatting, validMetricFormat } from './governed-metrics.js';
 import { defaultTextStyle, sheetObjectValid, serializeObjects, objectElementType, type SheetObject, type TextObject, type TextStyle } from './sheet-objects.js';
@@ -333,6 +333,7 @@ export type AuthorAction =
   | { type: 'sheet-layout-settings'; id: string; settings: SheetLayoutSettings }
   | { type: 'layout'; sheetId: string; layout: readonly Placement[] }
   | { type: 'calculation-add'; field: CalculatedField }
+  | { type: 'o-replace'; id: string; visual: AuthorVisual; calculatedFields: CalculatedField[] }
   | { type: 'o-add-many'; target: { kind: 'new-sheet'; name: string } | { kind: 'sheet'; sheetId: string }; items: { visual: AuthorVisual; calculatedFields: CalculatedField[]; placement: Placement }[] }
   | { type: 'o-add'; visual: AuthorVisual; calculatedFields: CalculatedField[] }
   | { type: 'add'; kind: VisualKind; empty?: boolean }
@@ -554,6 +555,22 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     const groups = (pivot?.collapsedRowGroups ?? []).filter(path => JSON.stringify(path) !== JSON.stringify(action.path));
     if (action.collapsed) groups.push([...action.path]);
     return update({ visuals: sheet.visuals.map(v => v === visual ? { ...v, formatting: { ...v.formatting, pivot: { ...pivot, collapsedRowGroups: groups } } } : v) });
+  }
+  if (action.type === 'o-replace') {
+    const previous = sheet.visuals.find(v => v.id === action.id);
+    if (!previous?.o || !validOProvenance(action.visual.o)) return draft;
+    const { kind, dimension, rows, columns, measures, filters, dateGrain, donut, o } = action.visual;
+    const visual = structuredClone({ ...previous, kind, dimension, rows, columns, measures, filters, dateGrain, donut, o,
+      title: previous.title === oTitle(previous.o.interpretation) ? oTitle(o.interpretation) : previous.title });
+    const calculatedFields = structuredClone(draft.calculatedFields);
+    for (const c of action.calculatedFields) {
+      const existing = calculatedFields.find(f => f.name === c.name);
+      if (existing && JSON.stringify(existing) !== JSON.stringify(c)) return draft;
+      if (!existing) calculatedFields.push(structuredClone(c));
+    }
+    const result = { ...update({ visuals: sheet.visuals.map(v => v.id === action.id ? visual : v) }), calculatedFields };
+    try { validateDraft(result); } catch { return draft; }
+    return result;
   }
   if (action.type === 'o-add' || action.type === 'o-add-many') {
     const bottom = Math.max(0, ...sheet.layout.map(p => p.y + p.h));

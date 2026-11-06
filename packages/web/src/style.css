@@ -2730,3 +2730,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .o-plan-list { padding-left: 20px; }
 .o-plan-list li { padding: 8px 0; border-bottom: 1px solid #dde3eb; }
 .o-plan-list li > button:first-child { text-align: left; }
+
+.o-previewing-revision { outline: 3px solid #426fc7; outline-offset: 3px; }
+.o-revision-label { position: absolute; z-index: 2; top: -20px; left: 0; background: #233b65; color: white; padding: 2px 8px; }
+.o-revision { border-top: 1px solid #ccd5df; margin-top: 12px; padding-top: 12px; }

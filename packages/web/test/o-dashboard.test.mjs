@@ -53,3 +53,23 @@ test('#196 preparation failures stay explicit and never alter the draft', () => 
   p.tiles[0].interpretation = editOInterpretation(p.tiles[0].interpretation, { suggestedVisualType: 'bar' });
   const failed = prepareOPlan(p, draft); assert.equal(failed.tiles[0].status, 'failed'); assert.match(failed.tiles[0].message, /O_MISSING_DIMENSION/); assert.deepEqual(oPlanItems(failed, draft), []); assert.equal(JSON.stringify(draft), before);
 });
+
+test('#196 replace preserves presentation and placement, advances auto title/stamp and undoes exactly', () => {
+  let draft = authorReducer(emptyDraft(), { type: 'o-add', ...prepareOVisual(interpretQuestion('sum revenue by region', dataFields([])).interpretations[0]) });
+  const old = activeSheet(draft).visuals[0];
+  Object.assign(old, { subtitle: 'A caption', subtitleVisible: true, palette: ['#112233', '#445566'], referenceLines: [{ value: 5, label: 'Target', color: '#112233' }], tooltipVisible: false, labels: true, formatting: { legendPosition: 'LEFT' } });
+  validateDraft(draft);
+  const before = structuredClone(draft), p = prepareOVisual(interpretQuestion('sum revenue by order_date per month', dataFields(draft.calculatedFields)).interpretations[0], draft.calculatedFields);
+  const history = authorHistoryReducer(createAuthorHistory(draft), { type: 'o-replace', id: old.id, ...p });
+  const next = activeSheet(history.draft).visuals[0];
+  for (const key of ['id', 'subtitle', 'subtitleVisible', 'palette', 'referenceLines', 'tooltipVisible', 'labels', 'formatting']) assert.deepEqual(next[key], old[key], key);
+  for (const key of ['kind', 'dimension', 'rows', 'columns', 'measures', 'filters', 'dateGrain', 'donut']) assert.deepEqual(next[key], p.visual[key], key);
+  assert.equal(next.title, p.visual.title); assert.deepEqual(next.o, p.visual.o); assert.deepEqual(activeSheet(history.draft).layout, activeSheet(before).layout);
+  assert.deepEqual(authorHistoryReducer(history, { type: 'undo' }).draft, before);
+  const second = prepareOVisual(interpretQuestion('avg revenue by region', dataFields(history.draft.calculatedFields)).interpretations[0], history.draft.calculatedFields);
+  const chained = authorReducer(history.draft, { type: 'o-replace', id: next.id, ...second }); assert.equal(activeSheet(chained).visuals[0].o.question, second.visual.o.question);
+  draft = structuredClone(before); activeSheet(draft).visuals[0].title = 'My custom title';
+  assert.equal(activeSheet(authorReducer(draft, { type: 'o-replace', id: old.id, ...p })).visuals[0].title, 'My custom title');
+  delete activeSheet(draft).visuals[0].o;
+  assert.equal(authorReducer(draft, { type: 'o-replace', id: old.id, ...p }), draft);
+});
