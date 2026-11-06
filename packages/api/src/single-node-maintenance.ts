@@ -1,3 +1,6 @@
+import { initializeBilling } from './hosted-billing.js';
+import { initializeTenantMail } from './hosted-mail.js';
+import { initializeSignups } from './hosted-signup.js';
 import { mkdir, lstat, realpath, open, readFile, rename, readdir, unlink } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -6,13 +9,14 @@ import { seal, unseal, digest } from './auth-crypto.js';
 import { identifier } from './metadata-resources.js';
 import { MetadataOperator } from './metadata-operator.js';
 import { appendOperatorAudit } from './operator-audit.js';
-import { tenantDeletionInventory, assertReferenceErasureStores, purgeTenantRows, verifyTenantRows, assertNoTenantOrphans, type ErasureCount, type TenantErasureCache, type TenantDeletionOptions, type TenantDeletionReport } from './tenant-erasure.js';
+import { hasErasureTable, tenantDeletionInventory, assertReferenceErasureStores, purgeTenantRows, verifyTenantRows, assertNoTenantOrphans, type ErasureCount, type TenantErasureCache, type TenantDeletionOptions, type TenantDeletionReport } from './tenant-erasure.js';
 
 // Foreign-key order; only application tables, never database roles or environment.
 export const referenceTables = ['h1_tenants', 'h1_namespaces', 'h1_revisions', 'h1_resources', 'h1_links', 'h1_operations', 'h1_outbox', 'h1_migrations',
   'h2_control', 'h2_identities', 'h2_memberships', 'h2_invitations', 'h2_keys', 'h2_sessions', 'h2_attempts', 'h2_onboarding', 'h2_requests',
   'h4_budget_config', 'h5_embedding_config', 'h6_keys', 'h6_sessions', 'h7_jobs', 'h7_occurrences', 'h7_deliveries', 'h7_migrations',
   'h8_schema', 'h8_usage', 'h8_monthly_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery', 'analytics_events', 'analytics_settings', 'h8_ideas'] as const;
+const optionalReferenceTables = ['h9_billing', 'h9_billing_links', 'h9_billing_events', 'h10_signups', 'h10_signup_settings', 'h10_mail_usage', 'h10_mail_receipts'];
 interface Registry { version: 1; backups: Record<string, string>; deleted: string[] }
 interface Snapshot { version: 1; tables: Record<string, SqlRow[]> }
 const maxBytes = 64 * 1024 * 1024;
@@ -79,7 +83,8 @@ export class ReferenceMaintenance {
     await this.saveRegistry(registry);
     const snapshot: Snapshot = { version: 1, tables: {} }; let rows = 0, bytes = 0;
     await this.db.transaction(async c => {
-      for (const table of referenceTables) {
+      for (const table of [...referenceTables, ...optionalReferenceTables]) {
+        if (optionalReferenceTables.includes(table) && !await hasErasureTable(c, table)) continue;
         const records = await c.query(`SELECT * FROM ${table} LIMIT 100001`);
         rows += records.length; bytes += Buffer.byteLength(JSON.stringify(records));
         if (rows > 100000 || bytes > maxBytes) failure('BACKUP_LIMIT_EXCEEDED');
@@ -101,16 +106,21 @@ export class ReferenceMaintenance {
     let snapshot: Snapshot;
     try { snapshot = JSON.parse(unseal(data, this.key, `h8-backup:${id}`)) as Snapshot; }
     catch { return failure('BACKUP_INVALID'); }
-    const sourceTables = Object.keys(snapshot.tables).sort();
+    const sourceTables = Object.keys(snapshot.tables).filter(table => !optionalReferenceTables.includes(table)).sort();
     const compatibleTables = [referenceTables, referenceTables.filter(t => t !== 'h8_monthly_usage')]
       .flatMap(tables => [tables, tables.filter(t => !t.startsWith('analytics_'))])
       .flatMap(tables => [tables, tables.filter(t => t !== 'h8_ideas')]);
     if (snapshot.version !== 1 || !compatibleTables.some(tables => JSON.stringify(sourceTables) === JSON.stringify([...tables].sort()))) failure('BACKUP_INVALID');
     if (snapshot.tables.h1_tenants!.some(t => registry.deleted.includes(String(t.tenant_id)) && t.state !== 'deleted')) failure('BACKUP_DELETED_TENANT');
+    if (snapshot.tables.h9_billing) await initializeBilling(this.db);
+    if (snapshot.tables.h10_signups) await initializeSignups(this.db);
+    if (snapshot.tables.h10_mail_usage) await initializeTenantMail(this.db);
     await this.db.transaction(async c => {
       if ((await c.query('SELECT tenant_id FROM h1_tenants')).length) failure('RESTORE_TARGET_NOT_EMPTY');
-      for (const table of [...referenceTables].reverse()) await c.query(`DELETE FROM ${table}`);
-      for (const table of referenceTables) for (const row of (snapshot.tables[table] ?? [])) {
+      const tables: string[] = [...referenceTables];
+      for (const table of optionalReferenceTables) if (await hasErasureTable(c, table)) tables.push(table);
+      for (const table of [...tables].reverse()) await c.query(`DELETE FROM ${table}`);
+      for (const table of tables) for (const row of (snapshot.tables[table] ?? [])) {
         const keys = Object.keys(row); if (keys.some(k => !/^[a-z_]+$/.test(k))) failure('BACKUP_INVALID');
         await c.query(`INSERT INTO ${table} (${keys.map(k => `"${k}"`).join(',')}) VALUES (${keys.map(() => '?').join(',')})`, Object.values(row));
       }

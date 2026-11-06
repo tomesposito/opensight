@@ -26,7 +26,7 @@ await runJourney('j7-operator', 'Operator', async j => {
   });
   await j.step('provisioning-ui', page, async () => {
     await button(page, 'Create tenant').click();
-    await page.getByRole('heading', { name: 'Tenant created on the Free plan', exact: true }).waitFor();
+    await page.getByRole('heading', { name: 'Tenant created with operator-configured quotas', exact: true }).waitFor();
     const href = await page.getByRole('link', { name: 'Open tenant details', exact: true }).getAttribute('href');
     const tenantId = href.slice('#operator-tenant/'.length);
     const created = await stack.request(`/api/host/tenants/${tenantId}`, 'GET', undefined, operator);

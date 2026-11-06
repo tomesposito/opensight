@@ -64,3 +64,38 @@ its scope in the archive. Other owners' private assets require their own exports
 this endpoint does not turn admin membership into a source-policy bypass.
 Closure uses the existing tenant lifecycle tombstone; D-84 erasure remains an
 offline operator maintenance operation, never a second deletion implementation.
+
+The operator Signups panel uses `GET/PATCH /api/host/signups`, with the same
+operator credential and browser-origin boundary as the existing operator plane.
+`OPENSIGHT_SIGNUP_VOLUME_CAP` defaults to 25 starts per rolling 24 hours. The
+same source IP gets at most three starts in that window before joining the
+queue; shared IPs are not treated as permanent identities. Cap and runtime
+pause checks share the provisioning transaction lock. The runtime pause row is
+operator-audited, survives restarts and never affects existing tenants.
+
+Verified queued signups keep their pending record. A single-node worker retries
+at startup, every minute and on operator resume; every retry rechecks admission.
+Provisioning's existing invitation is the workspace-ready email. Incomplete
+mail delivery resumes the same provisioning operation instead of creating a
+second tenant. Deploy-off never drains queued signups. The panel reports UTC
+daily starts/conversions/expiries, rolling starts, cap state and queue depth.
+
+Retention due appears on tenant details and in the Signups panel; its entry
+point opens the existing delete confirmation. That creates the existing D-84
+lifecycle operation. The operator then runs the existing frozen maintenance
+`delete-tenant` command (dry-run first), with its tenant confirmation and backup
+copy requirements. Erasure inventories/deletes billing and mail records and
+scrubs signup PII. The normalized email is stored only as a digest; the lifetime
+one-trial ledger and audit facts survive erasure. Encrypted reference backups
+include the new stores and restore them with the existing held-access policy.
+
+Signup always composes the existing quota service, including outside reference
+mode. Existing operator-created unmetered tenants retain their previous default
+behavior; trial and paid billing records override that default fail-closed.
+Embed authorization and tenant mail also check billing expiry. The session's
+`billingPaused` flag, like trial days remaining, is computed using the server
+clock so browser clock skew cannot decide whether the pause screen appears.
+
+Deployment remains separate: Tom's live-tenant review, approved pricing/CTA
+replacement, Stripe configuration, challenge keys and rollout switch are not
+performed by this build. No signup is enabled by shipping this code.

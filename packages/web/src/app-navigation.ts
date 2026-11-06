@@ -43,10 +43,11 @@ export function recordRecentPage(recents: readonly Page[], page: Page | undefine
 }
 
 export function visiblePage(access: Access, page: Page): boolean {
+  if (page === 'billing') return access.mode === 'hosted' && allowed(access, 'admin') && !!access.session?.billing;
   if (page === 'notebooks') return true;
   if (page === 'dashboards') return access.mode !== 'demo';
   if (page === 'analyses' || page === 'author' || dataPages.includes(page)) return allowed(access, 'build');
-  if (page === 'ai-settings' || page === 'users' || page === 'billing') return access.mode === 'hosted' && allowed(access, 'admin');
+  if (page === 'ai-settings' || page === 'users') return access.mode === 'hosted' && allowed(access, 'admin');
   if (page === 'fixtures') return access.mode === 'demo' || allowed(access, 'build');
   return true;
 }

@@ -231,7 +231,7 @@ export function SessionGate({ client, offline, children, invitation }: { client:
     <nav className="sign-in-links" aria-label="Startup options"><button type="button" onClick={explore}>Explore sample data</button></nav>
   </main></div>;
   if (!session) return <FirstRun issue={issue} checking={checking} onRetry={retry} onDemo={explore} />;
-  const paused = session.billing?.accessState === 'paused' && !!session.billing.pauseEffectiveAt && Date.parse(session.billing.pauseEffectiveAt) <= Date.now() || session.trial?.daysRemaining === 0;
+  const paused = session.billingPaused === true || session.trial?.daysRemaining === 0;
   if (paused) return <div className="trial-page"><header className="trial-appbar">{session.workspaceName ?? 'OpenSight'}</header><BillingPanel session={session} client={client} paused /></div>;
   return <AccessProvider access={{ mode: 'hosted', session, aiClient: client, ...(client.logout ? { signOut } : {}) }}>{invitation && client.acceptInvitation
     ? <AcceptInvitation key={invitation.token} token={invitation.token} client={{ acceptInvitation: client.acceptInvitation }} onAccepted={invitation.onAccepted} /> : <><TrialBanner key={session.tenantId} session={session} />{children}</>}</AccessProvider>;

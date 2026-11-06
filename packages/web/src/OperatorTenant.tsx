@@ -79,7 +79,9 @@ export function OperatorTenant({ tenantId, ...props }: OperatorProps & { tenantI
       {!readOnly && <><section className="operator-card"><h2>Plan & billing</h2>
         {view.billingMissing ? <p>Billing is not configured on this deployment</p> : view.billingError ? <p role="alert">Billing unavailable: {view.billingError}</p> : view.billing && <>
           <dl className="operator-facts"><div><dt>Current tier</dt><dd>{tiers[view.billing.tier ?? 'free']}</dd></div><div><dt>Subscription status</dt><dd>{view.billing.subscriptionStatus ?? 'None'}</dd></div><div><dt>Access state</dt><dd>{view.billing.accessState ?? 'active'}</dd></div></dl>
-          {view.billing.accessState === 'paused' && <div className="operator-banner"><p>Access paused. Resolve by paying in Stripe, exporting data, or closing the workspace. Data is retained for 30 days from the pause.</p></div>}
+          {view.billing.retentionDueAt && <div className="operator-banner"><p>Retention due: {new Date(view.billing.retentionDueAt).toLocaleString('en-US', { timeZone: 'UTC' })} UTC</p>
+            {Date.parse(view.billing.retentionDueAt) <= Date.now() && <button disabled={work.busy} onClick={() => setDialog('delete')}>Start D-84 erasure…</button>}</div>}
+          {view.billing.accessState === 'paused'  && <div className="operator-banner"><p>Access paused. Resolve by paying in Stripe, exporting data, or closing the workspace. Data is retained for 30 days from the pause.</p></div>}
           <form aria-label="Generate payment link" onSubmit={event => { event.preventDefault(); void work.run(async () => {
             const result = await operatorRequest(props, key)<{ url: string }>(`${path}/billing/payment-link`, 'POST', { tier }); setPayment({ url: result.url, tier });
           }); }}><label>Payment link for tier<select value={tier} disabled={work.busy} onChange={event => setTier(event.target.value as Tier)}>{(['light', 'regular', 'heavy'] as const).map(value => <option value={value} key={value}>{tiers[value]}</option>)}</select></label><button className="operator-primary" disabled={work.busy}>Generate payment link</button></form>

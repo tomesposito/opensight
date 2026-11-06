@@ -98,7 +98,7 @@ export class HostedSignup {
     if (typeof input.challengeToken !== 'string' || input.challengeToken.length > 4096 || !await this.verifyChallenge(input.challengeToken, ip)) throw new MetadataError('SIGNUP_CHALLENGE_REQUIRED', 403);
     const result = await this.db.transaction(async c => {
       await c.query('UPDATE h10_signup_settings SET id = id WHERE id = 1');
-      const prior = (await c.query('SELECT * FROM h10_signups WHERE normalized_email = ?', [normalized]))[0];
+      const prior = (await c.query('SELECT * FROM h10_signups WHERE normalized_email = ?', [digest(normalized)]))[0];
       // Check legacy administrator emails too, including well-known aliases.
       const admins = await c.query(`SELECT i.email, u.body FROM h2_identities i JOIN h2_memberships m ON m.subject = i.subject
         JOIN h1_resources u ON u.tenant_id = m.tenant_id AND u.namespace_id = m.namespace_id AND u.resource_id = m.user_id
@@ -108,7 +108,7 @@ export class HostedSignup {
       if (prior) return { known: false }; // Resend is the bounded retry path.
       const id = randomUUID(), token = randomBytes(32).toString('base64url'), now = new Date(this.clock()).toISOString();
       await c.query(`INSERT INTO h10_signups (id, normalized_email, email, display_name, slug, admin_name, token_digest, token_secret, expires_at, created_ip, created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)`, [id, normalized, email, displayName, slug, adminName, digest(token), seal(token, this.config.encryptionKey, `signup:${id}`), new Date(this.clock() + DAY_MS).toISOString(), digest(ip), now]);
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)`, [id, digest(normalized), email, displayName, slug, adminName, digest(token), seal(token, this.config.encryptionKey, `signup:${id}`), new Date(this.clock() + DAY_MS).toISOString(), digest(ip), now]);
       await appendOperatorAudit(c, { action: 'signup.requested', subject: id, detail: { slug } }, this.clock());
       return { known: false, row: (await c.query('SELECT * FROM h10_signups WHERE id = ?', [id]))[0] };
     });
@@ -122,7 +122,7 @@ export class HostedSignup {
     if (await this.blocked(email)) throw new MetadataError('SIGNUP_PERMANENT_EMAIL_REQUIRED', 400);
     const row = await this.db.transaction(async c => {
       await c.query('UPDATE h10_signup_settings SET id = id WHERE id = 1');
-      const prior = (await c.query("SELECT * FROM h10_signups WHERE normalized_email = ? AND trial_started_at IS NULL AND verified_at IS NULL", [email]))[0];
+      const prior = (await c.query("SELECT * FROM h10_signups WHERE normalized_email = ? AND trial_started_at IS NULL AND verified_at IS NULL", [digest(email)]))[0];
       if (!prior) return;
       const token = randomBytes(32).toString('base64url');
       await c.query("UPDATE h10_signups SET token_digest = ?, token_secret = ?, expires_at = ?, state = 'pending' WHERE id = ?", [digest(token), seal(token, this.config.encryptionKey, `signup:${prior.id}`), new Date(this.clock() + DAY_MS).toISOString(), prior.id!]);
@@ -158,9 +158,10 @@ export class HostedSignup {
           if (!current.verified_at && Date.parse(String(current.expires_at)) <= this.clock()) throw new MetadataError('SIGNUP_TOKEN_EXPIRED', 410);
           if (this.admission && !await this.admission(c, current)) throw new MetadataError('SIGNUP_QUEUED', 202);
         }, onCreated: async (c, tenantId) => {
+          const verified = (await c.query('SELECT verified_at FROM h10_signups WHERE id = ?', [row.id!]))[0]?.verified_at;
           await this.billing.startTrialIn(c, tenantId, this.clock());
           await c.query("UPDATE h10_signups SET state = 'verified', verified_at = ?, tenant_id = ?, trial_started_at = ?, token_secret = '' WHERE id = ?", [new Date(this.clock()).toISOString(), tenantId, new Date(this.clock()).toISOString(), row.id!]);
-          await appendOperatorAudit(c, { action: 'signup.verified', tenantId, subject: String(row.id), detail: { via: 'self_serve_signup' } }, this.clock());
+          if (!verified) await appendOperatorAudit(c, { action: 'signup.verified', tenantId, subject: String(row.id), detail: { via: 'self_serve_signup' } }, this.clock());
         },
       });
       await this.billing.load();
@@ -168,7 +169,10 @@ export class HostedSignup {
       return { tenantId: op.tenantId, invitationToken: unseal(String(invitation.token_secret), this.config.encryptionKey, `invitation:${operatorOperationId(`signup-${row.id}`)}`) };
     } catch (error) {
       if (!(error instanceof MetadataError) || error.code !== 'SIGNUP_QUEUED') throw error;
-      await this.db.transaction(c => c.query("UPDATE h10_signups SET verified_at = COALESCE(verified_at, ?), queued_at = COALESCE(queued_at, ?) WHERE id = ? AND state = 'pending'", [new Date(this.clock()).toISOString(), new Date(this.clock()).toISOString(), row.id!]));
+      await this.db.transaction(async c => {
+        const first = await c.query("UPDATE h10_signups SET verified_at = ?, queued_at = ? WHERE id = ? AND state = 'pending' AND verified_at IS NULL RETURNING id", [new Date(this.clock()).toISOString(), new Date(this.clock()).toISOString(), row.id!]);
+        if (first.length) await appendOperatorAudit(c, { action: 'signup.verified', subject: String(row.id), detail: { via: 'self_serve_signup', queued: true } }, this.clock());
+      });
       return SIGNUP_QUEUED;
     }
   }

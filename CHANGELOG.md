@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- An operator Signups panel with trial funnel counts, durable pause/resume, a rolling volume cap and verified queue, plus retention-due entry points into existing D-84 erasure; billing/mail/signup state participates in erasure and encrypted backups (#197).
+
 - An unlinked hosted signup page, session trial countdown, administrator tier checkout and paused-workspace payment/export/closure screens; stored `free` values display as Self-hosted in tier labels (#197).
 
 - Dark-by-default self-serve signup with email verification, existing idempotent provisioning, provider-aware email normalization, disposable-domain filtering, server-verified bot challenges and durable public rate limits (#197).

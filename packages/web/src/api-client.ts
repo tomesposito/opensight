@@ -420,6 +420,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     return {
       id: body.id, namespaceId: body.namespaceId, name: body.name, role: body.role,
       ...(tenantId ? { tenantId } : {}), ...(workspaceName ? { workspaceName } : {}),
+      billingPaused: body.billingPaused === true,
       trial: body.trial && typeof body.trial === 'object' && typeof (body.trial as Record<string, unknown>).endsAt === 'string' && Number.isInteger((body.trial as Record<string, unknown>).daysRemaining)
         ? body.trial as { endsAt: string; daysRemaining: number } : null,
       ...(body.billing && typeof body.billing === 'object' ? { billing: body.billing as import('./TrialBilling.js').BillingState } : {}),

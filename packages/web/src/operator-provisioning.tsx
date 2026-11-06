@@ -7,7 +7,7 @@ export const titleCase = (value: string) => value === 'free' ? 'Self-hosted' : v
 export interface OperatorProps { baseUrl?: string; fetcher?: typeof fetch }
 export interface TenantSummary { tenantId: string; displayName: string | null; slug: string | null; state: string; tier: Tier; memberCount: number; createdAt: string | null }
 export interface TenantDetail { tenantId: string; displayName: string | null; slug: string | null; state: string; namespaceId: string; version: number; createdOperationId: string | null; tombstone: string | null }
-export interface Billing { tier?: Tier | null; subscriptionStatus?: string | null; accessState?: string; status?: 'none' }
+export interface Billing { trialEndsAt?: string | null; retentionDueAt?: string | null; tier?: Tier | null; subscriptionStatus?: string | null; accessState?: string; status?: 'none' }
 export interface OperatorMember { id: string; name: string; role: string; status: string }
 export interface UsageOverview { day: string; period: string; apiCalls: number; queries: number; storageBytes: number; nlq: number; quotas: { apiCalls: number; queries: number; storageBytes: number; nlq: number | null } }
 export class OperatorError extends Error {
@@ -40,18 +40,18 @@ export function useOperatorWork() {
   return { busy, error, message, run, setError, setMessage };
 }
 export type OperatorWork = ReturnType<typeof useOperatorWork>;
-export function OperatorNav({ current }: { current: 'tenants' | 'users' | 'ideas' }) {
-  return <nav aria-label="Operator"><a href="#operator-tenants" aria-current={current === 'tenants' ? 'page' : undefined}>Tenants</a> · <a href="#operator-users" aria-current={current === 'users' ? 'page' : undefined}>Tenant users</a> · <a href="#operator-ideas" aria-current={current === 'ideas' ? 'page' : undefined}>Ideas</a></nav>;
+export function OperatorNav({ current }: { current: 'tenants' | 'users' | 'ideas' | 'signups' }) {
+  return <nav aria-label="Operator"><a href="#operator-tenants" aria-current={current === 'tenants' ? 'page' : undefined}>Tenants</a> · <a href="#operator-users" aria-current={current === 'users' ? 'page' : undefined}>Tenant users</a> · <a href="#operator-ideas" aria-current={current === 'ideas' ? 'page' : undefined}>Ideas</a> · <a href="#operator-signups" aria-current={current === 'signups' ? 'page' : undefined}>Signups</a></nav>;
 }
-export function OperatorFrame({ connected, connect, disconnect, work, children, title }: {
-  connected: boolean; connect: (key: string) => Promise<void>; disconnect: () => void; work: OperatorWork; children: ReactNode; title: string;
+export function OperatorFrame({ connected, connect, disconnect, work, children, title, current = 'tenants' }: {
+  current?: 'tenants' | 'users' | 'ideas' | 'signups'; connected: boolean; connect: (key: string) => Promise<void>; disconnect: () => void; work: OperatorWork; children: ReactNode; title: string;
 }) {
   const [credential, setCredential] = useState('');
   return <div className="operator-provisioning">
     <header className="operator-brand"><BrandMark size={26} /><strong>opensight</strong><span className="operator-plane">Operator</span>
       {connected && <span className="operator-connection">Credential held in memory only <button disabled={work.busy} onClick={() => { setCredential(''); disconnect(); }}>Disconnect</button></span>}
     </header>
-    <main className="admin-settings operator-tenants"><OperatorNav current="tenants" />
+    <main className="admin-settings operator-tenants"><OperatorNav current={current} />
       {!connected && <><h1>{title}</h1><form aria-label="Operator connection" onSubmit={event => { event.preventDefault(); void work.run(async () => { await connect(credential); setCredential(''); }); }}>
         <label>Operator credential<input type="password" autoComplete="off" required value={credential} disabled={work.busy} onChange={event => setCredential(event.target.value)} /></label>
         <button type="submit" disabled={work.busy}>Load tenants</button>

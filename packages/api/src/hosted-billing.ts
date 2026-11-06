@@ -185,6 +185,9 @@ export async function initializeBilling(db: Database): Promise<void> {
     for (const column of ['trial_ends_at', 'retention_due_at']) {
       if (!columns.some(row => row.name === column)) await c.query(`ALTER TABLE h9_billing ADD COLUMN ${column} TEXT`);
     }
+    for (const row of await c.query("SELECT tenant_id, pause_effective_at FROM h9_billing WHERE access_state = 'paused' AND pause_effective_at IS NOT NULL AND retention_due_at IS NULL")) {
+      await c.query('UPDATE h9_billing SET retention_due_at = ? WHERE tenant_id = ?', [new Date(Date.parse(String(row.pause_effective_at)) + 30 * DAY_MS).toISOString(), row.tenant_id!]);
+    }
     await c.query(`CREATE TABLE IF NOT EXISTS h9_billing_links (
       link_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES h1_tenants(tenant_id), tier TEXT NOT NULL, created_at TEXT NOT NULL)`);
     await c.query(`CREATE TABLE IF NOT EXISTS h9_billing_events (
@@ -305,6 +308,9 @@ export class HostedBilling {
     if (record?.accessState === 'paused' && record.pauseEffectiveAt && Date.parse(record.pauseEffectiveAt) <= this.clock())
       throw new MetadataError('BILLING_ACCESS_PAUSED', 403);
   }
+  accessPaused(tenantId: string): boolean {
+    try { this.assertAccess(tenantId); return false; } catch (error) { if (error instanceof MetadataError && ['TRIAL_EXPIRED', 'BILLING_ACCESS_PAUSED'].includes(error.code)) return true; throw error; }
+  }
   async state(tenantId: string): Promise<BillingRecord | { tenantId: string; status: 'none' }> {
     identifier(tenantId);
     await this.expireTrials();
@@ -418,7 +424,7 @@ export class HostedBilling {
             next.accessState = 'active'; next.pauseEffectiveAt = null;
           } else if (status === 'unpaid' || status === 'incomplete_expired') {
             if (next.accessState !== 'paused') { action = 'access_paused'; pauseNotice = { tenantId, effectiveAt: this.nowIso(), reason: `subscription_${status}` }; }
-            next.accessState = 'paused'; next.pauseEffectiveAt = this.nowIso();
+            next.accessState = 'paused'; next.pauseEffectiveAt = next.pauseEffectiveAt && Date.parse(next.pauseEffectiveAt) <= this.clock() ? next.pauseEffectiveAt : this.nowIso();
           } else if (status === 'canceled') {
             const periodEnd = typeof object.current_period_end === 'number' && Number.isFinite(object.current_period_end) ? object.current_period_end * 1000 : null;
             const effective = periodEnd !== null && periodEnd > this.clock() ? new Date(periodEnd).toISOString() : this.nowIso();
@@ -447,6 +453,7 @@ export class HostedBilling {
           access_state = excluded.access_state, pause_effective_at = excluded.pause_effective_at, stripe_customer_id = excluded.stripe_customer_id,
           stripe_subscription_id = excluded.stripe_subscription_id, updated_at = excluded.updated_at, trial_ends_at = excluded.trial_ends_at, retention_due_at = excluded.retention_due_at`,
         [next.tenantId, next.tier, next.subscriptionStatus, next.accessState, next.pauseEffectiveAt, next.stripeCustomerId, next.stripeSubscriptionId, next.updatedAt, next.trialEndsAt, next.retentionDueAt]);
+        if (existing?.trialEndsAt && !next.trialEndsAt && next.tier && PAID_TIERS.includes(next.tier)) await appendOperatorAudit(c, { action: 'billing.trial.converted', tenantId, detail: { tier: next.tier, stripeEventId: event.id } }, this.clock());
         const changed = !existing || existing.tier !== next.tier || existing.accessState !== next.accessState || existing.subscriptionStatus !== next.subscriptionStatus;
         if (changed) await appendOperatorAudit(c, { action: 'billing.entitlement.changed', tenantId, subject: next.stripeSubscriptionId ?? undefined,
           detail: { stripeEventId: event.id, type: event.type, action, fromTier: existing?.tier ?? null, toTier: next.tier, subscriptionStatus: next.subscriptionStatus, accessState: next.accessState, pauseEffectiveAt: next.pauseEffectiveAt } }, this.clock());

@@ -5,7 +5,7 @@ import { hasCapability, type Capability, type Role } from '@opensight/query-engi
 export interface Session {
   id: string; namespaceId: string; tenantId?: string; name: string; role: Role;
   /** Workspace display label (display_name with tenant_id fallback) and internal slug. */
-  trial?: TrialInfo | null; billing?: BillingState;
+  billingPaused?: boolean; trial?: TrialInfo | null; billing?: BillingState;
   workspaceName?: string; workspaceSlug?: string | null;
 }
 export interface Access { mode: 'demo' | 'hosted' | 'local'; session?: Session; signOut?(): Promise<void>; aiClient?: Pick<ReturnType<typeof createApiClient>, 'getAIStatus' | 'generateO' | 'generateCalculation' | 'planO' | 'reviseO'> }

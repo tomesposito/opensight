@@ -80,3 +80,75 @@ test('197 signup HTTP: default off is 404; enabled routes enforce site origin an
   assert.equal(unknown.status, 202); assert.deepEqual(unknown, known);
   assert.deepEqual((await request('/api/signup/slug?slug=available', { headers })).body, { available: true });
 });
+
+test('197 operator: cap queues verified signups, preserves tokens, resumes later and audits switch', async t => {
+  const { SignupOperator } = await import('../dist/hosted-signup-operator.js');
+  const f = await fixture(t); f.config.volumeCap = 1;
+  let now = Date.UTC(2026, 10, 6); const ops = new SignupOperator(f.db, f.signup, f.billing, () => now);
+  await f.signup.request(input('first@example.test'), 'first-ip'); const first = token(f.mail);
+  await f.signup.request({ ...input('second@example.test'), slug: 'second' }, 'second-ip'); const second = token(f.mail);
+  await f.signup.verify(first); const queued = await f.signup.verify(second); assert.equal(queued.queued, true);
+  let status = await ops.status(); assert.equal(status.trialsToday, 1); assert.equal(status.trialsLast24h, 1); assert.equal(status.queued, 1); assert.equal(status.pausedAtCap, true);
+  await ops.setPaused(true); now += 86400001; f.advance(86400001);
+  await ops.drain(); assert.equal((await ops.status()).queued, 1);
+  f.config.enabled = false; await ops.setPaused(false); assert.equal((await ops.status()).queued, 1);
+  f.config.enabled = true; await ops.drain(); status = await ops.status(); assert.equal(status.queued, 0); assert.equal(status.trialsLast24h, 1);
+  assert.equal((await f.db.transaction(c => c.query('SELECT * FROM h1_tenants'))).length, 2);
+  const audits = await readOperatorAudit(f.db, { limit: 100 }); assert.ok(audits.some(a => a.action === 'signup.paused')); assert.ok(audits.some(a => a.action === 'signup.resumed'));
+});
+test('197 operator: IP soft cap queues fourth trial and durable erasure keeps hashed lifetime identity', async t => {
+  const { SignupOperator } = await import('../dist/hosted-signup-operator.js');
+  const { purgeTenantRows, tenantDeletionInventory } = await import('../dist/tenant-erasure.js');
+  const { migrateReference } = await import('../dist/single-node.js');
+  const { referenceEnv } = await import('./h8-helpers.mjs');
+  const f = await fixture(t); await migrateReference(f.db, referenceEnv, 'sqlite');
+  const ops = new SignupOperator(f.db, f.signup, f.billing, () => Date.UTC(2026, 10, 6)); let firstTenant;
+  for (let n = 0; n < 4; n++) {
+    await f.signup.request({ ...input(`person${n}@example.test`), slug: `workspace-${n}` }, 'shared-ip');
+    const result = await f.signup.verify(token(f.mail));
+    if (!n) firstTenant = result.tenantId;
+    assert.equal('queued' in result, n === 3);
+  }
+  assert.equal((await ops.status()).queued, 1);
+  await f.db.transaction(c => purgeTenantRows(c, firstTenant));
+  const remaining = await f.db.transaction(c => tenantDeletionInventory(c, firstTenant));
+  assert.equal(remaining.filter(r => ['delete', 'scrub'].includes(r.action)).reduce((n, r) => n + r.count, 0), 0);
+  const ledger = (await f.db.transaction(c => c.query('SELECT * FROM h10_signups WHERE tenant_id = ?', [firstTenant])))[0];
+  assert.match(ledger.normalized_email, /^[a-f0-9]{64}$/); assert.equal(ledger.email, '');
+  const before = (await f.db.transaction(c => c.query('SELECT * FROM h10_signups'))).length;
+  assert.deepEqual(await f.signup.request(input('person0@example.test'), 'new-ip'), SIGNUP_ACCEPTED);
+  assert.equal((await f.db.transaction(c => c.query('SELECT * FROM h10_signups'))).length, before);
+});
+
+test('197 HTTP: expired identity still signs in; only admins can checkout/export/close; operator switch requires credential', async t => {
+  const { billingConfig } = await import('../dist/hosted-billing.js');
+  const f = await h8Fixture(t); await initializeBilling(f.db);
+  const now = Date.UTC(2026, 10, 6), clock = () => now + 15 * 86400000;
+  Object.assign(f.env, { OPENSIGHT_SIGNUP_ENABLED: 'true', OPENSIGHT_TRIAL_ENTITLEMENT: JSON.stringify({ apiCalls: 30000, storageBytes: 10000000000, computeAttempts: 1500 }), OPENSIGHT_STRIPE_SECRET_KEY: 'sk_test', OPENSIGHT_STRIPE_WEBHOOK_SECRET: 'whsec_test', OPENSIGHT_STRIPE_PRICE_LIGHT: 'price_l', OPENSIGHT_STRIPE_PRICE_REGULAR: 'price_r', OPENSIGHT_STRIPE_PRICE_HEAVY: 'price_h' });
+  const billing = new HostedBilling(f.db, billingConfig(f.env), { clock: () => now }); await billing.startTrial('tenant-one');
+  const { request, operator } = await serveH8(t, f, { clock, signupChallengeVerifier: async () => true, stripeFetcher: async () => ({ ok: true, status: 200, json: async () => ({ id: 'cs_trial', url: 'https://checkout.stripe.com/c/pay/trial' }) }) });
+  const headers = { authorization: 'one', origin: f.env.OPENSIGHT_PUBLIC_ORIGIN };
+  const session = await request('/api/session', { headers }); assert.equal(session.status, 200); assert.equal(session.body.trial.daysRemaining, 0); assert.equal(session.body.billingPaused, true);
+  assert.equal((await request('/api/users', { headers })).body.errorCode, 'TRIAL_EXPIRED');
+  assert.equal((await request('/api/signup/checkout', { method: 'POST', headers, body: { tier: 'light' } })).status, 201);
+  assert.equal((await request('/api/host/signups', { method: 'PATCH', headers, body: { paused: true } })).status, 403);
+  assert.equal((await request('/api/host/signups', { method: 'PATCH', headers: { ...operator, origin: f.env.OPENSIGHT_PUBLIC_ORIGIN }, body: { paused: true } })).body.paused, true);
+  await f.db.transaction(c => c.query(`UPDATE h1_resources SET body = ? WHERE tenant_id = 'tenant-one' AND resource_id = 'admin' AND kind = 'user'`, [JSON.stringify({ name: 'Reader', role: 'reader' })]));
+  for (const [path, method, body] of [['/api/signup/checkout', 'POST', { tier: 'light' }], ['/api/workspace/export', 'GET', undefined], ['/api/workspace/close', 'POST', { confirmTenantId: 'tenant-one' }]]) assert.equal((await request(path, { headers, method, body })).body.errorCode, 'SECURITY_ADMIN_REQUIRED');
+});
+
+test('197 durability: encrypted reference backup preserves trial, queue settings and lifetime signup identity', async t => {
+  const { migrateReference } = await import('../dist/single-node.js');
+  const { ReferenceMaintenance } = await import('../dist/single-node-maintenance.js');
+  const { referenceEnv } = await import('./h8-helpers.mjs');
+  const f = await fixture(t); await migrateReference(f.db, referenceEnv, 'sqlite');
+  await f.signup.request(input(), 'ip'); await f.signup.verify(token(f.mail));
+  await f.db.transaction(c => c.query('UPDATE h10_signup_settings SET paused = 1'));
+  const directory = join(dirname(f.path), 'backups');
+  const source = await ReferenceMaintenance.open(f.db, directory, f.config.encryptionKey, 'frozen'); const backup = await source.backup();
+  const target = await database(t); await migrateReference(target.db, referenceEnv, 'sqlite');
+  const restore = await ReferenceMaintenance.open(target.db, directory, f.config.encryptionKey, 'frozen'); await restore.restore(backup.id);
+  assert.equal((await target.db.transaction(c => c.query('SELECT paused FROM h10_signup_settings')))[0].paused, 1);
+  assert.deepEqual(await target.db.transaction(c => c.query('SELECT * FROM h10_signups')), await f.db.transaction(c => c.query('SELECT * FROM h10_signups')));
+  assert.deepEqual(await target.db.transaction(c => c.query('SELECT * FROM h9_billing')), await f.db.transaction(c => c.query('SELECT * FROM h9_billing')));
+});
