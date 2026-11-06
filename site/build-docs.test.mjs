@@ -148,6 +148,8 @@ test('site integrity checks catch missing docs, sitemap/canonical drift and exte
   cpSync(resolve(repoRoot, 'site/pricing'), join(root, 'site/pricing'), { recursive: true });
   cpSync(resolve(repoRoot, 'site/alternatives'), join(root, 'site/alternatives'), { recursive: true });
   cpSync(resolve(repoRoot, 'site/vs'), join(root, 'site/vs'), { recursive: true });
+  cpSync(resolve(repoRoot, 'site/signup'), join(root, 'site/signup'), { recursive: true });
+  cpSync(resolve(repoRoot, 'site/legal'), join(root, 'site/legal'), { recursive: true });
   // The existing homepage check only checks asset existence: no media copies needed.
   mkdirSync(join(root, 'site/assets'));
   const home = readFileSync(join(root, 'site/index.html'), 'utf8');
