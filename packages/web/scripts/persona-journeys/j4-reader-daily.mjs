@@ -1,7 +1,10 @@
 import { assert, button, launchBrowser, navigate, runJourney, startHostedStack } from './harness.mjs';
 
 await runJourney('j4-reader-daily', 'Reader AI', async j => {
-  const stack = await startHostedStack({ aiStub: true }); j.cleanup(stack.stop);
+  let stack;
+  try { stack = await startHostedStack({ aiStub: true }); }
+  catch (error) { j.gap('author-dashboard-generation', 'Drive the real author surface: plan 10 → 6 credits, revise → 5, then a credit-limited plan (#196).', `Hosted author setup unavailable: ${error.message}`); throw error; }
+  j.cleanup(stack.stop);
   const { hostedDataFixture } = await import('../../test/hosted-data-helpers.mjs');
   const { HostedData } = await import('../../../api/dist/hosted-data.js');
   const { HostedPrep } = await import('../../../api/dist/hosted-prep.js');
@@ -10,7 +13,7 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
   // tenant. No browser response is synthesized or delegated to fixture.fetcher.
   const raw = await seed.data.execute(await seed.login(), seed.source.id, 'output', {});
   const names = raw.columns.map(c => c.name);
-  const csv = [names.join(','), ...raw.rows.map(row => names.map(n => row[n]).join(','))].join('\n') + '\n';
+  const csv = [[...names, 'category', 'order_date'].join(','), ...raw.rows.map((row, i) => [...names.map(n => row[n]), i % 2 ? 'Services' : 'Hardware', `2025-0${i + 1}-01`].join(','))].join('\n') + '\n';
   const f = stack.fixture;
   const source = await f.sources.upload(await f.context(), { config: { format: 'csv' }, base64: Buffer.from(csv).toString('base64'), policy: { rowLevel: false, rowRules: [] }, expiresAt: '2099-01-01T00:00:00.000Z' });
   const prep = new HostedPrep(new HostedData(f.sources, undefined, f.budgets));
@@ -24,7 +27,10 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
   await f.metadata.batch(readerContext, [{ key: { ...oldKey, id: source.id }, body: ownRecord.body, expectedVersion: 0 }, { key: oldKey, body: null, expectedVersion: 1 }]);
   await f.metadata.put(await f.context(), readerUser, { name: 'Daily reader', role: 'reader_ai' }, 2);
   const adminToken = (await f.login()).token, readerToken = (await f.reader.login()).token;
-  const browser = await launchBrowser(j), author = await browser.page(stack, adminToken);
+  let browser;
+  try { browser = await launchBrowser(j); }
+  catch (error) { j.gap('author-dashboard-generation', 'Drive and capture the real author plan, revision and credit-limited tail (#196).', error.message.includes('Hatch WebGL domain policy') ? 'Chromium refuses startup: Hatch WebGL domain policy is required. No author steps or screenshots ran.' : `Browser startup failed: ${error.message.split('\n')[0]}`); throw error; }
+  const author = await browser.page(stack, adminToken);
   await j.step('author-orders-analysis', author, async () => {
     await author.goto(`${stack.origin}/#/data`); await button(author, 'Orders').click();
     await author.getByRole('heading', { name: 'Orders', exact: true }).waitFor();
@@ -69,6 +75,29 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     await author.waitForFunction(() => !document.querySelector('[role="switch"]').disabled);
     assert.match(await author.locator('.o-mode-notice').innerText(), /Managed AI/);
     return 'The explicit test-only managed stub enables hosted Ask O with ten monthly credits and no live provider call.';
+  });
+  await j.step('author-dashboard-plan', author, async () => {
+    const panel = author.locator('.q-side-panel');
+    await panel.getByRole('switch', { name: 'Generative mode', exact: true }).check();
+    await button(panel, 'Build a dashboard').click(); await panel.getByLabel('Dashboard prompt', { exact: true }).fill('Build a sales overview');
+    const response = author.waitForResponse(r => r.url().endsWith('/api/o/plan'));
+    await button(panel, 'Build dashboard').click(); const delivered = await response;
+    assert.equal(delivered.status(), 200); assert.equal((await delivered.json()).delivered, 4);
+    await author.getByRole('region', { name: 'Proposed sheet', exact: true }).waitFor();
+    assert.match(await panel.locator('.o-credits').innerText(), /6 of 10 credits left/);
+    assert.equal(await author.locator('.o-staging-grid article').count(), 4);
+    await button(author, 'Add as new sheet').click();
+    return 'The real author plan delivers all four stub questions, uses four credits, and commits as a new sheet.';
+  });
+  await j.step('author-revise-o-tile', author, async () => {
+    const panel = author.locator('.q-side-panel'); await button(panel, 'Ask a question').click();
+    await panel.getByLabel('Tile follow-up', { exact: true }).fill('Group it by region');
+    const response = author.waitForResponse(r => r.url().endsWith('/api/o/revise'));
+    await button(panel, 'Propose revision').click(); assert.equal((await response).status(), 200);
+    await panel.getByText('Revision ready · 1 credit used', { exact: true }).waitFor();
+    assert.match(await panel.locator('.o-credits').innerText(), /5 of 10 credits left/);
+    await button(panel, 'Replace').click();
+    return 'A delivered proposal consumes one credit; Replace updates the stamped tile in one command.';
   });
   await j.step('admin-grants-dashboard', author, async () => {
     await navigate(author, 'my-stuff');
@@ -155,7 +184,7 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     assert.deepEqual((await result.json()).rows, [{ region: 'east', 'O sum revenue': 40 }, { region: 'west', 'O sum revenue': 20 }]);
     await panel.locator('.o-result .chart svg').waitFor();
     assert.match(await panel.locator('.o-grounding').first().innerText(), /Grounded in:.*revenue.*region/);
-    assert.match(await panel.locator('.o-credits').innerText(), /9 of 10 credits left/);
+    assert.match(await panel.locator('.o-credits').innerText(), /4 of 10 credits left/);
     return 'The real hosted generate route returns a grounded interpretation; its query executes on reader-owned data and renders east 40 / west 20. One managed credit is committed. No live AI transport is used.';
   });
   await j.step('narrow-reader-with-panel', page, async () => {
@@ -167,11 +196,29 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     else j.gap('narrow-reader-with-panel', 'At 900px with Ask O open, the second card starts below the first.', actual);
     return actual;
   });
+  await j.step('author-credit-limited-plan', author, async () => {
+    await author.goto(`${stack.origin}/#/author`);
+    await author.getByRole('button', { name: /^Ask a question about / }).click();
+    const panel = author.locator('.q-side-panel');
+    await author.waitForFunction(() => !document.querySelector('[role="switch"]').disabled);
+    await panel.getByRole('switch', { name: 'Generative mode', exact: true }).check();
+    // A real additional answer leaves three credits; the second four-tile plan
+    // must deliver its important prefix and expose the fourth tile as limited.
+    await panel.getByRole('searchbox', { name: 'Ask a question', exact: true }).fill('sum revenue by region');
+    const single = author.waitForResponse(r => r.url().endsWith('/api/o/generate'));
+    await panel.getByRole('button', { name: 'Ask', exact: true }).click(); assert.equal((await single).status(), 200);
+    await panel.getByText(/3 of 10 credits left/).waitFor();
+    await button(panel, 'Build a dashboard').click(); await panel.getByLabel('Dashboard prompt', { exact: true }).fill('Build another sales overview');
+    const response = author.waitForResponse(r => r.url().endsWith('/api/o/plan'));
+    await button(panel, 'Build dashboard').click(); const result = await response;
+    assert.equal(result.status(), 200); const plan = await result.json();
+    assert.equal(plan.delivered, 3); assert.deepEqual(plan.tiles.map(t => t.status), ['ok', 'ok', 'ok', 'credit-limited']);
+    await author.locator('.o-plan-placeholder').getByText(/No monthly credits remain/).waitFor();
+    assert.match(await panel.locator('.o-credits').innerText(), /0 of 10 credits left/);
+    await button(author, 'Discard proposed sheet').click();
+    return 'The second plan delivers three tiles and leaves an explicit, uncharged credit-limited tail. Discard refunds no delivered tiles.';
+  });
   await j.step('managed-credit-limit', page, async () => {
-    const { HostedUsage } = await import('../../../api/dist/hosted-usage.js');
-    const usage = new HostedUsage(f.db, { defaults: { apiCalls: 10000, storageBytes: 10000000, computeAttempts: 1000, aiCallsPerMonth: 10 }, tenants: {} });
-    // Seed the remainder of this synthetic workspace's allowance to inspect the limit UI.
-    for (let i = 0; i < 9; i++) await usage.recordAiUsage(await f.context(), 0);
     await page.setViewportSize({ width: 1440, height: 1100 });
     await page.getByRole('button', { name: 'Close Ask O', exact: true }).click(); await trigger.click();
     const panel = page.locator('.q-side-panel');

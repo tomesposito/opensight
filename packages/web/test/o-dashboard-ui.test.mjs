@@ -66,6 +66,14 @@ test('#196 revise proposal seeds from stamp, outlines target, allows edits and d
   assert.match(JSON.stringify(f.renderer.toJSON()), /Revision ready · 1 credit used/); assert.match(JSON.stringify(f.renderer.toJSON()), /Was:/);
   await act(() => f.renderer.root.findByType(OSteps).props.edit({ granularity: 'YEAR' })); await act(() => button(f.renderer, 'Replace').props.onClick());
   assert.equal(f.actions[0].type, 'o-replace'); assert.equal(f.actions[0].visual.o.interpretation.granularity, 'YEAR'); assert.equal(JSON.stringify(draft), before); assert.equal(f.outline, undefined);
+  f.props.draft = authorReducer(draft, f.actions[0]); await f.update();
+  await act(() => f.renderer.root.findByProps({ 'aria-label': 'Tile follow-up' }).props.onChange({ target: { value: 'monthly again' } }));
+  await act(() => f.renderer.root.findByType(ORevision).findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.equal(f.calls[1][1].currentQuestion, activeSheet(f.props.draft).visuals[0].o.question);
+  const committed = JSON.stringify(f.props.draft);
+  await act(() => button(f.renderer, 'Discard revision').props.onClick());
+  assert.equal(f.actions.length, 1); assert.equal(JSON.stringify(f.props.draft), committed); assert.equal(f.outline, undefined);
+
 });
 test('#196 unstamped and stale governed metric seeds cannot replace', async t => {
   const unstamped = stamped(); delete activeSheet(unstamped).visuals[0].o;

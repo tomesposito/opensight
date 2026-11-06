@@ -1,7 +1,7 @@
 # O entry point — Phase 4, issue #6
 
-The builder chrome contains **Ask a question**. This is a local deterministic
-interpreter, not an LLM. It interprets the active prepared dataset or the local
+The builder chrome contains **Ask a question**. Its default mode is a local
+deterministic interpreter. A configured provider also enables generative questions. It interprets the active prepared dataset or the local
 sales schema (including locally available calculated fields), renders the
 selected answer through the existing visual compiler, and shows its explanation
 and grammar-match confidence.
@@ -192,3 +192,21 @@ cross-engine subtests) run in the standard root suite.
 | Web | 366 | 0 | 0 |
 | Conformance | 3 | 0 | 0 |
 | **Total** | **1,031** | **0** | **1** |
+
+## Build and revise in the author (#196)
+
+With Generative mode on, **Build a dashboard** stages up to eight validated tiles
+without changing the draft. Add as a new sheet by default, or explicitly add to
+the current sheet; either commit is one Undo step. Keep/remove, local steps edits,
+per-tile re-ask and discard are available before commit. Managed credits charge
+per delivered tile, including tiles later removed. Failed or credit-limited
+tiles cost zero; BYO shows no credit cost.
+
+Stamped Ask O tiles offer **Revise this tile** in Ask mode. A delivered proposal
+uses one managed credit whether replaced or discarded. Replace preserves the
+tile's presentation and custom title; auto titles follow the revised reading.
+Hand-built and older unstamped O tiles cannot be revised because their original
+question cannot be recovered without guessing. Neither capability appears in
+non-generative mode or on published reader surfaces. See
+[dashboard generation and tile revision](grounded-ask-o.md#dashboard-generation-and-tile-revision-196)
+for the complete behavior and security contract.

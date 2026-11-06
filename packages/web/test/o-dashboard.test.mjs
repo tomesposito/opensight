@@ -57,7 +57,7 @@ test('#196 preparation failures stay explicit and never alter the draft', () => 
 test('#196 replace preserves presentation and placement, advances auto title/stamp and undoes exactly', () => {
   let draft = authorReducer(emptyDraft(), { type: 'o-add', ...prepareOVisual(interpretQuestion('sum revenue by region', dataFields([])).interpretations[0]) });
   const old = activeSheet(draft).visuals[0];
-  Object.assign(old, { subtitle: 'A caption', subtitleVisible: true, palette: ['#112233', '#445566'], referenceLines: [{ value: 5, label: 'Target', color: '#112233' }], tooltipVisible: false, labels: true, formatting: { legendPosition: 'LEFT' } });
+  Object.assign(old, { subtitle: 'A caption', subtitleVisible: true, palette: ['#112233', '#445566'], referenceLines: [{ id: 'refline-1', value: 5, label: 'Target', color: '#112233' }], tooltipVisible: false, labels: true, formatting: { legendPosition: 'LEFT' } });
   validateDraft(draft);
   const before = structuredClone(draft), p = prepareOVisual(interpretQuestion('sum revenue by order_date per month', dataFields(draft.calculatedFields)).interpretations[0], draft.calculatedFields);
   const history = authorHistoryReducer(createAuthorHistory(draft), { type: 'o-replace', id: old.id, ...p });
