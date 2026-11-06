@@ -1,3 +1,4 @@
+import { validOProvenance } from './o-provenance.js';
 import { formatMetric } from './governed-metrics.js';
 import { formatNumber } from '@opensight/query-engine/browser';
 import { convertDefinition } from './definition-converter.js';
@@ -208,10 +209,12 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   if (kind === 'insight') {
     try { body = projectInsightBody(body); } catch (error) { if (error instanceof InsightError) fail(p, error.message); throw error; }
   }
-  keys(body, [...(kind === 'insight' ? ['insightConfiguration', 'dataSetIdentifier'] : []), key('opensightFormatting', 'OpenSightFormatting'), key('opensightPalette', 'OpenSightPalette'), key('opensightReferenceLines', 'OpenSightReferenceLines'), key('visualId', 'VisualId'), key('title', 'Title'), key('subtitle', 'Subtitle'), key('chartConfiguration', 'ChartConfiguration'), key('actions', 'Actions'), key('columnHierarchies', 'ColumnHierarchies')], p);
+  keys(body, [...(kind === 'insight' ? ['insightConfiguration', 'dataSetIdentifier'] : []), key('opensightO', 'OpenSightO'), key('opensightFormatting', 'OpenSightFormatting'), key('opensightPalette', 'OpenSightPalette'), key('opensightReferenceLines', 'OpenSightReferenceLines'), key('visualId', 'VisualId'), key('title', 'Title'), key('subtitle', 'Subtitle'), key('chartConfiguration', 'ChartConfiguration'), key('actions', 'Actions'), key('columnHierarchies', 'ColumnHierarchies')], p);
   for (const name of [key('actions', 'Actions'), key('columnHierarchies', 'ColumnHierarchies')]) {
     if (list(body[name], `${p}.${name}`).length) fail(`${p}.${name}`, 'actions and drill hierarchies are not supported');
   }
+  const provenance = body[key('opensightO', 'OpenSightO')];
+  if (provenance !== undefined && !validOProvenance(provenance)) fail(p, 'invalid Ask O provenance');
   const palette = body[key('opensightPalette', 'OpenSightPalette')];
   if (palette !== undefined && !paletteValid(palette)) fail(p, 'invalid visual palette');
   const formatting = body[key('opensightFormatting', 'OpenSightFormatting')];

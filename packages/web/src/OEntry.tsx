@@ -1,21 +1,24 @@
+import { ODashboardBuilder } from './ODashboardBuilder.js';
+import { OSteps } from './OSteps.js';
 import { useAccess, allowed, useAI } from './access.js';
 import { useMemo, useState, useRef, useEffect, type Dispatch, type ReactNode } from 'react';
-import { describeInterpretation, datetime, interpretQuestion, numeric, type Aggregation, type Granularity, type Interpretation, type InterpretationResult } from '@opensight/o-interpreter';
+import { describeInterpretation, interpretQuestion, type Interpretation, type InterpretationResult } from '@opensight/o-interpreter';
 import { type AuthorAction, type AuthorDraft } from './authoring.js';
 import { prepareOVisual, oVocabulary } from './o-authoring.js';
 import { LiveAuthorVisual } from './LiveAuthorVisual.js';
 import type { AuthorRows, QueryClient } from './author-query.js';
 import { OModeNotice } from './OModeNotice.js';
 
-interface OEntryProps { draft: AuthorDraft; dispatch?: Dispatch<AuthorAction>; client?: QueryClient; dashboardId?: string; renderBar?: (bar: ReactNode) => ReactNode }
+interface OEntryProps { draft: AuthorDraft; dispatch?: Dispatch<AuthorAction>; client?: QueryClient; dashboardId?: string; renderBar?: (bar: ReactNode) => ReactNode; onCanvasPreview?: (node: ReactNode) => void }
 export function OEntry(props: OEntryProps) {
   const access = useAccess();
   if (access.mode !== 'local' && !allowed(access, 'ai')) return <>{props.renderBar?.(null)}</>;
   return <OEntryContent {...props} />;
 }
-function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEntryProps) {
+function OEntryContent({ draft, dispatch, client, renderBar, dashboardId, onCanvasPreview }: OEntryProps) {
   const access = useAccess();
   const ai = useAI();
+  const [mode, setMode] = useState<'ask' | 'build'>('ask'), [extensionsUnavailable, setExtensionsUnavailable] = useState(false);
   const [generative, setGenerative] = useState(false), [pending, setPending] = useState(false), [error, setError] = useState('');
   const revision = useRef(0);
   useEffect(() => () => { revision.current++; }, []);
@@ -52,10 +55,6 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
   }, [interpretation, draft.calculatedFields, draft.dataset]);
   const metricsUsed = interpretation?.grounding.metricsUsed;
   const executedDiverged = !!metricsUsed?.length && executedMetrics !== undefined && metricsUsed.some(m => { const ex = executedMetrics.find(x => x.id === m.id); return !ex || ex.version !== m.version || ex.name !== m.name; });
-  const stepFields = oVocabulary(draft.calculatedFields, draft.dataset);
-  const measureField = interpretation ? stepFields.find(f => f.name === interpretation.measure) : undefined;
-  const aggregationOptions: Aggregation[] = interpretation && (interpretation.measure === null || (measureField && !numeric(measureField))) ? ['COUNT'] : measureField?.metric ? [measureField.metric.defaultAggregation] : ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'];
-  const hasDateDimension = interpretation ? interpretation.dimensions.some(name => { const f = stepFields.find(x => x.name === name); return !!f && datetime(f); }) : false;
   const submit = async () => {
     const current = ++revision.current; setSelected(0); setEdited(undefined); setAdded(''); setError(''); setAnswer(undefined); setExecutedMetrics(undefined);
     if (!generative || !ai.available) { setAnswer({ schema, result: interpretQuestion(question, oVocabulary(draft.calculatedFields, draft.dataset)) }); return; }
@@ -76,11 +75,13 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
   return <>
     {renderBar?.(bar)}
     <section className={`o-entry${renderBar ? ' o-entry-toolbar' : ''}`} aria-label="Ask a question">
-    {!renderBar && bar}
+    {dispatch && allowed(access, 'build') && !extensionsUnavailable && (generative && ai.available || mode === 'build') && <div className="o-mode-tabs" role="group" aria-label="Ask O mode"><button aria-pressed={mode === 'ask'} onClick={() => setMode('ask')}>Ask a question</button><button aria-pressed={mode === 'build'} disabled={!ai.available} onClick={() => setMode('build')}>Build a dashboard</button></div>}
+    {mode === 'ask' && !renderBar && bar}
     <span className="o-local-label">{(result ? answer?.generated : generative && ai.available) ? 'AI interpretation · Review before use' : ai.state === 'credit-limit' ? 'Standard interpreter · No AI' : 'Local deterministic interpreter · No AI'}</span>
-    <OModeNotice available={ai.available} state={ai.state} mode={ai.mode} credits={ai.credits} checked={generative} onChange={value => { revision.current++; setGenerative(value); setAnswer(undefined); setError(''); }} />
+    <OModeNotice available={ai.available} state={ai.state} mode={ai.mode} credits={ai.credits} checked={generative} onChange={value => { revision.current++; setGenerative(value); if (!value) setMode('ask'); setAnswer(undefined); setError(''); }} />
+    {mode === 'build' && dispatch && <ODashboardBuilder draft={draft} dispatch={dispatch} client={previewClient} ai={ai} onCanvasPreview={onCanvasPreview} onUnavailable={() => { setExtensionsUnavailable(true); setMode('ask'); setError('Ask O dashboard generation is not configured on this server.'); }} />}
     {pending && <p role="status">Asking configured provider…</p>}{error && <p role="alert">{error}</p>}
-    {result && <div className="o-answer">
+    {mode === 'ask' && result && <div className="o-answer">
       <div className="o-answer-actions"><strong>Interpreted question</strong><button type="button" onClick={() => setAnswer(undefined)}>Close answer</button></div>
       {result.errors.map(e => <p key={e.code} role="status" className="o-diagnostic">{e.code}: {e.message}</p>)}
       {interpretation && <>
@@ -94,15 +95,7 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId }: OEnt
           : <p className="o-grounding">Governed metrics: {metricsUsed.map(m => `${m.name} · version ${m.version}`).join(', ')}</p>)}
         {interpretation.grounding.synonymsMatched.length > 0 && <p className="o-grounding">Synonyms matched: {interpretation.grounding.synonymsMatched.map(s => `‘${s.term}’ → ${s.field}`).join(', ')}</p>}
         {interpretation.grounding.unmatchedTerms.length > 0 && <p className="o-grounding">Not understood: {interpretation.grounding.unmatchedTerms.join(', ')}</p>}
-        <div className="o-steps" aria-label="Interpretation steps">
-          <label>Aggregation <select aria-label="Aggregation step" value={interpretation.aggregation} onChange={e => edit({ aggregation: e.target.value as Aggregation })}>{aggregationOptions.map(a => <option key={a} value={a}>{a}</option>)}</select></label>
-          <span className="o-step-measure">Measure: {interpretation.measure ?? 'rows'}</span>
-          {interpretation.dimensions.map(name => <span key={name} className="o-step-chip">Group by {name} <button type="button" aria-label={`Remove group-by ${name}`} onClick={() => { const dimensions = interpretation.dimensions.filter(d => d !== name); const anyDate = dimensions.some(d => { const f = stepFields.find(x => x.name === d); return !!f && datetime(f); }); edit({ dimensions, topN: dimensions.length ? interpretation.topN : null, granularity: anyDate ? interpretation.granularity : null }); }}>×</button></span>)}
-          {interpretation.filters.map((f, index) => <span key={`${f.field}-${index}`} className="o-step-chip">{f.field} {f.operator === 'year' ? 'in year' : 'is'} {String(f.value)} <button type="button" aria-label={`Remove filter ${f.field}`} onClick={() => edit({ filters: interpretation.filters.filter((_, i) => i !== index) })}>×</button></span>)}
-          {hasDateDimension && <label>Granularity <select aria-label="Granularity step" value={interpretation.granularity ?? 'MONTH'} onChange={e => edit({ granularity: e.target.value as Granularity })}>{(['YEAR', 'QUARTER', 'MONTH', 'DAY'] as const).map(g => <option key={g} value={g}>{g}</option>)}</select></label>}
-          {interpretation.topN !== null && <span className="o-step-chip"><label>Top <input aria-label="Top N step" type="number" min={1} max={10000} value={interpretation.topN} onChange={e => edit({ topN: e.target.value === '' ? null : Number(e.target.value) })} /></label> <button type="button" aria-label="Clear top N" onClick={() => edit({ topN: null })}>×</button></span>}
-          <label>Visual <select aria-label="Visual step" value={interpretation.suggestedVisualType} onChange={e => edit({ suggestedVisualType: e.target.value as Interpretation['suggestedVisualType'] })}>{(['bar', 'line', 'pie', 'table', 'kpi'] as const).map(v => <option key={v} value={v}>{v}</option>)}</select></label>
-        </div>
+        <OSteps interpretation={interpretation} draft={draft} edit={edit} />
         {prepared?.error && <p role="alert">{prepared.error}</p>}
         {prepared?.value && <div className="o-result"><LiveAuthorVisual visual={prepared.value.visual} calculations={[...draft.calculatedFields, ...prepared.value.calculatedFields]} client={previewClient} theme={draft.theme} onExecutedMetrics={metrics => setExecutedMetrics(metrics)} /></div>}
         <p className="o-source">{client ? `${client.dataset?.name ?? 'Local sales'} API query.` : 'Offline demo: recomputed synthetic sales rows across all regions. No live queries run.'}</p>

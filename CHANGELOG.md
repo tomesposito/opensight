@@ -13,7 +13,7 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
-- Ask O dashboard plans and conversational tile revision API, with per-delivered-tile managed credits and shared field-security checks (#196).
+- Ask O dashboard planning with a staged canvas, editable tiles, atomic sheet commit, provenance stamps, and per-delivered-tile managed credits; plan and revision APIs share field-security checks (#196).
 
 - Hosted operator provisioning pages for tenant lists, creation, billing links, inline usage, invitations and lifecycle management; separate required workspace display names from namespace names with validated unique slugs (#192).
 

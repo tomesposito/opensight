@@ -71,6 +71,8 @@ export interface JobHistory { id: string; state: string; errorCode: string | nul
 export interface JobDelivery { delivery_id: string; recipient_id: string; state: string; attempts: number; error_code: string | null }
 export interface AICredits { period: string; limit: number | null; used: number; remaining: number; resetsAt: string }
 export interface AIStatus { configured: boolean; state: 'configured' | 'not-configured' | 'needs-approval' | 'credit-limit'; mode?: 'managed' | 'byo' | 'off'; credits?: AICredits | null; managedAvailable?: boolean }
+export interface OPlanTile { question: string; status: 'ok' | 'failed' | 'credit-limited'; result?: InterpretationResult; code?: string; message?: string }
+export interface OPlan { sheetTitle: string; tiles: OPlanTile[]; delivered: number }
 export interface ORequest { question: string; dashboardId?: string; datasetId?: string; calculatedFields?: readonly CalculatedField[] }
 export interface AnalyticsConfig { enabled: boolean; override: boolean | null; defaultEnabled: boolean; configured: boolean }
 export interface AIConfig extends AIStatus {
@@ -379,6 +381,12 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   const revokeInvitation = (id: string) => resource<{ deleted: true }>(`/api/invitations/${encodeURIComponent(id)}`, 'DELETE');
   const acceptInvitation = (token: string) => resource<Session | { accepted: true }>('/api/invitations/accept', 'POST', { token });
   const getAIStatus = () => resource<AIStatus>('/api/o/status');
+  const oExtension = async <T>(path: string, request: ORequest & { currentQuestion?: string }): Promise<T> => {
+    try { return await resource<T>(path, 'POST', request); }
+    catch (e) { if (e instanceof ApiError && e.status === 404) throw new ApiError('Ask O dashboard generation and revision are not configured on this server.', 404, 'AI_NOT_CONFIGURED'); throw e; }
+  };
+  const planO = (request: ORequest) => oExtension<OPlan>('/api/o/plan', request);
+  const reviseO = (request: ORequest & { currentQuestion: string }) => oExtension<InterpretationResult & { question: string }>('/api/o/revise', request);
   const generateO = (request: ORequest) => resource<InterpretationResult>('/api/o/generate', 'POST', request);
   const generateCalculation = (request: ORequest) => resource<CalculationResult>('/api/o/calculation', 'POST', request);
   const getAnalyticsConfig = () => resource<AnalyticsConfig>('/api/admin/analytics');
@@ -569,7 +577,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     onDemand, connect, subscribeAvailability,
     enroll, acceptEnrollment, login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob,
-    listPrepTemplates, proposePrepTemplate, publishPrepTemplate, createFromPrepTemplate, promoteCalculation, metricDatasets, listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
+    listPrepTemplates, proposePrepTemplate, publishPrepTemplate, createFromPrepTemplate, promoteCalculation, metricDatasets, listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, planO, reviseO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     listNotebooks, getNotebook, createNotebook, updateNotebook, deleteNotebook, runNotebook, notebookDatasets, notebookRuns, snapshotNotebookCell,
     listInputTables, getInputTable, createInputTable, updateInputTable, deleteInputTable, setInputTableEditors, addInputTableRow, updateInputTableRow, deleteInputTableRow, getInputTableAudit,
     queryDataset,
