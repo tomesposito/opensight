@@ -29,6 +29,11 @@ export async function edgeSource() {
         if (!ts.isForOfStatement(loop) || loop.expression.getText(file) !== 'Object.entries(record(request.headers))') throw Error('EDGE_SOURCE_CHANGED');
         text = text.replace(statement.body.statements[0].getText(file), 'const request = record(raw);')
           .replace(loop.getText(file), '').replace('headers(values)', 'headers(request.headers)');
+        // Unsupported paths must not spend the CloudFront regex budget scanning
+        // large browser headers first. All edge denials remain the same 403.
+        if (!text.includes('publicPath(request.uri);')) throw Error('EDGE_SOURCE_CHANGED');
+        text = text.replace('publicPath(request.uri);', '')
+          .replace('const request = record(raw);', 'const request = record(raw); publicPath(request.uri);');
       }
       selected.push(text);
     }
