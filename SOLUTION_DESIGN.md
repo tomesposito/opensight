@@ -1277,7 +1277,7 @@ After reopening, retain captured submissions; acceptance failure closes admissio
 for forward reconciliation rather than restoring over new requests. See
 [D-89](docs/itd/D-89-access-request-maintenance.md).
 
-**Ideas and analytics maintenance (D-92, frozen 2026-11-06, #178, #189):**
+**Ideas and analytics maintenance (D-92, frozen 2026-11-06, #178, #175):**
 Extend the D-89 owner-only, same-epoch procedure from the exact access-request
 inventory to that inventory plus `-ideas-v1`. The only schema additions are an
 empty `h8_ideas` table and nullable `analytics_events.delivered_at`; preserve
