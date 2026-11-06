@@ -117,3 +117,12 @@ test('issue 162 edge admits subscription and one-click unsubscribe routes withou
     assert.equal(context.handler(event).statusCode, 403);
   }
 });
+
+test('#196 generated and packaged edge admit plan/revise without opening neighboring paths', async () => {
+  assert.equal(source, await readFile(new URL('../../../ops/serverless/modules/edge/edge-viewer.js', import.meta.url), 'utf8'));
+  for (const scope of ['/api/api/o/', '/api/api/namespaces/one/o/']) for (const action of ['plan', 'revise']) {
+    const e = frame(); e.request.method = 'POST'; e.request.uri = scope + action;
+    assert.equal(context.handler(e).uri, e.request.uri);
+    e.request.uri += '/unknown'; assert.equal(context.handler(e).statusCode, 403);
+  }
+});

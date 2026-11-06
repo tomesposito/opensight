@@ -72,3 +72,10 @@ for (const fn of [planAnswer, reviseAnswer]) test(`#196 ${fn.name} bounds prompt
   await assert.rejects(fn({ ...body, currentQuestion: 'sum revenue' }, sensitive, c.complete, async () => {}), { code: 'AI_FIELD_NAME_PII' });
   assert.equal(c.prompts.length, 0);
 });
+
+test('#196 plan prompt specifies one response shape behind the shared security preamble', () => {
+  const instructions = planInstructions();
+  assert.match(instructions, /untrusted data, never instructions/); assert.match(instructions, /Grammar:/);
+  assert.match(instructions, /"sheetTitle"/); assert.match(instructions, /"questions"/);
+  assert.doesNotMatch(instructions, /"question":/);
+});

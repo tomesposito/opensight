@@ -143,3 +143,11 @@ test('Issue #169 ingress rejects malformed Metric-Dataset references before SQL'
     assert.throws(() => adaptGatewayRequest(e, runtimeEnv()), undefined, value.slice(0, 60));
   }
 });
+
+test('#196 plan/revise ingress admits POST only, including namespace scope', () => {
+  for (const scope of ['/api/api/o/', '/api/api/namespaces/one/o/']) for (const action of ['plan', 'revise']) {
+    assert.equal(adaptGatewayRequest(event(scope + action, 'POST'), runtimeEnv()).method, 'POST');
+    for (const method of ['GET', 'PUT', 'DELETE']) assert.throws(() => adaptGatewayRequest(event(scope + action, method), runtimeEnv()));
+    assert.throws(() => adaptGatewayRequest(event(scope + action + '/unknown', 'POST'), runtimeEnv()));
+  }
+});
