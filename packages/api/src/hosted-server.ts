@@ -47,6 +47,7 @@ import { hostedReadiness } from './hosted-health.js';
 import { HostedUsage, usageMonth } from './hosted-usage.js';
 import { billingConfig, HostedBilling, httpStripeClient, initializeBilling, parseStripeEvent, readRawBody, verifyStripeSignature, type StripeFetcher } from './hosted-billing.js';
 import { initializeTenantMail, TenantMailTransport } from './hosted-mail.js';
+import { HostedSignup, initializeSignups, signupConfig, type ChallengeVerifier } from './hosted-signup.js';
 import { HostedAI } from './hosted-ai.js';
 import type { HostedAIOptions } from './hosted-ai-settings.js';
 import { AIError } from './ai-providers.js';
@@ -100,6 +101,8 @@ export interface HostedServerOptions {
   mailTransport?: MailTransport;
   /** Test seam for the Stripe REST client (issue #194); production uses fetch. */
   stripeFetcher?: StripeFetcher;
+  signupChallengeVerifier?: ChallengeVerifier;
+  clock?: () => number;
   /** Provider transport seam; tests never call a live model. */
   ai?: HostedAIOptions;
   analytics?: Analytics;
@@ -124,17 +127,19 @@ function boundary(request: IncomingMessage, origin: string): void {
     for (let i = 0; i < request.rawHeaders.length; i += 2) if (request.rawHeaders[i]!.toLowerCase() === header) count++;
     if (count > 1) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
   }
-  if (request.headers.host !== new URL(origin).host || request.url !== '/api/access-requests' && request.headers.origin !== undefined && request.headers.origin !== origin
+  if (request.headers.host !== new URL(origin).host || request.url !== '/api/access-requests' && !/^\/api\/signup(?:\/|$)/.test(request.url ?? '') && request.headers.origin !== undefined && request.headers.origin !== origin
     || request.headers.forwarded !== undefined || request.headers['x-forwarded-host'] !== undefined) throw new MetadataError(
       /^\/api\/(?:namespaces\/[^/]+\/)?embedding(?:\/|$)/.test(request.url ?? '') ? 'EMBED_ORIGIN_DENIED' : 'UNTRUSTED_ORIGIN', 403);
   if (forgedHeaders.some(h => request.headers[h] !== undefined)) throw new MetadataError('FORGED_PRINCIPAL', 403);
   if (['GET', 'HEAD'].includes(request.method ?? '') && (request.headers['transfer-encoding'] || request.headers['content-length'] && request.headers['content-length'] !== '0')) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
-  if (!request.url?.startsWith('/') || request.url.startsWith('//') || request.url.includes('?') || request.url.includes('#')) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
+  if (!request.url?.startsWith('/') || request.url.startsWith('//') || request.url.includes('?') && !request.url.startsWith('/api/signup/slug?') || request.url.includes('#')) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
 }
 
 /** Hosted tenant plane never exposes legacy fixture stores or ownerless schedulers. */
 export async function createHostedApiServer(options: HostedServerOptions): Promise<Server> {
   const config = hostedConfig(options.env);
+  const clock = options.clock ?? Date.now;
+  const signupCfg = signupConfig(options.env ?? process.env, config.origin, config.encryptionKey);
   const billingCfg = billingConfig(options.env ?? process.env);
   const accessRate = accessRequestRate(options.env ?? process.env);
   const accessNotifyTo = accessRequestNotifyTo(options.env ?? process.env);
@@ -172,7 +177,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   // Stripe billing (issue #194) composes on the single-node hosted server;
   // invocation mode keeps /api/host closed, so billing stays out of it.
   const billingService = !options.invocation && billingCfg ? new HostedBilling(options.membershipDatabase, billingCfg,
-    { mail, notifyTo: accessNotifyTo, stripe: httpStripeClient(billingCfg.apiKey, options.stripeFetcher) }) : undefined;
+    { mail, clock, notifyTo: accessNotifyTo, stripe: httpStripeClient(billingCfg.apiKey, options.stripeFetcher) }) : undefined;
   if (billingService) { await billingService.load(); if (usage) usage.tierEntitlement = tenantId => billingService.tierEntitlement(tenantId); }
   if (billingService) await initializeTenantMail(options.membershipDatabase);
   const tenantMail = billingService ? new TenantMailTransport(options.membershipDatabase, billingService, mail) : mail;
@@ -186,7 +191,10 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const ownership = new JobOwnership(jobs, renderer), scheduler = new Scheduler(() => runner.tick());
   const sessions = new EmbedSessions(options.membershipDatabase, metadata, policy, embedSessionKey(options.env ?? process.env), (context, grant) => embedContent.authorize(context, grant));
   await sessions.initialize(!options.invocation);
-  const provisioning = new HostedProvisioning(options.membershipDatabase, config, tenantMail, Date.now, ownership, analytics, invocation?.invitations);
+  const provisioning = new HostedProvisioning(options.membershipDatabase, config, tenantMail, clock, ownership, analytics, invocation?.invitations);
+  if (signupCfg.enabled && (!billingService || !billingCfg?.trialEntitlement || !mail.configured)) throw new MetadataError('SIGNUP_CONFIG_INVALID', 503);
+  if (signupCfg.enabled) await initializeSignups(options.membershipDatabase);
+  const signup = signupCfg.enabled && billingService ? new HostedSignup(options.membershipDatabase, provisioning, billingService, mail, signupCfg, options.signupChallengeVerifier, clock) : undefined;
   // Prove that the durable H1/H2 schema is reachable before binding a socket.
   await options.membershipDatabase.transaction(async c => { await c.query('SELECT tenant_id FROM h1_tenants WHERE 1 = 0'); await c.query('SELECT subject FROM h2_memberships WHERE 1 = 0'); });
   await assertHostedSourcesReady(options.membershipDatabase);
@@ -205,7 +213,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
     const work = (async () => {
       boundary(request, config.origin);
       let path = request.url!;
-      if (path === '/api/access-requests' && request.headers.origin === 'https://getopensight.org') {
+      if ((path === '/api/access-requests' || path.startsWith('/api/signup')) && request.headers.origin === 'https://getopensight.org') {
         response.setHeader('Access-Control-Allow-Origin', 'https://getopensight.org');
         response.setHeader('Vary', 'Origin');
       }
@@ -237,6 +245,22 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         send(response, 200, { ready: true }); return;
       }
       if (draining) throw new MetadataError('SERVER_DRAINING', 503);
+      if (/^\/api\/signup(?:\/|$)/.test(path) && path !== '/api/signup/checkout') {
+        if (!signup) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
+        if (request.headers.origin !== 'https://getopensight.org' && !(path === '/api/signup/verify' && request.headers.origin === config.origin)) throw new MetadataError('UNTRUSTED_ORIGIN', 403);
+        const url = new URL(path, config.origin), route = url.pathname;
+        const verb = route === '/api/signup/slug' ? 'GET' : 'POST';
+        if (!['/api/signup', '/api/signup/slug', '/api/signup/resend', '/api/signup/verify'].includes(route)) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
+        method(request, response, [verb, 'OPTIONS']);
+        if (request.method === 'OPTIONS') { response.writeHead(204, { 'Access-Control-Allow-Methods': verb, 'Access-Control-Allow-Headers': 'Content-Type' }); response.end(); return; }
+        const ip = request.socket.remoteAddress ?? 'unknown';
+        if (route === '/api/signup/slug') { send(response, 200, await signup.slug(url.searchParams.get('slug'), ip)); return; }
+        if (route === '/api/signup/verify') { const input = await body(request, ['token']); const result = await signup.verify(input.token); send(response, 'queued' in result ? 202 : 201, result); return; }
+        if (route === '/api/signup/resend') { const input = await body(request, ['email']); send(response, 202, await signup.resend(input.email, ip)); return; }
+        const input = await body(request, ['displayName', 'slug', 'adminName', 'adminEmail', 'challengeToken']);
+        send(response, 202, await signup.request(input, ip)); return;
+      }
+      if (path === '/api/signup/checkout' && !signup) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
       if (path === '/api/access-requests') {
         method(request, response, ['POST', 'OPTIONS']);
         if (request.method === 'OPTIONS') {

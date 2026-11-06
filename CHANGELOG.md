@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Dark-by-default self-serve signup with email verification, existing idempotent provisioning, provider-aware email normalization, disposable-domain filtering, server-verified bot challenges and durable public rate limits (#197).
+
 - Tenant outbound mail now enforces 25 recipients over a trial and D-82 paid monthly allowances across invitations, reports, digests and alerts; operator mail is excluded (#197).
 
 - Hosted 14-day trial billing state, server-clock expiry and 30-day paused retention; payment, export and closure replace the drop-to-Free resolution (#197).

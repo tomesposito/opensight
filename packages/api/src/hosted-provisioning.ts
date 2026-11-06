@@ -62,7 +62,7 @@ export class HostedProvisioning {
     await c.query('INSERT INTO h2_invitations VALUES (?,?,?,?,?,?,0,0)', [operationId, subject, tenantId, digest(token), seal(token, this.config.encryptionKey, `invitation:${operationId}`), expiresAt]);
     return { id: operationId, token, expiresAt: new Date(expiresAt).toISOString() };
   }
-  async provision(key: string, raw: OnboardingInput): Promise<TenantOperation> {
+  async provision(key: string, raw: OnboardingInput, lifecycle?: { via: 'self_serve_signup'; beforeCreate(c: SqlConnection): Promise<void>; onCreated(c: SqlConnection, tenantId: string): Promise<void> }): Promise<TenantOperation> {
     const name = label(raw.name, 'name'), displayName = label(raw.displayName, 'displayName');
     const slug = parseWorkspaceSlug(raw.slug) ?? deriveWorkspaceSlug(displayName);
     const input = { name, displayName, slug, administrator: { email: normalizedEmail(raw.administrator.email), name: label(raw.administrator.name, 'administrator.name') } };
@@ -75,6 +75,7 @@ export class HostedProvisioning {
       await c.query('UPDATE h2_control SET id = id WHERE id = 1');
       const prior = (await c.query('SELECT * FROM h2_onboarding WHERE operation_id = ?', [operationId]))[0];
       if (prior) { if (prior.request_hash !== hash) throw new MetadataError('OPERATION_ID_REUSED'); return; }
+      await lifecycle?.beforeCreate(c);
       const tenantId = randomUUID(), namespaceId = randomUUID(), userId = randomUUID();
       const inserted = await c.query(`INSERT INTO h1_tenants (tenant_id,state,version,display_name,slug)
         VALUES (?,'provisioning',1,?,?) ON CONFLICT (slug) DO NOTHING RETURNING tenant_id`, [tenantId, input.displayName, input.slug]);
@@ -85,12 +86,13 @@ export class HostedProvisioning {
       await c.query("INSERT INTO h1_operations VALUES (?,?,?,'provision',?,'pending','created')", [operationId, tenantId, namespaceId, hash]);
       const invitation = await this.invite(c, operationId, tenantId, namespaceId, userId, input.administrator.email);
       await c.query('INSERT INTO h2_onboarding VALUES (?,?,?,?)', [operationId, hash, tenantId, invitation.id]);
+      await lifecycle?.onCreated(c, tenantId);
       await appendMetadataEvent(c, { tenantId, namespaceId }, 'tenant.provisioning');
       // The committed provisioning mutations are audited in the transaction that creates
       // them, so a later SMTP failure cannot leave them unaudited. Invitation tokens are
       // sealed in h2_invitations and mailed; only the recipient identity lands here.
-      await appendOperatorAudit(c, { action: 'tenant.provisioned', tenantId, subject: input.administrator.email, detail: { operationId, name: input.name, slug: input.slug } });
-      await appendOperatorAudit(c, { action: 'membership.invited', tenantId, subject: input.administrator.email, detail: { operationId, userId, role: 'administrator' } });
+      await appendOperatorAudit(c, { action: 'tenant.provisioned', tenantId, subject: input.administrator.email, detail: { operationId, name: input.name, slug: input.slug, ...(lifecycle ? { via: lifecycle.via } : {}) } });
+      await appendOperatorAudit(c, { action: 'membership.invited', tenantId, subject: input.administrator.email, detail: { operationId, userId, role: 'administrator', ...(lifecycle ? { via: lifecycle.via } : {}) } });
     });
     return this.completeProvision(operationId, input);
   }
