@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Hosted 14-day trial billing state, server-clock expiry and 30-day paused retention; payment, export and closure replace the drop-to-Free resolution (#197).
+
 - Ask O dashboard generation with a staged canvas, editable tiles and one-step sheet commit; conversational revision of stamped O tiles preserves presentation and custom titles. Managed credits charge per delivered tile or revision proposal (#196).
 
 - Hosted operator provisioning pages for tenant lists, creation, billing links, inline usage, invitations and lifecycle management; separate required workspace display names from namespace names with validated unique slugs (#192).

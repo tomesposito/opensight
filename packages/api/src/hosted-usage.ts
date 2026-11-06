@@ -100,7 +100,7 @@ export class HostedUsage {
    * Stripe billing configured, a tenant's durable billing tier entitlement
    * wins over the operator snapshot. Wired by composition only; unset in
    * every other mode, where the snapshot alone decides. */
-  tierEntitlement?: (tenantId: string) => Entitlement | undefined;
+  tierEntitlement?: (tenantId: string) => Entitlement | null | undefined;
   constructor(readonly db: Database, config: Entitlements, readonly clock = Date.now, private readonly objectDeployment?: string) { this.config = structuredClone(config); }
   private async billingScope(c: SqlConnection, scope: Scope, lock = false): Promise<void> {
     // Reporting includes suspended/provisioning/deleting tenants, but never resurrects
@@ -201,6 +201,7 @@ export class HostedUsage {
   }
   entitlement(scope: Scope): Entitlement {
     const override = this.tierEntitlement?.(scope.tenantId);
+    if (override === null) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
     if (override) return override;
     const limit = Object.hasOwn(this.config.tenants, scope.tenantId) ? this.config.tenants[scope.tenantId] : this.config.defaults;
     if (!limit) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);

@@ -271,7 +271,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         const browserMembership = /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/users(?:\/[A-Za-z0-9_-]+)?$/.test(path);
         const browserProvisioning = (path === '/api/host/tenants' && ['GET', 'POST'].includes(request.method ?? ''))
           || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+$/.test(path) && ['GET', 'DELETE'].includes(request.method ?? '')
-          || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/(?:invitations|suspend|resume|billing\/(?:payment-link|resolve))$/.test(path) && request.method === 'POST'
+          || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/(?:invitations|suspend|resume|billing\/(?:payment-link))$/.test(path) && request.method === 'POST'
           || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/billing$/.test(path) && request.method === 'GET'
           || /^\/api\/host\/usage\/[0-9]{4}-(?:0[1-9]|1[0-2])\/tenants\/[A-Za-z0-9_-]+$/.test(path) && request.method === 'GET';
         if (request.headers.origin !== undefined && !browserMembership && !browserIdeas && !browserProvisioning || !authorization?.startsWith('Operator ') || !equal(authorization.slice(9), config.operatorKey.toString('base64url'))) throw new MetadataError('OPERATOR_REQUIRED', 403);
@@ -317,7 +317,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
           const records = request.method === 'POST' ? await usage.rollupMonthlyUsageForPeriod(period, tenantId) : await usage.monthlyUsageForPeriod(period, tenantId);
           send(response, 200, { period, records, ...(tenantId && request.method === 'GET' ? { overview: await usage.operatorOverview(tenantId, period) } : {}) }); return;
         }
-        const billingTenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)\/billing(?:\/(payment-link|resolve))?$/.exec(path);
+        const billingTenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)\/billing(?:\/(payment-link))?$/.exec(path);
         if (billingTenant) {
           if (!billingService) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
           const tenantId = identifier(billingTenant[1]), billingAction = billingTenant[2];
@@ -327,9 +327,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
             const input = await body(request, ['tier']);
             send(response, 201, await billingService.createPaymentLink(tenantId, input.tier)); return;
           }
-          const input = await body(request, ['action']);
-          if (input.action !== 'drop_to_free') throw new MetadataError('BILLING_ACTION_INVALID', 400);
-          send(response, 200, { billing: await billingService.resolveDropToFree(tenantId) }); return;
+
         }
         const tenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)(?:\/(suspend|resume|invitations|users)(?:\/([A-Za-z0-9_-]+))?)?$/.exec(path);
         if (tenant) {
@@ -399,6 +397,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       // Billing past-due gate (issue #194): a tenant paused for non-payment
       // gets no hosted access until an admin resolution reopens it. The
       // tenant's data is untouched; only access pauses.
+      await billingService?.expireTrials();
       billingService?.assertAccess(context.tenantId);
       // Egress gate before routing (and before the apiCalls charge): a denied
       // request is not routed, consumes no admitted egress, and its 429 body

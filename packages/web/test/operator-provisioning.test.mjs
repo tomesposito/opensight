@@ -129,15 +129,12 @@ test('192 C: detail shows inline usage and billing, link generation keeps tier, 
   await click(button(ui, 'Disconnect')); assert.equal(ui.root.findAllByType('progress').length, 0); assert.doesNotMatch(ui.text(), /Workspace Admin/);
 });
 
-test('192 C: billing 404 removes controls; past due drop-to-free needs confirmation', async t => {
+test('197: billing 404 removes controls; paused resolutions exclude drop-to-Free', async t => {
   const missing = await mount(t, OperatorTenant, detailHandler({ billing: null }), { tenantId: 'tenant-one' }); await connect(missing);
-  assert.match(missing.text(), /Billing is not configured/); assert.equal(button(missing, 'Generate payment link'), undefined); assert.ok(button(missing, 'Send invitation'));
-  let resolved = false;
-  const paused = await mount(t, OperatorTenant, detailHandler({ billing: { tier: 'regular', accessState: 'paused', subscriptionStatus: 'unpaid' }, extra: call => {
-    if (call.path.endsWith('/resolve')) { assert.deepEqual(call.input, { action: 'drop_to_free' }); resolved = true; return response({}); }
-  } }), { tenantId: 'tenant-one' }); await connect(paused); assert.match(paused.text(), /Access paused/);
-  await click(button(paused, 'Drop to Free…')); assert.equal(resolved, false); assert.ok(paused.root.findByProps({ role: 'dialog' }));
-  await click(button(paused, 'Confirm drop to Free')); assert.equal(resolved, true); assert.match(paused.text(), /Tenant dropped to Free/);
+  assert.equal(missing.root.findAllByType('button').some(b => b.children.join('').includes('Generate payment link')), false);
+  const paused = await mount(t, OperatorTenant, detailHandler({ billing: { tier: 'regular', accessState: 'paused', subscriptionStatus: 'unpaid' } }), { tenantId: 'tenant-one' }); await connect(paused);
+  assert.match(paused.text(), /paying in Stripe, exporting data, or closing the workspace/);
+  assert.doesNotMatch(paused.text(), /Drop to Free/);
 });
 
 test('192 C: lifecycle uses freshly read version; conflict refetches; restore-review refusal is explicit', async t => {
