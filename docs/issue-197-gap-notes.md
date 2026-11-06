@@ -31,6 +31,26 @@ verification expiry/rotation/idempotency, enumeration-safe responses, public
 origin/rate/blocklist/challenge refusals, runtime/deploy-off queue preservation,
 cap and shared-IP behavior, checkout metadata, identity while paused,
 admin-only resolution routes/actions, server countdown rendering and the
-existing D-84 erasure/backup integration. The final full root-suite counts are
-reported in the delivery message; only live-Postgres integration skips are
-permitted when DATABASE_URL is absent.
+existing D-84 erasure/backup integration. The final November 6 root `npm test`
+run exited 0: **4,817 passed / 0 failed / 36 skipped**, with no cancellations or
+TODOs. This includes 4,785 Node tests and 32 Python tests passing. All 36 skips
+are live-Postgres integrations without a configured database; none are browser
+or issue #197 tests. The web suite passed all 2,542 tests, and the final root
+conformance/site-docs suite passed all 102 tests.
+
+After the November 6 VM reboot, all five slice checkpoints and both verification
+checkpoints were present on `work/issue-197-self-serve-signup`, with a clean tree.
+They were retained. The static demo and browser bundle were rebuilt, and all
+seven captures above were regenerated. The browser checks found no page errors
+or horizontal overflow; the expired screen had exactly checkout, export and
+close buttons. External browser requests were blocked.
+
+The initial resumed root run was stopped after the sandbox denied loopback
+listeners (`EPERM`) and Node aborted in its native callback handler. Running the
+focused billing/signup/mail tests outside that restriction passed 27/27. The
+default Chromium also failed at startup (`read ECONNRESET`); selecting the
+installed Playwright Chromium through the existing `OPENSIGHT_CHROMIUM` setting
+passed the focused browser check (6/6), as well as the captures above. The full
+root suite completed with that setting and the local execution allowance. No
+hosted service, Stripe, bot-challenge service or AWS account is contacted by
+these tests.
