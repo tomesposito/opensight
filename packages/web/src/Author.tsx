@@ -408,7 +408,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
   const mobile = width < 600;
   const layout = useMemo(() => mobile ? sheet.layout.map((p, i) => ({ ...p, x: 0, y: i * 8, w: GRID_COLUMNS, h: 8 })) : sheet.layout.map(p => ({ ...p, minW: 3, minH: 4 })), [mobile, sheet.layout]);
   return <>
-    <div className="author-layout">
+    <div className={`author-layout${oCanvasPreview || oRevisionPreview ? ' o-proposal-layout' : ''}`}>
       <Panel title="Data" className="fields-panel">
         <DatasetHeader datasetId={draft.dataset?.id} datasetName={draft.dataset?.name} client={client} />
         {unresolved.length > 0 && <details className="field-hint" open aria-label="Unavailable fields">
@@ -461,7 +461,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
           </div>
       </Panel>
       <div className="author-center" role="region" aria-label="Analysis sheet">
-        {oCanvasPreview ? oCanvasPreview : <>
+        {oCanvasPreview}<div hidden={!!oCanvasPreview}>
         <SheetTabs draft={draft} dispatch={dispatch} />
         {interactive && <div className="action-status"><button type="button" disabled={!Object.keys(selections).length} onClick={clearActions}>Reset actions</button><span role="status">{Object.keys(selections).length} active selection(s) {Object.entries(selections).map(([id, selection]) => `${id}: ${selection.range?.join(' – ') ?? Object.entries(selection.values).map(([field, value]) => `${field} = ${value}`).join(', ')}`).join('; ')} · {client ? 'Live queries' : 'Recomputed synthetic sales across all regions'}</span></div>}
         <ControlsStrip key={sheet.id} draft={draft} dispatch={dispatch} client={client} />
@@ -521,7 +521,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
             </GridLayout>
           </div>
         </div>
-      </div></>}
+      </div></div>
       </div>
       <Panel title="Properties" className="properties-panel">
         {selectedObject ? <SheetObjectProperties object={selectedObject} draft={draft} dispatch={dispatch} /> : selected ? <Properties key={selected.id} runtimeProblems={runtimeProblems[selected.id]} visual={selected} draft={draft} dispatch={dispatch} client={client} /> : <><p>Select a visual or object to edit its display settings.</p><ThemeEditor draft={draft} dispatch={dispatch} /></>}

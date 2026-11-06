@@ -7,10 +7,27 @@ import { AccessProvider } from '../build/test/access.js';
 import { OEntry } from '../build/test/OEntry.js';
 import { OSteps } from '../build/test/OSteps.js';
 import { ORevision } from '../build/test/ORevision.js';
+import { AuthorCanvas } from '../build/test/Author.js';
 import { activeSheet, emptyDraft, authorReducer, dataFields } from '../build/test/authoring.js';
 import { prepareOVisual } from '../build/test/o-authoring.js';
 const result = question => ({ ...interpretQuestion(question, dataFields([])), question });
 const status = { configured: true, state: 'configured', mode: 'managed' };
+test('#196 staging retains the mounted canvas width observer and gives proposals the full sheet area', async t => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  const previousWindow = globalThis.window;
+  globalThis.window = { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) };
+  const props = { draft: stamped(), dispatch() {} }; let renderer;
+  await act(() => { renderer = create(createElement(AuthorCanvas, props)); });
+  t.after(async () => { await act(() => renderer.unmount()); globalThis.window = previousWindow; });
+  const canvas = renderer.root.findByProps({ className: 'author-canvas' });
+  await act(() => renderer.update(createElement(AuthorCanvas, { ...props, oCanvasPreview: createElement('p', null, 'Proposed sheet') })));
+  assert.equal(renderer.root.findByProps({ className: 'author-canvas' }), canvas);
+  assert.equal(renderer.root.findAllByProps({ className: 'author-layout o-proposal-layout' }).length, 1);
+  assert.equal(canvas.parent.parent.props.hidden, true);
+  await act(() => renderer.update(createElement(AuthorCanvas, props)));
+  assert.equal(renderer.root.findByProps({ className: 'author-canvas' }), canvas);
+  assert.equal(canvas.parent.parent.props.hidden, false);
+});
 async function mount(t, options = {}) {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   const actions = [], calls = [], aiClient = { getAIStatus: async () => options.status ?? status,
