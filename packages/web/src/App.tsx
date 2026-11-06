@@ -1,3 +1,4 @@
+import { SignupVerification } from './SignupVerification.js';
 import { OperatorTenants } from './OperatorTenants.js';
 import { OperatorTenant } from './OperatorTenant.js';
 import { OperatorIdeas } from './OperatorIdeas.js';
@@ -24,6 +25,8 @@ export default function App() {
     window.addEventListener('hashchange', changed);
     return () => window.removeEventListener('hashchange', changed);
   }, []);
+  const signupToken = /^#signup=([A-Za-z0-9_-]{43})$/.exec(operator)?.[1];
+  if (!offline && signupToken) return <SignupVerification token={signupToken} baseUrl={import.meta.env?.VITE_OPENSIGHT_API_URL} />;
   const operatorTenant = /^#operator-tenant\/([A-Za-z0-9_-]+)$/.exec(operator);
   if (!offline && operator === '#operator-tenants') return <OperatorTenants baseUrl={import.meta.env?.VITE_OPENSIGHT_API_URL} />;
   if (!offline && operatorTenant) return <OperatorTenant key={operatorTenant[1]} tenantId={operatorTenant[1]!} baseUrl={import.meta.env?.VITE_OPENSIGHT_API_URL} />;

@@ -1,3 +1,4 @@
+import { BillingPage } from './TrialBilling.js';
 import { Notebooks } from './Notebooks.js';
 import { MetricDetail } from './MetricSubscriptions.js';
 import { Ideas } from './Ideas.js';
@@ -90,6 +91,7 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
       // falls through
       case 'data-sources': return <DataLanding key={route.page} onSuggestIdea={() => navigate({ page: 'ideas', ideaSurface: 'data-empty' })} initialTab={route.page === 'data-sources' ? 'Data sources' : 'Datasets'} client={connected ? api : undefined} onCreate={() => setCreation('dataset')} onCreateSource={() => setCreation('source')} onOpen={dataset => navigate({ page: 'data', datasetId: dataset.dataSetId })} onEdit={dataset => navigate({ page: 'data-prep', datasetId: dataset.dataSetId })} onPrep={source => navigate({ page: 'data-prep', sourceId: source.id })} />;
       case 'data-prep': return <DataPrep key={entry} initialSource={route.baseDatasetId ? { dataset: route.baseDatasetId } : route.sourceId} initialDatasetId={route.datasetId} onDatasets={() => navigate({ page: 'data' })} onSaved={dataset => navigate({ page: 'data', datasetId: dataset.dataSetId })} onBuild={access.mode === 'local' ? dataset => { setAuthorDataset(dataset); navigate({ page: 'author' }); } : undefined} client={connected ? api : undefined} onSources={() => navigate({ page: 'data-sources' })} onAuthor={() => navigate({ page: 'author' })} />;
+      case 'billing': return <BillingPage client={api} />;
       case 'users': return <UserManagement client={api} />;
       case 'ai-settings': return <AISettings client={api} />;
       case 'organization': return <OrganizationNotice />;

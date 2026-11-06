@@ -1,3 +1,4 @@
+import { BillingPanel, TrialBanner } from './TrialBilling.js';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AccessProvider, demoAccess, type Session, type Access } from './access.js';
 import { ApiError, type createApiClient, type LoginInput, type LoginResult } from './api-client.js';
@@ -8,7 +9,7 @@ import { StartupError } from './workspace-startup.js';
 import { InvitationEnrollment, type EnrollmentCredentials } from './InvitationEnrollment.js';
 import { AcceptInvitation } from './UserManagement.js';
 
-type Client = Pick<ReturnType<typeof createApiClient>, 'getSession'> & Partial<Pick<ReturnType<typeof createApiClient>, 'getLocalData' | 'enroll' | 'acceptEnrollment' | 'acceptInvitation' | 'login' | 'selectWorkspace' | 'logout' | 'clearSession' | 'onDemand' | 'connect' | 'subscribeAvailability'>> & Access['aiClient'];
+type Client = Pick<ReturnType<typeof createApiClient>, 'getSession'> & Partial<Pick<ReturnType<typeof createApiClient>, 'checkout' | 'exportWorkspace' | 'closeWorkspace' | 'getLocalData' | 'enroll' | 'acceptEnrollment' | 'acceptInvitation' | 'login' | 'selectWorkspace' | 'logout' | 'clearSession' | 'onDemand' | 'connect' | 'subscribeAvailability'>> & Access['aiClient'];
 export const SESSION_TIMEOUT_MS = 10_000;
 
 function startupIssue(error: unknown): StartupIssue {
@@ -230,6 +231,8 @@ export function SessionGate({ client, offline, children, invitation }: { client:
     <nav className="sign-in-links" aria-label="Startup options"><button type="button" onClick={explore}>Explore sample data</button></nav>
   </main></div>;
   if (!session) return <FirstRun issue={issue} checking={checking} onRetry={retry} onDemo={explore} />;
+  const paused = session.billing?.accessState === 'paused' && !!session.billing.pauseEffectiveAt && Date.parse(session.billing.pauseEffectiveAt) <= Date.now() || session.trial?.daysRemaining === 0;
+  if (paused) return <div className="trial-page"><header className="trial-appbar">{session.workspaceName ?? 'OpenSight'}</header><BillingPanel session={session} client={client} paused /></div>;
   return <AccessProvider access={{ mode: 'hosted', session, aiClient: client, ...(client.logout ? { signOut } : {}) }}>{invitation && client.acceptInvitation
-    ? <AcceptInvitation key={invitation.token} token={invitation.token} client={{ acceptInvitation: client.acceptInvitation }} onAccepted={invitation.onAccepted} /> : children}</AccessProvider>;
+    ? <AcceptInvitation key={invitation.token} token={invitation.token} client={{ acceptInvitation: client.acceptInvitation }} onAccepted={invitation.onAccepted} /> : <><TrialBanner key={session.tenantId} session={session} />{children}</>}</AccessProvider>;
 }

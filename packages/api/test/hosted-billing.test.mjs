@@ -193,12 +193,14 @@ test('HTTP: operator payment link, signed webhook, pause gate on the tenant plan
   res = await deliver({ id: 'evt_h_unpaid', type: 'customer.subscription.updated', data: { object: { id: 'sub_9', customer: 'cus_9', status: 'unpaid', items: { data: [{ price: { id: 'price_regular' } }] } } } });
   assert.equal(res.status, 200);
   session = await request('/api/session', { headers: { authorization: 'one' } });
-  assert.equal(session.status, 403); assert.equal(session.body.errorCode, 'BILLING_ACCESS_PAUSED');
+  assert.equal(session.status, 200); assert.equal(session.body.billing.accessState, 'paused');
+  const product = await request('/api/users', { headers: { authorization: 'one' } });
+  assert.equal(product.status, 403); assert.equal(product.body.errorCode, 'BILLING_ACCESS_PAUSED');
 
   const resolved = await request('/api/host/tenants/tenant-one/billing/resolve', { method: 'POST', headers: operator, body: { action: 'drop_to_free' } });
   assert.equal(resolved.status, 404);
   session = await request('/api/session', { headers: { authorization: 'one' } });
-  assert.equal(session.status, 403);
+  assert.equal(session.status, 200);
 });
 
 test('HTTP: without Stripe configuration the billing routes do not exist and the product works unchanged', async t => {
@@ -236,4 +238,21 @@ test('197: paid beats trial beats none; exact expiry, retained deadline, one aud
   assert.equal(billing.trial('tenant-one'), null); assert.deepEqual(billing.tierEntitlement('tenant-one'), LIGHT);
   assert.doesNotThrow(() => billing.assertAccess('tenant-one'));
   assert.equal(billing.tierEntitlement('no-billing'), undefined);
+});
+
+test('197 checkout: session/subscription metadata, no payment-link row, paid conversion restores expired trial', async t => {
+  const f = await h8Fixture(t); await initializeBilling(f.db);
+  let now = Date.UTC(2026, 10, 6), seen;
+  const stripe = httpStripeClient('sk_test', async (url, init) => { seen = { url, form: new URLSearchParams(init.body) }; return { ok: true, status: 200, json: async () => ({ id: 'cs_new', url: 'https://checkout.stripe.com/c/pay/test' }) }; });
+  const billing = new HostedBilling(f.db, billingConfig(env({ OPENSIGHT_TRIAL_ENTITLEMENT: JSON.stringify(LIGHT) })), { clock: () => now, origin: 'https://opensight.example', stripe });
+  await billing.startTrial('tenant-one'); now += 14 * 86400000; await billing.expireTrials();
+  await billing.createCheckoutSession('tenant-one', 'regular');
+  assert.equal(seen.url, 'https://api.stripe.com/v1/checkout/sessions'); assert.equal(seen.form.get('mode'), 'subscription');
+  for (const prefix of ['metadata', 'subscription_data[metadata]']) { assert.equal(seen.form.get(`${prefix}[tenant_id]`), 'tenant-one'); assert.equal(seen.form.get(`${prefix}[tier]`), 'regular'); }
+  assert.equal(seen.form.get('line_items[0][price]'), 'price_regular');
+  await billing.handleEvent({ id: 'evt_session_meta', type: 'checkout.session.completed', object: { id: 'cs_new', metadata: { tenant_id: 'tenant-one', tier: 'regular' }, subscription: 'sub_new', customer: 'cus_new', payment_status: 'paid' } });
+  const state = await billing.state('tenant-one'); assert.equal(state.tier, 'regular'); assert.equal(state.trialEndsAt, null); assert.equal(state.retentionDueAt, null);
+  assert.doesNotThrow(() => billing.assertAccess('tenant-one'));
+  assert.equal((await f.db.transaction(c => c.query('SELECT * FROM h9_billing_links'))).length, 0);
+  await assert.rejects(billing.createCheckoutSession('tenant-one', 'free'), { code: 'BILLING_TIER_INVALID' });
 });

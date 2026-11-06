@@ -2,8 +2,8 @@ import { useRef, useState, type ReactNode } from 'react';
 import { BrandMark } from './BrandMark.js';
 
 export type Tier = 'free' | 'light' | 'regular' | 'heavy';
-export const tiers: Record<Tier, string> = { free: 'Free', light: 'Light · $29/mo', regular: 'Regular · $99/mo', heavy: 'Heavy · $399/mo' };
-export const titleCase = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
+export const tiers: Record<Tier, string> = { free: 'Self-hosted', light: 'Light · $29/mo', regular: 'Regular · $99/mo', heavy: 'Heavy · $399/mo' };
+export const titleCase = (value: string) => value === 'free' ? 'Self-hosted' : value.charAt(0).toUpperCase() + value.slice(1);
 export interface OperatorProps { baseUrl?: string; fetcher?: typeof fetch }
 export interface TenantSummary { tenantId: string; displayName: string | null; slug: string | null; state: string; tier: Tier; memberCount: number; createdAt: string | null }
 export interface TenantDetail { tenantId: string; displayName: string | null; slug: string | null; state: string; namespaceId: string; version: number; createdOperationId: string | null; tombstone: string | null }

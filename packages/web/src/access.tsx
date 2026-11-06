@@ -1,9 +1,11 @@
+import type { TrialInfo, BillingState } from './TrialBilling.js';
 import type { AIStatus, createApiClient } from './api-client.js';
 import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import { hasCapability, type Capability, type Role } from '@opensight/query-engine/browser';
 export interface Session {
   id: string; namespaceId: string; tenantId?: string; name: string; role: Role;
   /** Workspace display label (display_name with tenant_id fallback) and internal slug. */
+  trial?: TrialInfo | null; billing?: BillingState;
   workspaceName?: string; workspaceSlug?: string | null;
 }
 export interface Access { mode: 'demo' | 'hosted' | 'local'; session?: Session; signOut?(): Promise<void>; aiClient?: Pick<ReturnType<typeof createApiClient>, 'getAIStatus' | 'generateO' | 'generateCalculation' | 'planO' | 'reviseO'> }

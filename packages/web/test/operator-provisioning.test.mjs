@@ -67,7 +67,7 @@ test('192 C: create derives labels until edited, paid selection is a second requ
   const posts = ui.calls.filter(call => call.method === 'POST'); assert.equal(posts.length, 2);
   assert.deepEqual(posts[0].input, { displayName: 'Public', name: 'Internal', slug: 'custom', administrator: { name: 'Admin', email: 'admin@example.test' } });
   assert.deepEqual(posts[1].input, { tier: 'regular' }); assert.ok(posts[0].headers['Idempotency-Key']);
-  assert.match(ui.text(), /Tenant created on the Free plan/); assert.match(ui.text(), /Regular plan starts when they pay/); assert.ok(button(ui, 'Copy link'));
+  assert.match(ui.text(), /Tenant created with operator-configured quotas/); assert.match(ui.text(), /Regular plan starts when they pay/); assert.ok(button(ui, 'Copy link'));
   assert.ok(ui.root.findByProps({ href: '#operator-tenant/new-tenant' }));
 });
 
@@ -107,7 +107,7 @@ test('192 C: in-flight submits cannot create twice; unconfigured billing preserv
 
 test('192 C: Free creation makes no billing call and slug derivation matches D-83 boundaries', async t => {
   const ui = await mount(t, OperatorTenants, call => response(call.method === 'GET' ? { tenants: [] } : { tenantId: 'new' }));
-  await connect(ui); await formValues(ui); await submit(ui, 'Create tenant'); assert.match(ui.text(), /Tenant created on the Free plan/); assert.equal(ui.calls.some(call => call.path.includes('billing')), false);
+  await connect(ui); await formValues(ui); await submit(ui, 'Create tenant'); assert.match(ui.text(), /Tenant created with operator-configured quotas/); assert.equal(ui.calls.some(call => call.path.includes('billing')), false);
   for (const [name, slug] of [[' Sales & Ops! ', 'sales-ops'], ['東京', ''], ['A'.repeat(63) + ' !tail', 'a'.repeat(63)], ['A'.repeat(70), 'a'.repeat(64)]]) assert.equal(deriveTenantSlug(name), slug);
 });
 

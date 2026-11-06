@@ -46,3 +46,21 @@ headers are not trusted. Verification tokens are sealed, SHA-256 indexed,
 single-use and expire after 24 hours; resending rotates the pending token.
 Signup IDs derive existing provisioning idempotency keys. Provisioning and
 trial creation share a transaction, and audits carry `via: self_serve_signup`.
+
+The unlinked `/signup/` page follows approved mockup (a); all existing site CTAs
+and pricing files stay unchanged. Deploy supplies the public challenge key in
+`signup-challenge-site-key`; absent configuration keeps the submit button off.
+The mail link enters `#signup=...`, then existing `#invite=...` enrollment.
+
+Session responses carry `{ trial: { endsAt, daysRemaining } | null }` plus billing
+state. Banner dismissal lasts only for the signed-in component session. Checkout
+is administrator-only and uses Stripe HTTPS, with tenant/tier metadata on both
+the session and subscription; existing operator payment links remain available.
+Paused identity, billing, export and closure are outside quota charging. Product
+requests still return the specific pause error. Portability exports shared
+namespace metadata, the current member's private assets and authorized source
+output. It preserves RLS/CLS and output bounds, excludes credentials, and states
+its scope in the archive. Other owners' private assets require their own exports;
+this endpoint does not turn admin membership into a source-policy bypass.
+Closure uses the existing tenant lifecycle tombstone; D-84 erasure remains an
+offline operator maintenance operation, never a second deletion implementation.

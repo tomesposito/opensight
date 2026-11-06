@@ -9,7 +9,7 @@ function CreateTenant({ request, work, cancel, refresh }: { request: OperatorReq
   const [idempotency] = useState(() => crypto.randomUUID()), [fields, setFields] = useState<Record<string, string>>({});
   const [created, setCreated] = useState<{ tenantId: string; url?: string; notice?: string }>();
   const fieldError = (field: string) => fields[field] && <span className="operator-field-error" role="alert">{fields[field]}</span>;
-  if (created) return <section className="operator-card" aria-label="Tenant created"><h2>Tenant created on the Free plan</h2>
+  if (created) return <section className="operator-card" aria-label="Tenant created"><h2>Tenant created with operator-configured quotas</h2>
     {created.url && <PaymentLink url={created.url} tier={tier} work={work} />}{created.notice && <p role="status">{created.notice}</p>}
     <a href={`#operator-tenant/${created.tenantId}`}>Open tenant details</a> <button disabled={work.busy} onClick={cancel}>All tenants</button>
   </section>;
@@ -24,8 +24,8 @@ function CreateTenant({ request, work, cancel, refresh }: { request: OperatorReq
           if (tier !== 'free') {
             try { const link = await request<{ url: string }>(`tenants/${result.tenantId}/billing/payment-link`, 'POST', { tier }); setCreated({ ...result, url: link.url }); }
             catch (e) { setCreated({ ...result, notice: e instanceof OperatorError && e.status === 404
-              ? 'Created on Free. Billing is not configured on this deployment; no link generated.'
-              : `Created on Free. No payment link generated: ${e instanceof Error ? e.message : 'Request failed'}. Generate a link from tenant details.` }); }
+              ? 'Created with operator-configured quotas. Billing is not configured on this deployment; no link generated.'
+              : `Created with operator-configured quotas. No payment link generated: ${e instanceof Error ? e.message : 'Request failed'}. Generate a link from tenant details.` }); }
           }
           await refresh();
         } catch (e) {
@@ -43,7 +43,7 @@ function CreateTenant({ request, work, cancel, refresh }: { request: OperatorReq
           <label>Administrator name<input required maxLength={512} value={adminName} aria-invalid={!!fields['administrator.name']} onChange={event => setAdminName(event.target.value)} />{fieldError('administrator.name')}</label>
           <label>Administrator email<input type="email" required value={email} aria-invalid={!!fields['administrator.email']} onChange={event => setEmail(event.target.value)} />{fieldError('administrator.email')}<small>The invitation is emailed to this address.</small></label>
         </div><fieldset className="operator-plans"><legend>Starting plan</legend><div>{(Object.keys(tiers) as Tier[]).map(value => <label key={value}><input type="radio" name="starting-plan" value={value} checked={tier === value} onChange={() => setTier(value)} />{tiers[value]}</label>)}</div>
-          <p>The tenant is created on Free quotas. With a paid plan selected, the next step generates a payment link. The paid plan starts when the customer pays.</p>
+          <p>The tenant is created with operator-configured quotas. With a paid plan selected, the next step generates a payment link. The paid plan starts when the customer pays.</p>
         </fieldset></fieldset>
         <button className="operator-primary" disabled={work.busy} type="submit">Create tenant</button><button disabled={work.busy} type="button" onClick={cancel}>Cancel</button>
       </form>

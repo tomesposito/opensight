@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- An unlinked hosted signup page, session trial countdown, administrator tier checkout and paused-workspace payment/export/closure screens; stored `free` values display as Self-hosted in tier labels (#197).
+
 - Dark-by-default self-serve signup with email verification, existing idempotent provisioning, provider-aware email normalization, disposable-domain filtering, server-verified bot challenges and durable public rate limits (#197).
 
 - Tenant outbound mail now enforces 25 recipients over a trial and D-82 paid monthly allowances across invitations, reports, digests and alerts; operator mail is excluded (#197).

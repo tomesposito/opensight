@@ -47,6 +47,7 @@ import { hostedReadiness } from './hosted-health.js';
 import { HostedUsage, usageMonth } from './hosted-usage.js';
 import { billingConfig, HostedBilling, httpStripeClient, initializeBilling, parseStripeEvent, readRawBody, verifyStripeSignature, type StripeFetcher } from './hosted-billing.js';
 import { initializeTenantMail, TenantMailTransport } from './hosted-mail.js';
+import { exportWorkspace } from './workspace-export.js';
 import { HostedSignup, initializeSignups, signupConfig, type ChallengeVerifier } from './hosted-signup.js';
 import { HostedAI } from './hosted-ai.js';
 import type { HostedAIOptions } from './hosted-ai-settings.js';
@@ -177,7 +178,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   // Stripe billing (issue #194) composes on the single-node hosted server;
   // invocation mode keeps /api/host closed, so billing stays out of it.
   const billingService = !options.invocation && billingCfg ? new HostedBilling(options.membershipDatabase, billingCfg,
-    { mail, clock, notifyTo: accessNotifyTo, stripe: httpStripeClient(billingCfg.apiKey, options.stripeFetcher) }) : undefined;
+    { mail, clock, origin: config.origin, notifyTo: accessNotifyTo, stripe: httpStripeClient(billingCfg.apiKey, options.stripeFetcher) }) : undefined;
   if (billingService) { await billingService.load(); if (usage) usage.tierEntitlement = tenantId => billingService.tierEntitlement(tenantId); }
   if (billingService) await initializeTenantMail(options.membershipDatabase);
   const tenantMail = billingService ? new TenantMailTransport(options.membershipDatabase, billingService, mail) : mail;
@@ -425,15 +426,36 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       // gets no hosted access until an admin resolution reopens it. The
       // tenant's data is untouched; only access pauses.
       await billingService?.expireTrials();
-      billingService?.assertAccess(context.tenantId);
+      const resolutionPath = ['/api/session', '/api/auth/logout', '/api/auth/switch', '/api/billing', '/api/signup/checkout', '/api/workspace/export', '/api/workspace/close'].includes(path);
+      if (billingService && resolutionPath) {
+        const user = await metadata.get(context, { kind: 'user', id: context.userId });
+        if (['/api/billing', '/api/signup/checkout', '/api/workspace/export', '/api/workspace/close'].includes(path)) {
+          if (!hasCapability(user.body.role as Parameters<typeof hasCapability>[0], 'admin')) throw new MetadataError('SECURITY_ADMIN_REQUIRED', 403);
+          if (path === '/api/billing') { method(request, response, ['GET']); send(response, 200, { billing: await billingService.state(context.tenantId), trial: billingService.trial(context.tenantId), checkoutEnabled: !!signup }); return; }
+          if (path === '/api/signup/checkout') {
+            if (request.headers.origin !== config.origin) throw new MetadataError('UNTRUSTED_ORIGIN', 403);
+            method(request, response, ['POST']); const input = await body(request, ['tier']); send(response, 201, await billingService.createCheckoutSession(context.tenantId, input.tier)); return;
+          }
+          if (path === '/api/workspace/export') {
+            method(request, response, ['GET']);
+            send(response, 200, await exportWorkspace(metadata, data.data, context)); return;
+          }
+          method(request, response, ['POST']); const input = await body(request, ['confirmTenantId']);
+          if (input.confirmTenantId !== context.tenantId) throw new MetadataError('WORKSPACE_CONFIRMATION_REQUIRED', 400);
+          const tenant = await provisioning.operator.tenant(context.tenantId);
+          await provisioning.transition(`close-${context.tenantId}`, context.tenantId, 'delete', tenant.version);
+          send(response, 200, { closed: true, message: 'Workspace closed. Erasure follows the operator D-84 maintenance flow.' }); return;
+        }
+      }
+      if (!resolutionPath) billingService?.assertAccess(context.tenantId);
       // Egress gate before routing (and before the apiCalls charge): a denied
       // request is not routed, consumes no admitted egress, and its 429 body
       // is not counted. Embed routes above run before this boundary and are
       // not counted in this slice; operator/health/pre-auth routes have no
       // tenant context and are not counted either.
-      if (usage) await usage.checkEgress(context);
-      await usage?.consume(metadata, context, 'apiCalls');
-      if (usage) {
+      if (usage && !resolutionPath) await usage.checkEgress(context);
+      if (!resolutionPath) await usage?.consume(metadata, context, 'apiCalls');
+      if (usage && !resolutionPath) {
         const scope = { tenantId: context.tenantId, namespaceId: context.namespaceId };
         let bytes = 0, recording: Promise<void> | undefined;
         const startRecording = (): void => {
@@ -478,7 +500,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         const tenant = (await options.membershipDatabase.transaction(c => c.query('SELECT display_name, slug FROM h1_tenants WHERE tenant_id = ?', [context.tenantId])))[0];
         const workspaceName = workspaceLabel(tenant?.display_name, context.tenantId);
         const workspaceSlug = typeof tenant?.slug === 'string' ? tenant.slug : null;
-        send(response, 200, { id: user.id, namespaceId: context.namespaceId, tenantId: context.tenantId, workspaceName, workspaceSlug, ...user.body, ...(invocation ? { capabilities: invocation.capabilities } : {}) }); return;
+        send(response, 200, { id: user.id, namespaceId: context.namespaceId, tenantId: context.tenantId, workspaceName, workspaceSlug, ...user.body, trial: billingService?.trial(context.tenantId) ?? null, ...(billingService ? { billing: await billingService.state(context.tenantId) } : {}), ...(invocation ? { capabilities: invocation.capabilities } : {}) }); return;
       }
       if (path === '/api/auth/switch' || path === '/api/auth/logout') {
         if (!options.builtinAuth) throw new MetadataError('BUILTIN_AUTH_UNAVAILABLE', 503);
