@@ -29,6 +29,7 @@ export function ORevision({ visual, draft, dispatch, client, ai, onPreview, onUn
     try { return { value: prepareOVisual(proposal, draft.calculatedFields, draft.dataset) }; }
     catch (e) { return { error: e instanceof Error ? e.message : String(e) }; }
   }, [proposal, draft.calculatedFields, draft.dataset]);
+  if (!ai.available && !proposal) return null;
   if (!visual.o) return <p className="o-unstamped">{UNSTAMPED_O_MESSAGE}</p>;
   const submit = async () => {
     const problem = revisionSeedProblem(visual, draft);

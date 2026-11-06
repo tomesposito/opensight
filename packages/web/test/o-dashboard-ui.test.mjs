@@ -56,6 +56,10 @@ test('#196 one commit carries final steps and only kept tiles; last-credit previ
   await build(f); await act(() => f.renderer.root.findByType(OSteps).props.edit({ aggregation: 'AVG' }));
   await act(() => nodeButton(f.preview, 'Add as new sheet').props.onClick());
   assert.equal(f.actions.length, 1); assert.equal(f.actions[0].type, 'o-add-many'); assert.deepEqual(f.actions[0].target, { kind: 'new-sheet', name: 'Sales' }); assert.equal(f.actions[0].items[0].visual.o.interpretation.aggregation, 'AVG'); assert.equal(f.preview, null);
+  f.props.draft = authorReducer(f.draft, f.actions[0]); await f.update();
+  await act(() => button(f.renderer, 'Ask a question').props.onClick());
+  assert.equal(button(f.renderer, 'Propose revision'), undefined); // No dead affordance after the plan exhausted credits.
+
 });
 const stamped = () => authorReducer(emptyDraft(), { type: 'o-add', ...prepareOVisual(result('sum revenue by region').interpretations[0]) });
 test('#196 revise proposal seeds from stamp, outlines target, allows edits and discards untouched', async t => {
