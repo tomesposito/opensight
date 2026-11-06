@@ -197,6 +197,7 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     return actual;
   });
   await j.step('author-credit-limited-plan', author, async () => {
+    await author.context().setExtraHTTPHeaders({ Authorization: `Bearer ${(await f.login()).token}` });
     await author.goto(`${stack.origin}/#/author`);
     await author.getByRole('button', { name: /^Ask a question about / }).click();
     const panel = author.locator('.q-side-panel');
