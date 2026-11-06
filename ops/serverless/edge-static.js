@@ -11,12 +11,14 @@ function handler(event) {
   if (typeof uri !== 'string' || !/^\/[A-Za-z0-9_./-]*$/.test(uri) || uri.indexOf('//') !== -1
       || uri.split('/').some(function (p) { return p === '.' || p === '..'; })) return denied;
   if (h.value === MARKETING_HOST) {
-    if (uri === '/demo') return { statusCode: 308, statusDescription: 'Permanent Redirect',
-      headers: { location: { value: '/demo/' }, 'cache-control': { value: 'no-store' } } };
+    var page = /^\/(demo|pricing|signup|alternatives\/(?:quicksight|tableau|power-bi)|vs\/(?:metabase|superset)|docs(?:\/(?:connectors|embedding|embedding-sessions|getting-started|migrating-from-quicksight|open-economics|permissions))?)(\/|\/index\.html)?$/.exec(uri);
+    if (page && !page[2]) return { statusCode: 308, statusDescription: 'Permanent Redirect',
+      headers: { location: { value: uri + '/' }, 'cache-control': { value: 'no-store' } } };
     if (uri === '/' || uri === '/index.html') r.uri = '/marketing/index.html';
     else if (uri === '/robots.txt') r.uri = '/marketing/robots.txt';
     else if (uri === '/sitemap.xml') r.uri = '/marketing/sitemap.xml';
-    else if (uri === '/demo/' || uri === '/demo/index.html') r.uri = '/marketing/demo/index.html';
+    else if (page) r.uri = '/marketing/' + page[1] + '/index.html';
+    else if (uri === '/docs/docs.css' || uri === '/signup/signup.js') r.uri = '/marketing' + uri;
     else if (/^\/(?:styles\.css|app\.js|assets\/[A-Za-z0-9_-]+\.(?:png|jpg|svg|mp4|webm|gif))$/.test(uri)) r.uri = '/marketing' + uri;
     else return denied;
   } else {

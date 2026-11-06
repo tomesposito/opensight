@@ -170,6 +170,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Include the social preview image and all approved pricing, comparison, documentation and dark signup pages in the attested marketing archive, with explicit public routes and reference checks (#183, #184, #185, #186, #187, #197).
+
 - Durable job deliveries (digests, reports, alerts) that fail with a load cancellation — execution-budget `EXECUTION_CANCELLED` or queue-wait `QUEUE_WAIT_EXCEEDED` — now retry with the existing durable backoff instead of being cancelled permanently, keeping delivery at-least-once as decided in HQ-13 (#199).
 
 - Imported visuals' tooltip field references no longer leak foreign QuickSight field IDs into live queries after remap; unresolvable tooltip references stay retained/read-only for export (#195).

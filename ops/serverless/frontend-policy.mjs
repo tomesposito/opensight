@@ -1,9 +1,15 @@
 // Public site files are deliberately bounded. Operator inputs never become assets.
 export const marketingFiles = Object.freeze([
   'index.html', 'styles.css', 'app.js', 'robots.txt', 'sitemap.xml', 'demo/index.html',
+  'pricing/index.html', 'alternatives/quicksight/index.html', 'alternatives/tableau/index.html',
+  'alternatives/power-bi/index.html', 'vs/metabase/index.html', 'vs/superset/index.html',
+  'docs/index.html', 'docs/docs.css', 'docs/connectors/index.html', 'docs/embedding/index.html',
+  'docs/embedding-sessions/index.html', 'docs/getting-started/index.html',
+  'docs/migrating-from-quicksight/index.html', 'docs/open-economics/index.html', 'docs/permissions/index.html',
+  'signup/index.html', 'signup/signup.js',
   'assets/blaze.png', 'assets/data-prep.png', 'assets/data-sources.png',
   'assets/embed-preview.png', 'assets/favicon.svg', 'assets/apple-touch-icon.png', 'assets/hero-poster.jpg',
-  'assets/hero.mp4', 'assets/hero.webm', 'assets/opensight-tour.gif',
+  'assets/hero.mp4', 'assets/hero.webm', 'assets/opensight-tour.gif', 'assets/og-image.jpg',
 ].map(name => 'marketing/' + name));
 export function requireMarketing(files, required = false) {
   const names = Object.keys(files).filter(name => name.startsWith('marketing/'));
