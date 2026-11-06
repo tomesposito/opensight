@@ -45,6 +45,13 @@ test('D-86 folded edge grammar matches shared routes without per-request regex c
   for (const path of ['/api/v1/analyses', '/api/v1/dashboards', '/api/v1/metrics', '/api/v1/metric-datasets', '/api/uploads/reservations/a/complete', '/api/session'])
     assert.equal(JSON.stringify(context.serverlessV1Methods(path)), JSON.stringify(serverlessV1Methods(path)), path);
 });
+test('edge rejects unsupported paths before reading a large header map', () => {
+  const e = frame(); e.request.uri = '/api/api/v1/datasets';
+  Object.defineProperty(e.request.headers, 'authorization', { enumerable: true, get() { throw Error('Unsupported route scanned headers'); } });
+  // Call the validator directly so a header read cannot be hidden by handler's
+  // uniform denial response; the path error must win before accessing headers.
+  assert.throws(() => context.validateViewerRequest({ ...e.request, protocol: 'https' }, origin), error => error.code === 'RESOURCE_NOT_FOUND');
+});
 test('SR4a edge executes shared path/header rejection without Node APIs and cannot accept forged provenance', () => {
   const bad = [];
   for (const name of ['x-user', 'x-role', 'x-tenant-id', 'x-opensight-ingress-peer', 'x-opensight-ingress-secret', 'x-forwarded-for', 'x-forwarded-host', 'forwarded']) {

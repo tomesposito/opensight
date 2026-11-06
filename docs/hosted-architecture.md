@@ -814,6 +814,7 @@ SR0 implementation decision register (issue #81; proposals, no AWS authorization
 | [D-86](itd/D-86-serverless-authoring.md) | Serverless hosted authoring | ✅ Atomic SQL retry receipts, shared rate windows and literal invitation/authoring/dashboard ingress |
 | [D-87](itd/D-87-preserved-cleanup-maintenance.md) | Governed constraint maintenance | ✅ Preserve epoch and scheduled cleanup through a fenced additive constraint upgrade |
 | [D-89](itd/D-89-access-request-maintenance.md) | Access-request maintenance | ✅ Preserve scheduled cleanup through the exact registered access-request table transition |
+| [D-92](itd/D-92-ideas-analytics-maintenance.md) | Ideas and analytics maintenance | ✅ Bind the exact additive ideas table and analytics delivery-marker upgrade while preserving cleanup |
 
 Related confirmed deployment decision: [ITD D-18 — serverless development
 deployment](itd/D-18-serverless-development-deployment.md) (2026-10-10). Lambda

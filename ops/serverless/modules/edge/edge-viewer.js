@@ -154,6 +154,7 @@ return result;
 }
 function validateViewerRequest(raw, origin) {
 var request = record(raw);
+publicPath(request.uri);
 var h = headers(request.headers);
 if (h.host !== __OPENSIGHT_HOST__ || request.protocol !== 'https')
 denied();
@@ -161,7 +162,6 @@ if (Object.keys(h).some(function (k) { return k.startsWith('x-opensight-ingress-
 denied();
 if (!['/api/access-requests', '/api/api/access-requests'].includes(String(request.uri)) && h.origin !== undefined && h.origin !== origin)
 denied();
-publicPath(request.uri);
 if (Object.keys(record(request.querystring)).length)
 invalid();
 }
