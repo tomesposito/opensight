@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Dependabot configuration covering the npm workspaces and the SHA-pinned GitHub Actions on a weekly schedule, opening labeled update PRs against the triage bar in `docs/dependency-triage.md` (#111).
+
 - An operator Signups panel with trial funnel counts, durable pause/resume, a rolling volume cap and verified queue, plus retention-due entry points into existing D-84 erasure; billing/mail/signup state participates in erasure and encrypted backups (#197).
 
 - An unlinked hosted signup page, session trial countdown, administrator tier checkout and paused-workspace payment/export/closure screens; stored `free` values display as Self-hosted in tier labels (#197).
