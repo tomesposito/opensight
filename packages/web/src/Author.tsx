@@ -67,6 +67,8 @@ function AuthorWorkspace({ initialDraft, renderIdentity, sampleLoaded = false, o
   const notify = useToast();
   const drafts = useLocalDrafts(access, dataset, { draftId, newAnalysis, initialDraft });
   const { draft, dispatch } = drafts;
+  const [oRevisionPreview, setORevisionPreview] = useState<string>();
+  const [oCanvasPreview, setOCanvasPreview] = useState<ReactNode>(null);
   const [metricError, setMetricError] = useState('');
   const metricList = apiClient?.listMetrics, metricDatasetId = draft.dataset?.id;
   useEffect(() => {
@@ -225,7 +227,7 @@ function AuthorWorkspace({ initialDraft, renderIdentity, sampleLoaded = false, o
       {!inApp && <a className="brand" href="./"><span className="brand-mark" aria-hidden="true"><BrandMark size={18} /></span><span className="brand-wordmark">opensight</span></a>}
       {titleControl}
     </header>}
-    {noData ? renderToolbar() : <QSidePanel draft={draft} dispatch={dispatch} client={client} renderTrigger={renderToolbar} />}
+    {noData ? renderToolbar() : <QSidePanel onRevisionPreview={setORevisionPreview} onCanvasPreview={setOCanvasPreview} draft={draft} dispatch={dispatch} client={client} renderTrigger={renderToolbar} />}
     <div className="author-tools">
       <div className="author-utilities">
         <button type="button" aria-keyshortcuts="Meta+S Control+S" onClick={saveDraft}>{access.mode === 'hosted' ? 'Save analysis' : 'Save draft'}</button>
@@ -262,7 +264,7 @@ function AuthorWorkspace({ initialDraft, renderIdentity, sampleLoaded = false, o
       <Panel title="Data" className="fields-panel"><p>No dataset selected.</p>{onSources && <button type="button" onClick={() => { if (drafts.keepCurrent()) onSources(); }}>Add data</button>}</Panel>
       <Panel title="Visuals" className="build-panel"><p>Add data to see fields and create visuals.</p></Panel>
       <div className="author-center" role="region" aria-label="Analysis sheet"><SheetTabs draft={draft} dispatch={dispatch} /><div className="author-canvas"><LocalEmptyState title="Add data to your analysis" onSources={onSources ? () => { if (drafts.keepCurrent()) onSources(); } : undefined} onSample={onTrySample || sampleLoaded || access.mode === 'demo' ? () => { dispatch({ type: 'dataset', dataset: sampleDataset() }); onTrySample?.(); } : undefined} /></div></div>
-    </div> : <AuthorCanvas draft={draft} dispatch={dispatch} client={client} fit={fit} sourceProblem={source.problem} />}
+    </div> : <AuthorCanvas oRevisionPreview={oRevisionPreview} oCanvasPreview={oCanvasPreview} draft={draft} dispatch={dispatch} client={client} fit={fit} sourceProblem={source.problem} />}
     {reportOpen && draft.bundle && <ImportReport draft={draft} onClose={() => {
       setReportOpen(false);
       if (importConfirmation.current) { importConfirmation.current = false; notify('Bundle imported'); }
@@ -340,7 +342,7 @@ const dimensionWellLabel = (kind: VisualKind, well: Well): string => well === 'c
   : well === 'breakdown' ? 'Breakdown' : well === 'smallMultiples' ? 'Small multiples' : kind === 'pointMap' ? 'Latitude' : kind === 'box' ? 'Group / sample dimensions' : ['bar', 'bar100', 'pie'].includes(kind) ? 'Group/Color' : dimensionLabel(kind);
 const FIELD_DRAG_TYPE = 'application/x-opensight-field';
 
-export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProblem }: EditorProps & { fit?: boolean; sourceProblem?: string }) {
+export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProblem, oCanvasPreview, oRevisionPreview }: EditorProps & { fit?: boolean; sourceProblem?: string; oCanvasPreview?: ReactNode; oRevisionPreview?: string }) {
   const unresolved = useMemo(() => unresolvedFieldDiagnostics(draft), [draft]);
   const [newKind, setNewKind] = useState<VisualKind>('bar');
   const [search, setSearch] = useState('');
@@ -406,7 +408,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
   const mobile = width < 600;
   const layout = useMemo(() => mobile ? sheet.layout.map((p, i) => ({ ...p, x: 0, y: i * 8, w: GRID_COLUMNS, h: 8 })) : sheet.layout.map(p => ({ ...p, minW: 3, minH: 4 })), [mobile, sheet.layout]);
   return <>
-    <div className="author-layout">
+    <div className={`author-layout${oCanvasPreview || oRevisionPreview ? ' o-proposal-layout' : ''}`}>
       <Panel title="Data" className="fields-panel">
         <DatasetHeader datasetId={draft.dataset?.id} datasetName={draft.dataset?.name} client={client} />
         {unresolved.length > 0 && <details className="field-hint" open aria-label="Unavailable fields">
@@ -459,6 +461,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
           </div>
       </Panel>
       <div className="author-center" role="region" aria-label="Analysis sheet">
+        {oCanvasPreview}<div hidden={!!oCanvasPreview}>
         <SheetTabs draft={draft} dispatch={dispatch} />
         {interactive && <div className="action-status"><button type="button" disabled={!Object.keys(selections).length} onClick={clearActions}>Reset actions</button><span role="status">{Object.keys(selections).length} active selection(s) {Object.entries(selections).map(([id, selection]) => `${id}: ${selection.range?.join(' – ') ?? Object.entries(selection.values).map(([field, value]) => `${field} = ${value}`).join(', ')}`).join('; ')} · {client ? 'Live queries' : 'Recomputed synthetic sales across all regions'}</span></div>}
         <ControlsStrip key={sheet.id} draft={draft} dispatch={dispatch} client={client} />
@@ -502,7 +505,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
                   },
                 } : undefined;
                 const cardMenuActions = [...visual.filterActions ?? [], ...visual.urlActions ?? [], ...visual.navigationActions ?? []].filter(action => actionActivation(action) === 'menu');
-                return <div key={visual.id}><AuthorCard theme={theme} interactive={interactive} interaction={interaction}
+                return <div key={visual.id} className={oRevisionPreview === visual.id ? 'o-previewing-revision' : undefined}>{oRevisionPreview === visual.id && <span className="o-revision-label">Previewing revision</span>}<AuthorCard theme={theme} interactive={interactive} interaction={interaction}
                   drillNavigation={hierarchy && <nav className="drill-navigation" aria-label={`Drill breadcrumb for ${visual.id}`}>
                     {drillBreadcrumbs(visual, path).map((crumb, i) => <button type="button" key={i} onClick={() => setPath(visual.id, drillUp(path, crumb.depth))}>{crumb.label}</button>)}
                     <span>Current: {levelLabel(hierarchy.levels[path.length]!)}</span>
@@ -519,6 +522,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
           </div>
         </div>
       </div></div>
+      </div>
       <Panel title="Properties" className="properties-panel">
         {selectedObject ? <SheetObjectProperties object={selectedObject} draft={draft} dispatch={dispatch} /> : selected ? <Properties key={selected.id} runtimeProblems={runtimeProblems[selected.id]} visual={selected} draft={draft} dispatch={dispatch} client={client} /> : <><p>Select a visual or object to edit its display settings.</p><ThemeEditor draft={draft} dispatch={dispatch} /></>}
       </Panel>

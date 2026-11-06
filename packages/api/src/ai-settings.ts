@@ -18,7 +18,7 @@ import { AIError, PROVIDERS, estimateTokens, providerAdapters, type AIProvider, 
 export interface AiMeter {
   check(namespaceId: string, managed?: boolean): Promise<void>;
   /** Managed routes commit only after grammar validation and scope recheck. */
-  commit?(namespaceId: string, tokens: number, estimated: boolean): Promise<void>;
+  commit?(namespaceId: string, tokens: number, estimated: boolean, count?: number): Promise<void>;
   credits?(namespaceId: string): Promise<{ period: string; limit: number | null; used: number; remaining: number; resetsAt: string }>;
   record(namespaceId: string, tokens: number, estimated: boolean): Promise<void>;
 }

@@ -1,3 +1,4 @@
+import { oQuestion, oTitle } from './o-provenance.js';
 import { metricColumn } from '@opensight/query-engine/browser';
 import { withGovernedMetrics, datetime, numeric, type Interpretation } from '@opensight/o-interpreter';
 import { calculationInfo, dataFields, defaults, type AuthorDataset, type AuthorVisual, type CalculatedField } from './authoring.js';
@@ -66,7 +67,7 @@ export function prepareOVisual(interpretation: Interpretation, existing: readonl
     filters.push({ columnName: add(`top ${interpretation.topN}`, `ifelse(rank([${sort.join(', ')}], [], POST_AGG_FILTER) <= ${interpretation.topN}, 'yes', 'no')`, 'dimension'), values: ['yes'] });
   }
   return { calculatedFields, visual: {
-    ...defaults(), id: 'o-preview', kind, title: interpretation.explanation.replace(/^Showing /, '').replace(/\.$/, ''),
+    ...defaults(), id: 'o-preview', kind, title: oTitle(interpretation), o: { question: oQuestion(interpretation), interpretation: structuredClone(interpretation) },
     dimension: dimensions[0] ?? null, rows: kind === 'table' ? dimensions : [], measures: [measure],
     donut: false, filters, ...(dates.length === 1 ? { dateGrain: grain } : {}),
   } };

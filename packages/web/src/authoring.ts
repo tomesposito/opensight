@@ -1,3 +1,4 @@
+import { validOProvenance, oTitle, type OProvenance } from './o-provenance.js';
 import { metricColumn, type PublishedMetric } from '@opensight/query-engine/browser';
 import { metricFormatting, validMetricFormat } from './governed-metrics.js';
 import { defaultTextStyle, sheetObjectValid, serializeObjects, objectElementType, type SheetObject, type TextObject, type TextStyle } from './sheet-objects.js';
@@ -100,6 +101,7 @@ export function referenceLineValid(value: unknown): value is ReferenceLine {
     typeof (value as Record<string, unknown>).color === 'string' && /^#[0-9a-f]{6}$/i.test((value as Record<string, unknown>).color as string);
 }
 export interface AuthorVisual {
+  o?: OProvenance;
   palette?: string[];
   formatting?: VisualFormatting;
   gauge?: { min: number; max: number };
@@ -331,6 +333,8 @@ export type AuthorAction =
   | { type: 'sheet-layout-settings'; id: string; settings: SheetLayoutSettings }
   | { type: 'layout'; sheetId: string; layout: readonly Placement[] }
   | { type: 'calculation-add'; field: CalculatedField }
+  | { type: 'o-replace'; id: string; visual: AuthorVisual; calculatedFields: CalculatedField[] }
+  | { type: 'o-add-many'; target: { kind: 'new-sheet'; name: string } | { kind: 'sheet'; sheetId: string }; items: { visual: AuthorVisual; calculatedFields: CalculatedField[]; placement: Placement }[] }
   | { type: 'o-add'; visual: AuthorVisual; calculatedFields: CalculatedField[] }
   | { type: 'add'; kind: VisualKind; empty?: boolean }
   | { type: 'assign-with-no-selection'; field: string; well?: Well }
@@ -362,7 +366,7 @@ export type AuthorAction =
   | { type: 'filter'; columnName: string; values: string[] | null }
   | { type: 'assign' | 'unassign'; field: string; well?: Well };
 
-function validLayout(layout: readonly Placement[], visuals: readonly { id: string }[]): boolean {
+export function validLayout(layout: readonly Placement[], visuals: readonly { id: string }[]): boolean {
   return layout.length === visuals.length && new Set(layout.map(p => p.i)).size === layout.length && layout.every(p =>
     visuals.some(v => v.id === p.i) && [p.x, p.y, p.w, p.h].every(Number.isSafeInteger) && p.x >= 0 && p.y >= 0 &&
     p.w >= 3 && p.h >= 4 && p.x + p.w <= GRID_COLUMNS && p.y + p.h <= 10000);
@@ -552,14 +556,42 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     if (action.collapsed) groups.push([...action.path]);
     return update({ visuals: sheet.visuals.map(v => v === visual ? { ...v, formatting: { ...v.formatting, pivot: { ...pivot, collapsedRowGroups: groups } } } : v) });
   }
-  if (action.type === 'o-add') {
-    const id = nextId('visual', [...draft.sheets.flatMap(s => s.visuals.map(v => v.id)), ...originalIds(draft, true)]);
-    const visual = structuredClone({ ...action.visual, id });
+  if (action.type === 'o-replace') {
+    const previous = sheet.visuals.find(v => v.id === action.id);
+    if (!previous?.o || !validOProvenance(action.visual.o)) return draft;
+    const { kind, dimension, rows, columns, measures, filters, dateGrain, donut, o } = action.visual;
+    const visual = structuredClone({ ...previous, kind, dimension, rows, columns, measures, filters, dateGrain, donut, o,
+      title: previous.title === oTitle(previous.o.interpretation) ? oTitle(o.interpretation) : previous.title });
+    const calculatedFields = structuredClone(draft.calculatedFields);
+    for (const c of action.calculatedFields) {
+      const existing = calculatedFields.find(f => f.name === c.name);
+      if (existing && JSON.stringify(existing) !== JSON.stringify(c)) return draft;
+      if (!existing) calculatedFields.push(structuredClone(c));
+    }
+    const result = { ...update({ visuals: sheet.visuals.map(v => v.id === action.id ? visual : v) }), calculatedFields };
+    try { validateDraft(result); } catch { return draft; }
+    return result;
+  }
+  if (action.type === 'o-add' || action.type === 'o-add-many') {
     const bottom = Math.max(0, ...sheet.layout.map(p => p.y + p.h));
-    const result = { ...update({ visuals: [...sheet.visuals, visual], selectedId: id,
-      layout: [...sheet.layout, { i: id, x: 0, y: bottom, w: 6, h: 8 }] }),
-      calculatedFields: [...draft.calculatedFields, ...structuredClone(action.calculatedFields)] };
-    // A question is one atomic edit: a rejected definition cannot leave orphaned helpers.
+    const target = action.type === 'o-add' ? { kind: 'sheet' as const, sheetId: sheet.id } : action.target;
+    const items = action.type === 'o-add' ? [{ ...action, placement: { i: '', x: 0, y: bottom, w: 6, h: 8 } }] : action.items;
+    if (!items.length) return draft;
+    const destination = target.kind === 'new-sheet' ? { id: nextId('sheet', [...draft.sheets.map(s => s.id), ...originalIds(draft, false)]), name: target.name, visuals: [], controls: [], layout: [], selectedId: null } : draft.sheets.find(s => s.id === target.sheetId);
+    if (!destination) return draft;
+    const ids = [...draft.sheets.flatMap(s => [...s.visuals.map(v => v.id), ...(s.objects ?? []).map(o => o.id)]), ...originalIds(draft, true)];
+    const visuals: AuthorVisual[] = [], layout: Placement[] = [], calculatedFields = structuredClone(draft.calculatedFields);
+    for (const item of items) {
+      const id = nextId('visual', ids); ids.push(id);
+      visuals.push(structuredClone({ ...item.visual, id })); layout.push({ ...item.placement, i: id });
+      for (const c of item.calculatedFields) {
+        const existing = calculatedFields.find(f => f.name === c.name);
+        if (existing && JSON.stringify(existing) !== JSON.stringify(c)) return draft;
+        if (!existing) calculatedFields.push(structuredClone(c));
+      }
+    }
+    const next = { ...destination, visuals: [...destination.visuals, ...visuals], layout: [...destination.layout, ...layout], selectedId: visuals[0]!.id };
+    const result = { ...draft, activeSheetId: destination.id, calculatedFields, sheets: target.kind === 'new-sheet' ? [...draft.sheets, next] : draft.sheets.map(s => s.id === destination.id ? next : s) };
     try { validateDraft(result); } catch { return draft; }
     return result;
   }
@@ -908,7 +940,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   const values: BundleMeasureField[] = visual.measures.map(name => ({ numericalMeasureField: { ...columnField(name), aggregationFunction: { simpleNumericalAggregation: dataset?.metrics?.find(m => metricColumn(m.id) === name)?.defaultAggregation ?? 'SUM' } } }));
   const visibility = (show: boolean) => ({ visibility: show ? 'VISIBLE' : 'HIDDEN' });
   visual = { ...visual, formatting: metricFormatting(visual.formatting, dataset?.metrics?.filter(m => visual.measures.includes(metricColumn(m.id)))) };
-  const body = { ...(visual.subtitle !== undefined ? { subtitle: { ...visibility(visual.subtitleVisible !== false), formatText: { plainText: visual.subtitle } } } : {}), ...(visual.formatting ? { opensightFormatting: visual.formatting } : {}), ...(visual.palette ? { opensightPalette: visual.palette } : {}), ...(visual.referenceLines?.length ? { opensightReferenceLines: visual.referenceLines.map(l => ({ value: l.value, label: l.label, color: l.color })) } : {}), ...(includeInteractions ? serializeInteractions(visual) : {}), visualId: visual.id, ...(visual.title.trim() || !visual.titleVisible ? { title: { ...visibility(visual.titleVisible), ...(visual.title.trim() ? { formatText: { plainText: visual.title.trim() } } : {}) } } : {}) } satisfies BundleVisualBody;
+  const body = { ...(visual.o ? { opensightO: visual.o } : {}), ...(visual.subtitle !== undefined ? { subtitle: { ...visibility(visual.subtitleVisible !== false), formatText: { plainText: visual.subtitle } } } : {}), ...(visual.formatting ? { opensightFormatting: visual.formatting } : {}), ...(visual.palette ? { opensightPalette: visual.palette } : {}), ...(visual.referenceLines?.length ? { opensightReferenceLines: visual.referenceLines.map(l => ({ value: l.value, label: l.label, color: l.color })) } : {}), ...(includeInteractions ? serializeInteractions(visual) : {}), visualId: visual.id, ...(visual.title.trim() || !visual.titleVisible ? { title: { ...visibility(visual.titleVisible), ...(visual.title.trim() ? { formatText: { plainText: visual.title.trim() } } : {}) } } : {}) } satisfies BundleVisualBody;
   const display = { legend: { ...visibility(visual.legend), ...(visual.formatting?.legendPosition ? { position: visual.formatting.legendPosition } : {}) }, dataLabels: visibility(visual.labels),
     tooltip: { tooltipVisibility: visual.tooltipVisible ? 'VISIBLE' : 'HIDDEN', ...(visual.tooltipType === 'detailed' && tooltipDetailKinds(visual.kind) ? { selectedTooltipType: 'DETAILED', fieldBasedTooltip: {
       aggregationVisibility: visual.tooltipAggregations ? 'VISIBLE' : 'HIDDEN',
@@ -1095,7 +1127,8 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported || unresolvedAllowed ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'breakdowns', 'multiplesOptions', 'groupSort', 'sliceLimit', 'breakdownLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['o', 'id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'breakdowns', 'multiplesOptions', 'groupSort', 'sliceLimit', 'breakdownLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (v.o !== undefined && !validOProvenance(v.o)) return fail();
       if (v.referenceLines !== undefined && (!Array.isArray(v.referenceLines) || !v.referenceLines.every(referenceLineValid))) return fail();
       if (v.smallMultiples !== undefined && (!fieldNames(v.smallMultiples, 'dimension') || v.smallMultiples.length > 1 || !unresolvedAllowed && v.smallMultiples.some(name => fields.find(f => f.name === name)?.type === 'BOOLEAN'))) return fail();
       if (v.breakdowns !== undefined && (!fieldNames(v.breakdowns, 'dimension') || v.breakdowns.length > 1 || !unresolvedAllowed && v.breakdowns.some(name => fields.find(f => f.name === name)?.type === 'BOOLEAN'))) return fail();

@@ -10,7 +10,7 @@ import { columnProbeApis, assertSameColumnFailure } from './cls-oracle-helpers.m
 const route = '/api/o/generate';
 const response = text => Response.json({ output: [{ type: 'message', content: [{ type: 'output_text', text: typeof text === 'string' ? text : JSON.stringify(text) }] }] });
 const options = fetcher => ({ bootstrap: { provider: 'openai', model: 'test-model', key: randomBytes(20).toString('hex') }, fetcher });
-for (const endpoint of [route, '/api/o/calculation']) test(`#180 ${endpoint} conceals denied-column existence before provider calls`, async t => {
+for (const endpoint of [route, '/api/o/calculation', '/api/o/plan', '/api/o/revise']) test(`#180 ${endpoint} conceals denied-column existence before provider calls`, async t => {
   let calls = 0;
   const { denied, missing } = await columnProbeApis(t, 'profit', {
     ai: options(async () => { calls++; return response({ question: 'sum revenue' }); }),
@@ -19,7 +19,7 @@ for (const endpoint of [route, '/api/o/calculation']) test(`#180 ${endpoint} con
     [{ name: 'leak', role: 'measure', expression: '{profit}' }],
     [{ name: 'leak', role: 'measure', expression: '{indirect}' }, { name: 'indirect', role: 'measure', expression: 'sum({profit})' }],
   ]) {
-    const body = { dashboardId: 'sales-dashboard', question: 'sum leak', calculatedFields };
+    const body = { dashboardId: 'sales-dashboard', question: 'sum leak', calculatedFields, ...(endpoint.endsWith('revise') ? { currentQuestion: 'sum revenue' } : {}) };
     assertSameColumnFailure(await denied(endpoint, 'POST', body, 'default-alice'), await missing(endpoint, 'POST', body, 'default-alice'), 'profit');
     assert.equal(calls, 0);
   }
@@ -283,4 +283,20 @@ test('malicious provider output cannot escape the constrained JSON answers', asy
     text = value; const r = await api(route, 'POST', { question: 'question', dashboardId: 'sales-dashboard' });
     assert.ok(r.status >= 400, JSON.stringify(value)); assert.match(r.body.errorCode, /^O_/);
   }
+});
+
+for (const endpoint of ['/api/o/plan', '/api/o/revise']) test(`#196 #180 ${endpoint} denied and missing provider fields fail byte-identically`, async t => {
+  const { denied, missing } = await columnProbeApis(t, 'profit', { ai: options(async () => response(endpoint.endsWith('plan') ? { questions: ['sum profit'] } : { question: 'sum profit' })) }, 'author_ai');
+  const body = { question: 'sales', ...(endpoint.endsWith('revise') ? { currentQuestion: 'sum revenue' } : {}) };
+  const a = await denied(endpoint, 'POST', body, 'default-alice'), b = await missing(endpoint, 'POST', body, 'default-alice');
+  assert.deepEqual(a, b); if (endpoint.endsWith('plan')) assert.equal(a.body.tiles[0].status, 'failed'); else assert.equal(a.status, 422);
+});
+for (const endpoint of ['/api/o/plan', '/api/o/revise']) test(`#196 ${endpoint} revocation during provider I/O blocks delivery`, async t => {
+  let release, started;
+  const entered = new Promise(r => { started = r; }), waiting = new Promise(r => { release = r; });
+  const { api } = await organizationApi(t, { ai: options(async () => { started(); await waiting; return response(endpoint.endsWith('plan') ? { questions: ['sum revenue'] } : { question: 'sum revenue' }); }) });
+  await api('/api/users/alice', 'PUT', { name: 'Alice', role: 'author_ai' });
+  const pending = api(endpoint, 'POST', { question: 'sales', ...(endpoint.endsWith('revise') ? { currentQuestion: 'sum revenue' } : {}) }, 'default-alice');
+  await entered; await api('/api/users/alice', 'PUT', { name: 'Alice', role: 'author' }); release();
+  assert.equal((await pending).body.errorCode, 'SECURITY_AI_REQUIRED');
 });

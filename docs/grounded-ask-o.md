@@ -120,3 +120,47 @@ constraints. Run the complete root `npm test`, reporting exact passed/failed/
 skipped counts. Rebuild the static demo, compare screenshots with the reference
 set, record findings in gap notes, and refresh affected README imagery and tour.
 The static demo is not a deployed server; visual fidelity remains unmeasured.
+
+## Dashboard generation and tile revision (#196)
+
+In the analysis author, enable Generative mode to choose **Build a dashboard**.
+One prompt produces up to eight questions over the authorized dataset. The
+server validates every question against the post-CLS schema after provider I/O.
+Duplicate questions are delivered once. Failed and credit-limited questions
+remain visible with their diagnostic; no substitute data or question appears.
+
+The proposed sheet occupies the canvas under a **Not saved yet** banner. Keep or
+remove tiles, edit their steps locally, or re-ask one tile. A failed re-ask retains
+the existing proposal. **Add as new sheet** is the default; **Add to current
+sheet** explicitly appends below its existing layout. KPIs pack four across,
+charts two across, and tables full width. Commit is one Undo command covering
+all tiles, helper calculations and the new sheet. Discard leaves the draft intact.
+
+Managed AI uses one credit per delivered tile at generation, up to eight.
+Failed and credit-limited tiles cost zero; a fully failed plan costs zero.
+The pre-check requires only one credit and the available balance funds valid
+tiles in importance order. Removing tiles or discarding a proposal does not
+refund credits. Re-ask and a delivered revision each use one credit. BYO has no
+OpenSight credit charge. Provider tokens still count toward managed daily spend,
+even when the result fails grammar validation.
+
+Select a stamped Ask O tile in Ask mode to **Revise this tile**. A follow-up
+produces a live preview, editable steps and a Was/Now description. **Replace**
+changes the definition while preserving placement, subtitle, formatting,
+palette, reference lines, tooltip settings and actions. Auto titles follow the
+revision; custom titles stay. One Undo restores the previous tile exactly.
+A stale governed-metric seed fails visibly without changing the tile.
+
+New single-question additions, plan commits and replacements retain the final
+edited interpretation and a canonical question in `AuthorVisual.o`. The stamp
+survives save, bundle export/import and dataset remaps. Hand-built visuals and
+Ask O visuals created before stamps existed cannot be revised conversationally:
+reverse-mapping their richer definitions would guess at aggregation and filter
+intent. The panel explains this and offers ordinary editing or a new question.
+
+These controls are author-only and generative-only. Unconfigured/local
+interpreter mode gains no dashboard templates or revision buttons. Published
+readers keep single-question answers. Older servers without `/api/o/plan` or
+`/api/o/revise` fail closed as not configured. Both routes use the same prompt
+bounds, PII guards, authorization rechecks and CLS concealment as single answers;
+a denied field and a nonexistent field yield identical failures.

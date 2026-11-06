@@ -1,3 +1,4 @@
+import { validOProvenance } from './o-provenance.js';
 import { importObjects, serializeObject, objectElementType, type SheetObject } from './sheet-objects.js';
 import { analysisDescriptionValid, layoutSettingsValid } from './authoring.js';
 import { projectInsightBody } from './insight-configuration.js';
@@ -206,7 +207,8 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const importedBreakdownLimit = kind === 'waterfall' && Number.isInteger(breakdownItemsLimit) && (breakdownItemsLimit as number) >= 1 && (breakdownItemsLimit as number) <= 100 &&
     (breakdownOtherCategories === undefined || breakdownOtherCategories === 'INCLUDE' || breakdownOtherCategories === 'EXCLUDE')
     ? { count: breakdownItemsLimit as number, includeOther: breakdownOtherCategories !== 'EXCLUDE' } : undefined;
-  const visual: AuthorVisual = { ...defaults(), ...(validInsight && body.insightConfiguration !== undefined ? { insightConfiguration: copy(obj(body.insightConfiguration)) } : {}), ...(paletteValid(body.opensightPalette) ? { palette: [...body.opensightPalette] } : {}), id, kind, title: string(obj(obj(body.title).formatText).plainText),
+  if (body.opensightO !== undefined && !validOProvenance(body.opensightO)) throw new Error('Invalid Ask O provenance.');
+  const visual: AuthorVisual = { ...defaults(), ...(validOProvenance(body.opensightO) ? { o: copy(body.opensightO) } : {}), ...(validInsight && body.insightConfiguration !== undefined ? { insightConfiguration: copy(obj(body.insightConfiguration)) } : {}), ...(paletteValid(body.opensightPalette) ? { palette: [...body.opensightPalette] } : {}), id, kind, title: string(obj(obj(body.title).formatText).plainText),
     ...(formattingValid(body.opensightFormatting) ? { formatting: copy(body.opensightFormatting) } : {}),
     ...(body.subtitle !== undefined ? { subtitle: string(obj(subtitle.formatText).plainText), subtitleVisible: subtitle.visibility !== 'HIDDEN' } : {}),
     ...(legendPositionValid(legendPosition) ? { formatting: { ...(formattingValid(body.opensightFormatting) ? copy(body.opensightFormatting) : {}), legendPosition } } : {}),

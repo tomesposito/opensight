@@ -321,6 +321,17 @@ gated by role and grounded in the caller's authorized dataset. When credits run
 out, the standard interpreter remains available. See
 [hosted Ask O configuration](docs/issue-190-hosted-generative.md).
 
+Authors with Generative mode enabled can **Build a dashboard** of up to eight
+tiles, review them on a proposed sheet, and commit them in one undoable edit.
+Select a stamped O tile to propose a conversational revision, then replace it
+while keeping its formatting and custom title. Managed credits charge when
+tiles or revision proposals are delivered, including proposals later discarded.
+Hand-built and older unstamped tiles use the normal editors.
+
+![Proposed Ask O sheet with four rendered tiles and six credits remaining, using local hosted synthetic data and the test-only provider](docs/images/ask-o-dashboard-plan.png)
+
+![Conversational tile revision with a live proposal, Was/Now reading, and highlighted target, using the same local hosted fixture](docs/images/ask-o-tile-revision.png)
+
 ![Ask O in Author with field grounding, editable steps and a synthetic sales preview](docs/images/q-side-panel.png)
 
 ![O answer querying a locally uploaded CSV: North 6 and South 3](docs/images/o-answer.png)

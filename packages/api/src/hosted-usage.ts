@@ -341,10 +341,10 @@ export class HostedUsage {
     await c.query('UPDATE h8_usage SET denied = denied + 1 WHERE tenant_id = ? AND namespace_id = ? AND period = ? AND metric = ?', args);
     await c.query('INSERT INTO h8_usage_events VALUES (?,?,?,?,?,?,?,?)', [randomUUID(), scope.tenantId, scope.namespaceId, now, 'aiCalls', 'call', 1, 'denied']);
   }
-  private async creditGate(c: SqlConnection, scope: Scope, now: string): Promise<boolean> {
+  private async creditGate(c: SqlConnection, scope: Scope, now: string, count = 1): Promise<boolean> {
     const limit = this.entitlement(scope).aiCallsPerMonth;
     if (limit === undefined) throw new MetadataError('AI_MANAGED_UNAVAILABLE', 503);
-    if (await this.monthlyAiCalls(c, scope, now.slice(0, 7)) < limit) return true;
+    if (await this.monthlyAiCalls(c, scope, now.slice(0, 7)) + count <= limit) return true;
     await this.denyAi(c, scope, now); return false;
   }
   async checkAiCredits(scope: Scope): Promise<void> {
@@ -392,16 +392,16 @@ export class HostedUsage {
    * intent commits with the charge. Audit delivery is retried independently.
    * Warning-intent storage failure never rolls back the charge (see below).
    */
-  async recordAiUsage(scope: Scope, tokens: number, estimated = false, managed = false): Promise<{ aiCalls: number; aiTokens: number; spendCents: number; warned: boolean }> {
-    if (!Number.isSafeInteger(tokens) || tokens < 0) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+  async recordAiUsage(scope: Scope, tokens: number, estimated = false, managed = false, count = 1): Promise<{ aiCalls: number; aiTokens: number; spendCents: number; warned: boolean }> {
+    if (!Number.isSafeInteger(count) || count < 0 || !Number.isSafeInteger(tokens) || tokens < 0) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
     const entitlement = this.entitlement(scope), now = new Date(this.clock()).toISOString(), period = now.slice(0, 10);
     const recorded = await this.db.transaction(async c => {
       await this.lockAiScope(c, scope);
       const after = await this.aiCountIn(c, scope, period, 'aiTokens') + tokens;
-      if (managed && !await this.creditGate(c, scope, now)) return undefined;
-      const aiCalls = await this.aiCountIn(c, scope, period, 'aiCalls') + 1;
+      if (managed && !await this.creditGate(c, scope, now, count)) return undefined;
+      const aiCalls = await this.aiCountIn(c, scope, period, 'aiCalls') + count;
       if (!Number.isSafeInteger(after) || !Number.isSafeInteger(aiCalls)) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
-      for (const [metric, amount, unit] of [['aiCalls', 1, 'call'], ['aiTokens', tokens, estimated ? 'estimated-token' : 'token']] as const) {
+      for (const [metric, amount, unit] of [['aiCalls', count, 'call'], ['aiTokens', tokens, estimated ? 'estimated-token' : 'token']] as const) {
         const args = [scope.tenantId, scope.namespaceId, period, metric];
         await c.query('INSERT INTO h8_usage VALUES (?,?,?,?,0,0) ON CONFLICT (tenant_id, namespace_id, period, metric) DO NOTHING', args);
         await c.query('UPDATE h8_usage SET admitted = admitted + ? WHERE tenant_id = ? AND namespace_id = ? AND period = ? AND metric = ?', [amount, ...args]);
@@ -467,7 +467,7 @@ export class HostedUsage {
     return {
       check: async (namespaceId, managed) => { const scope = await resolveScope(namespaceId); if (managed) await this.checkAiCredits(scope); await this.checkAiSpend(scope); },
       credits: async namespaceId => this.aiCredits(await resolveScope(namespaceId)),
-      commit: async (namespaceId, tokens, estimated) => { await this.recordAiUsage(await resolveScope(namespaceId), tokens, estimated, true); },
+      commit: async (namespaceId, tokens, estimated, count = 1) => { await this.recordAiUsage(await resolveScope(namespaceId), tokens, estimated, true, count); },
       record: async (namespaceId, tokens, estimated) => { await this.recordAiUsage(await resolveScope(namespaceId), tokens, estimated); },
     };
   }

@@ -81,7 +81,7 @@ var unscoped = internal.replace(/^\/api\/namespaces\/[A-Za-z0-9_-]+\//, '/api/')
 if (!/^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(unscoped)
 && internal !== '/api/access-requests'
 && !serverlessV1Methods(unscoped)
-&& !/^\/api\/(?:o\/(?:status|generate|calculation|query)|admin\/ai(?:\/(?:key|test))?)$/.test(unscoped)
+&& !/^\/api\/(?:o\/(?:status|generate|calculation|query|plan|revise)|admin\/ai(?:\/(?:key|test))?)$/.test(unscoped)
 && !/^\/api\/invitations(?:\/[A-Za-z0-9_-]+)?$/.test(unscoped)
 && !/^\/api\/(?:startup|session|ideas|namespaces|users|groups|connectors|sources|prep-sources|uploads|prep-datasets|automation-status|job-recipients|jobs)$/.test(unscoped)
 && !/^\/api\/auth\/(?:enroll|accept|login(?:\/select)?|switch|logout)$/.test(unscoped)

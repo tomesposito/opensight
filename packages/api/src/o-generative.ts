@@ -1,10 +1,10 @@
 import { disabledAnalytics } from './analytics.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { interpretQuestion, withGovernedMetrics, type SchemaField } from '@opensight/o-interpreter';
+import { interpretQuestion, withGovernedMetrics, type InterpretationResult, type SchemaField } from '@opensight/o-interpreter';
 import { resolveSecurity, ExpressionBinder, parseExpression, QueryEngineError } from '@opensight/query-engine';
 import { method, send } from './automation-routes.js';
 import { AIError } from './ai-providers.js';
-import { generativeInstructions, hasFieldNamePII, redactPII } from './ai-guard.js';
+import { generativeInstructions, planInstructions, reviseInstructions, hasFieldNamePII, redactPII } from './ai-guard.js';
 import type { Completion } from './ai-providers.js';
 import type { PublishedMetric, InteractiveQuery } from '@opensight/query-engine';
 import type { AISettings } from './ai-settings.js';
@@ -19,7 +19,7 @@ export interface GenerativeSchemaSource {
   metricLookup(): Promise<readonly PublishedMetric[]>;
   execute(query: InteractiveQuery): Promise<unknown>;
 }
-export interface DeliveredCompletion { text: string; commit(): Promise<void> }
+export interface DeliveredCompletion { text: string; commit(count?: number): Promise<void>; remaining?(): Promise<number> }
 async function schema(body: Record<string, unknown>, source: GenerativeSchemaSource) {
   const metadata = await source.securitySchema(), policy = { deniedColumns: metadata.deniedColumns };
   const raw = body.calculatedFields ?? [];
@@ -50,32 +50,33 @@ function providerObject(text: string, keys: string[]): Record<string, unknown> {
   catch { throw new AIError(502, 'O_INVALID_PROVIDER_RESPONSE', 'Provider did not return a supported O response'); }
 }
 export async function generativeRoute(request: IncomingMessage, response: ServerResponse, path: string, query: string, identity: Identity, security: SecurityService, organization: OrganizationService, ai: AISettings, sales?: SalesQuery, analytics = disabledAnalytics): Promise<boolean> {
-  if (!['/api/o/status', '/api/o/generate', '/api/o/calculation'].includes(path)) return false;
+  if (!['/api/o/status', '/api/o/generate', '/api/o/calculation', '/api/o/plan', '/api/o/revise'].includes(path)) return false;
   security.require(identity, 'ai');
   if (query) throw new RequestError(400, 'Query parameters are not supported');
   if (path === '/api/o/status') { method(request, response, ['GET']); send(response, 200, ai.status(identity.namespaceId)); return true; }
   method(request, response, ['POST']);
   const calculation = path === '/api/o/calculation';
   if (calculation) security.require(identity, 'build');
-  const body = record(await readBody(request), ['question', 'dashboardId', 'calculatedFields']);
+  const body = record(await readBody(request), ['question', 'dashboardId', 'calculatedFields', ...(path === '/api/o/revise' ? ['currentQuestion'] : [])]);
   requireOScope(body, identity, security, organization, sales);
   const source: GenerativeSchemaSource = {
     securitySchema: async () => { const m = sales!.securitySchema(); return { columns: m.columns, deniedColumns: resolveSecurity(security.context(identity), m.columns, m.localData.dataSetArn).deniedColumns, datasetId: 'sales' }; },
     metricLookup: async () => sales!.metricLookup ? (await sales!.metricLookup(identity)({ kind: 'dataset', id: 'sales' })).metrics : [],
     execute: query => sales!.execute(query, identity),
   };
-  const result = await generateAnswer(body, calculation, source, async input => ({ text: await ai.complete(identity.namespaceId, input), commit: async () => {} }), async () => {
+  const answer = path === '/api/o/plan' ? planAnswer : path === '/api/o/revise' ? reviseAnswer : (body: Record<string, unknown>, ...args: Parameters<typeof planAnswer> extends [unknown, ...infer Rest] ? Rest : never) => generateAnswer(body, calculation, ...args);
+  const result = await answer(body, source, async input => ({ text: await ai.complete(identity.namespaceId, input), commit: async () => {} }), async () => {
     requireOScope(body, identity, security, organization, sales); if (calculation) security.require(identity, 'build');
-  }, () => analytics.track({ tenantId: identity.namespaceId, namespaceId: identity.namespaceId }, { name: 'ask_o_asked', props: { count: 1 } }));
+  }, (count = 1) => analytics.track({ tenantId: identity.namespaceId, namespaceId: identity.namespaceId }, { name: 'ask_o_asked', props: { count } }));
   send(response, 200, result); return true;
 }
 /** Both planes share the guard, prompt, grammar and calculation validation. */
 export async function generateAnswer(body: Record<string, unknown>, calculation: boolean, source: GenerativeSchemaSource,
-  complete: (input: Completion) => Promise<DeliveredCompletion>, recheck: () => Promise<void>, onAsked: () => void = () => {}) {
+  complete: (input: Completion) => Promise<DeliveredCompletion>, recheck: () => Promise<void>, onAsked: (count: number) => void = () => {}) {
   if (typeof body.question !== 'string' || !body.question.trim() || body.question.length > 2000) invalid('$.question', 'expected 1–2000 characters');
   const before = await schema(body, source);
   if (hasFieldNamePII(before.fields)) throw new AIError(400, 'AI_FIELD_NAME_PII', 'A field name matches a sensitive-data pattern. Rename the field before using generative AI.');
-  if (!calculation) onAsked();
+  if (!calculation) onAsked(1);
   // Prompts are the one place user-influenced content meets the provider:
   // the question is PII-redacted, field names pass the shared PII guard,
   // and JSON strings plus system instructions pin content as data, never rules.
@@ -97,6 +98,62 @@ export async function generateAnswer(body: Record<string, unknown>, calculation:
     const result = interpretQuestion(value.question, current.fields);
     if (!result.interpretations.length || result.errors.some(e => e.code !== 'AMBIGUOUS_QUESTION')) throw new AIError(422, 'O_UNSUPPORTED_QUESTION', 'Provider returned an unsupported interpretation');
     await completion.commit();
-    return result;
+    return { ...result, question: value.question };
   }
+}
+
+export interface PlanTile { question: string; status: 'ok' | 'failed' | 'credit-limited'; result?: InterpretationResult; code?: string; message?: string }
+export interface PlanAnswer { sheetTitle: string; tiles: PlanTile[]; delivered: number }
+type Complete = (input: Completion) => Promise<DeliveredCompletion>;
+function prompt(value: unknown, path: string): asserts value is string {
+  if (typeof value !== 'string' || !value.trim() || value.length > 2000) invalid(path, 'expected 1–2000 characters');
+}
+function diagnostic(result: InterpretationResult) {
+  return result.errors.find(e => e.code !== 'AMBIGUOUS_QUESTION') ?? (!result.interpretations.length ? { code: 'O_UNSUPPORTED_QUESTION', message: 'This question cannot be expressed in the supported O grammar.' } : undefined);
+}
+async function guardedSchema(body: Record<string, unknown>, source: GenerativeSchemaSource) {
+  const value = await schema(body, source);
+  if (hasFieldNamePII(value.fields)) throw new AIError(400, 'AI_FIELD_NAME_PII', 'A field name matches a sensitive-data pattern. Rename the field before using generative AI.');
+  return value;
+}
+export async function planAnswer(body: Record<string, unknown>, source: GenerativeSchemaSource, complete: Complete, recheck: () => Promise<void>, onAsked: (count: number) => void = () => {}): Promise<PlanAnswer> {
+  prompt(body.question, '$.question');
+  const before = await guardedSchema(body, source);
+  const completion = await complete({ system: planInstructions(), prompt: JSON.stringify({ question: redactPII(body.question), fields: before.fields }) });
+  await recheck();
+  const current = await schema(body, source);
+  const value = providerObject(completion.text, ['sheetTitle', 'questions']);
+  if (!Array.isArray(value.questions) || !value.questions.every(q => typeof q === 'string')) throw new AIError(502, 'O_INVALID_PROVIDER_RESPONSE', 'Provider did not return a supported O response');
+  const sheetTitle = typeof value.sheetTitle === 'string' && value.sheetTitle.trim() && value.sheetTitle.length <= 80 && !/[{}\p{Cc}]/u.test(value.sheetTitle) ? value.sheetTitle.trim() : 'Ask O dashboard';
+  const remaining = completion.remaining ? await completion.remaining() : Infinity;
+  let delivered = 0;
+  const tiles: PlanTile[] = [...new Set<string>(value.questions)].slice(0, 8).map(question => {
+    const result = interpretQuestion(question, current.fields), error = diagnostic(result);
+    if (error) return { question, status: 'failed', ...error };
+    if (delivered >= remaining) return { question, status: 'credit-limited', code: 'AI_CREDITS_EXHAUSTED', message: 'No monthly credits remain for this tile.' };
+    delivered++;
+    return { question, status: 'ok', result: { ...result, interpretations: result.interpretations.slice(0, 1) } };
+  });
+  await completion.commit(delivered);
+  onAsked(delivered);
+  return { sheetTitle, tiles, delivered };
+}
+export async function reviseAnswer(body: Record<string, unknown>, source: GenerativeSchemaSource, complete: Complete, recheck: () => Promise<void>, onAsked: (count: number) => void = () => {}) {
+  prompt(body.question, '$.question'); prompt(body.currentQuestion, '$.currentQuestion');
+  const before = await guardedSchema(body, source);
+  const validate = (question: string, fields: SchemaField[]) => {
+    const result = interpretQuestion(question, fields), error = diagnostic(result);
+    if (error) throw new AIError(422, error.code, error.message);
+    return result;
+  };
+  validate(body.currentQuestion, before.fields);
+  const completion = await complete({ system: reviseInstructions(), prompt: JSON.stringify({ question: redactPII(body.question), currentQuestion: redactPII(body.currentQuestion), fields: before.fields }) });
+  await recheck();
+  const current = await schema(body, source);
+  validate(body.currentQuestion, current.fields);
+  const value = providerObject(completion.text, ['question']);
+  if (typeof value.question !== 'string' || !value.question.trim() || value.question.length > 2000) throw new AIError(422, 'O_UNSUPPORTED_QUESTION', 'Provider could not express this question in the supported O grammar');
+  const result = validate(value.question, current.fields);
+  await completion.commit(); onAsked(1);
+  return { ...result, question: value.question };
 }
