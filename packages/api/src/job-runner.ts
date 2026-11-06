@@ -8,7 +8,10 @@ import { JobStore } from './job-store.js';
 import type { JobExecutor } from './job-renderer.js';
 
 const errorCode = (error: unknown) => error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : 'JOB_EXECUTION_FAILED';
-const retryable = (code: string) => ['SMTP_SEND_FAILED', 'SMTP_NOT_CONFIGURED', 'WORKER_EXECUTION_FAILED', 'TENANT_BUDGET_EXCEEDED', 'NODE_BUDGET_EXCEEDED'].includes(code);
+// Delivery is at-least-once (HQ-13): transient load outcomes — budget
+// pressure, queue waits and execution-budget cancellations under load —
+// retry with backoff instead of cancelling the delivery for good (#199).
+const retryable = (code: string) => ['SMTP_SEND_FAILED', 'SMTP_NOT_CONFIGURED', 'WORKER_EXECUTION_FAILED', 'TENANT_BUDGET_EXCEEDED', 'NODE_BUDGET_EXCEEDED', 'EXECUTION_CANCELLED', 'QUEUE_WAIT_EXCEEDED'].includes(code);
 /** One scheduler only. Database records make restart durable, not multi-node safe. */
 export class JobRunner {
   private pending?: Promise<void>;

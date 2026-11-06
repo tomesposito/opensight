@@ -170,6 +170,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Durable job deliveries (digests, reports, alerts) that fail with a load cancellation — execution-budget `EXECUTION_CANCELLED` or queue-wait `QUEUE_WAIT_EXCEEDED` — now retry with the existing durable backoff instead of being cancelled permanently, keeping delivery at-least-once as decided in HQ-13 (#199).
+
 - Imported visuals' tooltip field references no longer leak foreign QuickSight field IDs into live queries after remap; unresolvable tooltip references stay retained/read-only for export (#195).
 
 - Imported visuals whose only issues are retained, read-only properties now render once remapped to a local dataset with their wells assigned: the retained properties stay named in the import report and are preserved verbatim on export, but are not executed. Unsupported visual types, filter-group and calculated-field issues, and compile errors still block rendering (#191).
