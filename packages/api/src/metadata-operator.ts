@@ -33,11 +33,27 @@ async function read(c: SqlConnection, id: string): Promise<TenantOperation> {
 /** Trusted operator-plane records only. Never hand this object or its DB credentials to tenant routes. */
 export class MetadataOperator {
   constructor(private readonly database: Database) {}
-  async tenant(tenantId: string): Promise<{ tenantId: string; namespaceId: string; state: string; version: number; tombstone: string | null }> {
+  async tenants() {
     return this.database.transaction(async c => {
-      const rows = await c.query('SELECT t.*, n.namespace_id FROM h1_tenants t JOIN h1_namespaces n ON n.tenant_id = t.tenant_id WHERE t.tenant_id = ?', [identifier(tenantId)]);
+      // Billing is optional. Inspect an existing record even when billing is currently
+      // disabled, but listing must never install new stores on an unconfigured host.
+      const hasBilling = (await c.query(this.database.dialect === 'postgres'
+        ? "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'h9_billing'"
+        : "SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'h9_billing'")).length > 0;
+      const rows = await c.query(`SELECT t.tenant_id, t.display_name, t.slug, t.state, ${hasBilling ? 'b.tier' : 'NULL AS tier'},
+        (SELECT COUNT(*) FROM h2_memberships m WHERE m.tenant_id = t.tenant_id AND m.status <> 'removed') AS member_count,
+        (SELECT MIN(a.created_at) FROM h8_audit a WHERE a.tenant_id = t.tenant_id AND a.action = 'tenant.provisioned') AS created_at
+        FROM h1_tenants t ${hasBilling ? 'LEFT JOIN h9_billing b ON b.tenant_id = t.tenant_id' : ''} ORDER BY t.tenant_id`);
+      return rows.map(t => ({ tenantId: String(t.tenant_id), displayName: t.display_name === null ? null : String(t.display_name),
+        slug: t.slug === null ? null : String(t.slug), state: String(t.state), tier: t.tier === null ? 'free' : String(t.tier),
+        memberCount: t.state === 'deleted' ? 0 : Number(t.member_count), createdAt: t.created_at === null ? null : String(t.created_at) }));
+    });
+  }
+  async tenant(tenantId: string) {
+    return this.database.transaction(async c => {
+      const rows = await c.query(`SELECT t.*, n.namespace_id, (SELECT o.operation_id FROM h1_operations o WHERE o.tenant_id = t.tenant_id AND o.action = 'provision') AS created_operation_id FROM h1_tenants t JOIN h1_namespaces n ON n.tenant_id = t.tenant_id WHERE t.tenant_id = ?`, [identifier(tenantId)]);
       const t = rows[0]; if (!t) missing();
-      return { tenantId, namespaceId: String(t.namespace_id), state: String(t.state), version: Number(t.version), tombstone: t.tombstone === null ? null : String(t.tombstone) };
+      return { tenantId, displayName: t.display_name === null ? null : String(t.display_name), slug: t.slug === null ? null : String(t.slug), createdOperationId: t.created_operation_id === null ? null : String(t.created_operation_id), namespaceId: String(t.namespace_id), state: String(t.state), version: Number(t.version), tombstone: t.tombstone === null ? null : String(t.tombstone) };
     });
   }
   async inspect(operationId: string): Promise<TenantOperation> { return this.database.transaction(c => read(c, operationId)); }

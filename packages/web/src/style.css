@@ -2637,3 +2637,81 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .admin-settings .ai-mode-option:has(input:checked) { border-color: #3b82f6; background: #f4f8ff; }
 .admin-settings .ai-mode-option input { flex: none; width: auto; margin-top: 2px; }
 .ai-mode-option small { display: block; margin-top: 4px; line-height: 1.5; }
+
+/* Issue #192: the operator provisioning plane, following the approved mockups. */
+.operator-provisioning { min-height: 100vh; background: #fff; color: #1e293b; font-family: Arial, "Helvetica Neue", Helvetica, sans-serif; font-size: 14px; }
+.operator-brand { display: flex; align-items: center; gap: 12px; padding: 14px 28px; border-bottom: 3px solid transparent; border-image: linear-gradient(90deg, #38bdf8, #3b82f6, #6d3bff) 1; }
+.operator-brand strong { color: #0f172a; font-size: 20px; }
+.operator-plane { border: 1px solid #cbd5e1; border-radius: 20px; padding: 3px 10px; text-transform: uppercase; font-size: 12px; color: #64748b; }
+.operator-connection { margin-left: auto; font-size: 13px; color: #64748b; }
+.operator-provisioning button, .operator-tenants input, .operator-tenants select { border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #1e293b; font: inherit; }
+.operator-provisioning button { padding: .65rem 1rem; cursor: pointer; }
+.operator-provisioning button:disabled { cursor: default; opacity: .55; }
+.operator-provisioning button:hover:not(:disabled) { background: #eef3fd; }
+.operator-provisioning :focus-visible { outline: 2px solid #3b82f6; outline-offset: 3px; }
+.admin-settings.operator-tenants { max-width: 68rem; padding-bottom: 3rem; }
+.operator-tenants nav { margin-bottom: 24px; color: #64748b; }
+.operator-tenants a { color: #2f66d8; }
+.operator-tenants h1 { font-size: 26px; margin: 0 0 6px; color: #0f172a; }
+.operator-tenants h2 { font-size: 17px; margin: 0 0 12px; color: #0f172a; }
+.operator-tenants p { line-height: 1.55; color: #64748b; }
+.operator-tenants p[role=alert], .operator-field-error { color: #b91c1c; }
+.operator-tenants small { font-size: 12px; font-weight: 400; color: #64748b; line-height: 1.45; }
+.operator-tenants label { font-size: 13px; font-weight: 600; }
+.operator-tenants nav a { padding: 2px 4px; text-decoration: none; }
+.operator-tenants nav a[aria-current] { font-weight: 700; color: #0f172a; }
+.operator-toolbar, .operator-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0; }
+.operator-title { justify-content: flex-start; flex-wrap: wrap; margin-bottom: 4px; }
+.operator-toolbar label { max-width: 22rem; }
+.operator-toolbar button { margin-left: auto; }
+.operator-connected, .operator-payment { padding: 12px 14px; background: #eef3fd; border: 1px solid #e2e8f0; border-radius: 8px; }
+.operator-table-wrap { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 8px; }
+.operator-tenants table { width: 100%; border-collapse: collapse; }
+.operator-tenants th { text-align: left; text-transform: uppercase; font-size: 12px; color: #64748b; background: #f8fafc; }
+.operator-tenants th, .operator-tenants td { padding: 12px 14px; border-bottom: 1px solid #e2e8f0; }
+.operator-tenants tbody tr { cursor: pointer; }
+.operator-tenants tbody tr:hover { background: #eef3fd; }
+.operator-name { font-weight: 600; }
+.operator-name a { color: #0f172a; text-decoration: none; }
+.operator-tenants .deleted .operator-name { text-decoration: line-through; }
+.operator-chip { display: inline-block; font-size: 12px; font-weight: 600; border-radius: 20px; padding: 3px 9px; background: #e2e8f0; color: #475569; white-space: nowrap; }
+.operator-chip.active { background: #dcfce7; color: #166534; }
+.operator-chip.suspended, .operator-banner { background: #fef3c7; color: #92400e; }
+.operator-chip.plan { background: #eef3fd; color: #2f66d8; border: 1px solid #bfdbfe; }
+.operator-card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px 22px; margin: 16px 0; }
+.operator-create { max-width: 52rem; }
+.operator-tenants .operator-fields { width: 100%; padding: 0; border: 0; min-width: 0; }
+.operator-field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 20px; }
+.operator-tenants .operator-plans { border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; margin-top: 20px; }
+.operator-plans > div { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.operator-tenants .operator-plans label { display: flex; align-items: center; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; }
+.operator-plans label:has(:checked) { background: #eef3fd; border-color: #3b82f6; }
+.operator-tenants .operator-plans input { width: auto; }
+.operator-tenants button.operator-primary { background: #3b82f6; border-color: #3b82f6; color: #fff; font-weight: 600; }
+.operator-tenants button.operator-primary:hover:not(:disabled) { background: #2f66d8; }
+.operator-facts, .operator-usage { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px 20px; margin: 0; }
+.operator-facts dt { text-transform: uppercase; color: #64748b; font-size: 12px; }
+.operator-facts dd { margin: 4px 0 0; overflow-wrap: anywhere; font-weight: 600; }
+.operator-facts code { font-weight: 400; font-size: 12px; }
+.operator-usage { margin-top: 16px; padding-top: 16px; border-top: 1px solid #e2e8f0; }
+.operator-usage small, .operator-usage progress { display: block; width: 100%; }
+.operator-usage progress { height: 6px; margin-top: 6px; accent-color: #3b82f6; }
+.operator-note { font-size: 12px; }
+.operator-payment { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; overflow-wrap: anywhere; }
+.operator-banner { padding: 14px; border-radius: 8px; }
+.operator-danger { border-color: #fecaca; }
+.operator-danger h2, .operator-danger button { color: #b91c1c; }
+.operator-danger-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 0; border-bottom: 1px solid #e2e8f0; }
+.operator-danger-row p { margin: 4px 0; }
+.operator-tenants [role=dialog] button { margin: 16px 8px 0 0; }
+@media (max-width: 700px) {
+  .operator-brand { flex-wrap: wrap; padding: 12px; }
+  .operator-connection { margin-left: 0; }
+  .operator-field-grid, .operator-facts, .operator-usage, .operator-plans > div { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 440px) {
+  .operator-field-grid, .operator-facts, .operator-usage, .operator-plans > div { grid-template-columns: 1fr; }
+  .operator-toolbar { flex-wrap: wrap; }
+}
+
+.operator-tenants input, .operator-tenants select { font-weight: 400; }

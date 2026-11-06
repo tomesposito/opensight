@@ -92,7 +92,7 @@ test('H6 authorization is rechecked after asynchronous asset checks before issua
 
 test('H6 cross-tenant handles and reduced operator origins cannot revoke, renew or redeem', async t => {
   const f = await sessionFixture(t), issued = await f.issue();
-  const other = await f.provisioning.provision('other-tenant', { name: 'Other', administrator: { email: 'different@example.test', name: 'Other administrator' } });
+  const other = await f.provisioning.provision('other-tenant', { name: 'Other', displayName: 'Other', administrator: { email: 'different@example.test', name: 'Other administrator' } });
   const user = await f.db.transaction(c => c.query("SELECT resource_id FROM h1_resources WHERE tenant_id = ? AND kind = 'user'", [other.tenantId]));
   const foreign = await f.metadata.authenticate(null, async () => ({ namespaceId: other.namespaceId, userId: user[0].resource_id }));
   await assert.rejects(f.sessions.revoke(foreign, issued.sessionId), { code: 'RESOURCE_NOT_FOUND' });

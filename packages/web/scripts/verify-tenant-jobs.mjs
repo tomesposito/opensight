@@ -46,7 +46,7 @@ try {
   console.log('Ready: local HTTPS Vite');
   f = await realEmbedFixture(db, 'postgres', origin, 'https://product.example');
   await f.metadata.put(await f.context(), { kind: 'user', id: f.reader.identity.userId }, { name: 'Schedule author', role: 'author' }, 1);
-  const otherTenant = await f.provisioning.provision('jobs-other-tenant', { name: 'Other tenant', administrator: { email: 'other-tenant@example.test', name: 'Other tenant admin' } });
+  const otherTenant = await f.provisioning.provision('jobs-other-tenant', { name: 'Other tenant', displayName: 'Other tenant', administrator: { email: 'other-tenant@example.test', name: 'Other tenant admin' } });
   const invitation = f.mail.messages.at(-1).html.match(/<code>([^<]+)<\/code>/)[1], password = randomBytes(24).toString('base64');
   const enrollment = await f.auth.enroll(invitation, password, 'local'), secret = decode32(enrollment.secret), step = Math.floor(Date.now() / 30000);
   await f.auth.accept(invitation, password, totp(secret, step), 'local');

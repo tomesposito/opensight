@@ -122,7 +122,7 @@ live, async t => {
   const clock = () => now;
   const attempted = [];
   const failingMail = { configured: true, async send(message) { attempted.push(message); throw new MailError('SMTP_SEND_FAILED'); } };
-  const input = { name: 'Acme', administrator: { email: 'boss@example.test', name: 'Boss' } };
+  const input = { name: 'Acme', displayName: 'Acme', administrator: { email: 'boss@example.test', name: 'Boss' } };
   const provisioning = new HostedProvisioning(owner.db, config, failingMail, clock);
   await assert.rejects(provisioning.provision('mailfail-1', input), err => err instanceof MailError && err.code === 'SMTP_SEND_FAILED');
   // The provisioning mutations committed before delivery failed, and were audited in their own transaction.

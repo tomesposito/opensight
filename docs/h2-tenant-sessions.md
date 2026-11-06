@@ -34,7 +34,8 @@ ignored `.opensight/`. The CLI creates its database with private permissions.
 Terminate TLS at a trusted reverse proxy, preserve the configured public Host,
 and restrict access to the backend listener. Forwarded host headers are rejected;
 they never select identity or tenant. Browser Origin, when present, must exactly
-match the configured origin. Operator requests must have no browser Origin.
+match the configured origin. Operator requests reject browser Origin except for
+the explicitly allowed operator UI routes described below.
 
 Library users initialize H1 metadata and call `createBuiltinHostedServer` with
 durable membership and tenant databases. `createHostedApiServer` requires an
@@ -49,13 +50,26 @@ Operator requests use `Authorization: Operator <base64url encoding of the operat
 key bytes>`. This deployment operator has no tenant data access. Tenant sessions,
 including administrators, cannot use the operator plane or create namespaces.
 
-- `POST /api/host/tenants`: `{name, administrator:{email,name}}` plus an
+- `POST /api/host/tenants`: `{name, displayName, slug?, administrator:{email,name}}` plus an
   `Idempotency-Key`. Reserves opaque tenant/namespace/user IDs, membership,
   invitation and operation atomically. Sends the invitation, verifies the mapping,
   and activates the empty tenant. Returns safe operation progress and current
   state with 201; credentials are delivered only in the invitation email.
+  `displayName` is a required nonblank workspace label (up to 512 characters,
+  no control characters); `name` remains the namespace name. Optional `slug`
+  must match `^[a-z0-9]+(?:-[a-z0-9]+)*$`, up to 64 characters. Omission derives
+  it from the display name; a name with no ASCII letters/digits has a null slug.
+  Slug collisions return `TENANT_SLUG_CONFLICT` (409). Validation, slug-conflict
+  and unconfigured-mail failures create no tenant and do not reserve the form's
+  idempotency key. Delivery failures after reservation remain retryable with the
+  same key and payload, as described below.
+- `GET /api/host/tenants`: lists display name, slug, lifecycle state, billing
+  tier (absent/null is Free), nonremoved member count and creation time from
+  the retained provisioning audit entry (unknown for unaudited legacy rows).
+  Deleted tenants remain listed, with zero members.
 - `GET /api/host/operations/{operationId}` and `GET /api/host/tenants/{tenantId}`:
-  inspect operation progress and lifecycle/version.
+  inspect operation progress and lifecycle/version. Tenant detail also includes
+  display name, slug and the original provisioning operation ID.
 - `POST /api/host/tenants/{tenantId}/invitations`: `{email,name,role}` plus an
   idempotency key. Creates another preprovisioned membership before login.
 - `POST /api/host/tenants/{tenantId}/suspend` or `/resume`, and
@@ -68,7 +82,7 @@ including administrators, cannot use the operator plane or create namespaces.
   owner/reference integrity. Repeating removal is harmless.
 
 Idempotency keys are scoped to the deployment operator and payload checksum.
-Changed payloads return `OPERATION_ID_REUSED`. Retrying onboarding resumes after
+Changed payloads after a committed reservation return `OPERATION_ID_REUSED`. Retrying onboarding resumes after
 delivery failure without creating another tenant. Delivery is at least once:
 a crash after SMTP acceptance can resend the same invitation, never a new grant.
 Expired invitations fail closed; renewal/recovery UI is outside this slice.
@@ -155,3 +169,43 @@ data and embed paths; [H7](tenant-automation.md) now provides owned recurring jo
 durable histories/outbox and the operator transfer-or-stop removal choice. No
 ownerless scheduler runs in the hosted composition. The static demo remains a
 local artifact, not a deployed server.
+
+
+## Operator provisioning pages (#192)
+
+In the hosted app, open `#operator-tenants` to list/filter workspaces or create
+one. `#operator-tenant/<tenantId>` shows its overview, billing, inline usage,
+people and lifecycle controls. All operator pages link to Tenants, Tenant users
+and Ideas. These pages are absent from the offline demo.
+
+Each page requires the operator credential. It stays in component memory, clears
+on Disconnect/navigation, and is sent with `credentials: 'omit'`; no cookie or
+browser storage carries it. Trusted-Origin requests are allowed only for the
+existing ideas/users routes and the precise provisioning shapes and methods:
+list/create, detail/delete, invitations, suspend/resume, billing read/payment-link/
+resolve, and GET `/api/host/usage/<YYYY-MM>/tenants/<tenantId>`. Other host routes
+(including audit, operations, health and usage rollups) still reject Origin.
+Tenant sessions cannot use any of these operator routes.
+
+Creating always starts on Free. Selecting a paid plan generates a payment link
+after creation; payment and the billing webhook change the tier. A billing 404
+shows a not-configured message and leaves the successful tenant on Free. Missing
+mail prevents creation with `SMTP_NOT_CONFIGURED`. Each create form session
+uses one idempotency key and disables submission while working. Invitations are
+emailed by the server; these operator pages never show invitation tokens.
+
+Usage comes from the existing per-tenant usage route. Its additive `overview`
+contains current daily UTC API/query counts and quotas, live logical storage,
+and monthly NLQ usage/quota. Quotas come from the billing override or configured
+entitlements, never hardcoded plan numbers. Stored monthly `records` keep their
+existing rollup semantics. The overview is null for past months. Missing usage
+configuration is shown explicitly, rather than as zero use.
+
+Suspend, Resume and Delete refetch the version immediately before submitting.
+A conflict refreshes the page data; `RESTORE_REVIEW_REQUIRED` remains explicit.
+Past-due billing resolution requires confirmation. Delete requires typing the
+slug (tenant ID for a legacy/null slug), revokes access and enters `deleting`.
+Deleting and deleted tenants are read-only; a completed deletion shows the
+retained tombstone. Full erasure is separate offline maintenance, audit entries
+are retained, and serverless object-store erasure remains unsupported and fails
+closed. There is no erasure, rename, impersonation or tenant-facing action here.

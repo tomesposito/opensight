@@ -1,3 +1,5 @@
+import { OperatorTenants } from './OperatorTenants.js';
+import { OperatorTenant } from './OperatorTenant.js';
 import { OperatorIdeas } from './OperatorIdeas.js';
 import { useEffect, useState } from 'react';
 import { createApiClient } from './api-client.js';
@@ -22,6 +24,9 @@ export default function App() {
     window.addEventListener('hashchange', changed);
     return () => window.removeEventListener('hashchange', changed);
   }, []);
+  const operatorTenant = /^#operator-tenant\/([A-Za-z0-9_-]+)$/.exec(operator);
+  if (!offline && operator === '#operator-tenants') return <OperatorTenants baseUrl={import.meta.env?.VITE_OPENSIGHT_API_URL} />;
+  if (!offline && operatorTenant) return <OperatorTenant key={operatorTenant[1]} tenantId={operatorTenant[1]!} baseUrl={import.meta.env?.VITE_OPENSIGHT_API_URL} />;
   if (!offline && operator === '#operator-ideas') return <OperatorIdeas baseUrl={import.meta.env?.VITE_OPENSIGHT_API_URL} />;
   if (!offline && operator === '#operator-users') return <OperatorUsers baseUrl={import.meta.env?.VITE_OPENSIGHT_API_URL} />;
   const invitation = invite ? { token: invite, onAccepted: () => { window.history.replaceState(null, '', window.location.pathname + window.location.search); setInvite(undefined); } } : undefined;

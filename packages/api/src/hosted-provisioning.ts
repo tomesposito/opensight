@@ -15,7 +15,7 @@ import { applyDisposition, disposition, type JobDisposition, type JobOwnership }
 import { deriveWorkspaceSlug, parseWorkspaceSlug, workspaceLabel } from './workspace-naming.js';
 import type { TenantContext } from './metadata.js';
 
-export interface OnboardingInput { name: string; slug?: string; administrator: { email: string; name: string } }
+export interface OnboardingInput { name: string; displayName: string; slug?: string; administrator: { email: string; name: string } }
 export interface InvitationInput { email: string; name: string; role: Role }
 export interface PendingInvitation { id: string; namespaceId: string; email: string; name: string; role: Role; expiresAt: string }
 export interface InvitationDispatch {
@@ -26,8 +26,8 @@ export function invitationMessage(origin: string, tenantId: string, workspaceNam
   const tenantLine = workspaceName ? `<p>Workspace: ${escapeHtml(workspaceLabel(workspaceName, tenantId))}</p>` : `<p>Tenant: ${escapeHtml(tenantId)}</p>`;
   return { to: [email], subject: 'OpenSight invitation', html: `<p>You have been invited to OpenSight.</p>${tenantLine}<p><a href="${escapeHtml(origin)}/#invite=${token}">Set up your OpenSight account</a> in your browser: choose a password and register your authenticator app. If you already have an account, sign in to accept the invitation.</p><p>This invitation is single-use. Operators and automation can also use the enrollment API with this token:</p><code>${token}</code>` };
 }
-function label(value: string): string {
-  if (typeof value !== 'string' || !value.trim() || value.length > 512 || /[\x00-\x1f]/.test(value)) throw new MetadataError('METADATA_INVALID', 400);
+function label(value: unknown, field?: string): string {
+  if (typeof value !== 'string' || !value.trim() || value.length > 512 || /[\x00-\x1f\x7f-\x9f]/.test(value)) throw new MetadataError('METADATA_INVALID', 400, field ? { field } : undefined);
   return value;
 }
 /** The deployment has one operator identity, separate from all tenant identities. */
@@ -38,12 +38,13 @@ export class HostedProvisioning {
   constructor(private readonly database: Database, private readonly config: HostedConfig, private readonly mail: MailTransport, private readonly clock = Date.now, private readonly jobs?: JobOwnership, private readonly analytics = disabledAnalytics, private readonly invitationDispatch?: InvitationDispatch) {
     this.operator = new MetadataOperator(database);
   }
+  private async reserveIn(c: SqlConnection, operationId: string, hash: string): Promise<void> {
+    await c.query('INSERT INTO h2_requests VALUES (?,?) ON CONFLICT (operation_id) DO NOTHING', [operationId, hash]);
+    const prior = (await c.query('SELECT request_hash FROM h2_requests WHERE operation_id = ?', [operationId]))[0]!;
+    if (prior.request_hash !== hash) throw new MetadataError('OPERATION_ID_REUSED');
+  }
   private async reserve(operationId: string, hash: string): Promise<void> {
-    await this.database.transaction(async c => {
-      await c.query('INSERT INTO h2_requests VALUES (?,?) ON CONFLICT (operation_id) DO NOTHING', [operationId, hash]);
-      const prior = (await c.query('SELECT request_hash FROM h2_requests WHERE operation_id = ?', [operationId]))[0]!;
-      if (prior.request_hash !== hash) throw new MetadataError('OPERATION_ID_REUSED');
-    });
+    await this.database.transaction(c => this.reserveIn(c, operationId, hash));
   }
   async transition(key: string, tenantId: string, action: 'suspend' | 'resume' | 'delete', expectedVersion: number): Promise<TenantOperation> {
     identifier(tenantId);
@@ -62,18 +63,21 @@ export class HostedProvisioning {
     return { id: operationId, token, expiresAt: new Date(expiresAt).toISOString() };
   }
   async provision(key: string, raw: OnboardingInput): Promise<TenantOperation> {
-    const name = label(raw.name), slug = parseWorkspaceSlug(raw.slug) ?? deriveWorkspaceSlug(name);
-    const input = { name, slug, administrator: { email: normalizedEmail(raw.administrator.email), name: label(raw.administrator.name) } };
+    const name = label(raw.name, 'name'), displayName = label(raw.displayName, 'displayName');
+    const slug = parseWorkspaceSlug(raw.slug) ?? deriveWorkspaceSlug(displayName);
+    const input = { name, displayName, slug, administrator: { email: normalizedEmail(raw.administrator.email), name: label(raw.administrator.name, 'administrator.name') } };
     const operationId = operatorOperationId(key), hash = checksum({ action: 'onboard', input });
     if (!this.mail.configured) throw new MetadataError('SMTP_NOT_CONFIGURED', 503);
-    await this.reserve(operationId, hash);
     await this.database.transaction(async c => {
+      // A validation/slug conflict creates nothing and leaves the form session retryable.
+      // A committed tenant (including a later mail failure) retains the input checksum.
+      await this.reserveIn(c, operationId, hash);
       await c.query('UPDATE h2_control SET id = id WHERE id = 1');
       const prior = (await c.query('SELECT * FROM h2_onboarding WHERE operation_id = ?', [operationId]))[0];
       if (prior) { if (prior.request_hash !== hash) throw new MetadataError('OPERATION_ID_REUSED'); return; }
       const tenantId = randomUUID(), namespaceId = randomUUID(), userId = randomUUID();
       const inserted = await c.query(`INSERT INTO h1_tenants (tenant_id,state,version,display_name,slug)
-        VALUES (?,'provisioning',1,?,?) ON CONFLICT (slug) DO NOTHING RETURNING tenant_id`, [tenantId, input.name, input.slug]);
+        VALUES (?,'provisioning',1,?,?) ON CONFLICT (slug) DO NOTHING RETURNING tenant_id`, [tenantId, input.displayName, input.slug]);
       if (!inserted.length) throw new MetadataError('TENANT_SLUG_CONFLICT', 409);
       await c.query('INSERT INTO h1_namespaces VALUES (?,?,?)', [namespaceId, tenantId, input.name]);
       await c.query('INSERT INTO h1_revisions VALUES (?,?,1,1,1)', [tenantId, namespaceId]);

@@ -1,3 +1,4 @@
+import { OperatorNav } from './operator-provisioning.js';
 import { useRef, useState } from 'react';
 import { IdeaDetails } from './Ideas.js';
 import { declineLabels, ideaLabels, nextIdeaStatuses, type Idea, type IdeaStatus } from './ideas.js';
@@ -38,7 +39,7 @@ export function OperatorIdeas({ baseUrl = '/api', fetcher = fetch }: { baseUrl?:
     try { await action(); } catch (e) { setError(e instanceof Error ? e.message : 'Request failed'); }
     finally { running.current = false; setBusy(false); }
   };
-  return <main className="admin-settings data-page ideas-page"><nav aria-label="Operator"><a href="#operator-users">Tenant users</a> · <a href="#operator-ideas" aria-current="page">Ideas</a></nav>
+  return <main className="admin-settings data-page ideas-page"><OperatorNav current="ideas" />
     <h1>Operator · Ideas</h1><p>Review suggestions with the product owner. Every decision is made by a human. Accepting an idea does not create an issue or start a build.</p>
     <form className="idea-form" aria-label="Operator connection" onSubmit={event => { event.preventDefault(); void run(async () => { setConnection(undefined); await load(credential); setConnection(credential); setCredential(''); }); }}>
       <label>Operator credential<input type="password" autoComplete="off" required value={credential} disabled={busy} onChange={event => setCredential(event.target.value)} /></label><button type="submit" disabled={busy}>Load ideas</button>

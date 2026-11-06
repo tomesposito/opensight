@@ -58,7 +58,7 @@ test('provisioning, invitation and activation emit after success and skip idempo
   const f = await database(t); await initializeAnalytics(f.db); const calls = [];
   const analytics = new Analytics(new AnalyticsStore(f.db), { enabled: true, vendorKey: 'test-only', transport: async (_url, init) => { calls.push(JSON.parse(init.body)); return { ok: true }; } });
   const mail = new StubMailTransport(), provisioning = new HostedProvisioning(f.db, f.config, mail, Date.now, undefined, analytics);
-  const input = { name: 'Synthetic private label', administrator: { email: 'synthetic@example.test', name: 'Private administrator' } };
+  const input = { name: 'Synthetic private label', displayName: 'Synthetic private label', administrator: { email: 'synthetic@example.test', name: 'Private administrator' } };
   const tenant = await provisioning.provision('analytics-onboard', input); await provisioning.provision('analytics-onboard', input);
   await assert.rejects(provisioning.provision('analytics-onboard', { ...input, name: 'Different' }));
   const invitation = { email: 'another@example.test', name: 'Private invitee', role: 'reader' };

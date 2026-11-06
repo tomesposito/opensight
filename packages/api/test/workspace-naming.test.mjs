@@ -7,7 +7,7 @@ import { SqliteMetadataDatabase } from '../dist/metadata-db.js';
 import { initializeMetadata, ensureTenantNaming } from '../dist/metadata-schema.js';
 import { deriveWorkspaceSlug } from '../dist/workspace-naming.js';
 
-const input = (name, slug) => ({ name, ...(slug === undefined ? {} : { slug }), administrator: { email: 'admin@example.test', name: 'Administrator' } });
+const input = (name, slug) => ({ name, displayName: name, ...(slug === undefined ? {} : { slug }), administrator: { email: 'admin@example.test', name: 'Administrator' } });
 async function setup(t) {
   const f = await database(t), mail = new StubMailTransport();
   return { ...f, mail, provision: new HostedProvisioning(f.db, f.config, mail) };
@@ -91,4 +91,43 @@ test('Issue #146 item 2: invitation uses the workspace name, escapes labels, and
     assert.ok(f.mail.messages.at(-1).html.includes(`<p>Tenant: ${op.tenantId}</p>`));
     assert.doesNotMatch(f.mail.messages.at(-1).html, /Workspace:/);
   }
+});
+
+test('Issue 192 A: display name is required, independently validated and used for slug and invitation', async t => {
+  const f = await setup(t), raw = { ...input('Internal namespace'), displayName: 'Public & <Workspace>' };
+  const op = await f.provision.provision('split', raw), row = await tenant(f.db, op.tenantId);
+  assert.equal(row.display_name, raw.displayName); assert.equal(row.slug, 'public-workspace');
+  assert.equal((await f.db.transaction(c => c.query('SELECT name FROM h1_namespaces WHERE namespace_id = ?', [op.namespaceId])))[0].name, raw.name);
+  assert.match(f.mail.messages[0].html, /Workspace: Public &amp; &lt;Workspace&gt;/);
+  assert.deepEqual(await f.provision.provision('split', raw), op);
+  await assert.rejects(f.provision.provision('split', { ...raw, displayName: 'Changed' }), { code: 'OPERATION_ID_REUSED' });
+  const before = await counts(f.db);
+  for (const displayName of [undefined, null, 12, '', '  ', 'bad\nname', 'bad\x7fname', 'bad\x85name', 'x'.repeat(513)]) {
+    await assert.rejects(f.provision.provision('bad-display', { ...raw, displayName }), error => {
+      assert.equal(error.code, 'METADATA_INVALID'); assert.equal(error.status, 400);
+      assert.equal(error.detail.field, 'displayName'); return true;
+    });
+  }
+  assert.deepEqual(await counts(f.db), before);
+  await f.provision.provision('max-display', { ...raw, displayName: 'x'.repeat(512) });
+});
+
+
+test('Issue 192 A/C: fixing a rejected slug can reuse the form session key without weakening committed deduplication', async t => {
+  const f = await setup(t);
+  await f.provision.provision('existing', input('Existing', 'taken'));
+  await assert.rejects(f.provision.provision('form-session', input('New', 'taken')), { code: 'TENANT_SLUG_CONFLICT' });
+  const created = await f.provision.provision('form-session', input('New', 'available'));
+  assert.deepEqual(await f.provision.provision('form-session', input('New', 'available')), created);
+  await assert.rejects(f.provision.provision('form-session', input('New', 'changed-again')), { code: 'OPERATION_ID_REUSED' });
+  assert.equal(f.mail.messages.length, 2);
+});
+
+
+test('Issue 192 A: missing mail configuration creates no partial tenant or reservation', async t => {
+  const f = await setup(t), before = await counts(f.db);
+  const provisioning = new HostedProvisioning(f.db, f.config, { configured: false, async send() { assert.fail('mail must not run'); } });
+  await assert.rejects(provisioning.provision('no-mail', input('Mail required')), { code: 'SMTP_NOT_CONFIGURED', status: 503 });
+  assert.deepEqual(await counts(f.db), before);
+  assert.deepEqual(await f.db.transaction(c => c.query('SELECT * FROM h2_requests')), []);
 });

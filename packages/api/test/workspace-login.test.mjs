@@ -8,7 +8,7 @@ import { digest, totp } from '../dist/auth-crypto.js';
 const denied = { code: 'AUTHENTICATION_FAILED', status: 401 };
 const rows = (f, sql, args = []) => f.db.transaction(c => c.query(sql, args));
 async function member(f, name = 'Second workspace') {
-  const op = await f.provisioning.provision(name.replaceAll(' ', '-'), { ...f.input, name });
+  const op = await f.provisioning.provision(name.replaceAll(' ', '-'), { ...f.input, name, displayName: name });
   const token = f.mail.messages.at(-1).html.match(/<code>([^<]+)<\/code>/)[1];
   await f.auth.accept(token, f.password, f.code(), 'local'); f.advance();
   return op;
@@ -81,7 +81,7 @@ for (const kind of ['expired', 'suspended', 'membership-removed', 'identity-inac
 test('Issue #146 item 3: disjoint identities see only their workspaces and cannot select each other’s tenants', async t => {
   const f = await authFixture(t), second = await member(f);
   const otherEmail = 'another@example.test', password = randomBytes(24).toString('base64');
-  const other = await f.provisioning.provision('other', { name: 'Other identity', administrator: { email: otherEmail, name: 'Other' } });
+  const other = await f.provisioning.provision('other', { name: 'Other identity', displayName: 'Other identity', administrator: { email: otherEmail, name: 'Other' } });
   const invite = f.mail.messages.at(-1).html.match(/<code>([^<]+)<\/code>/)[1];
   const enrollment = await f.auth.enroll(invite, password, 'other');
   await f.auth.accept(invite, password, totp(decode32(enrollment.secret), Math.floor(f.clock() / 30000)), 'other'); f.advance();

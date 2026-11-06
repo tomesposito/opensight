@@ -103,7 +103,7 @@ test('a failed operator mutation leaves no audit entry', async t => {
 
 test('onboarding, invitation minting and member removal are audited without secret values', async t => {
   const f = await fixture(t);
-  const onboarded = await f.provisioning.provision('onboard-1', { name: 'Acme', administrator: { email: 'boss@example.test', name: 'Boss' } });
+  const onboarded = await f.provisioning.provision('onboard-1', { name: 'Acme', displayName: 'Acme', administrator: { email: 'boss@example.test', name: 'Boss' } });
   const tenantId = onboarded.tenantId;
   const invited = await f.provisioning.inviteMember('invite-1', tenantId, { email: 'member@example.test', name: 'Member', role: 'reader' });
   let entries = await readOperatorAudit(f.db, { limit: 200 });
@@ -145,7 +145,7 @@ test('a failed invitation delivery leaves committed provisioning audited, withou
   let now = Date.UTC(2026, 9, 16, 12);
   const failing = new HostedProvisioning(f.db, f.config, rejecting, () => now);
   await assert.rejects(failing.provision('onboard-retry',
-    { name: 'Retry Co', administrator: { email: 'retry@example.test', name: 'Retry' } }), /SMTP rejected/);
+    { name: 'Retry Co', displayName: 'Retry Co', administrator: { email: 'retry@example.test', name: 'Retry' } }), /SMTP rejected/);
   // The committed mutations are audited even though delivery failed.
   let entries = await readOperatorAudit(f.db, { limit: 200 });
   const provisioned = entries.find(e => e.action === 'tenant.provisioned');
@@ -163,7 +163,7 @@ test('a failed invitation delivery leaves committed provisioning audited, withou
   // Retrying with working mail completes and records activation exactly once.
   const retry = new HostedProvisioning(f.db, f.config, new StubMailTransport(), () => now);
   const completed = await retry.provision('onboard-retry',
-    { name: 'Retry Co', administrator: { email: 'retry@example.test', name: 'Retry' } });
+    { name: 'Retry Co', displayName: 'Retry Co', administrator: { email: 'retry@example.test', name: 'Retry' } });
   assert.equal(completed.status, 'complete');
   entries = await readOperatorAudit(f.db, { limit: 200 });
   assert.equal(entries.filter(e => e.action === 'tenant.activated').length, 1);

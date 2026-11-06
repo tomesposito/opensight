@@ -269,7 +269,12 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         const authorization = request.headers.authorization;
         const browserIdeas = /^\/api\/host\/ideas(?:\/[A-Za-z0-9_-]+)?$/.test(path);
         const browserMembership = /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/users(?:\/[A-Za-z0-9_-]+)?$/.test(path);
-        if (request.headers.origin !== undefined && !browserMembership && !browserIdeas || !authorization?.startsWith('Operator ') || !equal(authorization.slice(9), config.operatorKey.toString('base64url'))) throw new MetadataError('OPERATOR_REQUIRED', 403);
+        const browserProvisioning = (path === '/api/host/tenants' && ['GET', 'POST'].includes(request.method ?? ''))
+          || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+$/.test(path) && ['GET', 'DELETE'].includes(request.method ?? '')
+          || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/(?:invitations|suspend|resume|billing\/(?:payment-link|resolve))$/.test(path) && request.method === 'POST'
+          || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/billing$/.test(path) && request.method === 'GET'
+          || /^\/api\/host\/usage\/[0-9]{4}-(?:0[1-9]|1[0-2])\/tenants\/[A-Za-z0-9_-]+$/.test(path) && request.method === 'GET';
+        if (request.headers.origin !== undefined && !browserMembership && !browserIdeas && !browserProvisioning || !authorization?.startsWith('Operator ') || !equal(authorization.slice(9), config.operatorKey.toString('base64url'))) throw new MetadataError('OPERATOR_REQUIRED', 403);
         if (path === '/api/host/ideas') {
           method(request, response, ['GET']);
           send(response, 200, { ideas: await listIdeas(options.membershipDatabase, { status: request.headers['idea-status'], tenantId: request.headers['idea-tenant'] }) }); return;
@@ -290,9 +295,10 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
           send(response, 200, { disclosure: referenceDisclosure }); return;
         }
         if (path === '/api/host/tenants') {
-          method(request, response, ['POST']);
-          const input = await body(request, ['name', 'slug', 'administrator']), administrator = object(input.administrator, ['email', 'name']);
-          const result = await provisioning.provision(idempotency(request), { name: input.name as string, slug: input.slug as string | undefined, administrator: { email: administrator.email as string, name: administrator.name as string } });
+          method(request, response, ['GET', 'POST']);
+          if (request.method === 'GET') { send(response, 200, { tenants: await provisioning.operator.tenants() }); return; }
+          const input = await body(request, ['name', 'displayName', 'slug', 'administrator']), administrator = object(input.administrator, ['email', 'name']);
+          const result = await provisioning.provision(idempotency(request), { name: input.name as string, displayName: input.displayName as string, slug: input.slug as string | undefined, administrator: { email: administrator.email as string, name: administrator.name as string } });
           send(response, 201, { ...result, state: (await provisioning.operator.tenant(result.tenantId)).state }); return;
         }
         const operation = /^\/api\/host\/operations\/([A-Za-z0-9_-]+)$/.exec(path);
@@ -303,12 +309,13 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         }
         const billing = /^\/api\/host\/usage(?:\/([^/]+)(?:\/tenants\/([A-Za-z0-9_-]+))?)?$/.exec(path);
         if (billing) {
-          operator(request); method(request, response, ['GET', 'POST']);
+          if (!browserProvisioning) operator(request);
+          method(request, response, ['GET', 'POST']);
           const period = usageMonth(billing[1]), tenantId = billing[2];
           if (!usage) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
           if (request.method === 'POST') await body(request, []);
           const records = request.method === 'POST' ? await usage.rollupMonthlyUsageForPeriod(period, tenantId) : await usage.monthlyUsageForPeriod(period, tenantId);
-          send(response, 200, { period, records }); return;
+          send(response, 200, { period, records, ...(tenantId && request.method === 'GET' ? { overview: await usage.operatorOverview(tenantId, period) } : {}) }); return;
         }
         const billingTenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)\/billing(?:\/(payment-link|resolve))?$/.exec(path);
         if (billingTenant) {
@@ -537,7 +544,9 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       const status = dataError ? 422 : error instanceof MetadataError || error instanceof RequestError || error instanceof SecurityError ? error.status : 500;
       const errorCode = dataError ? error.code : error instanceof MetadataError || error instanceof SecurityError ? error.code : error instanceof RequestError ? 'HOSTED_REQUEST_INVALID' : 'HOSTED_INTERNAL_ERROR';
       const quotaMessage = error instanceof AIError ? error.message : publicQuotaMessage(error);
-      send(response, status, { errorCode, ...(quotaMessage === undefined ? {} : { Message: quotaMessage }) });
+      const field = error instanceof MetadataError && error.code === 'METADATA_INVALID' && error.detail && typeof error.detail === 'object' && 'field' in error.detail
+        && typeof error.detail.field === 'string' && ['name', 'displayName', 'slug', 'administrator.name', 'administrator.email'].includes(error.detail.field) ? error.detail.field : undefined;
+      send(response, status, { errorCode, ...(field ? { field } : {}), ...(quotaMessage === undefined ? {} : { Message: quotaMessage }) });
     }).finally(async () => { active.delete(work); await egressSettle?.(); });
     active.add(work);
     return work;

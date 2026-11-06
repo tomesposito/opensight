@@ -32,7 +32,10 @@ price IDs in the deploy environment.
 
 ## Operator flow
 
-1. Provision the tenant as usual.
+1. Open `#operator-tenants` in the hosted app and connect with the operator
+   credential. Create the tenant on Free; selecting a paid starting plan then
+   generates a payment link. The detail page also offers payment links and
+   confirmed drop-to-Free resolution. See [operator provisioning](h2-tenant-sessions.md#operator-provisioning-pages-192).
 2. `POST /api/host/tenants/{tenantId}/billing/payment-link` with
    `{ "tier": "light" | "regular" | "heavy" }` returns a Stripe-hosted
    payment link bound to that tenant. Send the link to the customer; they

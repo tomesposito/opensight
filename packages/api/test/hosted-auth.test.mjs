@@ -25,7 +25,7 @@ test('H2 login and acceptance refuse inactive invitations, unconfirmed MFA, expi
   const { db, config } = await database(t), mail = new StubMailTransport(); let now = 1800000000000;
   const auth = await HostedAuth.create(db, config, () => now), provision = new HostedProvisioning(db, config, mail, () => now);
   const email = 'new@example.test', password = randomBytes(24).toString('base64');
-  const tenant = await provision.provision('new', { name: 'New', administrator: { email, name: 'New' } });
+  const tenant = await provision.provision('new', { name: 'New', displayName: 'New', administrator: { email, name: 'New' } });
   const token = mail.messages[0].html.match(/<code>([^<]+)<\/code>/)[1];
   await assert.rejects(auth.login(email, password, '123456', tenant.tenantId, 'local'), { code: 'AUTHENTICATION_FAILED' });
   await auth.enroll(token, password, 'local');
@@ -56,7 +56,7 @@ test('H2 TOTP consumption is atomic across concurrent logins', async t => {
 });
 test('H2 tenant switching verifies preprovisioned membership and revokes the old session atomically', async t => {
   const f = await authFixture(t);
-  const other = await f.provisioning.provision('onboard-two', { ...f.input, name: 'Second tenant' });
+  const other = await f.provisioning.provision('onboard-two', { ...f.input, name: 'Second tenant', displayName: 'Second tenant' });
   const token = f.mail.messages[1].html.match(/<code>([^<]+)<\/code>/)[1];
   let session = await f.login();
   await assert.rejects(f.auth.switchTenant(session.token, other.tenantId), { code: 'AUTHENTICATION_FAILED' });
@@ -113,7 +113,7 @@ test('H2 durable rate limits survive restart and recover only after their window
 test('H2 onboarding is idempotent, secret-free in responses, durable before delivery and resumes failed delivery', async t => {
   const { db, config } = await database(t); const mail = new StubMailTransport(); let fail = true;
   const provision = new HostedProvisioning(db, config, { configured: true, async send(message) { if (fail) throw Error('stub failure'); await mail.send(message); } });
-  const input = { name: 'Retry', administrator: { email: 'retry@example.test', name: 'Retry' } };
+  const input = { name: 'Retry', displayName: 'Retry', administrator: { email: 'retry@example.test', name: 'Retry' } };
   await assert.rejects(provision.provision('retry', input), /stub failure/);
   const [state] = await db.transaction(c => c.query('SELECT * FROM h1_tenants'));
   assert.equal(state.state, 'provisioning'); assert.equal((await db.transaction(c => c.query('SELECT * FROM h2_memberships'))).length, 1);
@@ -127,7 +127,7 @@ test('H2 onboarding is idempotent, secret-free in responses, durable before deli
 test('Issue #152: invitation mail leads with the browser link and retains the automation token', async t => {
   const { db, config } = await database(t), mail = new StubMailTransport();
   const provision = new HostedProvisioning(db, config, mail);
-  const tenant = await provision.provision('browser-mail', {name:'Browser & workspace', administrator:{email:'browser@example.test',name:'Admin'}});
+  const tenant = await provision.provision('browser-mail', {name:'Browser & workspace', displayName: 'Browser & workspace', administrator:{email:'browser@example.test',name:'Admin'}});
   await provision.inviteMember('browser-reader',tenant.tenantId,{email:'reader@example.test',name:'Reader',role:'reader'});
   for (const message of mail.messages) {
     const token = message.html.match(/<code>([A-Za-z0-9_-]{43})<\/code>/)[1];
