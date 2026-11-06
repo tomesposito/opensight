@@ -14,22 +14,17 @@ and → 0 after three delivered tiles in a four-question plan. The fourth tile i
 credit-limited. The existing credit-limit screen now follows actual calls rather
 than manually seeded usage.
 
-In this environment, the hosted fixture started, but Chromium refused to launch:
-`Hatch WebGL domain policy is required for browser startup` (exit 13). No browser
-steps ran. J4 records this as `author-dashboard-generation` in its existing gap
-bookkeeping and still fails the journey; it does not claim a successful answer
-or replace the real API with browser mocks.
-
-The static demo rebuild (`npm run build:demo --workspace @opensight/web`) passed.
-The existing `capture-grounded-ask-o.mjs` screenshot tool fails at the same
-browser launch. README Ask O images and the hero GIF therefore remain unchanged.
-There is no new screenshot comparison or claim of measured visual fidelity.
-The existing light/dark author references remain the visual review baseline.
+An early sandboxed attempt could not launch Chromium (`Hatch WebGL domain
+policy is required for browser startup`, exit 13) and recorded the
+`author-dashboard-generation` gap. A later run through the existing Chromium
+wrapper launched successfully: J4's author steps passed — `author-dashboard-plan`
+(the four-tile plan moved credits 10 → 6) and `author-revise-o-tile` (the
+delivered revision moved them to 5) — as did the dashboard-sharing and
+reader denied-source steps. Both proposal states were captured, and the two
+new screenshots (`docs/images/ask-o-dashboard-plan.png`,
+`docs/images/ask-o-tile-revision.png`) were added to the README. The hero GIF
+was not regenerated. There is no claim of measured visual fidelity.
 The static demo is a local artifact, not a deployed server.
-
-External issue filing was not attempted under this brief's no-network rule.
-The supervisor can rerun J4 and the screenshot/tour tools in an environment with
-the required browser policy and review the resulting captures before merging.
 
 ## Tests
 
