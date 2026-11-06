@@ -55,7 +55,7 @@ test('#196 stub plan and both revision branches stay inside the grammar', async 
   const p = JSON.parse((await stub.complete({}, '', { system: planInstructions(), prompt: '{}' })).text);
   assert.deepEqual(p, { sheetTitle: 'Sales overview', questions: ['sum revenue', 'sum revenue by region', 'sum revenue by order_date per month', 'sum revenue by category'] });
   for (const question of p.questions) assert.equal(interpretQuestion(question, columns).errors.length, 0);
-  for (const [currentQuestion, expected] of [['sum revenue by region', p.questions[2]], ['sum revenue', p.questions[1]]]) {
+  for (const [currentQuestion, expected] of [['sum revenue by region', p.questions[2]], ['sum "revenue" by "region" bar', p.questions[2]], ["sum revenue by 'region'", p.questions[2]], ['sum revenue', p.questions[1]]]) {
     const r = JSON.parse((await stub.complete({}, '', { system: reviseInstructions(), prompt: JSON.stringify({ currentQuestion }) })).text);
     assert.equal(r.question, expected); assert.equal(interpretQuestion(r.question, columns).errors.length, 0);
   }

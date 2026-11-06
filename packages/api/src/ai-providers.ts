@@ -116,7 +116,7 @@ class StubAdapter implements ProviderAdapter {
     if (input.system.includes('Revise the currentQuestion')) {
       const seed: unknown = JSON.parse(input.prompt);
       const current = isObject(seed) && typeof seed.currentQuestion === 'string' ? seed.currentQuestion : '';
-      return { text: JSON.stringify({ question: /by region\b/.test(current) ? 'sum revenue by order_date per month' : 'sum revenue by region' }), tokens: 12 };
+      return { text: JSON.stringify({ question: /\bby\s+["']?region["']?(?:\s|$)/i.test(current) ? 'sum revenue by order_date per month' : 'sum revenue by region' }), tokens: 12 };
     }
     return { text: JSON.stringify({ question: 'sum revenue by region' }), tokens: 12 };
   }
