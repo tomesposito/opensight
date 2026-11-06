@@ -1283,6 +1283,17 @@ inventory. Verify that each local icon referenced by the marketing HTML is
 packaged with its exact digest and image content type. Do not change the icon
 artwork or expand packaging to arbitrary site files.
 
+**Marketing release completeness (frozen 2026-11-06, #183–#187, #197):**
+Include the existing `site/assets/og-image.jpg`, pricing, comparison pages,
+committed documentation pages/styles and unlinked signup page/script in the
+explicit bounded attested frontend inventory. Never recurse over arbitrary site
+files. Package exact source bytes and media types; verify local page, asset,
+Open Graph and Twitter image references and sitemap URLs resolve within that
+inventory. Route only the named public directory indexes and scripts on the
+marketing host, with canonical trailing-slash redirects; retain host isolation,
+path rejection and app routes. Keep signup dark and all existing CTAs unchanged.
+Verify the actual CloudFront functions and served artifact digests after cutover.
+
 **SR4c compatible release automation (frozen 2026-10-11):** The operator approved
 public isolated CI, immutable release artifacts, private manual deployment via
 dedicated OIDC roles, and an independently tested access shutoff. Implement
