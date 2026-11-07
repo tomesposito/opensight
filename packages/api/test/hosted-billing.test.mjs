@@ -256,14 +256,14 @@ test('211 fencing: checkout replacement requires tenant metadata or a stored pay
   assert.equal((await f.billing.handleEvent({ id: 'evt_stale_checkout', created: 15, type: 'checkout.session.completed', object: { ...object, metadata: { tenant_id: 'tenant-one', tier: 'heavy' } } })).action, 'stale');
   assert.deepEqual(await f.billing.state('tenant-one'), before);
   await f.billing.createPaymentLink('tenant-one', 'regular');
-  assert.equal((await f.billing.handleEvent({ id: 'evt_link_replacement', created: 40, type: 'checkout.session.completed', object: { ...object, payment_link: 'plink_regular' } })).handled, true);
+  assert.equal((await f.billing.handleEvent({ id: 'evt_link_replacement', created: 40, type: 'checkout.session.completed', object: { ...object, payment_link: 'plink_regular', payment_status: 'paid' } })).handled, true);
   const state = await f.billing.state('tenant-one'); assert.equal(state.stripeSubscriptionId, 'sub_new'); assert.equal(state.tier, 'regular');
 });
 
 test('211 allowlist: unknown subscription and invoice types are recorded without changing billing', async t => {
   const f = await billingFixture(t);
   await f.billing.createPaymentLink('tenant-one', 'light');
-  await f.billing.handleEvent({ id: 'evt_allow_checkout', created: 1, type: 'checkout.session.completed', object: { payment_link: 'plink_light', subscription: 'sub_1', customer: 'cus_1' } });
+  await f.billing.handleEvent({ id: 'evt_allow_checkout', created: 1, type: 'checkout.session.completed', object: { payment_link: 'plink_light', subscription: 'sub_1', customer: 'cus_1', payment_status: 'paid' } });
   await f.billing.handleEvent(subscriptionEvent('evt_allow_active', activeSub));
   const before = await f.billing.state('tenant-one');
   const audits = await readOperatorAudit(f.db, { limit: 100 });
@@ -283,7 +283,7 @@ test('211 allowlist: unknown subscription and invoice types are recorded without
 test('webhook flow: checkout binds the tenant, subscription activates the tier, replay is a no-op', async t => {
   const f = await billingFixture(t);
   await f.billing.createPaymentLink('tenant-one', 'light');
-  const checkout = await f.billing.handleEvent({ id: 'evt_checkout', created: 1, type: 'checkout.session.completed', object: { payment_link: 'plink_light', subscription: 'sub_1', customer: 'cus_1' } });
+  const checkout = await f.billing.handleEvent({ id: 'evt_checkout', created: 1, type: 'checkout.session.completed', object: { payment_link: 'plink_light', subscription: 'sub_1', customer: 'cus_1', payment_status: 'paid' } });
   assert.equal(checkout.handled, true);
   let state = await f.billing.state('tenant-one');
   assert.equal(state.tier, 'light'); assert.equal(state.stripeSubscriptionId, 'sub_1');
@@ -303,7 +303,7 @@ test('webhook flow: checkout binds the tenant, subscription activates the tier, 
 test('past-due rule: failed payment keeps access during retries, unpaid pauses; drop-to-Free is unavailable', async t => {
   const f = await billingFixture(t);
   await f.billing.createPaymentLink('tenant-one', 'light');
-  await f.billing.handleEvent({ id: 'evt_co', created: 1, type: 'checkout.session.completed', object: { payment_link: 'plink_light', subscription: 'sub_1', customer: 'cus_1' } });
+  await f.billing.handleEvent({ id: 'evt_co', created: 1, type: 'checkout.session.completed', object: { payment_link: 'plink_light', subscription: 'sub_1', customer: 'cus_1', payment_status: 'paid' } });
   await f.billing.handleEvent(subscriptionEvent('evt_act', activeSub));
   await f.billing.handleEvent({ id: 'evt_fail', created: 3, type: 'invoice.payment_failed', object: { subscription: 'sub_1', customer: 'cus_1' } });
   let state = await f.billing.state('tenant-one');
@@ -326,7 +326,7 @@ test('past-due rule: failed payment keeps access during retries, unpaid pauses; 
 test('past-due rule: paying in Stripe restores the paid tier when the subscription returns to active', async t => {
   const f = await billingFixture(t);
   await f.billing.createPaymentLink('tenant-one', 'regular');
-  await f.billing.handleEvent({ id: 'evt_co2', created: 1, type: 'checkout.session.completed', object: { payment_link: 'plink_regular', subscription: 'sub_1', customer: 'cus_1' } });
+  await f.billing.handleEvent({ id: 'evt_co2', created: 1, type: 'checkout.session.completed', object: { payment_link: 'plink_regular', subscription: 'sub_1', customer: 'cus_1', payment_status: 'paid' } });
   const regular = { ...activeSub, items: { data: [{ price: { id: 'price_regular' } }] } };
   await f.billing.handleEvent(subscriptionEvent('evt_act2', regular));
   await f.billing.handleEvent(subscriptionEvent('evt_unpaid2', { ...regular, status: 'unpaid' }, 3));
@@ -342,7 +342,7 @@ test('cancelled subscription pauses at period end, not before', async t => {
   const start = Date.UTC(2026, 10, 3, 12);
   const f = await billingFixture(t, start);
   await f.billing.createPaymentLink('tenant-one', 'light');
-  await f.billing.handleEvent({ id: 'evt_co3', created: 1, type: 'checkout.session.completed', object: { payment_link: 'plink_light', subscription: 'sub_1', customer: 'cus_1' } });
+  await f.billing.handleEvent({ id: 'evt_co3', created: 1, type: 'checkout.session.completed', object: { payment_link: 'plink_light', subscription: 'sub_1', customer: 'cus_1', payment_status: 'paid' } });
   await f.billing.handleEvent(subscriptionEvent('evt_act3', activeSub));
   const periodEndSeconds = Math.floor(start / 1000) + 86400;
   await f.billing.handleEvent({ id: 'evt_cancel', created: 3, type: 'customer.subscription.deleted', object: { ...activeSub, status: 'canceled', current_period_end: periodEndSeconds } });
@@ -391,7 +391,7 @@ test('HTTP: operator payment link, signed webhook, pause gate on the tenant plan
   const bad = await rawRequest(port, '/api/host/billing/webhook', { headers: { 'content-type': 'application/json', 'stripe-signature': sign(badRaw, Math.floor(Date.now() / 1000), 'whsec_wrong') }, raw: badRaw });
   assert.equal(bad.status, 400); assert.equal(bad.body.errorCode, 'STRIPE_SIGNATURE_INVALID');
 
-  let res = await deliver({ id: 'evt_h_co', created: 1, type: 'checkout.session.completed', data: { object: { payment_link: 'plink_regular', subscription: 'sub_9', customer: 'cus_9' } } });
+  let res = await deliver({ id: 'evt_h_co', created: 1, type: 'checkout.session.completed', data: { object: { payment_link: 'plink_regular', subscription: 'sub_9', customer: 'cus_9', payment_status: 'paid' } } });
   assert.equal(res.status, 200); assert.equal(res.body.handled, true);
   res = await deliver({ id: 'evt_h_act', created: 2, type: 'customer.subscription.updated', data: { object: { id: 'sub_9', customer: 'cus_9', status: 'active', items: { data: [{ price: { id: 'price_regular' } }] } } } });
   assert.equal(res.status, 200);
@@ -472,4 +472,50 @@ test('197 checkout: session/subscription metadata, no payment-link row, paid con
   assert.doesNotThrow(() => billing.assertAccess('tenant-one'));
   assert.equal((await f.db.transaction(c => c.query('SELECT * FROM h9_billing_links'))).length, 0);
   await assert.rejects(billing.createCheckoutSession('tenant-one', 'free'), { code: 'BILLING_TIER_INVALID' });
+});
+
+const TRIAL212 = { apiCalls: 42, storageBytes: 4200, computeAttempts: 42 };
+async function trialBilling212(t) {
+  const f = await h8Fixture(t); await initializeUsage(f.db); await initializeBilling(f.db);
+  const start = Date.UTC(2026, 10, 6); let now = start;
+  const mail = new StubMailTransport();
+  const stripe = { createPaymentLink: async ({ tier }) => ({ id: `plink_${tier}`, url: `https://buy.stripe.com/plink_${tier}` }) };
+  const billing = new HostedBilling(f.db, billingConfig(env({ OPENSIGHT_TRIAL_ENTITLEMENT: JSON.stringify(TRIAL212) })), { clock: () => now, mail, notifyTo: 'operator@example.test', stripe });
+  await billing.startTrial('tenant-one');
+  return { f, billing, trialEnds: new Date(start + 14 * 86400000).toISOString() };
+}
+
+test('212: unpaid checkout and incomplete subscription keep a live trial; the active transition converts', async t => {
+  const { f, billing, trialEnds } = await trialBilling212(t);
+  const unpaid = await billing.handleEvent({ id: 'evt_212_unpaid', created: 1, type: 'checkout.session.completed', object: {
+    subscription: 'sub_1', customer: 'cus_1', metadata: { tenant_id: 'tenant-one', tier: 'light' }, payment_status: 'unpaid',
+  } });
+  assert.equal(unpaid.handled, true);
+  let state = await billing.state('tenant-one');
+  assert.equal(state.stripeSubscriptionId, 'sub_1'); assert.equal(state.tier, null); assert.equal(state.trialEndsAt, trialEnds);
+  assert.deepEqual(billing.tierEntitlement('tenant-one'), TRIAL212);
+  assert.equal(billing.trial('tenant-one').endsAt, trialEnds);
+  await billing.handleEvent({ id: 'evt_212_created', created: 2, type: 'customer.subscription.created', object: { ...activeSub, status: 'incomplete' } });
+  state = await billing.state('tenant-one');
+  assert.equal(state.subscriptionStatus, 'incomplete'); assert.equal(state.tier, null); assert.equal(state.trialEndsAt, trialEnds);
+  assert.deepEqual(billing.tierEntitlement('tenant-one'), TRIAL212);
+  assert.doesNotThrow(() => billing.assertAccess('tenant-one'));
+  const audits = await readOperatorAudit(f.db, { limit: 100 });
+  assert.equal(audits.filter(e => e.action === 'billing.trial.converted').length, 0);
+  await billing.handleEvent(subscriptionEvent('evt_212_active', activeSub, 3));
+  state = await billing.state('tenant-one');
+  assert.equal(state.tier, 'light'); assert.equal(state.trialEndsAt, null); assert.equal(billing.trial('tenant-one'), null);
+  assert.deepEqual(billing.tierEntitlement('tenant-one'), LIGHT);
+});
+
+test('212: unpaid payment-link checkout binds but does not convert a live trial', async t => {
+  const { billing, trialEnds } = await trialBilling212(t);
+  await billing.createPaymentLink('tenant-one', 'light');
+  const result = await billing.handleEvent({ id: 'evt_212_link_unpaid', created: 1, type: 'checkout.session.completed', object: {
+    payment_link: 'plink_light', subscription: 'sub_1', customer: 'cus_1', payment_status: 'unpaid',
+  } });
+  assert.equal(result.handled, true);
+  const state = await billing.state('tenant-one');
+  assert.equal(state.stripeSubscriptionId, 'sub_1'); assert.equal(state.tier, null); assert.equal(state.trialEndsAt, trialEnds);
+  assert.deepEqual(billing.tierEntitlement('tenant-one'), TRIAL212);
 });
