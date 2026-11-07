@@ -440,12 +440,19 @@ export class HostedBilling {
         await c.query('UPDATE h9_billing_events SET tenant_id = ?, outcome = ? WHERE event_id = ?', [tenantId, 'applied', event.id]);
         const next: BillingRecord = existing ? { ...existing } : { tenantId, trialEndsAt: null, retentionDueAt: null, tier: null, subscriptionStatus: null, accessState: 'active', pauseEffectiveAt: null, stripeCustomerId: null, stripeSubscriptionId: null, lastStripeEventCreated: null, updatedAt: this.nowIso() };
         let action = 'recorded';
+        // A trial converts to paid entitlements only on a verified successful
+        // billing transition in THIS event (#212): an unpaid checkout or an
+        // incomplete subscription binds and is recorded, but must not assign
+        // the paid tier or clear the trial expiry.
+        let conversionAuthorized = false;
         if (event.type === 'checkout.session.completed') {
           next.stripeCustomerId = stringOrNull(object.customer) ?? next.stripeCustomerId;
           next.stripeSubscriptionId = stringOrNull(object.subscription) ?? next.stripeSubscriptionId;
-          if (resolved.linkTier) {
+          const paymentVerified = ['paid', 'no_payment_required'].includes(String(object.payment_status));
+          if (resolved.linkTier && paymentVerified) {
             next.tier = resolved.linkTier;
-            if (stringOrNull(nested(object.metadata).tier) && ['paid', 'no_payment_required'].includes(String(object.payment_status))) { next.accessState = 'active'; next.pauseEffectiveAt = null; }
+            conversionAuthorized = true;
+            if (stringOrNull(nested(object.metadata).tier)) { next.accessState = 'active'; next.pauseEffectiveAt = null; }
           }
           action = 'checkout_completed';
         } else if (SUBSCRIPTION_EVENT_TYPES.has(event.type)) {
@@ -454,7 +461,11 @@ export class HostedBilling {
           next.stripeSubscriptionId = stringOrNull(object.id) ?? next.stripeSubscriptionId;
           const items = nested(object.items), first = Array.isArray(items.data) ? nested(items.data[0]) : {};
           const priceTier = this.tierForPrice(stringOrNull(nested(first.price).id));
-          if (priceTier) next.tier = priceTier;
+          // The price tier becomes the entitlement only once the subscription
+          // itself authorizes it; other statuses (incomplete, past_due, ...)
+          // are recorded in subscriptionStatus without touching the tier, so
+          // an incomplete payment stays represented separately (#212).
+          if (priceTier && (status === 'active' || status === 'trialing')) { next.tier = priceTier; conversionAuthorized = true; }
           next.subscriptionStatus = status;
           if (status === 'active' || status === 'trialing') {
             if (next.accessState === 'paused') action = 'access_restored';
@@ -482,7 +493,7 @@ export class HostedBilling {
           await c.query('UPDATE h9_billing_events SET outcome = ? WHERE event_id = ?', ['ignored', event.id]);
           return { duplicate: false, handled: false, tenantId, action: 'ignored' } satisfies BillingEventResult;
         }
-        if (next.tier && PAID_TIERS.includes(next.tier)) next.trialEndsAt = null;
+        if (conversionAuthorized && next.tier && PAID_TIERS.includes(next.tier)) next.trialEndsAt = null;
         next.retentionDueAt = next.pauseEffectiveAt ? new Date(Date.parse(next.pauseEffectiveAt) + 30 * DAY_MS).toISOString() : null;
         next.updatedAt = this.nowIso();
         next.lastStripeEventCreated = event.created;
