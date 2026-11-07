@@ -25,6 +25,7 @@ export interface BillingRecord {
   accessState: BillingAccessState; pauseEffectiveAt: string | null;
   trialEndsAt: string | null; retentionDueAt: string | null;
   stripeCustomerId: string | null; stripeSubscriptionId: string | null; updatedAt: string;
+  lastStripeEventCreated: number | null;
 }
 export interface BillingConfig {
   apiKey: string; webhookSecret: string;
@@ -160,7 +161,7 @@ export async function readRawBody(request: IncomingMessage, maxBytes = 1024 * 10
   return Buffer.concat(chunks, size);
 }
 
-export interface StripeEvent { id: string; type: string; object: Record<string, unknown> }
+export interface StripeEvent { id: string; type: string; created: number; object: Record<string, unknown> }
 const SUBSCRIPTION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted',
 ]);
@@ -175,9 +176,10 @@ export function parseStripeEvent(rawBody: Buffer): StripeEvent {
   const event = parsed as Record<string, unknown>;
   const data = event.data !== null && typeof event.data === 'object' && !Array.isArray(event.data) ? event.data as Record<string, unknown> : {};
   const object = data.object !== null && typeof data.object === 'object' && !Array.isArray(data.object) ? data.object as Record<string, unknown> : undefined;
-  if (typeof event.id !== 'string' || !/^evt_[A-Za-z0-9_]+$/.test(event.id) || typeof event.type !== 'string' || !event.type || event.type.length > 128 || !object)
+  if (typeof event.id !== 'string' || !/^evt_[A-Za-z0-9_]+$/.test(event.id) || typeof event.type !== 'string' || !event.type || event.type.length > 128 || !object
+    || typeof event.created !== 'number' || !Number.isSafeInteger(event.created) || event.created < 0)
     throw new MetadataError('STRIPE_EVENT_INVALID', 400);
-  return { id: event.id, type: event.type, object };
+  return { id: event.id, type: event.type, created: event.created, object };
 }
 
 export async function initializeBilling(db: Database): Promise<void> {
@@ -192,6 +194,8 @@ export async function initializeBilling(db: Database): Promise<void> {
     for (const column of ['trial_ends_at', 'retention_due_at']) {
       if (!columns.some(row => row.name === column)) await c.query(`ALTER TABLE h9_billing ADD COLUMN ${column} TEXT`);
     }
+    if (!columns.some(row => row.name === 'last_stripe_event_created'))
+      await c.query('ALTER TABLE h9_billing ADD COLUMN last_stripe_event_created BIGINT');
     for (const row of await c.query("SELECT tenant_id, pause_effective_at FROM h9_billing WHERE access_state = 'paused' AND pause_effective_at IS NOT NULL AND retention_due_at IS NULL")) {
       await c.query('UPDATE h9_billing SET retention_due_at = ? WHERE tenant_id = ?', [new Date(Date.parse(String(row.pause_effective_at)) + 30 * DAY_MS).toISOString(), row.tenant_id!]);
     }
@@ -212,6 +216,7 @@ function asRecord(row: Record<string, unknown> | undefined): BillingRecord | und
     stripeCustomerId: row.stripe_customer_id === null ? null : String(row.stripe_customer_id),
     stripeSubscriptionId: row.stripe_subscription_id === null ? null : String(row.stripe_subscription_id),
     trialEndsAt: stringOrNull(row.trial_ends_at), retentionDueAt: stringOrNull(row.retention_due_at),
+    lastStripeEventCreated: row.last_stripe_event_created == null ? null : Number(row.last_stripe_event_created),
     updatedAt: String(row.updated_at),
   };
 }
@@ -409,9 +414,19 @@ export class HostedBilling {
           return { duplicate: false, handled: false, tenantId: null, action: 'unmatched' } satisfies BillingEventResult;
         }
         const { tenantId } = resolved;
-        await c.query('UPDATE h9_billing_events SET tenant_id = ?, outcome = ? WHERE event_id = ?', [tenantId, 'applied', event.id]);
+        // Lock the parent even before the first billing row exists. PostgreSQL
+        // transactions otherwise race at READ COMMITTED; SQLite uses BEGIN IMMEDIATE.
+        if (this.db.dialect === 'postgres') await c.query('SELECT tenant_id FROM h1_tenants WHERE tenant_id = ? FOR UPDATE', [tenantId]);
         const existing = asRecord((await c.query('SELECT * FROM h9_billing WHERE tenant_id = ?', [tenantId]))[0]);
-        const next: BillingRecord = existing ? { ...existing } : { tenantId, trialEndsAt: null, retentionDueAt: null, tier: null, subscriptionStatus: null, accessState: 'active', pauseEffectiveAt: null, stripeCustomerId: null, stripeSubscriptionId: null, updatedAt: this.nowIso() };
+        // Stripe timestamps have one-second precision, and event IDs do not
+        // establish chronology. Equal-created events are first-applied-wins:
+        // keep the committed state and record subsequent ties as stale.
+        if (existing?.lastStripeEventCreated != null && event.created <= existing.lastStripeEventCreated) {
+          await c.query('UPDATE h9_billing_events SET tenant_id = ?, outcome = ? WHERE event_id = ?', [tenantId, 'stale', event.id]);
+          return { duplicate: false, handled: false, tenantId, action: 'stale' } satisfies BillingEventResult;
+        }
+        await c.query('UPDATE h9_billing_events SET tenant_id = ?, outcome = ? WHERE event_id = ?', [tenantId, 'applied', event.id]);
+        const next: BillingRecord = existing ? { ...existing } : { tenantId, trialEndsAt: null, retentionDueAt: null, tier: null, subscriptionStatus: null, accessState: 'active', pauseEffectiveAt: null, stripeCustomerId: null, stripeSubscriptionId: null, lastStripeEventCreated: null, updatedAt: this.nowIso() };
         const object = event.object;
         let action = 'recorded';
         if (event.type === 'checkout.session.completed') {
@@ -459,11 +474,13 @@ export class HostedBilling {
         if (next.tier && PAID_TIERS.includes(next.tier)) next.trialEndsAt = null;
         next.retentionDueAt = next.pauseEffectiveAt ? new Date(Date.parse(next.pauseEffectiveAt) + 30 * DAY_MS).toISOString() : null;
         next.updatedAt = this.nowIso();
-        await c.query(`INSERT INTO h9_billing (tenant_id, tier, subscription_status, access_state, pause_effective_at, stripe_customer_id, stripe_subscription_id, updated_at, trial_ends_at, retention_due_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (tenant_id) DO UPDATE SET tier = excluded.tier, subscription_status = excluded.subscription_status,
+        next.lastStripeEventCreated = event.created;
+        await c.query(`INSERT INTO h9_billing (tenant_id, tier, subscription_status, access_state, pause_effective_at, stripe_customer_id, stripe_subscription_id, updated_at, trial_ends_at, retention_due_at, last_stripe_event_created)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (tenant_id) DO UPDATE SET tier = excluded.tier, subscription_status = excluded.subscription_status,
           access_state = excluded.access_state, pause_effective_at = excluded.pause_effective_at, stripe_customer_id = excluded.stripe_customer_id,
-          stripe_subscription_id = excluded.stripe_subscription_id, updated_at = excluded.updated_at, trial_ends_at = excluded.trial_ends_at, retention_due_at = excluded.retention_due_at`,
-        [next.tenantId, next.tier, next.subscriptionStatus, next.accessState, next.pauseEffectiveAt, next.stripeCustomerId, next.stripeSubscriptionId, next.updatedAt, next.trialEndsAt, next.retentionDueAt]);
+          stripe_subscription_id = excluded.stripe_subscription_id, updated_at = excluded.updated_at, trial_ends_at = excluded.trial_ends_at, retention_due_at = excluded.retention_due_at,
+          last_stripe_event_created = excluded.last_stripe_event_created`,
+        [next.tenantId, next.tier, next.subscriptionStatus, next.accessState, next.pauseEffectiveAt, next.stripeCustomerId, next.stripeSubscriptionId, next.updatedAt, next.trialEndsAt, next.retentionDueAt, next.lastStripeEventCreated]);
         if (existing?.trialEndsAt && !next.trialEndsAt && next.tier && PAID_TIERS.includes(next.tier)) await appendOperatorAudit(c, { action: 'billing.trial.converted', tenantId, detail: { tier: next.tier, stripeEventId: event.id } }, this.clock());
         const changed = !existing || existing.tier !== next.tier || existing.accessState !== next.accessState || existing.subscriptionStatus !== next.subscriptionStatus;
         if (changed) await appendOperatorAudit(c, { action: 'billing.entitlement.changed', tenantId, subject: next.stripeSubscriptionId ?? undefined,

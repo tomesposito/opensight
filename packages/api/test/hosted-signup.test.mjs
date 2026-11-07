@@ -160,7 +160,7 @@ test('197 operator: daily expired count survives same-day conversion', async t =
   await f.signup.request(input(), 'ip'); const result = await f.signup.verify(token(f.mail));
   f.advance(14 * 86400000); now += 14 * 86400000;
   assert.equal((await ops.status()).expiredToday, 1);
-  await f.billing.handleEvent({ id: 'evt_funnel', type: 'customer.subscription.updated', object: { id: 'sub_funnel', status: 'active', metadata: { tenant_id: result.tenantId }, items: { data: [{ price: { id: 'pl' } }] } } });
+  await f.billing.handleEvent({ id: 'evt_funnel', created: 1, type: 'customer.subscription.updated', object: { id: 'sub_funnel', status: 'active', metadata: { tenant_id: result.tenantId }, items: { data: [{ price: { id: 'pl' } }] } } });
   const status = await ops.status(); assert.equal(status.expiredToday, 1); assert.equal(status.convertedToday, 1);
 });
 
