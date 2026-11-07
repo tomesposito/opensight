@@ -96,6 +96,41 @@ test('H8 absent/malformed entitlements fail closed, with no foreign context or H
   await drainHostedServer(server);
 });
 
+test('213 HTTP: entitlements enforce tenant quotas with signup unset or off, while signup stays closed', async t => {
+  for (const enabled of [undefined, 'false']) await t.test(enabled ?? 'unset', async t => {
+    const f = await h8Fixture(t);
+    if (enabled !== undefined) f.env.OPENSIGHT_SIGNUP_ENABLED = enabled;
+    f.env.OPENSIGHT_ENTITLEMENTS = JSON.stringify({ defaults: { ...limits, apiCalls: 1 }, tenants: {} });
+    const { request } = await serveH8(t, f);
+    const headers = { authorization: 'one' };
+    assert.equal((await request('/api/session', { headers })).status, 200);
+    for (let n = 0; n < 2; n++) {
+      const denied = await request('/api/session', { headers });
+      assert.equal(denied.status, 429); assert.equal(denied.body.errorCode, 'USAGE_LIMIT_EXCEEDED');
+    }
+    assert.equal((await request('/api/session', { headers: { authorization: 'two' } })).status, 200);
+    for (const path of ['/api/signup', '/api/signup/slug?slug=hello', '/api/signup/verify', '/api/signup/resend', '/api/signup/checkout']) {
+      const slug = path.includes('/slug');
+      const disabled = await request(path, { method: slug ? 'GET' : 'POST', headers: { origin: 'https://getopensight.org' }, body: slug ? undefined : {} });
+      assert.equal(disabled.status, 404); assert.equal(disabled.body.errorCode, 'RESOURCE_NOT_FOUND');
+    }
+  });
+});
+
+test('213 HTTP: present but empty or malformed entitlements fail startup with signup off', async t => {
+  for (const raw of ['', '{}']) {
+    const f = await h8Fixture(t); f.env.OPENSIGHT_ENTITLEMENTS = raw;
+    await assert.rejects(serveH8(t, f), { code: 'ENTITLEMENT_UNRESOLVED', status: 503 });
+  }
+});
+
+test('213 HTTP: no entitlements, billing or signup leaves existing tenants unmetered', async t => {
+  const f = await h8Fixture(t), { request } = await serveH8(t, f);
+  for (let n = 0; n < 5; n++) for (const authorization of ['one', 'two']) {
+    assert.equal((await request('/api/session', { headers: { authorization } })).status, 200);
+  }
+});
+
 
 test('H8 admitted scheduled refresh is charged once, manual refresh is charged, corrupt accounting fails closed', async t => {
   const f = await setup(t), sources = new HostedSources(f.metadata, f.env.OPENSIGHT_AUTH_ENCRYPTION_KEY, endpoints);

@@ -150,14 +150,15 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const authenticate = options.security.authenticate;
   const reference = referenceConfig(options.env ?? process.env);
   if (options.invocation && reference) throw new MetadataError('SERVERLESS_REFERENCE_FORBIDDEN', 503);
-  // Enabling signup always composes quota enforcement, even outside reference
-  // mode. Existing unmetered operator tenants keep their prior unrestricted
-  // defaults; every trial/paid billing override still resolves fail-closed.
-  const signupUsage = !reference && signupCfg.enabled && !options.invocation;
-  if (signupUsage) await initializeUsage(options.membershipDatabase);
-  const signupDefaults = (options.env ?? process.env).OPENSIGHT_ENTITLEMENTS;
-  const usage = reference ? new HostedUsage(options.membershipDatabase, reference.entitlements, clock) : signupUsage
-    ? new HostedUsage(options.membershipDatabase, signupDefaults ? entitlementConfig(signupDefaults) : { defaults: { apiCalls: Number.MAX_SAFE_INTEGER, storageBytes: Number.MAX_SAFE_INTEGER, computeAttempts: Number.MAX_SAFE_INTEGER }, tenants: {} }, clock)
+  // Outside reference/invocation modes, entitlements, usable billing or signup
+  // compose quota enforcement independently of the signup rollout flag.
+  // Without explicit entitlements, operator defaults remain unrestricted;
+  // every trial/paid billing override still resolves fail-closed.
+  const configuredEntitlements = (options.env ?? process.env).OPENSIGHT_ENTITLEMENTS;
+  const hostedUsage = !reference && !options.invocation && (configuredEntitlements !== undefined || billingCfg !== undefined || signupCfg.enabled);
+  if (hostedUsage) await initializeUsage(options.membershipDatabase);
+  const usage = reference ? new HostedUsage(options.membershipDatabase, reference.entitlements, clock) : hostedUsage
+    ? new HostedUsage(options.membershipDatabase, configuredEntitlements !== undefined ? entitlementConfig(configuredEntitlements) : { defaults: { apiCalls: Number.MAX_SAFE_INTEGER, storageBytes: Number.MAX_SAFE_INTEGER, computeAttempts: Number.MAX_SAFE_INTEGER }, tenants: {} }, clock)
     : options.invocation?.usage;
   if (reference) await options.membershipDatabase.transaction(async c => {
     for (const table of ['h8_usage', 'h8_monthly_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
