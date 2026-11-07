@@ -417,6 +417,30 @@ test('HTTP: operator payment link, signed webhook, pause gate on the tenant plan
   assert.equal(session.status, 200);
 });
 
+test('213 HTTP: billing-only tier quotas apply with signup off and preserve operator defaults', async t => {
+  const f = await h8Fixture(t);
+  Object.assign(f.env, env({ OPENSIGHT_SIGNUP_ENABLED: 'false',
+    OPENSIGHT_BILLING_TIER_ENTITLEMENTS: JSON.stringify({ light: { ...LIGHT, apiCalls: 0 } }) }));
+  const { server, request } = await serveH8(t, f, { stripeFetcher: async () => { throw new Error('Unexpected Stripe request'); } });
+  const headers = { authorization: 'one' };
+  assert.equal((await request('/api/users', { headers })).status, 200);
+  const raw = JSON.stringify({ id: 'evt_213_paid', created: 1, type: 'checkout.session.completed', data: { object: {
+    subscription: 'sub_213', customer: 'cus_213', metadata: { tenant_id: 'tenant-one', tier: 'light' }, payment_status: 'paid',
+  } } });
+  const paid = await rawRequest(server.address().port, '/api/host/billing/webhook', {
+    headers: { 'content-type': 'application/json', 'stripe-signature': sign(raw, Math.floor(Date.now() / 1000)) }, raw,
+  });
+  assert.equal(paid.status, 200); assert.equal(paid.body.handled, true);
+  for (let n = 0; n < 3; n++) {
+    const denied = await request('/api/users', { headers });
+    assert.equal(denied.status, 429); assert.equal(denied.body.errorCode, 'USAGE_LIMIT_EXCEEDED');
+    assert.equal((await request('/api/users', { headers: { authorization: 'two' } })).status, 200);
+  }
+  // Identity remains available for billing resolution even when product quotas are exhausted.
+  const session = await request('/api/session', { headers });
+  assert.equal(session.status, 200); assert.equal(session.body.billing.tier, 'light');
+});
+
 test('HTTP: without Stripe configuration the billing routes do not exist and the product works unchanged', async t => {
   const f = await h8Fixture(t);
   const { request, operator } = await serveH8(t, f);
