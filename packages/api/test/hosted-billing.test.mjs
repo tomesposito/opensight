@@ -72,6 +72,26 @@ async function billingFixture(t, now = Date.UTC(2026, 10, 3, 12)) {
 const subscriptionEvent = (id, object) => ({ id, type: 'customer.subscription.updated', object });
 const activeSub = { id: 'sub_1', customer: 'cus_1', status: 'active', current_period_end: 1794000000, items: { data: [{ price: { id: 'price_light' } }] } };
 
+test('211 allowlist: unknown subscription and invoice types are recorded without changing billing', async t => {
+  const f = await billingFixture(t);
+  await f.billing.createPaymentLink('tenant-one', 'light');
+  await f.billing.handleEvent({ id: 'evt_allow_checkout', type: 'checkout.session.completed', object: { payment_link: 'plink_light', subscription: 'sub_1', customer: 'cus_1' } });
+  await f.billing.handleEvent(subscriptionEvent('evt_allow_active', activeSub));
+  const before = await f.billing.state('tenant-one');
+  const audits = await readOperatorAudit(f.db, { limit: 100 });
+  for (const [index, type] of ['customer.subscription.fabricated', 'customer.subscription.updated.extra', 'invoice.paid.extra'].entries()) {
+    const event = { id: `evt_ignored_${index}`, type, object: { ...activeSub, status: 'unpaid', subscription: 'sub_other', metadata: { tenant_id: 'tenant-one' } } };
+    const result = await f.billing.handleEvent(event);
+    assert.equal(result.action, 'ignored'); assert.equal(result.handled, false);
+    assert.deepEqual(await f.billing.state('tenant-one'), before);
+    assert.equal((await f.db.transaction(c => c.query('SELECT outcome FROM h9_billing_events WHERE event_id = ?', [event.id])))[0].outcome, 'ignored');
+    assert.equal((await f.billing.handleEvent(event)).duplicate, true);
+  }
+  assert.deepEqual(await readOperatorAudit(f.db, { limit: 100 }), audits);
+  assert.equal(f.mail.messages.length, 0);
+  assert.doesNotThrow(() => f.billing.assertAccess('tenant-one'));
+});
+
 test('webhook flow: checkout binds the tenant, subscription activates the tier, replay is a no-op', async t => {
   const f = await billingFixture(t);
   await f.billing.createPaymentLink('tenant-one', 'light');

@@ -161,6 +161,13 @@ export async function readRawBody(request: IncomingMessage, maxBytes = 1024 * 10
 }
 
 export interface StripeEvent { id: string; type: string; object: Record<string, unknown> }
+const SUBSCRIPTION_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted',
+]);
+const BILLING_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'checkout.session.completed', ...SUBSCRIPTION_EVENT_TYPES,
+  'invoice.payment_failed', 'invoice.paid', 'invoice.payment_succeeded',
+]);
 export function parseStripeEvent(rawBody: Buffer): StripeEvent {
   let parsed: unknown;
   try { parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(rawBody)); } catch { throw new MetadataError('STRIPE_EVENT_INVALID', 400); }
@@ -359,7 +366,7 @@ export class HostedBilling {
       const link = (await c.query('SELECT tenant_id, tier FROM h9_billing_links WHERE link_id = ?', [paymentLink]))[0];
       if (link) return { tenantId: String(link.tenant_id), linkTier: String(link.tier) as BillingTier };
     }
-    const subscriptionId = event.type.startsWith('customer.subscription') ? stringOrNull(object.id) : stringOrNull(object.subscription);
+    const subscriptionId = SUBSCRIPTION_EVENT_TYPES.has(event.type) ? stringOrNull(object.id) : stringOrNull(object.subscription);
     if (subscriptionId) {
       const row = (await c.query('SELECT tenant_id FROM h9_billing WHERE stripe_subscription_id = ?', [subscriptionId]))[0];
       if (row) return { tenantId: String(row.tenant_id) };
@@ -391,6 +398,10 @@ export class HostedBilling {
           throw error;
         }
         await c.query('RELEASE SAVEPOINT opensight_billing_event');
+        if (!BILLING_EVENT_TYPES.has(event.type)) {
+          await c.query('UPDATE h9_billing_events SET outcome = ? WHERE event_id = ?', ['ignored', event.id]);
+          return { duplicate: false, handled: false, tenantId: null, action: 'ignored' } satisfies BillingEventResult;
+        }
         const resolved = await this.resolveTenant(c, event);
         if (!resolved) {
           await c.query('UPDATE h9_billing_events SET outcome = ? WHERE event_id = ?', ['unmatched', event.id]);
@@ -411,7 +422,7 @@ export class HostedBilling {
             if (stringOrNull(nested(object.metadata).tier) && ['paid', 'no_payment_required'].includes(String(object.payment_status))) { next.accessState = 'active'; next.pauseEffectiveAt = null; }
           }
           action = 'checkout_completed';
-        } else if (event.type.startsWith('customer.subscription')) {
+        } else if (SUBSCRIPTION_EVENT_TYPES.has(event.type)) {
           const status = event.type === 'customer.subscription.deleted' ? 'canceled' : stringOrNull(object.status) ?? next.subscriptionStatus;
           next.stripeCustomerId = stringOrNull(object.customer) ?? next.stripeCustomerId;
           next.stripeSubscriptionId = stringOrNull(object.id) ?? next.stripeSubscriptionId;
