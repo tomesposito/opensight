@@ -361,15 +361,15 @@ export class HostedBilling {
     for (const tier of PAID_TIERS) if (this.config.priceIds[tier as 'light' | 'regular' | 'heavy'] === priceId) return tier as BillingTier;
     return undefined;
   }
-  private async resolveTenant(c: SqlConnection, event: StripeEvent): Promise<{ tenantId: string; linkTier?: BillingTier } | undefined> {
+  private async resolveTenant(c: SqlConnection, event: StripeEvent): Promise<{ tenantId: string; linkTier?: BillingTier; checkoutBinding?: boolean } | undefined> {
     const object = event.object;
     const metadata = nested(object.metadata);
     const metaTenant = stringOrNull(metadata.tenant_id);
-    if (metaTenant) { try { return { tenantId: identifier(metaTenant), ...(event.type === 'checkout.session.completed' && PAID_TIERS.includes(metadata.tier as BillingTier) ? { linkTier: metadata.tier as BillingTier } : {}) }; } catch { /* fall through to durable bindings */ } }
-    const paymentLink = stringOrNull(object.payment_link);
+    if (metaTenant) { try { return { tenantId: identifier(metaTenant), checkoutBinding: event.type === 'checkout.session.completed', ...(event.type === 'checkout.session.completed' && PAID_TIERS.includes(metadata.tier as BillingTier) ? { linkTier: metadata.tier as BillingTier } : {}) }; } catch { /* fall through to durable bindings */ } }
+    const paymentLink = event.type === 'checkout.session.completed' ? stringOrNull(object.payment_link) : null;
     if (paymentLink) {
       const link = (await c.query('SELECT tenant_id, tier FROM h9_billing_links WHERE link_id = ?', [paymentLink]))[0];
-      if (link) return { tenantId: String(link.tenant_id), linkTier: String(link.tier) as BillingTier };
+      if (link) return { tenantId: String(link.tenant_id), linkTier: String(link.tier) as BillingTier, checkoutBinding: true };
     }
     const subscriptionId = SUBSCRIPTION_EVENT_TYPES.has(event.type) ? stringOrNull(object.id) : stringOrNull(object.subscription);
     if (subscriptionId) {
@@ -418,6 +418,18 @@ export class HostedBilling {
         // transactions otherwise race at READ COMMITTED; SQLite uses BEGIN IMMEDIATE.
         if (this.db.dialect === 'postgres') await c.query('SELECT tenant_id FROM h1_tenants WHERE tenant_id = ? FOR UPDATE', [tenantId]);
         const existing = asRecord((await c.query('SELECT * FROM h9_billing WHERE tenant_id = ?', [tenantId]))[0]);
+        const object = event.object;
+        const subscriptionId = SUBSCRIPTION_EVENT_TYPES.has(event.type) ? stringOrNull(object.id) : stringOrNull(object.subscription);
+        // Only tenant-bound checkout (metadata or a stored operator payment
+        // link), or subscription.created for the bound customer, may replace a
+        // binding. Customer/metadata resolution alone never authorizes updates
+        // or invoices for another subscription, including an unbound tenant.
+        const mayBind = resolved.checkoutBinding || event.type === 'customer.subscription.created'
+          && existing?.stripeCustomerId != null && existing.stripeCustomerId === stringOrNull(object.customer);
+        if (!subscriptionId || subscriptionId !== existing?.stripeSubscriptionId && !mayBind) {
+          await c.query('UPDATE h9_billing_events SET tenant_id = ?, outcome = ? WHERE event_id = ?', [tenantId, 'foreign_subscription', event.id]);
+          return { duplicate: false, handled: false, tenantId, action: 'foreign_subscription' } satisfies BillingEventResult;
+        }
         // Stripe timestamps have one-second precision, and event IDs do not
         // establish chronology. Equal-created events are first-applied-wins:
         // keep the committed state and record subsequent ties as stale.
@@ -427,7 +439,6 @@ export class HostedBilling {
         }
         await c.query('UPDATE h9_billing_events SET tenant_id = ?, outcome = ? WHERE event_id = ?', [tenantId, 'applied', event.id]);
         const next: BillingRecord = existing ? { ...existing } : { tenantId, trialEndsAt: null, retentionDueAt: null, tier: null, subscriptionStatus: null, accessState: 'active', pauseEffectiveAt: null, stripeCustomerId: null, stripeSubscriptionId: null, lastStripeEventCreated: null, updatedAt: this.nowIso() };
-        const object = event.object;
         let action = 'recorded';
         if (event.type === 'checkout.session.completed') {
           next.stripeCustomerId = stringOrNull(object.customer) ?? next.stripeCustomerId;

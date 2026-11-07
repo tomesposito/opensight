@@ -183,6 +183,83 @@ test('211 migration: existing billing rows get a nullable event watermark, initi
   assert.equal((await f.billing.state('tenant-one')).lastStripeEventCreated, 30);
 });
 
+test('211 fencing: previous-subscription updates and invoices cannot change a replacement binding', async t => {
+  const f = await billingFixture(t); await bindActive(f);
+  await f.billing.handleEvent({ id: 'evt_replace', created: 30, type: 'checkout.session.completed', object: {
+    subscription: 'sub_new', customer: 'cus_1', metadata: { tenant_id: 'tenant-one', tier: 'regular' }, payment_status: 'paid',
+  } });
+  const before = await f.billing.state('tenant-one');
+  assert.equal(before.stripeSubscriptionId, 'sub_new'); assert.equal(before.tier, 'regular');
+  const audits = await readOperatorAudit(f.db, { limit: 100 });
+  for (const [index, type] of ['customer.subscription.updated', 'customer.subscription.deleted', 'invoice.payment_failed', 'invoice.paid', 'invoice.payment_succeeded'].entries()) {
+    for (const metadata of [undefined, { tenant_id: 'tenant-one' }]) {
+      const event = { id: `evt_foreign_${index}_${metadata ? 'metadata' : 'customer'}`, created: 1000 + index, type, object: {
+        ...activeSub, status: 'unpaid', subscription: 'sub_1', metadata, items: { data: [{ price: { id: 'price_heavy' } }] },
+      } };
+      const result = await f.billing.handleEvent(event);
+      assert.equal(result.handled, false); assert.equal(result.action, 'foreign_subscription');
+      assert.deepEqual(await f.billing.state('tenant-one'), before);
+      assert.deepEqual(await eventOutcome(f, event.id), { tenant_id: 'tenant-one', outcome: 'foreign_subscription' });
+      assert.equal((await f.billing.handleEvent(event)).duplicate, true);
+    }
+  }
+  assert.deepEqual(await readOperatorAudit(f.db, { limit: 100 }), audits);
+  assert.equal(f.mail.messages.length, 0); assert.doesNotThrow(() => f.billing.assertAccess('tenant-one'));
+  // Rejected events must not advance ordering and suppress legitimate pauses.
+  assert.equal((await f.billing.handleEvent({ id: 'evt_cancel_current', created: 40, type: 'customer.subscription.deleted', object: {
+    ...activeSub, id: 'sub_new', current_period_end: 1, items: { data: [{ price: { id: 'price_regular' } }] },
+  } })).action, 'access_paused');
+  const paused = await f.billing.state('tenant-one');
+  assert.equal((await f.billing.handleEvent(subscriptionEvent('evt_old_reactivate', activeSub, 50))).action, 'foreign_subscription');
+  assert.deepEqual(await f.billing.state('tenant-one'), paused);
+  assert.throws(() => f.billing.assertAccess('tenant-one'), { code: 'BILLING_ACCESS_PAUSED' });
+});
+
+test('211 fencing: metadata and customer fallback cannot establish arbitrary subscription or invoice bindings', async t => {
+  const f = await billingFixture(t);
+  for (const [index, type] of ['customer.subscription.updated', 'customer.subscription.deleted', 'customer.subscription.created', 'invoice.payment_failed', 'invoice.paid', 'invoice.payment_succeeded'].entries()) {
+    const result = await f.billing.handleEvent({ id: `evt_unbound_${index}`, created: 30, type, object: {
+      ...activeSub, subscription: 'sub_1', metadata: { tenant_id: 'tenant-one' },
+    } });
+    assert.equal(result.action, 'foreign_subscription');
+    assert.deepEqual(await f.billing.state('tenant-one'), { tenantId: 'tenant-one', status: 'none' });
+  }
+  await bindActive(f);
+  const before = await f.billing.state('tenant-one');
+  for (const [index, object] of [{ customer: 'cus_1' }, { subscription: null, customer: 'cus_1' }, { id: 'sub_other', customer: 'cus_other', metadata: { tenant_id: 'tenant-one' } }].entries()) {
+    const type = index === 2 ? 'customer.subscription.created' : 'invoice.payment_failed';
+    assert.equal((await f.billing.handleEvent({ id: `evt_bad_binding_${index}`, created: 40, type, object })).action, 'foreign_subscription');
+    assert.deepEqual(await f.billing.state('tenant-one'), before);
+  }
+});
+
+test('211 fencing: subscription creation for the bound customer can explicitly establish and replace a binding', async t => {
+  const f = await billingFixture(t);
+  await f.db.transaction(c => c.query('INSERT INTO h9_billing (tenant_id, stripe_customer_id, updated_at) VALUES (?,?,?)', ['tenant-one', 'cus_1', new Date(f.now()).toISOString()]));
+  assert.equal((await f.billing.handleEvent({ id: 'evt_first_created', created: 10, type: 'customer.subscription.created', object: activeSub })).handled, true);
+  assert.equal((await f.billing.state('tenant-one')).stripeSubscriptionId, 'sub_1');
+  const replacement = { id: 'evt_new_created', created: 20, type: 'customer.subscription.created', object: { ...activeSub, id: 'sub_new' } };
+  assert.equal((await f.billing.handleEvent(replacement)).handled, true);
+  const before = await f.billing.state('tenant-one'); assert.equal(before.stripeSubscriptionId, 'sub_new');
+  assert.equal((await f.billing.handleEvent({ id: 'evt_late_created', created: 15, type: 'customer.subscription.created', object: activeSub })).action, 'stale');
+  assert.deepEqual(await f.billing.state('tenant-one'), before);
+  assert.equal((await f.billing.handleEvent(subscriptionEvent('evt_late_update', activeSub, 30))).action, 'foreign_subscription');
+  assert.deepEqual(await f.billing.state('tenant-one'), before);
+});
+
+test('211 fencing: checkout replacement requires tenant metadata or a stored payment link, and must be newer', async t => {
+  const f = await billingFixture(t); await bindActive(f);
+  const before = await f.billing.state('tenant-one');
+  const object = { customer: 'cus_1', subscription: 'sub_new' };
+  assert.equal((await f.billing.handleEvent({ id: 'evt_customer_only', created: 30, type: 'checkout.session.completed', object })).action, 'foreign_subscription');
+  assert.deepEqual(await f.billing.state('tenant-one'), before);
+  assert.equal((await f.billing.handleEvent({ id: 'evt_stale_checkout', created: 15, type: 'checkout.session.completed', object: { ...object, metadata: { tenant_id: 'tenant-one', tier: 'heavy' } } })).action, 'stale');
+  assert.deepEqual(await f.billing.state('tenant-one'), before);
+  await f.billing.createPaymentLink('tenant-one', 'regular');
+  assert.equal((await f.billing.handleEvent({ id: 'evt_link_replacement', created: 40, type: 'checkout.session.completed', object: { ...object, payment_link: 'plink_regular' } })).handled, true);
+  const state = await f.billing.state('tenant-one'); assert.equal(state.stripeSubscriptionId, 'sub_new'); assert.equal(state.tier, 'regular');
+});
+
 test('211 allowlist: unknown subscription and invoice types are recorded without changing billing', async t => {
   const f = await billingFixture(t);
   await f.billing.createPaymentLink('tenant-one', 'light');
@@ -328,6 +405,12 @@ test('HTTP: operator payment link, signed webhook, pause gate on the tenant plan
   const product = await request('/api/users', { headers: { authorization: 'one' } });
   assert.equal(product.status, 403); assert.equal(product.body.errorCode, 'BILLING_ACCESS_PAUSED');
 
+  res = await deliver({ id: 'evt_h_old_active', created: 2, type: 'customer.subscription.updated', data: { object: { id: 'sub_9', customer: 'cus_9', status: 'active', items: { data: [{ price: { id: 'price_light' } }] } } } });
+  assert.equal(res.status, 200); assert.equal(res.body.handled, false);
+  assert.equal((await eventOutcome(f, 'evt_h_old_active')).outcome, 'stale');
+  const stillPaused = await request('/api/users', { headers: { authorization: 'one' } });
+  assert.equal(stillPaused.status, 403); assert.equal(stillPaused.body.errorCode, 'BILLING_ACCESS_PAUSED');
+
   const resolved = await request('/api/host/tenants/tenant-one/billing/resolve', { method: 'POST', headers: operator, body: { action: 'drop_to_free' } });
   assert.equal(resolved.status, 404);
   session = await request('/api/session', { headers: { authorization: 'one' } });
@@ -364,7 +447,10 @@ test('197: paid beats trial beats none; exact expiry, retained deadline, one aud
   assert.equal(mail.messages.length, 1);
   const audits = await readOperatorAudit(f.db, { limit: 100 });
   assert.equal(audits.filter(e => e.action === 'billing.access.paused' && e.detail.reason === 'trial_expired').length, 1);
-  await billing.handleEvent(subscriptionEvent('evt_trial_paid', { ...activeSub, metadata: { tenant_id: 'tenant-one' } }));
+  await billing.handleEvent({ id: 'evt_trial_checkout', created: 1, type: 'checkout.session.completed', object: {
+    subscription: 'sub_1', customer: 'cus_1', metadata: { tenant_id: 'tenant-one', tier: 'light' }, payment_status: 'paid',
+  } });
+  await billing.handleEvent(subscriptionEvent('evt_trial_paid', activeSub));
   assert.equal((await billing.state('tenant-one')).trialEndsAt, null);
   assert.equal(billing.trial('tenant-one'), null); assert.deepEqual(billing.tierEntitlement('tenant-one'), LIGHT);
   assert.doesNotThrow(() => billing.assertAccess('tenant-one'));
