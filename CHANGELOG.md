@@ -172,6 +172,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Delayed Stripe events can no longer restore canceled access, undo tier upgrades, or replace the current subscription through unrelated subscription updates or invoices. Billing now checks event creation order and subscription bindings atomically, and ignores unlisted event types (#211).
+
 - Reject unsupported API paths before scanning large browser headers at the edge, avoiding a CloudFront regex-limit failure during release validation (#199).
 
 - Include the social preview image and all approved pricing, comparison, documentation and dark signup pages in the attested marketing archive, with explicit public routes and reference checks (#183, #184, #185, #186, #187, #197).

@@ -45,13 +45,54 @@ price IDs in the deploy environment.
 3. Stripe calls `POST /api/host/billing/webhook`. Configure the Stripe
    webhook endpoint for `checkout.session.completed`,
    `customer.subscription.created/updated/deleted`,
-   `invoice.payment_failed`, and `invoice.paid` events. The endpoint
+   `invoice.payment_failed`, `invoice.paid`, and `invoice.payment_succeeded` events. The endpoint
    verifies the Stripe signature against the raw body before trusting
    anything in it; events are applied exactly once (replays are durable
    no-ops), and every entitlement change lands in the operator audit
    trail with the Stripe event ID as the reference.
 4. `GET /api/host/tenants/{tenantId}/billing` shows the tenant's current
    tier, subscription status, trial deadline, access state and retention date.
+
+## Event reconciliation (#211)
+
+The verified event must include a nonnegative integer `created` timestamp
+in Unix seconds; missing or invalid timestamps return `STRIPE_EVENT_INVALID`
+(400). Only the exact event types listed above can change billing. Other
+types, including unlisted `customer.subscription.*` types, are recorded in
+`h9_billing_events` as `ignored` without resolving or changing a tenant.
+
+Subscription and invoice events must refer to the tenant's currently bound
+subscription. A missing or different subscription is recorded as
+`foreign_subscription` and cannot change the tier, status, access, retention
+dates, customer or subscription binding. Tenant metadata and customer lookup
+locate a tenant; they do not authorize arbitrary updates or invoices to bind
+a subscription. Binding creation or replacement is limited to checkout
+completion with tenant metadata (or the existing stored operator payment
+link), and `customer.subscription.created` for the already-bound customer.
+Checkout resolved only through customer lookup cannot replace a binding.
+
+The billing row stores the last applied Stripe creation time in
+`last_stripe_event_created` (`lastStripeEventCreated` in the billing response).
+Older events are recorded as `stale`. Equal timestamps use **first applied
+wins**: Stripe creation times have one-second precision and event IDs do not
+establish chronology, so another event from the same second is also `stale`.
+This deliberately retains the first committed state until a strictly newer
+eligible event arrives. Rejected or ignored events never advance this value.
+The subscription check precedes ordering, so an event for a foreign
+subscription is classified as `foreign_subscription` even if it is older.
+
+Resolution, checks, event recording, billing writes and audit entries share
+one database transaction. PostgreSQL locks the tenant row before reading the
+billing state, including when no billing row exists yet; SQLite serializes
+writes with `BEGIN IMMEDIATE`. Replayed IDs remain durable no-ops, including
+IDs previously recorded as stale, foreign or ignored. Stale and foreign events
+do not send pause notifications or entitlement-change audits.
+
+Initialization adds a nullable timestamp column to existing installations and
+is safe to repeat. Legacy rows have no ordering baseline until their first
+eligible event is applied; historical Stripe creation times were not stored
+and cannot be reconstructed from receipt times. This change preserves the
+retry-window, cancellation and shared paused-state behavior below.
 
 ## Past-due behaviour (amended by #197)
 
