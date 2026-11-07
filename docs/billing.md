@@ -15,6 +15,12 @@ the product works exactly as before. A partial configuration is an
 operator error: the hosted server refuses to start
 (`BILLING_CONFIG_INVALID`).
 
+In non-reference, non-invocation hosted deployments, billing configuration also
+composes quota enforcement even when self-serve signup is off (#213). Explicit
+`OPENSIGHT_ENTITLEMENTS` are validated and supply deployment defaults; without
+them, defaults remain unrestricted. Trial and paid tier entitlements override
+those defaults fail-closed, while operator tenants without billing keep them.
+
 | Variable | Meaning |
 | --- | --- |
 | `OPENSIGHT_STRIPE_SECRET_KEY` | Stripe secret API key (server-side only). |

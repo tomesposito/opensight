@@ -172,6 +172,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Existing hosted tenants keep their configured quotas and billing tier limits enforced when self-serve signup is disabled (#213).
+
 - A trial workspace no longer converts to paid entitlements before payment succeeds: an unpaid checkout or an incomplete subscription now binds and is recorded without assigning the paid tier or clearing the trial expiry, and conversion happens only on a verified paid checkout or an active subscription (#212).
 
 - Delayed Stripe events can no longer restore canceled access, undo tier upgrades, or replace the current subscription through unrelated subscription updates or invoices. Billing now checks event creation order and subscription bindings atomically, and ignores unlisted event types (#211).
