@@ -1,4 +1,4 @@
-// Integrity check for the marketing site (issues #93, #106, #134, #176, #183, #184, #185, #186, #187).
+// Integrity check for the marketing site (issues #93, #106, #134, #176, #183, #184, #185, #186, #187, #210).
 // Usage: node site/check.mjs  (exit 0 = pass)
 // Verifies: every local asset referenced from index.html exists, no external
 // requests beyond allowlisted links, required sections and AEO artifacts present.
@@ -105,6 +105,7 @@ check(sitemap.includes('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0
   sitemap.includes('</urlset>'), 'sitemap.xml must use the sitemap namespace and urlset');
 const locations = [...sitemap.matchAll(/<url>\s*<loc>([^<]+)<\/loc>\s*<\/url>/g)].map(m => m[1]);
 const publicUrls = ['https://getopensight.org/', 'https://getopensight.org/pricing/',
+  'https://getopensight.org/legal/terms/', 'https://getopensight.org/legal/privacy/',
   'https://getopensight.org/alternatives/quicksight/',
   'https://getopensight.org/alternatives/tableau/',
   'https://getopensight.org/alternatives/power-bi/',
@@ -259,7 +260,7 @@ check(!/MIT license/i.test(pricing), 'pricing: page must not claim an MIT licens
 const pricingParas = [...pricing.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/g)].map(m => stripTags(m[1]));
 for (const copy of [
   'OpenSight is free. Run it yourself and it costs nothing: the code is Apache-2.0, it is the same product we host, and no feature sits behind a paywall.',
-  'Hosted OpenSight is paying us to run it for you — hosting, backups, updates, support, and an SLA. The tiers below differ in quotas, not in features.',
+  'Hosted OpenSight is paying us to run it for you — hosting, backups, updates, and support. The tiers below differ in quotas, not in features.',
   'The free tier has no time limit. The quotas above are its limit, not a clock.',
   'Hit a quota and that usage stops until the next month or a higher tier. There is no overage bill running in the background.',
   'Take a team of 20: 4 people who build dashboards and 16 who view them. That team fits the Regular tier above, at 20 users.',
@@ -478,6 +479,74 @@ check(footer?.includes('<a href="/alternatives/tableau/">Tableau alternative</a>
 check(footer?.includes('<a href="/alternatives/power-bi/">Power BI alternative</a>'), 'home footer must link the Power BI page');
 check(footer?.includes('<a href="/vs/metabase/">OpenSight vs Metabase</a>'), 'home footer must link the Metabase page');
 check(footer?.includes('<a href="/vs/superset/">OpenSight vs Apache Superset</a>'), 'home footer must link the Superset page');
+
+// 17. Legal pages (issue #210): the approved Terms of Service and Privacy
+// Policy publish verbatim at /legal/, stamped with the publication date;
+// every standard footer links both pages; the signup page (which carries no
+// footer) links them from its terms line; and the SLA promise Tom removed
+// on 2026-11-06 stays out of site copy and the open-economics doc.
+const legalPages = [
+  {
+    dir: 'legal/terms', url: 'https://getopensight.org/legal/terms/',
+    title: 'Terms of Service — OpenSight', h1: 'Terms of Service',
+    copy: [
+      'These terms govern the hosted OpenSight service at app.getopensight.org',
+      'Light $29/month, Regular $99/month, Heavy $399/month, per workspace.',
+      'These terms do not include a service-level agreement or uptime guarantee in version 1.0.',
+      'Governing law: the laws of the State of Illinois, without regard to its conflict-of-law rules.',
+    ],
+  },
+  {
+    dir: 'legal/privacy', url: 'https://getopensight.org/legal/privacy/',
+    title: 'Privacy Policy — OpenSight', h1: 'Privacy Policy',
+    copy: [
+      'We do not sell personal information, and we do not share workspace content with third parties for their own purposes.',
+      'not row data, except where a question cannot be answered without a sample the product explicitly includes) are sent to our AI provider, currently AWS Bedrock',
+      'Technical logs are kept for 90 days and then deleted or anonymized.',
+    ],
+  },
+];
+for (const page of legalPages) {
+  const name = `${page.dir}/index.html`;
+  const body = readArtifact(name);
+  check(body.match(/<title>([^<]+)<\/title>/)?.[1] === page.title, `${name}: incorrect page title`);
+  check(body.match(/<h1>([^<]+)<\/h1>/)?.[1] === page.h1, `${name}: H1 must be ${page.h1}`);
+  const pageCanonicals = [...body.matchAll(/<link rel="canonical" href="([^"]+)">/g)].map(m => m[1]);
+  check(pageCanonicals.length === 1 && pageCanonicals[0] === page.url,
+    `${name}: expected exactly one canonical link naming the page`);
+  check(body.includes('<p class="legal-meta">Last updated: November 6, 2026</p>'),
+    `${name}: publication date must be stamped with the merge date`);
+  check(body.includes('<p class="legal-meta">Version: 1.0</p>'), `${name}: missing version line`);
+  const pageText = stripTags(body);
+  for (const copy of page.copy) {
+    check(pageText.includes(copy), `${name}: missing or altered approved copy: ${copy.slice(0, 60)}…`);
+  }
+  for (const match of body.matchAll(/\b(?:href|src)="([^"]+)"/g)) {
+    const ref = match[1];
+    if (/^(?:https?:|mailto:|#)/.test(ref) || ref === '../../demo/') continue;
+    const path = ref.split(/[?#]/)[0];
+    const target = path.startsWith('/') ? resolve(root, path.slice(1)) : resolve(root, page.dir, path);
+    check(existsSync(target), `${name}: missing local reference: ${ref}`);
+  }
+}
+const footerPages = ['index.html', 'pricing/index.html',
+  'alternatives/quicksight/index.html', 'alternatives/tableau/index.html',
+  'alternatives/power-bi/index.html', 'vs/metabase/index.html', 'vs/superset/index.html',
+  'legal/terms/index.html', 'legal/privacy/index.html',
+  'docs/index.html', ...manifest.map(page => `docs/${page.slug}/index.html`)];
+for (const name of footerPages) {
+  const pageFooter = readArtifact(name).match(/<footer\b[^>]*>[\s\S]*?<\/footer>/)?.[0];
+  check(pageFooter?.includes('<a href="/legal/terms/">Terms</a>'), `${name}: footer must link the Terms page`);
+  check(pageFooter?.includes('<a href="/legal/privacy/">Privacy</a>'), `${name}: footer must link the Privacy page`);
+}
+const signup = readArtifact('signup/index.html');
+check(signup.includes('<a href="/legal/terms/">terms</a>'), 'signup: terms line must link the Terms page');
+check(signup.includes('<a href="/legal/privacy/">privacy policy</a>'), 'signup: terms line must link the Privacy page');
+check(!pricing.includes('SLA'), 'pricing: the SLA promise must not return (removed 2026-11-06)');
+const economics = readArtifact('docs/open-economics/index.html');
+check(!economics.includes('SLA'), 'docs/open-economics: the SLA promise must not return (removed 2026-11-06)');
+check(economics.includes('Paid tiers buy higher usage quotas and support.'),
+  'docs/open-economics: paid-tiers sentence must match the SLA-free source doc');
 
 if (failures.length) {
   console.error(`site/check.mjs FAILED (${failures.length}):`);

@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Terms of Service and Privacy Policy published as site pages at `/legal/terms/` and `/legal/privacy/`, linked from every site footer (and from the signup page's terms line) and listed in the sitemap; the pricing page and the open-economics doc no longer promise an SLA (#210).
+
 - Dependabot configuration covering the npm workspaces and the SHA-pinned GitHub Actions on a weekly schedule, opening labeled update PRs against the triage bar in `docs/dependency-triage.md` (#111).
 
 - An operator Signups panel with trial funnel counts, durable pause/resume, a rolling volume cap and verified queue, plus retention-due entry points into existing D-84 erasure; billing/mail/signup state participates in erasure and encrypted backups (#197).

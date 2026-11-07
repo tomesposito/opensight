@@ -11,7 +11,7 @@ function handler(event) {
   if (typeof uri !== 'string' || !/^\/[A-Za-z0-9_./-]*$/.test(uri) || uri.indexOf('//') !== -1
       || uri.split('/').some(function (p) { return p === '.' || p === '..'; })) return denied;
   if (h.value === MARKETING_HOST) {
-    var page = /^\/(demo|pricing|signup|alternatives\/(?:quicksight|tableau|power-bi)|vs\/(?:metabase|superset)|docs(?:\/(?:connectors|embedding|embedding-sessions|getting-started|migrating-from-quicksight|open-economics|permissions))?)(\/|\/index\.html)?$/.exec(uri);
+    var page = /^\/(demo|pricing|signup|legal\/(?:terms|privacy)|alternatives\/(?:quicksight|tableau|power-bi)|vs\/(?:metabase|superset)|docs(?:\/(?:connectors|embedding|embedding-sessions|getting-started|migrating-from-quicksight|open-economics|permissions))?)(\/|\/index\.html)?$/.exec(uri);
     if (page && !page[2]) return { statusCode: 308, statusDescription: 'Permanent Redirect',
       headers: { location: { value: uri + '/' }, 'cache-control': { value: 'no-store' } } };
     if (uri === '/' || uri === '/index.html') r.uri = '/marketing/index.html';
