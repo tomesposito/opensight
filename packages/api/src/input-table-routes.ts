@@ -72,7 +72,7 @@ export class InputTableRoutes {
   }
 
   private findVisible(principal: InputPrincipal, id: string): InputTable {
-    const table = this.store.read().tables.find(t => t.id === id);
+    const table = this.store.tableById(id);
     if (!table || !canViewInputTable(principal, table)) throw new InputTableError('INPUT_TABLE_NOT_FOUND', 404, 'Input table not found');
     return table;
   }
@@ -262,9 +262,8 @@ export class InputTableRoutes {
         method(request, response, ['GET']);
         const pagination = auditPagination(query);
         const id = routeId(auditMatch[1]!);
-        const state = this.store.read();
-        const table = state.tables.find(t => t.id === id);
-        const entries = state.audit.filter(a => a.tableId === id);
+        const table = this.store.tableById(id);
+        const entries = this.store.auditFor(id);
         if (table) {
           if (!canViewInputTable(principal, table)) throw new InputTableError('INPUT_TABLE_NOT_FOUND', 404, 'Input table not found');
         } else {

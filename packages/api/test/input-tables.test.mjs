@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApiServer, emptySecurityState, StubMailTransport } from '@opensight/api';
 import { appendAudit, InputTableStore, MAX_INPUT_AUDIT_ENTRIES_PER_TABLE, MAX_INPUT_AUDIT_ENTRIES_TOTAL } from '../dist/input-tables.js';
+import { AutomationStore } from '../dist/automation-store.js';
 const root = fileURLToPath(new URL('../../../fixtures/', import.meta.url));
 
 async function api(t, options = {}) {
@@ -188,6 +189,70 @@ test('input tables (#220): paginated audit remains namespace-scoped before and a
     }
   }
   assert.deepEqual(await call('/api/input-tables/missing/audit?limit=2'), foreign);
+});
+
+test('input tables (#220): projections clone only their result and isolate nested values', async () => {
+  // An uncloneable unrelated value proves project never clones the full state.
+  const store = await AutomationStore.load({ selected: { values: [1, 2] }, unrelated: () => {} });
+  const selected = store.project(state => state.selected);
+  selected.values[0] = 99;
+  selected.values.push(3);
+  assert.deepEqual(store.project(state => state.selected), { values: [1, 2] });
+  assert.equal(store.project(state => state.selected.values.length), 2);
+  assert.equal(store.project(() => undefined), undefined);
+});
+
+test('input tables (#220): tableById and auditFor return isolated slices including nested rows', async () => {
+  const store = await InputTableStore.load();
+  await store.change(draft => {
+    for (const id of ['forecast', 'other']) {
+      const table = {
+        id, namespaceId: 'default', ownerId: 'author', name: id, boundDatasetId: null,
+        columns: structuredClone(columns), rows: [{ id: 'row-1', values: { region: 'East', forecast: 10, starts_on: null, active: null } }],
+        editors: ['other-author'], version: 1, createdAt: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-01T00:00:00.000Z',
+      };
+      draft.tables.push(table);
+      appendAudit(draft, table, 'author', 'row_added', { row: structuredClone(table.rows[0]) });
+    }
+  });
+  const before = store.read();
+  const table = store.tableById('forecast');
+  const audit = store.auditFor('forecast');
+  assert.deepEqual(table, before.tables[0]);
+  assert.deepEqual(audit, [before.audit[0]]);
+  table.name = 'Changed'; table.columns[0].name = 'changed'; table.editors.push('reader');
+  table.rows[0].values.forecast = 99; table.rows.pop();
+  audit[0].actorId = 'reader'; audit[0].detail.row.values.forecast = 99; audit.pop();
+  assert.deepEqual(store.read(), before);
+  assert.deepEqual(store.tableById('forecast'), before.tables[0]);
+  assert.deepEqual(store.auditFor('forecast'), [before.audit[0]]);
+  assert.equal(store.tableById('missing'), undefined);
+  const missing = store.auditFor('missing');
+  assert.deepEqual(missing, []);
+  missing.push(before.audit[0]);
+  assert.deepEqual(store.auditFor('missing'), []);
+});
+
+test('input tables (#220): single-table and audit routes never read the whole store', async t => {
+  const call = await api(t);
+  const table = await createTable(call);
+  const path = `/api/input-tables/${table.id}`;
+  assert.equal((await call(`${path}/rows`, 'POST', { values: { region: 'East', forecast: 10 } })).status, 201);
+  const before = await call(path);
+  const audit = await call(`${path}/audit`);
+  t.mock.method(InputTableStore.prototype, 'read', () => { throw new Error('Unexpected full input-table store read'); });
+  assert.deepEqual(await call(path), before);
+  assert.deepEqual(await call(`${path}/audit`), audit);
+  assert.deepEqual(await call(`${path}/audit?limit=1`), {
+    status: 200, body: { entries: audit.body.entries.slice(0, 1), total: 2, limit: 1, offset: 0 },
+  });
+  assert.equal((await call(path, 'GET', undefined, 'tenant-author')).status, 404);
+  assert.equal((await call(`${path}/audit?limit=1`, 'GET', undefined, 'tenant-author')).status, 404);
+  assert.equal((await call(path, 'DELETE')).status, 200);
+  assert.equal((await call(path)).status, 404);
+  const retained = await call(`${path}/audit?limit=1&offset=2`);
+  assert.equal(retained.status, 200);
+  assert.equal(retained.body.entries[0].action, 'table_deleted');
 });
 
 test('input tables: create validates the schema and lists summaries', async t => {

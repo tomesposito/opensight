@@ -208,6 +208,8 @@ export class InputTableStore {
     }
   }
   read(): InputTablesState { return this.store.read(); }
+  tableById(id: string): InputTable | undefined { return this.store.project(state => state.tables.find(table => table.id === id)); }
+  auditFor(tableId: string): InputAuditEntry[] { return this.store.project(state => state.audit.filter(entry => entry.tableId === tableId)); }
   /** Single serialized mutation; audit entries are appended atomically with the data change. */
   change<R>(update: (draft: InputTablesState) => R): Promise<R> { return this.store.change(update); }
 }
