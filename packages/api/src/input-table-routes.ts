@@ -39,7 +39,7 @@ function auditPagination(query: string): { limit: number; offset: number } | und
     if (!values.length) return fallback;
     const raw = values[0]!;
     const value = Number(raw);
-    if (values.length !== 1 || !/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value < min || value > max) {
+    if (values.length !== 1 || !raw || /\D/.test(raw) || !Number.isSafeInteger(value) || value < min || value > max) {
       throw new InputTableError('INPUT_TABLE_AUDIT_PAGINATION_INVALID', 400, `${name} must be an integer from ${min} to ${max}.`);
     }
     return value;

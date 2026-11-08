@@ -155,9 +155,9 @@ test('input tables (#220): invalid pagination fails with a named error and other
   const before = await call(`${path}/audit`);
   for (const query of [
     'limit=0', 'limit=-1', 'limit=1001', 'limit=1.5', 'limit=', 'limit=abc', 'limit=Infinity',
-    'limit=1e2', 'limit=0x10', 'limit=%20', 'limit=%2B2', 'limit=2&limit=3',
+    'limit=1e2', 'limit=0x10', 'limit=%20', 'limit=%2B2', 'limit=2%0A', 'limit=2%0D', 'limit=2&limit=3',
     'offset=-1', 'offset=1.5', 'offset=', 'offset=abc', 'offset=Infinity',
-    'offset=9007199254740992', 'offset=0&offset=1',
+    'offset=9007199254740992', 'offset=2%0D%0A', 'offset=0&offset=1',
   ]) {
     const rejected = await call(`${path}/audit?${query}`);
     assert.equal(rejected.status, 400, query);
