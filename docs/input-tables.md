@@ -20,8 +20,10 @@ The rules that make them safe:
   invalid calendar date, a non-finite number, a missing required value, or an
   unknown column is refused with a named error (`INPUT_TABLE_*`). The column
   schema is fixed when the table is created in v1.
-- **Conflicts are last-write-wins.** There is no locking in v1; the audit
-  trail is the record of who changed what.
+- **Row patches merge against the latest committed row.** Different-cell
+  concurrent patches both apply. Same-cell patches without an
+  `expectedVersion` remain last-write-wins; callers can supply the table
+  version to reject stale saves instead.
 - **Every change is audited.** Table creation, renames, row adds, cell
   updates (old → new value), row deletes, editor changes, and table deletion
   are appended to an append-only audit trail in the same store update as the
@@ -50,10 +52,21 @@ All routes are namespace-scoped; a table in another namespace is a 404.
 | `PATCH /api/input-tables/:id` | Rename and/or set `boundDatasetId` (editors and above). |
 | `PUT /api/input-tables/:id/editors` | Replace the editors list (owner or administrator). Editors must be workspace users. |
 | `POST /api/input-tables/:id/rows` | Add a row (editors). Body: `values` keyed by column name. |
-| `PATCH /api/input-tables/:id/rows/:rowId` | Update cells (editors); the merged row is revalidated. |
+| `PATCH /api/input-tables/:id/rows/:rowId` | Update cells (editors). Body: `values`, optional `expectedVersion`; the merged row is revalidated. |
 | `DELETE /api/input-tables/:id/rows/:rowId` | Delete a row (editors). |
 | `DELETE /api/input-tables/:id` | Delete the table (owner or administrator). Audit is retained. |
 | `GET /api/input-tables/:id/audit` | The append-only audit entries, oldest first. Works after deletion. |
+
+Row PATCH merges and validates against the latest committed row inside the
+serialized store mutation. Audit old values come from that same row.
+Optional `expectedVersion` must be a positive safe integer (otherwise
+400 `INPUT_TABLE_INVALID_VERSION`). It is compared with the table's current
+`version` inside the mutation; a mismatch returns 412
+`INPUT_TABLE_VERSION_CONFLICT` without changing the table or appending an
+audit entry. This is a table-wide version, so any intervening table change
+can cause a conflict, including a change to another row. Reload the table
+and reconcile edits before retrying. Omitting the version preserves
+last-write-wins behavior for the cells in the patch.
 
 Limits: 1–32 columns per table, 10,000 rows per table, text values up to
 10,000 characters, table names up to 120 characters. `boundDatasetId` binds a
@@ -83,5 +96,7 @@ table also appears in the Data Prep source picker under the same id.
 The Data page has an **Input tables** tab: create a table (name, optional
 bound dataset, typed columns), edit its grid in place (typed cell inputs,
 per-row save, add/delete rows), manage editors, and read the audit trail.
+Row Save sends the loaded table version because it submits the full row;
+a stale save reports a conflict and keeps the draft for review.
 Users without an editor grant see the grid read-only, with the reason stated
 plainly.

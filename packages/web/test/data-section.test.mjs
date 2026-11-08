@@ -61,6 +61,31 @@ test('input tables tab lists tables and opens a read-only grid for viewers', asy
   assert.match(ui.text(), /East/);
   assert.match(ui.text(), /Read-only: editing needs an editor grant/);
 });
+test('input tables Save uses the loaded table version and retains the draft on a conflict (#219)', async t => {
+  const full = { id: 't1', name: 'Forecast', boundDatasetId: null,
+    columns: [{ name: 'region', type: 'text', required: true }, { name: 'amount', type: 'number', required: false }],
+    rows: [{ id: 'r1', values: { region: 'East', amount: 10 } }], editors: [], canEdit: true, canManage: false, version: 3 };
+  const saves = [];
+  let reads = 0;
+  const itClient = { ...client,
+    listInputTables: async () => ({ tables: [{ ...full, columnCount: 2, rowCount: 1 }] }),
+    getInputTable: async () => { reads++; return structuredClone(full); },
+    createInputTable: async () => full, addInputTableRow: async () => ({}), deleteInputTableRow: async () => ({}),
+    updateInputTableRow: async (...args) => { saves.push(args); throw new Error('Input table has changed. Reload the table before saving.'); },
+  };
+  const ui = await mount(t, { client: itClient });
+  await act(async () => { button(ui, 'Input tables').props.onClick(); });
+  await act(async () => { button(ui, 'Forecast').props.onClick(); });
+  await change(ui.root.findByProps({ 'aria-label': 'amount for row r1' }), '99');
+  // Another editor changes the server's copy after this grid loaded version 3.
+  full.rows[0].values.region = 'West'; full.version = 4;
+  await act(async () => { button(ui, 'Save').props.onClick(); });
+  assert.deepEqual(saves, [['t1', 'r1', { region: 'East', amount: 99 }, 3]]);
+  assert.equal(reads, 1, 'a rejected save does not replace the local draft');
+  assert.match(ui.text(), /Input table has changed/);
+  assert.equal(ui.root.findByProps({ 'aria-label': 'amount for row r1' }).props.value, '99');
+  assert.equal(button(ui, 'Save').props.disabled, false);
+});
 test('landing searches and filters real datasets, shows badges and opens exact row/menu targets', async t => {
   const opened = [], edited = [];
   const ui = await mount(t, { client, onOpen: row => opened.push(row.dataSetId), onEdit: row => edited.push(row.dataSetId) }, { mode: 'local' });
