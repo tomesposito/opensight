@@ -198,11 +198,22 @@ validation, **not** recommended capacity or a product tier:
 Each tenant override is a complete replacement with the three required nonnegative,
 safe-integer API/storage/compute limits and any optional fields. The optional
 `egressBytes` field is a nonnegative safe-integer monthly cap in bytes
-(#193): when set, authenticated tenant API responses are counted at their
-actual byte length and the tenant is hard-stopped with
-`USAGE_LIMIT_EXCEEDED` once the month's recorded egress reaches the cap;
-when absent, egress is metered but never capped. Set `defaults`
-to `null` to require an explicit tenant entry.
+(#193, #214). Before routing or charging an API call, admission atomically
+reserves the **entire remaining allowance** for the tenant/namespace and UTC
+month. Recorded admitted bytes plus live reservations determine availability:
+while a capped response is in flight, concurrent requests for that scope receive
+`USAGE_LIMIT_EXCEEDED` (429). Zero cap denies immediately. When absent, egress
+is metered but never capped and no reservation row is created.
+
+Settlement atomically records actual response body bytes and deletes the
+reservation. One admitted response may cross the cap in full; subsequent
+admissions are denied. Reservations are not usage and never appear in rollups,
+usage events or metrics. A failed settlement leaves its durable reservation in
+place, even after restart, so later admissions stay denied instead of spending
+against an understated counter. A request that fails before response byte
+counting starts releases its reservation without recording egress. Reservations
+count only in their admission month; actual bytes use the settlement date.
+Set `defaults` to `null` to require an explicit tenant entry.
 Missing/malformed configuration or missing tenant entitlement is
 `ENTITLEMENT_UNRESOLVED` (503). Zero disables the selected API/storage/compute unit. Config is read at
 startup; drain, update the environment, and restart to change it. It cannot be
@@ -222,7 +233,7 @@ also apply to the stored serverless entitlements snapshot. See
 | API | One authenticated, correctly namespace-scoped tenant or verified embed API request admitted past the identity boundary | Exact durable admissions per UTC calendar day; later validation/operation errors still consume a call. Over-limit calls return `USAGE_LIMIT_EXCEEDED` (429). Authentication attempts, embed shell/bootstrap redemption and operator calls are excluded; H2 authentication throttles still apply. |
 | Storage | Exact sum of UTF-8 bytes of serialized `h1_resources.body` within a tenant | Logical current occupancy, including encrypted source/upload payload envelopes and base64 overhead. Growing writes above the ceiling roll back metadata, links, secrets and revisions together. Shrinking/deleting data remains possible after a limit reduction. Every committed tenant resource write emits the resulting byte gauge. |
 | Compute | One admitted execution attempt of a manual source/prepared refresh, an H7 refresh/report/alert occurrence, or a recipient rendering attempt | Exact count of admissions per UTC day, **not** CPU time, row count or cost. A report may use one execution attempt plus one per rendered recipient. Retries/restarts doing new work count again; reuse of a saved delivery message does not render or consume another attempt. A scheduled refresh is not double-counted by the underlying refresh path. |
-| Egress | Actual response body bytes of authenticated tenant API responses on the hosted path | Durable daily byte counters summed per UTC calendar month. When the entitlement sets `egressBytes`, a pre-routing check denies with `USAGE_LIMIT_EXCEEDED` (429) once the month's recorded bytes reach the cap; the response that crosses the cap is admitted and recorded, the next request is denied, and denials record no admitted bytes. Absent a cap, egress is metered only. Operator/health and pre-auth responses are not counted; embed-session responses are not counted in this slice. |
+| Egress | Actual response body bytes of authenticated tenant API responses on the hosted path | Durable daily byte counters summed per UTC calendar month. A configured `egressBytes` cap reserves the whole remaining allowance at admission; concurrent requests for that scope get `USAGE_LIMIT_EXCEEDED` (429) while a capped response is in flight. Settlement records actual bytes and removes the reservation atomically, permitting one crossing response; a failed settlement retains the claim and keeps admissions denied. Failures before counting starts release without usage. Reservations and denied responses never add admitted bytes. Absent a cap, egress is metered only. Operator/health, pre-auth and billing resolution responses are not counted; embed-session responses are not counted in this slice. |
 | AI | `aiCalls`: validated managed answers delivered to the caller; `aiTokens`: reported input + output tokens, or a marked deterministic estimate | Durable UTC daily totals. A configured positive rate and recorded spend at/above the cap deny the next call with `AI_SPEND_CAP_EXCEEDED` (429). At the threshold, the charge commits with a durable intent to deliver one `ai.spend.warning` per tenant/day. Audit delivery retries on later admission/recording and can never erase or block the charge; undelivered warnings stay pending until the audit store recovers. Hosted generative O/admin AI routes are available (#190). Managed generations additionally require `aiCallsPerMonth` and stop at `AI_CREDITS_EXHAUSTED` (429). BYO and admin connection tests do not consume credits; failed/invalid answers are not charged. |
 
 API/compute use atomic per-tenant locked counters and `h8_usage_events`, with

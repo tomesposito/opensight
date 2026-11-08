@@ -16,7 +16,7 @@ export const referenceTables = ['h1_tenants', 'h1_namespaces', 'h1_revisions', '
   'h2_control', 'h2_identities', 'h2_memberships', 'h2_invitations', 'h2_keys', 'h2_sessions', 'h2_attempts', 'h2_onboarding', 'h2_requests',
   'h4_budget_config', 'h5_embedding_config', 'h6_keys', 'h6_sessions', 'h7_jobs', 'h7_occurrences', 'h7_deliveries', 'h7_migrations',
   'h8_schema', 'h8_usage', 'h8_monthly_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery', 'analytics_events', 'analytics_settings', 'h8_ideas'] as const;
-const optionalReferenceTables = ['h9_billing', 'h9_billing_links', 'h9_billing_events', 'h10_signups', 'h10_signup_settings', 'h10_mail_usage', 'h10_mail_receipts'];
+const optionalReferenceTables = ['h8_egress_reservations', 'h9_billing', 'h9_billing_links', 'h9_billing_events', 'h10_signups', 'h10_signup_settings', 'h10_mail_usage', 'h10_mail_receipts'];
 interface Registry { version: 1; backups: Record<string, string>; deleted: string[] }
 interface Snapshot { version: 1; tables: Record<string, SqlRow[]> }
 const maxBytes = 64 * 1024 * 1024;
