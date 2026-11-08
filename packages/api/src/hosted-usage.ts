@@ -324,10 +324,16 @@ export class HostedUsage {
   private finishEgress(handle: EgressReservation, settlement?: { bytes: number }): Promise<void> {
     const existing = this.egressFinishes.get(handle);
     if (existing) return existing;
+    if (!settlement && handle.id === null) {
+      const released = Promise.resolve();
+      this.egressFinishes.set(handle, released);
+      return released;
+    }
     const finishing = this.db.transaction(async c => {
       const { scope, id } = handle;
-      if (!settlement && id === null) return;
-      await this.lockAiScope(c, scope);
+      // Release needs only the scoped row deletion, so a suspension between
+      // admission and API charging cannot strand an unpublished response's claim.
+      if (settlement) await this.lockAiScope(c, scope);
       // The tenant lock and durable row also prevent duplicate capped settlement
       // through another HostedUsage instance. Rollback restores a deleted claim.
       if (id !== null && !(await c.query('DELETE FROM h8_egress_reservations WHERE id = ? AND tenant_id = ? AND namespace_id = ? RETURNING id',

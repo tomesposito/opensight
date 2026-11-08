@@ -452,3 +452,21 @@ test('HTTP drain waits for pending settlement after response.end and finally sel
   assert.deepEqual(await reservations(f), []);
   assert.equal((await f.usage.rollupMonthlyUsage(one, '2026-10')).egressBytes, Buffer.byteLength(JSON.stringify(result.body)));
 });
+
+test('uncapped release is a no-op even when the usage database is unavailable', async t => {
+  const f = await setup(t, base);
+  const handle = await f.usage.reserveEgress(one);
+  const transaction = t.mock.method(f.db, 'transaction', () => Promise.reject(new Error('unavailable')));
+  await f.usage.releaseEgress(handle); await f.usage.releaseEgress(handle);
+  assert.equal(transaction.mock.callCount(), 0);
+});
+
+test('release frees unpublished allowance when tenant suspension races admission', async t => {
+  const f = await setup(t, { ...base, egressBytes: 100 });
+  const handle = await f.usage.reserveEgress(one);
+  await f.db.transaction(c => c.query("UPDATE h1_tenants SET state = 'suspended' WHERE tenant_id = ?", [one.tenantId]));
+  await f.usage.releaseEgress(handle);
+  assert.deepEqual(await reservations(f), []); assert.deepEqual(await egressEvents(f), []);
+  await f.db.transaction(c => c.query("UPDATE h1_tenants SET state = 'active' WHERE tenant_id = ?", [one.tenantId]));
+  await f.usage.checkEgress(one); await f.usage.reserveEgress(one);
+});
