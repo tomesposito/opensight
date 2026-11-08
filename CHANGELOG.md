@@ -172,6 +172,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- The open-economics guard (#165) now exercises executable checks instead of prose alone: behavior tests prove row-level security, the audit log, basic embedding and the identity verifier seam work under every billing tier's entitlement, the entitlement parsers reject governance feature-flag fields, and the site guard scans every published site page, pricing and comparison pages included (#215).
+
 - Hosted egress caps reserve the remaining allowance before sending a response, preventing concurrent requests from multiplying the permitted single-response overshoot. Failed accounting retains the reservation so later requests remain denied (#214).
 
 - Existing hosted tenants keep their configured quotas and billing tier limits enforced when self-serve signup is disabled (#213).
