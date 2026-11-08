@@ -172,6 +172,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Hosted egress caps reserve the remaining allowance before sending a response, preventing concurrent requests from multiplying the permitted single-response overshoot. Failed accounting retains the reservation so later requests remain denied (#214).
+
 - Existing hosted tenants keep their configured quotas and billing tier limits enforced when self-serve signup is disabled (#213).
 
 - A trial workspace no longer converts to paid entitlements before payment succeeds: an unpaid checkout or an incomplete subscription now binds and is recorded without assigning the paid tier or clearing the trial expiry, and conversion happens only on a verified paid checkout or an active subscription (#212).
