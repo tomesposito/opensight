@@ -290,6 +290,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Security
 
+- The dark-by-default signup flag is now enforced on the namespace-scoped
+  checkout route as well as the literal one: with signup disabled, an
+  authenticated administrator can no longer create a Stripe checkout session
+  through `/api/namespaces/<ns>/signup/checkout`; billing state stays
+  readable with `checkoutEnabled: false` (#216).
 - XLSX uploads are now rejected before parsing when the workbook's declared
   uncompressed ZIP sizes exceed the ceilings (16 MiB per member, 64 MiB
   total, 1000 members), so a small high-ratio file can no longer inflate

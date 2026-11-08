@@ -443,6 +443,10 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       };
       const context = await metadata.authenticate(request, verified);
       path = scopePath(path, context);
+      // The pre-auth dark-flag check above only sees the literal path, so a
+      // namespace-scoped checkout reaches here already normalized (#216):
+      // recheck the flag on the normalized path before any checkout handling.
+      if (path === '/api/signup/checkout' && (!signup || !signupCfg.enabled)) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
       // Billing past-due gate (issue #194): a tenant paused for non-payment
       // gets no hosted access until an admin resolution reopens it. The
       // tenant's data is untouched; only access pauses.
