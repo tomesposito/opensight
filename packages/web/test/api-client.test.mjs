@@ -5,6 +5,23 @@ import { ApiError, createApiClient } from '../build/test/api-client.js';
 const definition = { DataSetIdentifierDeclarations: [], Sheets: [] };
 const response = body => Response.json(body);
 
+test('input-table row patches optionally send expectedVersion and preserve version conflicts (#219)', async () => {
+  const calls = [];
+  const client = createApiClient('/', async (url, options) => {
+    calls.push({ url, method: options.method, body: JSON.parse(options.body) });
+    return response({ row: { id: 'r1', values: { forecast: 99 } }, version: 4 });
+  });
+  await client.updateInputTableRow('t1', 'r1', { forecast: 99 });
+  await client.updateInputTableRow('t1', 'r1', { forecast: 99 }, 3);
+  assert.deepEqual(calls, [
+    { url: '/api/input-tables/t1/rows/r1', method: 'PATCH', body: { values: { forecast: 99 } } },
+    { url: '/api/input-tables/t1/rows/r1', method: 'PATCH', body: { values: { forecast: 99 }, expectedVersion: 3 } },
+  ]);
+  const stale = createApiClient('/', async () => Response.json({ errorCode: 'INPUT_TABLE_VERSION_CONFLICT', Message: 'Input table has changed. Reload the table before saving.' }, { status: 412 }));
+  await assert.rejects(stale.updateInputTableRow('t1', 'r1', { forecast: 99 }, 3), error =>
+    error instanceof ApiError && error.status === 412 && error.errorCode === 'INPUT_TABLE_VERSION_CONFLICT');
+});
+
 test('session errors preserve structured reason and HTTP status without leaking response bodies', async () => {
   for (const [reply, code] of [
     [Response.json({ errorCode: 'SECURITY_NOT_CONFIGURED', Message: 'private details' }, { status: 503 }), 'SECURITY_NOT_CONFIGURED'],

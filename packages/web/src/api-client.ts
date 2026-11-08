@@ -355,7 +355,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   const deleteInputTable = (id: string) => resource<{ deleted: true }>(`/api/input-tables/${encodeURIComponent(id)}`, 'DELETE');
   const setInputTableEditors = (id: string, editors: string[]) => resource<InputTableFull>(`/api/input-tables/${encodeURIComponent(id)}/editors`, 'PUT', { editors });
   const addInputTableRow = (id: string, values: Record<string, InputCellValue>) => resource<{ row: InputRow; version: number }>(`/api/input-tables/${encodeURIComponent(id)}/rows`, 'POST', { values });
-  const updateInputTableRow = (id: string, rowId: string, values: Record<string, InputCellValue>) => resource<{ row: InputRow; version: number }>(`/api/input-tables/${encodeURIComponent(id)}/rows/${encodeURIComponent(rowId)}`, 'PATCH', { values });
+  const updateInputTableRow = (id: string, rowId: string, values: Record<string, InputCellValue>, expectedVersion?: number) => resource<{ row: InputRow; version: number }>(`/api/input-tables/${encodeURIComponent(id)}/rows/${encodeURIComponent(rowId)}`, 'PATCH', { values, ...(expectedVersion === undefined ? {} : { expectedVersion }) });
   const deleteInputTableRow = (id: string, rowId: string) => resource<{ deleted: true; version: number }>(`/api/input-tables/${encodeURIComponent(id)}/rows/${encodeURIComponent(rowId)}`, 'DELETE');
   const getInputTableAudit = (id: string) => resource<{ entries: InputAuditEntry[] }>(`/api/input-tables/${encodeURIComponent(id)}/audit`);
   const listPrepDatasets = () => resource<PrepDatasetsResponse>('/api/prep-datasets');
