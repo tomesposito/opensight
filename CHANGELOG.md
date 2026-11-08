@@ -290,6 +290,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Security
 
+- Managed-AI connection tests in the admin AI settings now pass the same
+  pre-call spend gate as answers and record their provider tokens in the
+  spend ledger (still zero delivered-answer credits), so repeated tests can
+  no longer run past the daily spend cap or hide their operator cost (#217).
 - The dark-by-default signup flag is now enforced on the namespace-scoped
   checkout route as well as the literal one: with signup disabled, an
   authenticated administrator can no longer create a Stripe checkout session

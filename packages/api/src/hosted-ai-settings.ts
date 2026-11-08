@@ -97,7 +97,9 @@ export class HostedAISettings {
     if (mode === 'managed') {
       if (!this.managed || !this.meter?.commit || !this.meter.credits || (await this.meter.credits(context.namespaceId)).limit === null) throw new AIError(503, 'AI_MANAGED_UNAVAILABLE', 'Managed AI is unavailable for this workspace');
       config = { provider: 'bedrock', model: this.managed.model }; adapter = this.adapters[this.managed.provider];
-      if (!test) await this.meter.check(context.namespaceId, true);
+      // Connection tests are credit-free, not cost-free: the pre-call gate
+      // (monthly credits + daily spend cap) applies to them too (#217).
+      await this.meter.check(context.namespaceId, true);
     } else if (mode === 'byo' && saved) {
       config = this.provider(saved.body);
       if (config.provider === 'bedrock') throw new AIError(409, 'AI_BEDROCK_APPROVAL_REQUIRED', 'Amazon Bedrock is managed only');
@@ -108,7 +110,9 @@ export class HostedAISettings {
     const result = await adapter.complete(config, key, input);
     // Token spend is an operator cost even when grammar/policy later rejects delivery.
     // Count zero leaves the monthly delivered-answer allowance untouched.
-    if (!test && mode === 'managed') await this.meter!.commit!(context.namespaceId, result.tokens ?? estimateTokens(input.system, input.prompt, result.text), result.tokens === undefined, 0);
+    // Connection tests commit the same way (#217): their tokens land in the
+    // spend ledger so the daily cap accounts for them, still at zero credits.
+    if (mode === 'managed') await this.meter!.commit!(context.namespaceId, result.tokens ?? estimateTokens(input.system, input.prompt, result.text), result.tokens === undefined, 0);
     let committed = false;
     return { text: key ? result.text.split(key).join('[redacted]') : result.text, remaining: async () => mode === 'managed' ? (await this.meter!.credits!(context.namespaceId)).remaining : Infinity, commit: async (count = 1) => {
       if (committed || test || mode !== 'managed') return;

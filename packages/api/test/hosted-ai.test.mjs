@@ -76,6 +76,21 @@ test('#190 failed responses, unsupported answers and pre-call denials never cons
   assert.equal((await f.api('/api/admin/ai/test', {})).status, 200);
   assert.equal((await f.api('/api/o/status')).body.credits.used, 0);
 });
+test('#217 managed connection tests record token spend, stay credit-free and stop at the daily spend cap', async t => {
+  const f = await fixture(t, { entitlement: { aiSpendCapCents: 12 } });
+  // Each stubbed provider reply reports 5 tokens; at the fixture rate of
+  // 1,000,000 cents per million tokens that is 5 cents of operator spend.
+  for (let i = 0; i < 3; i++) assert.equal((await f.api('/api/admin/ai/test', {})).status, 200);
+  assert.equal(f.calls.length, 3);
+  assert.equal((await f.api('/api/o/status')).body.credits.used, 0);
+  assert.match(await f.usage.metrics(), /opensight_ai_tokens\{[^}]*\} 15/);
+  // 15 cents recorded against a 12-cent daily cap: the next test is gated
+  // before any provider call is made, and still consumes no credits.
+  const blocked = await f.api('/api/admin/ai/test', {});
+  assert.equal(blocked.status, 429, JSON.stringify(blocked.body)); assert.equal(blocked.body.errorCode, 'AI_SPEND_CAP_EXCEEDED');
+  assert.equal(f.calls.length, 3);
+  assert.equal((await f.api('/api/o/status')).body.credits.used, 0);
+});
 test('#190 hosted BYO settings encrypt keys, isolate tenants, reject tenant Bedrock and bypass credits', async t => {
   const f = await fixture(t, { entitlement: { aiCallsPerMonth: 0, aiSpendCapCents: 0 } });
   const key = randomBytes(20).toString('hex');
