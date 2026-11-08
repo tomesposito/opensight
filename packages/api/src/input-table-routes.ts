@@ -138,6 +138,9 @@ export class InputTableRoutes {
           boundDatasetId, columns, rows: [], editors, version: 1, createdAt: at, updatedAt: at,
         };
         await this.store.change(draft => {
+          // Recheck against the current role inside the serialized mutation (#218):
+          // the grant may have been revoked while the body was in flight or queued.
+          this.requireAuthor(this.principal(identity));
           draft.tables.push(structuredClone(table));
           appendAudit(draft, table, principal.userId, 'table_created', { name, boundDatasetId, columns, editors });
         });
@@ -156,6 +159,7 @@ export class InputTableRoutes {
         const updated = await this.store.change(draft => {
           const table = draft.tables.find(t => t.id === id && t.namespaceId === principal.namespaceId);
           if (!table) throw new InputTableError('INPUT_TABLE_NOT_FOUND', 404, 'Input table not found');
+          this.requireManage(this.principal(identity), table);
           const oldEditors = [...table.editors];
           table.editors = editors; table.version++; table.updatedAt = nowIso();
           appendAudit(draft, table, principal.userId, 'editors_changed', { oldEditors, newEditors: editors });
@@ -177,6 +181,7 @@ export class InputTableRoutes {
         const result = await this.store.change(draft => {
           const table = draft.tables.find(t => t.id === id && t.namespaceId === principal.namespaceId);
           if (!table) throw new InputTableError('INPUT_TABLE_NOT_FOUND', 404, 'Input table not found');
+          this.requireEdit(this.principal(identity), table);
           if (table.rows.length >= MAX_INPUT_ROWS) throw new InputTableError('INPUT_TABLE_ROW_LIMIT_EXCEEDED', 400, `At most ${MAX_INPUT_ROWS} rows per table.`);
           table.rows.push(structuredClone(row)); table.version++; table.updatedAt = nowIso();
           appendAudit(draft, table, principal.userId, 'row_added', { row: structuredClone(row) });
@@ -196,6 +201,7 @@ export class InputTableRoutes {
           const result = await this.store.change(draft => {
             const table = draft.tables.find(t => t.id === id && t.namespaceId === principal.namespaceId);
             if (!table) throw new InputTableError('INPUT_TABLE_NOT_FOUND', 404, 'Input table not found');
+            this.requireEdit(this.principal(identity), table);
             const index = table.rows.findIndex(r => r.id === rowId);
             if (index < 0) throw new InputTableError('INPUT_TABLE_ROW_NOT_FOUND', 404, 'Row not found');
             const [removed] = table.rows.splice(index, 1);
@@ -215,6 +221,7 @@ export class InputTableRoutes {
         const result = await this.store.change(draft => {
           const table = draft.tables.find(t => t.id === id && t.namespaceId === principal.namespaceId);
           if (!table) throw new InputTableError('INPUT_TABLE_NOT_FOUND', 404, 'Input table not found');
+          this.requireEdit(this.principal(identity), table);
           const row = table.rows.find(r => r.id === rowId);
           if (!row) throw new InputTableError('INPUT_TABLE_ROW_NOT_FOUND', 404, 'Row not found');
           row.values = structuredClone(merged.values);
@@ -252,6 +259,7 @@ export class InputTableRoutes {
           await this.store.change(draft => {
             const index = draft.tables.findIndex(t => t.id === id && t.namespaceId === principal.namespaceId);
             if (index < 0) throw new InputTableError('INPUT_TABLE_NOT_FOUND', 404, 'Input table not found');
+            this.requireManage(this.principal(identity), draft.tables[index]!);
             const [removed] = draft.tables.splice(index, 1);
             appendAudit(draft, removed!, principal.userId, 'table_deleted', { name: removed!.name });
           });
@@ -267,6 +275,7 @@ export class InputTableRoutes {
         const updated = await this.store.change(draft => {
           const table = draft.tables.find(t => t.id === id && t.namespaceId === principal.namespaceId);
           if (!table) throw new InputTableError('INPUT_TABLE_NOT_FOUND', 404, 'Input table not found');
+          this.requireEdit(this.principal(identity), table);
           if (name !== undefined && name !== table.name) {
             appendAudit(draft, table, principal.userId, 'table_renamed', { oldValue: table.name, newValue: name });
             table.name = name;
