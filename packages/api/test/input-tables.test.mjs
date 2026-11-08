@@ -122,6 +122,74 @@ test('input tables (#220): legacy audit above both caps loads intact and is prun
   assert.deepEqual((await InputTableStore.load(path)).read().audit, retained);
 });
 
+test('input tables (#220): audit pagination preserves the default response and slices oldest first', async t => {
+  const call = await api(t);
+  const table = await createTable(call);
+  const path = `/api/input-tables/${table.id}`;
+  for (let i = 0; i < 4; i++) assert.equal((await call(`${path}/rows`, 'POST', { values: { region: 'East', forecast: i } })).status, 201);
+  // Unrelated entries must not affect this table's total or its pages.
+  await createTable(call);
+  const all = await call(`${path}/audit`);
+  assert.equal(all.status, 200);
+  assert.deepEqual(Object.keys(all.body), ['entries']);
+  assert.equal(all.body.entries.length, 5);
+  assert.deepEqual(all.body.entries.map(e => e.action), ['table_created', 'row_added', 'row_added', 'row_added', 'row_added']);
+  assert.deepEqual(all.body.entries.slice(1).map(e => e.detail.row.values.forecast), [0, 1, 2, 3]);
+  for (const [query, limit, offset] of [
+    ['limit=2', 2, 0], ['limit=2&offset=2', 2, 2], ['offset=2', 1000, 2],
+    ['limit=1&offset=0', 1, 0], ['limit=1000', 1000, 0], ['limit=2&offset=5', 2, 5],
+    ['offset=9007199254740991', 1000, Number.MAX_SAFE_INTEGER],
+  ]) {
+    assert.deepEqual(await call(`${path}/audit?${query}`), {
+      status: 200, body: { entries: all.body.entries.slice(offset, offset + limit), total: 5, limit, offset },
+    });
+  }
+  assert.deepEqual(await call(`${path}/audit`), all);
+});
+
+test('input tables (#220): invalid pagination fails with a named error and other query strings remain rejected', async t => {
+  const call = await api(t);
+  const table = await createTable(call);
+  const path = `/api/input-tables/${table.id}`;
+  const before = await call(`${path}/audit`);
+  for (const query of [
+    'limit=0', 'limit=-1', 'limit=1001', 'limit=1.5', 'limit=', 'limit=abc', 'limit=Infinity',
+    'limit=1e2', 'limit=0x10', 'limit=%20', 'limit=%2B2', 'limit=2&limit=3',
+    'offset=-1', 'offset=1.5', 'offset=', 'offset=abc', 'offset=Infinity',
+    'offset=9007199254740992', 'offset=0&offset=1',
+  ]) {
+    const rejected = await call(`${path}/audit?${query}`);
+    assert.equal(rejected.status, 400, query);
+    assert.equal(rejected.body.errorCode, 'INPUT_TABLE_AUDIT_PAGINATION_INVALID', query);
+  }
+  for (const [route, method] of [
+    ['/api/input-tables', 'GET'], ['/api/input-tables', 'POST'], [path, 'GET'], [path, 'PATCH'], [path, 'DELETE'],
+    [`${path}/rows`, 'POST'], [`${path}/rows/missing`, 'PATCH'], [`${path}/rows/missing`, 'DELETE'],
+    [`${path}/editors`, 'PUT'], [`${path}/audit`, 'POST'],
+  ]) assert.deepEqual(await call(`${route}?limit=2`, method), { status: 400, body: { Message: 'Query parameters are not supported' } });
+  assert.deepEqual(await call(`${path}/audit?unknown=1`), { status: 400, body: { Message: 'Query parameters are not supported' } });
+  assert.deepEqual(await call(`${path}/audit`), before);
+});
+
+test('input tables (#220): paginated audit remains namespace-scoped before and after deletion', async t => {
+  const call = await api(t);
+  const table = await createTable(call);
+  const path = `/api/input-tables/${table.id}`;
+  const foreign = { status: 404, body: { errorCode: 'INPUT_TABLE_NOT_FOUND', Message: 'Input table not found' } };
+  for (const deleted of [false, true]) {
+    if (deleted) assert.equal((await call(path, 'DELETE')).status, 200);
+    const all = await call(`${path}/audit`);
+    assert.equal(all.status, 200);
+    for (const offset of [0, 100]) {
+      assert.deepEqual(await call(`${path}/audit?limit=1&offset=${offset}`, 'GET', undefined, 'reader'), {
+        status: 200, body: { entries: all.body.entries.slice(offset, offset + 1), total: all.body.entries.length, limit: 1, offset },
+      });
+      assert.deepEqual(await call(`${path}/audit?limit=1&offset=${offset}`, 'GET', undefined, 'tenant-author'), foreign);
+    }
+  }
+  assert.deepEqual(await call('/api/input-tables/missing/audit?limit=2'), foreign);
+});
+
 test('input tables: create validates the schema and lists summaries', async t => {
   const call = await api(t);
   const table = await createTable(call);

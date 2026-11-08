@@ -9,7 +9,7 @@ import type { Identity, SecurityService } from './security.js';
 import {
   InputTableError, InputTableStore, appendAudit, canEditInputTable, canManageInputTable, canViewInputTable,
   mergeRowPatch, nowIso, validateCellValue, validateColumns, validateRowValues, validateTableName,
-  MAX_INPUT_ROWS, type InputColumn, type InputPrincipal, type InputTable,
+  MAX_INPUT_ROWS, MAX_INPUT_AUDIT_ENTRIES_PER_TABLE, type InputColumn, type InputPrincipal, type InputTable,
 } from './input-tables.js';
 
 export interface InputTableDependencies {
@@ -28,6 +28,23 @@ export const inputTablePrepSourceId = (tableId: string): string => `input-table-
 function body(raw: unknown, allowed: readonly string[]): Record<string, unknown> {
   if (!isObject(raw) || Object.keys(raw).some(k => !allowed.includes(k))) throw new InputTableError('INPUT_TABLE_INVALID_BODY', 400, 'Request body has unsupported fields.');
   return raw as Record<string, unknown>;
+}
+
+function auditPagination(query: string): { limit: number; offset: number } | undefined {
+  const params = new URLSearchParams(query);
+  if (!params.size) return undefined;
+  if ([...params.keys()].some(key => key !== 'limit' && key !== 'offset')) throw new RequestError(400, 'Query parameters are not supported');
+  const integer = (name: string, fallback: number, min: number, max: number): number => {
+    const values = params.getAll(name);
+    if (!values.length) return fallback;
+    const raw = values[0]!;
+    const value = Number(raw);
+    if (values.length !== 1 || !/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value < min || value > max) {
+      throw new InputTableError('INPUT_TABLE_AUDIT_PAGINATION_INVALID', 400, `${name} must be an integer from ${min} to ${max}.`);
+    }
+    return value;
+  };
+  return { limit: integer('limit', MAX_INPUT_AUDIT_ENTRIES_PER_TABLE, 1, MAX_INPUT_AUDIT_ENTRIES_PER_TABLE), offset: integer('offset', 0, 0, Number.MAX_SAFE_INTEGER) };
 }
 
 export class InputTableRoutes {
@@ -111,13 +128,13 @@ export class InputTableRoutes {
   async route(request: IncomingMessage, response: ServerResponse, path: string, query: string, identity?: Identity): Promise<boolean> {
     if (!path.startsWith('/api/input-tables')) return false;
     try {
-      if (query) throw new RequestError(400, 'Query parameters are not supported');
+      const auditMatch = /^\/api\/input-tables\/([^/]+)\/audit$/.exec(path);
+      if (query && !(auditMatch && request.method === 'GET')) throw new RequestError(400, 'Query parameters are not supported');
       const principal = this.principal(identity);
       const tableMatch = /^\/api\/input-tables\/([^/]+)$/.exec(path);
       const editorsMatch = /^\/api\/input-tables\/([^/]+)\/editors$/.exec(path);
       const rowsMatch = /^\/api\/input-tables\/([^/]+)\/rows$/.exec(path);
       const rowMatch = /^\/api\/input-tables\/([^/]+)\/rows\/([^/]+)$/.exec(path);
-      const auditMatch = /^\/api\/input-tables\/([^/]+)\/audit$/.exec(path);
 
       if (path === '/api/input-tables') {
         const verb = method(request, response, ['GET', 'POST']);
@@ -243,6 +260,7 @@ export class InputTableRoutes {
 
       if (auditMatch) {
         method(request, response, ['GET']);
+        const pagination = auditPagination(query);
         const id = routeId(auditMatch[1]!);
         const state = this.store.read();
         const table = state.tables.find(t => t.id === id);
@@ -253,7 +271,10 @@ export class InputTableRoutes {
           // Deleted tables keep their audit trail (D-84): still namespace-scoped, never leaked.
           if (!entries.length || entries[0]!.namespaceId !== principal.namespaceId) throw new InputTableError('INPUT_TABLE_NOT_FOUND', 404, 'Input table not found');
         }
-        send(response, 200, { entries: entries.filter(a => a.namespaceId === principal.namespaceId) });
+        const visible = entries.filter(a => a.namespaceId === principal.namespaceId);
+        send(response, 200, pagination
+          ? { entries: visible.slice(pagination.offset, pagination.offset + pagination.limit), total: visible.length, ...pagination }
+          : { entries: visible });
         return true;
       }
 
