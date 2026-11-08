@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { h8Fixture, serveH8 } from './h8-helpers.mjs';
 import { HostedUsage, initializeUsage, entitlementConfig } from '../dist/hosted-usage.js';
+import { initializeJobs } from '../dist/job-schema.js';
 import { drainHostedServer } from '../dist/hosted-server.js';
 
 const base = { apiCalls: 1000, storageBytes: 100000, computeAttempts: 100 };
@@ -289,7 +290,7 @@ test('zero or invalid caps and reservation storage failure fail admission withou
     await assert.rejects(f.usage.checkEgress(one), unresolved);
   }
   f.usage.config.defaults.egressBytes = 100;
-  await f.db.transaction(c => c.query("CREATE TRIGGER fail_reservation BEFORE INSERT ON h8_egress_reservations BEGIN SELECT RAISE(ABORT, 'unavailable'); END"));
+  await f.db.transaction(c => c.query("CREATE TRIGGER fail_reservation BEFORE INSERT ON h8_egress_reservations BEGIN SELECT RAISE(ABORT, 'UNIQUE constraint failed: h8_egress_reservations.id'); END"));
   await assert.rejects(f.usage.reserveEgress(one), unresolved);
   assert.deepEqual(await reservations(f), []);
   assert.deepEqual(await egressEvents(f), []);
@@ -325,4 +326,129 @@ test('invalid settlements and corrupt or overflowing daily counters preserve res
     assert.deepEqual(await reservations(f), before);
     assert.deepEqual(await egressEvents(f), []);
   }
+});
+
+
+async function serveUsage(t, f, compose) {
+  await initializeJobs(f.db);
+  return serveH8(t, f, { invocation: { usage: f.usage, signal: new AbortController().signal, compose } });
+}
+const headers = { authorization: 'one' };
+
+test('overlapping HTTP responses admit exactly one crossing response with no charge for seven denials', { timeout: 10000 }, async t => {
+  const f = await setup(t, { ...base, egressBytes: 1 });
+  const entered = Promise.withResolvers(), proceed = Promise.withResolvers(), denied = Promise.withResolvers();
+  let routes = 0, denials = 0;
+  const { server, request } = await serveUsage(t, f, () => ({ allows: () => true, finish: async () => {},
+    route: async (_request, response) => {
+      routes++; entered.resolve(); await proceed.promise;
+      response.setHeader('Content-Type', 'application/json');
+      response.write('{"probe":'); response.end('"crossing"}'); return true;
+    } }));
+  // Launch all eight without waiting for a response. Hold the admitted route
+  // open until the seven other HTTP requests finish their reservation denials.
+  const requests = Array.from({ length: 8 }, () => request('/api/egress-probe', { headers }).then(result => {
+    if (result.status === 429 && ++denials === 7) denied.resolve();
+    return result;
+  }));
+  try {
+    await entered.promise; await denied.promise;
+    assert.equal(routes, 1);
+    assert.equal((await reservations(f)).length, 1);
+    assert.equal((await f.usage.rollupMonthlyUsage(one, '2026-10')).egressBytes, 0);
+  } finally { proceed.resolve(); }
+  const results = await Promise.all(requests);
+  assert.equal(results.filter(r => r.status === 200).length, 1);
+  assert.equal(results.filter(r => r.status === 429 && r.body.errorCode === exceeded.code).length, 7);
+  assert.equal((await request('/api/egress-probe', { headers })).status, 429);
+  await drainHostedServer(server);
+  const record = await f.usage.rollupMonthlyUsage(one, '2026-10');
+  assert.equal(record.egressBytes, Buffer.byteLength('{"probe":"crossing"}'));
+  assert.equal(record.apiCallsAdmitted, 1); assert.equal(record.apiCallsDenied, 0);
+  assert.equal((await egressEvents(f)).length, 1);
+  assert.deepEqual(await reservations(f), []);
+});
+
+test('HTTP API quota failure releases admission before byte counting without an egress event', async t => {
+  const f = await setup(t, { ...base, apiCalls: 0, egressBytes: 100 });
+  const release = t.mock.method(f.usage, 'releaseEgress');
+  const settle = t.mock.method(f.usage, 'settleEgress');
+  const { server, request } = await serveUsage(t, f);
+  assert.equal((await request('/api/session', { headers })).status, 429);
+  assert.equal((await request('/api/session', { headers })).status, 429);
+  await drainHostedServer(server);
+  assert.equal(release.mock.callCount(), 2); assert.equal(settle.mock.callCount(), 0);
+  assert.deepEqual(await reservations(f), []);
+  assert.deepEqual(await egressEvents(f), []);
+  const record = await f.usage.rollupMonthlyUsage(one, '2026-10');
+  assert.equal(record.egressBytes, 0); assert.equal(record.apiCallsAdmitted, 0); assert.equal(record.apiCallsDenied, 2);
+  await f.usage.checkEgress(one); await f.usage.reserveEgress(one);
+});
+
+test('HTTP errors after byte counting starts settle their exact response bytes once', async t => {
+  const f = await setup(t, { ...base, egressBytes: 1 });
+  const settle = t.mock.method(f.usage, 'settleEgress');
+  const release = t.mock.method(f.usage, 'releaseEgress');
+  const { server, request } = await serveUsage(t, f);
+  const result = await request('/api/session', { headers, method: 'POST', body: {} });
+  assert.equal(result.status, 405); assert.equal(result.body.errorCode, 'HOSTED_REQUEST_INVALID');
+  assert.equal((await request('/api/session', { headers })).status, 429);
+  await drainHostedServer(server);
+  assert.equal(settle.mock.callCount(), 1); assert.equal(release.mock.callCount(), 0);
+  assert.equal((await f.usage.rollupMonthlyUsage(one, '2026-10')).egressBytes, Buffer.byteLength(JSON.stringify(result.body)));
+});
+
+test('HTTP settlement failure logs once, retains the claim and never falls back to recording or release', async t => {
+  const f = await setup(t, { ...base, egressBytes: 1 });
+  await f.db.transaction(c => c.query("CREATE TRIGGER fail_http_egress BEFORE INSERT ON h8_usage_events WHEN NEW.metric = 'egressBytes' BEGIN SELECT RAISE(ABORT, 'unavailable'); END"));
+  const log = t.mock.method(console, 'error', () => {});
+  const release = t.mock.method(f.usage, 'releaseEgress');
+  const record = t.mock.method(f.usage, 'recordEgressBytes');
+  const settle = t.mock.method(f.usage, 'settleEgress');
+  const { server, request } = await serveUsage(t, f);
+  assert.equal((await request('/api/session', { headers })).status, 200);
+  assert.equal((await request('/api/session', { headers })).status, 429);
+  await f.db.transaction(c => c.query('DROP TRIGGER fail_http_egress'));
+  assert.equal((await request('/api/session', { headers })).status, 429);
+  await drainHostedServer(server);
+  assert.equal(settle.mock.callCount(), 1); assert.equal(release.mock.callCount(), 0); assert.equal(record.mock.callCount(), 0);
+  assert.deepEqual(log.mock.calls.map(c => c.arguments), [['EGRESS_RECORD_FAILED']]);
+  assert.equal((await reservations(f)).length, 1);
+  assert.equal((await f.usage.rollupMonthlyUsage(one, '2026-10')).egressBytes, 0);
+  assert.deepEqual(await egressEvents(f), []);
+});
+
+test('HTTP reservation storage failure returns 503 before API charge or routing', async t => {
+  const f = await setup(t, { ...base, egressBytes: 100 });
+  await f.db.transaction(c => c.query("CREATE TRIGGER fail_http_reservation BEFORE INSERT ON h8_egress_reservations BEGIN SELECT RAISE(ABORT, 'unavailable'); END"));
+  const consume = t.mock.method(f.usage, 'consume');
+  const release = t.mock.method(f.usage, 'releaseEgress');
+  const { server, request } = await serveUsage(t, f);
+  const result = await request('/api/session', { headers });
+  assert.equal(result.status, 503); assert.equal(result.body.errorCode, unresolved.code);
+  await drainHostedServer(server);
+  assert.equal(consume.mock.callCount(), 0); assert.equal(release.mock.callCount(), 0);
+  assert.deepEqual(await reservations(f), []); assert.deepEqual(await egressEvents(f), []);
+});
+
+test('HTTP drain waits for pending settlement after response.end and finally select it once', { timeout: 10000 }, async t => {
+  const f = await setup(t, { ...base, egressBytes: 1 });
+  const entered = Promise.withResolvers(), proceed = Promise.withResolvers();
+  const original = f.usage.settleEgress.bind(f.usage);
+  const settle = t.mock.method(f.usage, 'settleEgress', async (...args) => {
+    entered.resolve(); await proceed.promise; return original(...args);
+  });
+  const { server, request } = await serveUsage(t, f);
+  const result = await request('/api/session', { headers }); await entered.promise;
+  let drained = false;
+  const drain = drainHostedServer(server).then(() => { drained = true; });
+  try {
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(drained, false);
+    assert.equal((await reservations(f)).length, 1);
+  } finally { proceed.resolve(); }
+  await drain;
+  assert.equal(settle.mock.callCount(), 1);
+  assert.deepEqual(await reservations(f), []);
+  assert.equal((await f.usage.rollupMonthlyUsage(one, '2026-10')).egressBytes, Buffer.byteLength(JSON.stringify(result.body)));
 });

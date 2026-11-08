@@ -161,7 +161,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
     ? new HostedUsage(options.membershipDatabase, configuredEntitlements !== undefined ? entitlementConfig(configuredEntitlements) : { defaults: { apiCalls: Number.MAX_SAFE_INTEGER, storageBytes: Number.MAX_SAFE_INTEGER, computeAttempts: Number.MAX_SAFE_INTEGER }, tenants: {} }, clock)
     : options.invocation?.usage;
   if (reference) await options.membershipDatabase.transaction(async c => {
-    for (const table of ['h8_usage', 'h8_monthly_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
+    for (const table of ['h8_usage', 'h8_egress_reservations', 'h8_monthly_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
     const r = (await c.query('SELECT version FROM h8_schema WHERE id = 1'))[0];
     if (Number(r?.version) !== 1) throw new MetadataError('MIGRATIONS_REQUIRED', 503);
     await appendOperatorAudit(c, { action: 'reference.started' });
@@ -254,7 +254,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         if (draining) throw new MetadataError('SERVER_DRAINING', 503);
         await hostedReadiness(options.membershipDatabase, options.tenantDatabase);
         if (reference) await options.membershipDatabase.transaction(async c => {
-          for (const table of ['h8_usage', 'h8_monthly_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
+          for (const table of ['h8_usage', 'h8_egress_reservations', 'h8_monthly_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
           const row = (await c.query('SELECT version FROM h8_schema WHERE id = 1'))[0];
           if (Number(row?.version) !== 1) throw new MetadataError('MIGRATIONS_REQUIRED', 503);
         }).catch(() => { throw new MetadataError('MIGRATIONS_REQUIRED', 503); });
@@ -469,23 +469,24 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         }
       }
       if (!resolutionPath) billingService?.assertAccess(context.tenantId);
-      // Egress gate before routing (and before the apiCalls charge): a denied
+      // Egress reservation before routing (and before the apiCalls charge): a denied
       // request is not routed, consumes no admitted egress, and its 429 body
       // is not counted. Embed routes above run before this boundary and are
       // not counted in this slice; operator/health/pre-auth routes have no
       // tenant context and are not counted either.
-      if (usage && !resolutionPath) await usage.checkEgress(context);
-      if (!resolutionPath) await usage?.consume(metadata, context, 'apiCalls');
       if (usage && !resolutionPath) {
-        const scope = { tenantId: context.tenantId, namespaceId: context.namespaceId };
-        let bytes = 0, recording: Promise<void> | undefined;
+        const reservation = await usage.reserveEgress(context);
+        let bytes = 0, counted = false, recording: Promise<void> | undefined;
         const startRecording = (): void => {
-          // The response is already sent when this settles, so a recording
-          // failure cannot crash, double-send, or corrupt it. It is surfaced
-          // as EGRESS_RECORD_FAILED rather than silently pretending success;
-          // the gate then reads only durably recorded bytes.
-          recording ??= usage.recordEgressBytes(scope, bytes).catch(() => { console.error('EGRESS_RECORD_FAILED'); });
+          // A failed settlement retains the durable claim: later admissions
+          // stay denied. Never release it or retry with plain recording.
+          recording ??= (counted ? usage.settleEgress(reservation, bytes) : usage.releaseEgress(reservation))
+            .catch(() => { console.error('EGRESS_RECORD_FAILED'); });
         };
+        // Install cleanup before consume: its denial publishes no counted
+        // response, so finally must release the reservation without usage.
+        egressSettle = async () => { startRecording(); await recording; };
+        await usage.consume(metadata, context, 'apiCalls');
         const originalWrite = typeof response.write === 'function' ? response.write.bind(response) : undefined;
         const originalEnd = response.end.bind(response);
         if (originalWrite) response.write = ((chunk: unknown, ...args: unknown[]) => {
@@ -498,7 +499,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
           startRecording();
           return (originalEnd as (chunk?: unknown, ...rest: unknown[]) => ServerResponse)(chunk, ...args);
         }) as typeof response.end;
-        egressSettle = async () => { startRecording(); await recording; };
+        counted = true;
       }
       if (await analyticsSettingsRoute(request, response, path, '', analytics, context, async () => {
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
@@ -616,7 +617,9 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       const field = error instanceof MetadataError && error.code === 'METADATA_INVALID' && error.detail && typeof error.detail === 'object' && 'field' in error.detail
         && typeof error.detail.field === 'string' && ['name', 'displayName', 'slug', 'administrator.name', 'administrator.email'].includes(error.detail.field) ? error.detail.field : undefined;
       send(response, status, { errorCode, ...(field ? { field } : {}), ...(quotaMessage === undefined ? {} : { Message: quotaMessage }) });
-    }).finally(async () => { active.delete(work); await egressSettle?.(); });
+    }).finally(async () => {
+      try { await egressSettle?.(); } finally { active.delete(work); }
+    });
     active.add(work);
     return work;
   };

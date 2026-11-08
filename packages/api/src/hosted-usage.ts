@@ -307,7 +307,10 @@ export class HostedUsage {
       await c.query('INSERT INTO h8_egress_reservations (id, tenant_id, namespace_id, period, reserved_bytes, created_at) VALUES (?,?,?,?,?,?)',
         [id, scope.tenantId, scope.namespaceId, month, cap - committed, now]);
       return { scope: { tenantId: scope.tenantId, namespaceId: scope.namespaceId }, id };
-    }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
+    }).catch((error: unknown) => {
+      if (error instanceof MetadataError && ['TENANT_UNAVAILABLE', 'ENTITLEMENT_UNRESOLVED', 'USAGE_LIMIT_EXCEEDED'].includes(error.code)) throw error;
+      throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+    });
   }
   /** Record actual bytes and remove the claim atomically. A failed transaction
    * retains the full claim, including after restart; never release on failure. */
