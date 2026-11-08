@@ -186,7 +186,7 @@ test('site integrity checks catch missing docs, sitemap/canonical drift and exte
   }
 });
 
-test('open economics rule stays published and no published page paywalls core governance (issue #165)', () => {
+test('open economics rule stays published and no published page paywalls core governance (issues #165, #215)', () => {
   const entry = manifest.find(page => page.slug === 'open-economics');
   assert.ok(entry, 'the open-economics rule must stay in the published docs manifest');
   const rule = readFileSync(resolve(repoRoot, entry.source), 'utf8').toLowerCase();
@@ -195,13 +195,18 @@ test('open economics rule stays published and no published page paywalls core go
   }
   assert.ok(rule.includes('never paywalled'), 'the open-economics rule must say never paywalled');
 
-  // Published surfaces only: the marketing homepage plus every manifest doc
-  // source. Decision records under docs/idd/ are history, not published copy.
+  // Published surfaces: every committed site page (homepage, pricing,
+  // alternatives, vs, signup, legal and the generated docs pages) plus every
+  // manifest doc source (issue #215: pricing and the other commercial pages
+  // were previously outside the scanned set). Decision records under
+  // docs/idd/ are history, not published copy.
   const features = 'single sign-on|\\bsso\\b|\\bsaml\\b|row-level security|audit log|embedding';
   const paywall = 'paid tier|paid plan|paid tiers|enterprise tier|enterprise plan|premium tier';
   const gated = new RegExp(`(${features})[^.\\n]{0,80}(${paywall})|(${paywall})[^.\\n]{0,80}(${features})`, 'i');
-  const published = [resolve(repoRoot, 'site/index.html'),
-    ...manifest.map(page => resolve(repoRoot, page.source))];
+  const sitePages = readdirSync(resolve(repoRoot, 'site'), { recursive: true })
+    .filter(path => path.endsWith('.html')).map(path => resolve(repoRoot, 'site', path));
+  const published = [...new Set([resolve(repoRoot, 'site/index.html'), ...sitePages,
+    ...manifest.map(page => resolve(repoRoot, page.source))])];
   for (const path of published) {
     assert.ok(!gated.test(readFileSync(path, 'utf8')),
       `${path} must not describe a core governance feature as a paid or enterprise tier feature`);
