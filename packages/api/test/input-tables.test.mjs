@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { request as httpRequest } from 'node:http';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,11 +25,32 @@ async function api(t, options = {}) {
   } } });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(() => { server.close(); server.closeAllConnections(); });
-  return async (path, method = 'GET', body, user = 'author') => {
+  const call = async (path, method = 'GET', body, user = 'author') => {
     const response = await fetch(`http://127.0.0.1:${server.address().port}${path}`, { method, headers: { 'Content-Type': 'application/json', ...(user ? { Authorization: `Bearer ${user}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: response.status, body: await response.json() };
   };
+  call.port = server.address().port;
+  return call;
 }
+
+/** Start a JSON request, send only the first half of its body, and return a finisher.
+ *  The caller can revoke a grant while the handler is parked in readBody, then
+ *  complete the body: the mutation must be re-authorized when it commits (#218). */
+function startDelayedBody(port, path, method, user, payload) {
+  const bytes = JSON.stringify(payload);
+  const split = Math.max(1, Math.floor(bytes.length / 2));
+  let req;
+  const done = new Promise((resolve, reject) => {
+    req = httpRequest({ host: '127.0.0.1', port, path, method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${user}`, 'Content-Length': Buffer.byteLength(bytes) } }, res => {
+      const chunks = []; res.on('data', c => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(Buffer.concat(chunks).toString()) }));
+    });
+    req.on('error', reject);
+    req.write(bytes.slice(0, split));
+  });
+  return { finish: async () => { req.end(bytes.slice(split)); return done; } };
+}
+const settle = () => new Promise(resolve => setTimeout(resolve, 200));
 
 const columns = [
   { name: 'region', type: 'text', required: true },
@@ -191,4 +213,65 @@ test('input tables: prep can use a table as its input and join against it; forei
   // Another namespace cannot reference the table at all.
   const foreign = await call('/api/datasets/itjoin/prep/preview', 'POST', { pipeline: { version: 1, input: sourceId, steps: [] } }, 'tenant-author');
   assert.equal(foreign.body.errorCode, 'PREP_SOURCE_NOT_FOUND', JSON.stringify(foreign.body));
+});
+
+test('input tables (#218): an editor revoked while a row-add body is in flight cannot commit the write', async t => {
+  const call = await api(t);
+  const table = await createTable(call);
+  const rows = `/api/input-tables/${table.id}/rows`;
+  assert.equal((await call(`/api/input-tables/${table.id}/editors`, 'PUT', { editors: ['other-author'] })).status, 200);
+  // The request passes its initial editor check, then parks awaiting the rest of its body.
+  const delayed = startDelayedBody(call.port, rows, 'POST', 'other-author', { values: { region: 'East', forecast: 99 } });
+  await settle();
+  // The owner revokes the grant before the body completes.
+  assert.equal((await call(`/api/input-tables/${table.id}/editors`, 'PUT', { editors: [] })).status, 200);
+  const denied = await delayed.finish();
+  assert.equal(denied.status, 403, JSON.stringify(denied.body));
+  assert.equal(denied.body.errorCode, 'INPUT_TABLE_EDIT_REQUIRED');
+  const after = await call(`/api/input-tables/${table.id}`);
+  assert.equal(after.body.rows.length, 0);
+  const audit = await call(`/api/input-tables/${table.id}/audit`);
+  assert.ok(!audit.body.entries.some(e => e.action === 'row_added'), 'revoked write left no audit entry');
+});
+
+test('input tables (#218): an editor revoked while a patch or rename body is in flight cannot commit either', async t => {
+  const call = await api(t);
+  const table = await createTable(call);
+  const rows = `/api/input-tables/${table.id}/rows`;
+  const added = await call(rows, 'POST', { values: { region: 'East', forecast: 10 } });
+  const rowId = added.body.row.id;
+  assert.equal((await call(`/api/input-tables/${table.id}/editors`, 'PUT', { editors: ['other-author'] })).status, 200);
+  const patch = startDelayedBody(call.port, `${rows}/${rowId}`, 'PATCH', 'other-author', { values: { forecast: 999 } });
+  await settle();
+  assert.equal((await call(`/api/input-tables/${table.id}/editors`, 'PUT', { editors: [] })).status, 200);
+  const deniedPatch = await patch.finish();
+  assert.equal(deniedPatch.status, 403, JSON.stringify(deniedPatch.body));
+  assert.equal(deniedPatch.body.errorCode, 'INPUT_TABLE_EDIT_REQUIRED');
+  // Re-grant, then revoke again during a delayed rename of the table itself.
+  assert.equal((await call(`/api/input-tables/${table.id}/editors`, 'PUT', { editors: ['other-author'] })).status, 200);
+  const rename = startDelayedBody(call.port, `/api/input-tables/${table.id}`, 'PATCH', 'other-author', { name: 'Renamed by revoked editor' });
+  await settle();
+  assert.equal((await call(`/api/input-tables/${table.id}/editors`, 'PUT', { editors: [] })).status, 200);
+  const deniedRename = await rename.finish();
+  assert.equal(deniedRename.status, 403, JSON.stringify(deniedRename.body));
+  assert.equal(deniedRename.body.errorCode, 'INPUT_TABLE_EDIT_REQUIRED');
+  const after = await call(`/api/input-tables/${table.id}`);
+  assert.equal(after.body.rows[0].values.forecast, 10);
+  assert.equal(after.body.name, 'Regional forecast');
+});
+
+test('input tables (#218): a still-authorized editor write that queues behind a revocation of someone else commits normally', async t => {
+  const call = await api(t);
+  const table = await createTable(call);
+  const rows = `/api/input-tables/${table.id}/rows`;
+  assert.equal((await call(`/api/input-tables/${table.id}/editors`, 'PUT', { editors: ['other-author'] })).status, 200);
+  // Owner and editor write concurrently through the serialized store; the owner's
+  // own authorization is unaffected by the editor-list change in between.
+  const [ownerAdd, editorAdd] = await Promise.all([
+    call(rows, 'POST', { values: { region: 'East', forecast: 1 } }, 'author'),
+    call(rows, 'POST', { values: { region: 'West', forecast: 2 } }, 'other-author'),
+  ]);
+  assert.equal(ownerAdd.status, 201, JSON.stringify(ownerAdd.body));
+  assert.equal(editorAdd.status, 201, JSON.stringify(editorAdd.body));
+  assert.equal((await call(`/api/input-tables/${table.id}`)).body.rows.length, 2);
 });
