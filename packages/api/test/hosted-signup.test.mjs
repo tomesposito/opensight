@@ -137,6 +137,27 @@ test('197 HTTP: expired identity still signs in; only admins can checkout/export
   for (const [path, method, body] of [['/api/signup/checkout', 'POST', { tier: 'light' }], ['/api/workspace/export', 'GET', undefined], ['/api/workspace/close', 'POST', { confirmTenantId: 'tenant-one' }]]) assert.equal((await request(path, { headers, method, body })).body.errorCode, 'SECURITY_ADMIN_REQUIRED');
 });
 
+test('216 HTTP: dark signup flag also closes the namespace-scoped checkout route', async t => {
+  const { billingConfig } = await import('../dist/hosted-billing.js');
+  const f = await h8Fixture(t); await initializeBilling(f.db);
+  const now = Date.UTC(2026, 10, 6), clock = () => now;
+  // Billing is configured (a checkout session could be created), but
+  // OPENSIGHT_SIGNUP_ENABLED is deliberately absent: signup stays dark.
+  Object.assign(f.env, { OPENSIGHT_TRIAL_ENTITLEMENT: JSON.stringify({ apiCalls: 30000, storageBytes: 10000000000, computeAttempts: 1500 }), OPENSIGHT_STRIPE_SECRET_KEY: 'sk_test', OPENSIGHT_STRIPE_WEBHOOK_SECRET: 'whsec_test', OPENSIGHT_STRIPE_PRICE_LIGHT: 'price_l', OPENSIGHT_STRIPE_PRICE_REGULAR: 'price_r', OPENSIGHT_STRIPE_PRICE_HEAVY: 'price_h' });
+  const billing = new HostedBilling(f.db, billingConfig(f.env), { clock }); await billing.startTrial('tenant-one');
+  const { request } = await serveH8(t, f, { clock, signupChallengeVerifier: async () => true, stripeFetcher: async () => ({ ok: true, status: 200, json: async () => ({ id: 'cs_dark', url: 'https://checkout.stripe.com/c/pay/dark' }) }) });
+  const headers = { authorization: 'one', origin: f.env.OPENSIGHT_PUBLIC_ORIGIN };
+  for (const path of ['/api/signup/checkout', '/api/namespaces/one/signup/checkout']) {
+    const res = await request(path, { method: 'POST', headers, body: { tier: 'light' } });
+    assert.equal(res.status, 404, path); assert.equal(res.body.errorCode, 'RESOURCE_NOT_FOUND', path);
+  }
+  // Billing state stays readable on both routes while dark; only checkout closes.
+  for (const path of ['/api/billing', '/api/namespaces/one/billing']) {
+    const res = await request(path, { headers });
+    assert.equal(res.status, 200, path); assert.equal(res.body.checkoutEnabled, false, path);
+  }
+});
+
 test('197 durability: encrypted reference backup preserves trial, queue settings and lifetime signup identity', async t => {
   const { migrateReference } = await import('../dist/single-node.js');
   const { ReferenceMaintenance } = await import('../dist/single-node-maintenance.js');
