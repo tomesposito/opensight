@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { request as httpRequest } from 'node:http';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApiServer, emptySecurityState, StubMailTransport } from '@opensight/api';
+import { appendAudit, InputTableStore, MAX_INPUT_AUDIT_ENTRIES_PER_TABLE, MAX_INPUT_AUDIT_ENTRIES_TOTAL } from '../dist/input-tables.js';
 const root = fileURLToPath(new URL('../../../fixtures/', import.meta.url));
 
 async function api(t, options = {}) {
@@ -63,6 +64,63 @@ async function createTable(call, extra = {}) {
   assert.equal(created.status, 201, JSON.stringify(created.body));
   return created.body;
 }
+
+test('input tables (#220): append retains the newest 1000 entries per table without pruning other tables', async () => {
+  assert.equal(MAX_INPUT_AUDIT_ENTRIES_PER_TABLE, 1000);
+  const store = await InputTableStore.load();
+  const table = { id: 'forecast', namespaceId: 'default' };
+  const last = await store.change(draft => {
+    for (let i = 0; i < 1007; i++) {
+      if (i % 100 === 0) appendAudit(draft, { ...table, id: 'other' }, 'author', 'table_renamed', { sequence: i });
+      appendAudit(draft, table, 'author', 'row_deleted', { row: { id: `row-${i}`, values: { forecast: i } } });
+    }
+    return draft.audit.at(-1);
+  });
+  const audit = store.read().audit;
+  const entries = audit.filter(e => e.tableId === table.id);
+  assert.equal(entries.length, 1000);
+  assert.deepEqual(entries.map(e => e.detail.row.values.forecast), Array.from({ length: 1000 }, (_, i) => i + 7));
+  assert.deepEqual(entries.at(-1), last);
+  assert.equal(entries.at(-1).detail.row.id, 'row-1006');
+  assert.deepEqual(audit.filter(e => e.tableId === 'other').map(e => e.detail.sequence), Array.from({ length: 11 }, (_, i) => i * 100));
+});
+
+test('input tables (#220): append retains the newest 10000 entries overall across tables and namespaces', async () => {
+  assert.equal(MAX_INPUT_AUDIT_ENTRIES_TOTAL, 10000);
+  const store = await InputTableStore.load();
+  const last = await store.change(draft => {
+    for (let i = 0; i < 10037; i++) {
+      const table = { id: `table-${i % 11}`, namespaceId: i % 11 < 5 ? 'default' : 'other' };
+      appendAudit(draft, table, 'author', 'table_renamed', { sequence: i });
+    }
+    return draft.audit.at(-1);
+  });
+  const entries = store.read().audit;
+  assert.equal(entries.length, 10000);
+  assert.deepEqual(entries.map(e => e.detail.sequence), Array.from({ length: 10000 }, (_, i) => i + 37));
+  assert.deepEqual(entries.at(-1), last);
+  for (let i = 0; i < 11; i++) assert.ok(entries.filter(e => e.tableId === `table-${i}`).length <= 1000);
+});
+
+test('input tables (#220): legacy audit above both caps loads intact and is pruned on append', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'opensight-input-audit-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, 'input-tables.json');
+  const table = { id: 'deleted-table', namespaceId: 'default' };
+  const audit = Array.from({ length: 10005 }, (_, i) => ({
+    id: `audit-${i}`, tableId: table.id, namespaceId: table.namespaceId, actorId: 'author',
+    action: 'row_deleted', at: '2026-11-01T00:00:00.000Z', detail: { row: { id: `row-${i}`, values: { forecast: i } } },
+  }));
+  await writeFile(path, JSON.stringify({ version: 1, tables: [], audit }));
+  const store = await InputTableStore.load(path);
+  assert.deepEqual(store.read().audit, audit);
+  await store.change(draft => appendAudit(draft, table, 'author', 'table_deleted', { name: 'Forecast' }));
+  const retained = store.read().audit;
+  assert.equal(retained.length, 1000);
+  assert.deepEqual(retained.slice(0, -1), audit.slice(-999));
+  assert.equal(retained.at(-1).action, 'table_deleted');
+  assert.deepEqual((await InputTableStore.load(path)).read().audit, retained);
+});
 
 test('input tables: create validates the schema and lists summaries', async t => {
   const call = await api(t);
