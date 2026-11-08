@@ -290,6 +290,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Security
 
+- Input-table mutations now recheck the caller's editor/manager authorization
+  inside the serialized store change, against the current table and current
+  role: an editor whose grant is revoked while their request body is in
+  flight, or while the write is queued, can no longer commit a row add,
+  patch, delete, rename, editor change, or table deletion (#218).
 - Managed-AI connection tests in the admin AI settings now pass the same
   pre-call spend gate as answers and record their provider tokens in the
   spend ledger (still zero delivered-answer credits), so repeated tests can
