@@ -34,6 +34,8 @@ export const MAX_INPUT_COLUMNS = 32;
 export const MAX_INPUT_ROWS = 10_000;
 export const MAX_INPUT_NAME_CHARS = 120;
 export const MAX_INPUT_TEXT_CHARS = 10_000;
+export const MAX_INPUT_AUDIT_ENTRIES_PER_TABLE = 1000;
+export const MAX_INPUT_AUDIT_ENTRIES_TOTAL = 10_000;
 
 export class InputTableError extends Error {
   constructor(readonly code: string, readonly status: number, message: string) { super(message); this.name = 'InputTableError'; }
@@ -170,6 +172,7 @@ export function validateInputTablesState(raw: unknown): InputTablesState {
     if (typeof t.createdAt !== 'string' || !Number.isFinite(Date.parse(t.createdAt)) || typeof t.updatedAt !== 'string' || !Number.isFinite(Date.parse(t.updatedAt))) return bad(`tables[${i}] timestamps are invalid`);
     return { id: t.id, namespaceId: t.namespaceId, ownerId: t.ownerId, name: t.name, boundDatasetId: t.boundDatasetId, columns, rows, editors: [...new Set(t.editors as string[])], version: Number(t.version), createdAt: t.createdAt, updatedAt: t.updatedAt };
   });
+  // Legacy stores may exceed the retention caps; enforce caps on append, not on load.
   const audit: InputAuditEntry[] = s.audit.map((entry, i) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return bad(`audit[${i}] is not an object`);
     const a = entry as Record<string, unknown>;
@@ -205,6 +208,8 @@ export class InputTableStore {
     }
   }
   read(): InputTablesState { return this.store.read(); }
+  tableById(id: string): InputTable | undefined { return this.store.project(state => state.tables.find(table => table.id === id)); }
+  auditFor(tableId: string): InputAuditEntry[] { return this.store.project(state => state.audit.filter(entry => entry.tableId === tableId)); }
   /** Single serialized mutation; audit entries are appended atomically with the data change. */
   change<R>(update: (draft: InputTablesState) => R): Promise<R> { return this.store.change(update); }
 }
@@ -213,4 +218,8 @@ export function newId(): string { return randomUUID(); }
 export function nowIso(): string { return new Date().toISOString(); }
 export function appendAudit(draft: InputTablesState, table: Pick<InputTable, 'id' | 'namespaceId'>, actorId: string, action: InputAuditAction, detail: Record<string, unknown>): void {
   draft.audit.push({ id: randomUUID(), tableId: table.id, namespaceId: table.namespaceId, actorId, action, at: nowIso(), detail });
+  let excess = draft.audit.reduce((count, entry) => count + Number(entry.tableId === table.id), 0) - MAX_INPUT_AUDIT_ENTRIES_PER_TABLE;
+  // Entries are appended in order: discard this table's oldest entries first.
+  if (excess > 0) draft.audit = draft.audit.filter(entry => entry.tableId !== table.id || excess-- <= 0);
+  if (draft.audit.length > MAX_INPUT_AUDIT_ENTRIES_TOTAL) draft.audit.splice(0, draft.audit.length - MAX_INPUT_AUDIT_ENTRIES_TOTAL);
 }

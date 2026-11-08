@@ -2,11 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { request as httpRequest } from 'node:http';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApiServer, emptySecurityState, StubMailTransport } from '@opensight/api';
+import { appendAudit, InputTableStore, MAX_INPUT_AUDIT_ENTRIES_PER_TABLE, MAX_INPUT_AUDIT_ENTRIES_TOTAL } from '../dist/input-tables.js';
+import { AutomationStore } from '../dist/automation-store.js';
 const root = fileURLToPath(new URL('../../../fixtures/', import.meta.url));
 
 async function api(t, options = {}) {
@@ -63,6 +65,195 @@ async function createTable(call, extra = {}) {
   assert.equal(created.status, 201, JSON.stringify(created.body));
   return created.body;
 }
+
+test('input tables (#220): append retains the newest 1000 entries per table without pruning other tables', async () => {
+  assert.equal(MAX_INPUT_AUDIT_ENTRIES_PER_TABLE, 1000);
+  const store = await InputTableStore.load();
+  const table = { id: 'forecast', namespaceId: 'default' };
+  const last = await store.change(draft => {
+    for (let i = 0; i < 1007; i++) {
+      if (i % 100 === 0) appendAudit(draft, { ...table, id: 'other' }, 'author', 'table_renamed', { sequence: i });
+      appendAudit(draft, table, 'author', 'row_deleted', { row: { id: `row-${i}`, values: { forecast: i } } });
+    }
+    return draft.audit.at(-1);
+  });
+  const audit = store.read().audit;
+  const entries = audit.filter(e => e.tableId === table.id);
+  assert.equal(entries.length, 1000);
+  assert.deepEqual(entries.map(e => e.detail.row.values.forecast), Array.from({ length: 1000 }, (_, i) => i + 7));
+  assert.deepEqual(entries.at(-1), last);
+  assert.equal(entries.at(-1).detail.row.id, 'row-1006');
+  assert.deepEqual(audit.filter(e => e.tableId === 'other').map(e => e.detail.sequence), Array.from({ length: 11 }, (_, i) => i * 100));
+});
+
+test('input tables (#220): append retains the newest 10000 entries overall across tables and namespaces', async () => {
+  assert.equal(MAX_INPUT_AUDIT_ENTRIES_TOTAL, 10000);
+  const store = await InputTableStore.load();
+  const last = await store.change(draft => {
+    for (let i = 0; i < 10037; i++) {
+      const table = { id: `table-${i % 11}`, namespaceId: i % 11 < 5 ? 'default' : 'other' };
+      appendAudit(draft, table, 'author', 'table_renamed', { sequence: i });
+    }
+    return draft.audit.at(-1);
+  });
+  const entries = store.read().audit;
+  assert.equal(entries.length, 10000);
+  assert.deepEqual(entries.map(e => e.detail.sequence), Array.from({ length: 10000 }, (_, i) => i + 37));
+  assert.deepEqual(entries.at(-1), last);
+  for (let i = 0; i < 11; i++) assert.ok(entries.filter(e => e.tableId === `table-${i}`).length <= 1000);
+});
+
+test('input tables (#220): legacy audit above both caps loads intact and is pruned on append', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'opensight-input-audit-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, 'input-tables.json');
+  const table = { id: 'deleted-table', namespaceId: 'default' };
+  const audit = Array.from({ length: 10005 }, (_, i) => ({
+    id: `audit-${i}`, tableId: table.id, namespaceId: table.namespaceId, actorId: 'author',
+    action: 'row_deleted', at: '2026-11-01T00:00:00.000Z', detail: { row: { id: `row-${i}`, values: { forecast: i } } },
+  }));
+  await writeFile(path, JSON.stringify({ version: 1, tables: [], audit }));
+  const store = await InputTableStore.load(path);
+  assert.deepEqual(store.read().audit, audit);
+  await store.change(draft => appendAudit(draft, table, 'author', 'table_deleted', { name: 'Forecast' }));
+  const retained = store.read().audit;
+  assert.equal(retained.length, 1000);
+  assert.deepEqual(retained.slice(0, -1), audit.slice(-999));
+  assert.equal(retained.at(-1).action, 'table_deleted');
+  assert.deepEqual((await InputTableStore.load(path)).read().audit, retained);
+});
+
+test('input tables (#220): audit pagination preserves the default response and slices oldest first', async t => {
+  const call = await api(t);
+  const table = await createTable(call);
+  const path = `/api/input-tables/${table.id}`;
+  for (let i = 0; i < 4; i++) assert.equal((await call(`${path}/rows`, 'POST', { values: { region: 'East', forecast: i } })).status, 201);
+  // Unrelated entries must not affect this table's total or its pages.
+  await createTable(call);
+  const all = await call(`${path}/audit`);
+  assert.equal(all.status, 200);
+  assert.deepEqual(Object.keys(all.body), ['entries']);
+  assert.equal(all.body.entries.length, 5);
+  assert.deepEqual(all.body.entries.map(e => e.action), ['table_created', 'row_added', 'row_added', 'row_added', 'row_added']);
+  assert.deepEqual(all.body.entries.slice(1).map(e => e.detail.row.values.forecast), [0, 1, 2, 3]);
+  for (const [query, limit, offset] of [
+    ['limit=2', 2, 0], ['limit=2&offset=2', 2, 2], ['offset=2', 1000, 2],
+    ['limit=1&offset=0', 1, 0], ['limit=1000', 1000, 0], ['limit=2&offset=5', 2, 5],
+    ['offset=9007199254740991', 1000, Number.MAX_SAFE_INTEGER],
+  ]) {
+    assert.deepEqual(await call(`${path}/audit?${query}`), {
+      status: 200, body: { entries: all.body.entries.slice(offset, offset + limit), total: 5, limit, offset },
+    });
+  }
+  assert.deepEqual(await call(`${path}/audit`), all);
+});
+
+test('input tables (#220): invalid pagination fails with a named error and other query strings remain rejected', async t => {
+  const call = await api(t);
+  const table = await createTable(call);
+  const path = `/api/input-tables/${table.id}`;
+  const before = await call(`${path}/audit`);
+  for (const query of [
+    'limit=0', 'limit=-1', 'limit=1001', 'limit=1.5', 'limit=', 'limit=abc', 'limit=Infinity',
+    'limit=1e2', 'limit=0x10', 'limit=%20', 'limit=%2B2', 'limit=2%0A', 'limit=2%0D', 'limit=2&limit=3',
+    'offset=-1', 'offset=1.5', 'offset=', 'offset=abc', 'offset=Infinity',
+    'offset=9007199254740992', 'offset=2%0D%0A', 'offset=0&offset=1',
+  ]) {
+    const rejected = await call(`${path}/audit?${query}`);
+    assert.equal(rejected.status, 400, query);
+    assert.equal(rejected.body.errorCode, 'INPUT_TABLE_AUDIT_PAGINATION_INVALID', query);
+  }
+  for (const [route, method] of [
+    ['/api/input-tables', 'GET'], ['/api/input-tables', 'POST'], [path, 'GET'], [path, 'PATCH'], [path, 'DELETE'],
+    [`${path}/rows`, 'POST'], [`${path}/rows/missing`, 'PATCH'], [`${path}/rows/missing`, 'DELETE'],
+    [`${path}/editors`, 'PUT'], [`${path}/audit`, 'POST'],
+  ]) assert.deepEqual(await call(`${route}?limit=2`, method), { status: 400, body: { Message: 'Query parameters are not supported' } });
+  assert.deepEqual(await call(`${path}/audit?unknown=1`), { status: 400, body: { Message: 'Query parameters are not supported' } });
+  assert.deepEqual(await call(`${path}/audit`), before);
+});
+
+test('input tables (#220): paginated audit remains namespace-scoped before and after deletion', async t => {
+  const call = await api(t);
+  const table = await createTable(call);
+  const path = `/api/input-tables/${table.id}`;
+  const foreign = { status: 404, body: { errorCode: 'INPUT_TABLE_NOT_FOUND', Message: 'Input table not found' } };
+  for (const deleted of [false, true]) {
+    if (deleted) assert.equal((await call(path, 'DELETE')).status, 200);
+    const all = await call(`${path}/audit`);
+    assert.equal(all.status, 200);
+    for (const offset of [0, 100]) {
+      assert.deepEqual(await call(`${path}/audit?limit=1&offset=${offset}`, 'GET', undefined, 'reader'), {
+        status: 200, body: { entries: all.body.entries.slice(offset, offset + 1), total: all.body.entries.length, limit: 1, offset },
+      });
+      assert.deepEqual(await call(`${path}/audit?limit=1&offset=${offset}`, 'GET', undefined, 'tenant-author'), foreign);
+    }
+  }
+  assert.deepEqual(await call('/api/input-tables/missing/audit?limit=2'), foreign);
+});
+
+test('input tables (#220): projections clone only their result and isolate nested values', async () => {
+  // An uncloneable unrelated value proves project never clones the full state.
+  const store = await AutomationStore.load({ selected: { values: [1, 2] }, unrelated: () => {} });
+  const selected = store.project(state => state.selected);
+  selected.values[0] = 99;
+  selected.values.push(3);
+  assert.deepEqual(store.project(state => state.selected), { values: [1, 2] });
+  assert.equal(store.project(state => state.selected.values.length), 2);
+  assert.equal(store.project(() => undefined), undefined);
+});
+
+test('input tables (#220): tableById and auditFor return isolated slices including nested rows', async () => {
+  const store = await InputTableStore.load();
+  await store.change(draft => {
+    for (const id of ['forecast', 'other']) {
+      const table = {
+        id, namespaceId: 'default', ownerId: 'author', name: id, boundDatasetId: null,
+        columns: structuredClone(columns), rows: [{ id: 'row-1', values: { region: 'East', forecast: 10, starts_on: null, active: null } }],
+        editors: ['other-author'], version: 1, createdAt: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-01T00:00:00.000Z',
+      };
+      draft.tables.push(table);
+      appendAudit(draft, table, 'author', 'row_added', { row: structuredClone(table.rows[0]) });
+    }
+  });
+  const before = store.read();
+  const table = store.tableById('forecast');
+  const audit = store.auditFor('forecast');
+  assert.deepEqual(table, before.tables[0]);
+  assert.deepEqual(audit, [before.audit[0]]);
+  table.name = 'Changed'; table.columns[0].name = 'changed'; table.editors.push('reader');
+  table.rows[0].values.forecast = 99; table.rows.pop();
+  audit[0].actorId = 'reader'; audit[0].detail.row.values.forecast = 99; audit.pop();
+  assert.deepEqual(store.read(), before);
+  assert.deepEqual(store.tableById('forecast'), before.tables[0]);
+  assert.deepEqual(store.auditFor('forecast'), [before.audit[0]]);
+  assert.equal(store.tableById('missing'), undefined);
+  const missing = store.auditFor('missing');
+  assert.deepEqual(missing, []);
+  missing.push(before.audit[0]);
+  assert.deepEqual(store.auditFor('missing'), []);
+});
+
+test('input tables (#220): single-table and audit routes never read the whole store', async t => {
+  const call = await api(t);
+  const table = await createTable(call);
+  const path = `/api/input-tables/${table.id}`;
+  assert.equal((await call(`${path}/rows`, 'POST', { values: { region: 'East', forecast: 10 } })).status, 201);
+  const before = await call(path);
+  const audit = await call(`${path}/audit`);
+  t.mock.method(InputTableStore.prototype, 'read', () => { throw new Error('Unexpected full input-table store read'); });
+  assert.deepEqual(await call(path), before);
+  assert.deepEqual(await call(`${path}/audit`), audit);
+  assert.deepEqual(await call(`${path}/audit?limit=1`), {
+    status: 200, body: { entries: audit.body.entries.slice(0, 1), total: 2, limit: 1, offset: 0 },
+  });
+  assert.equal((await call(path, 'GET', undefined, 'tenant-author')).status, 404);
+  assert.equal((await call(`${path}/audit?limit=1`, 'GET', undefined, 'tenant-author')).status, 404);
+  assert.equal((await call(path, 'DELETE')).status, 200);
+  assert.equal((await call(path)).status, 404);
+  const retained = await call(`${path}/audit?limit=1&offset=2`);
+  assert.equal(retained.status, 200);
+  assert.equal(retained.body.entries[0].action, 'table_deleted');
+});
 
 test('input tables: create validates the schema and lists summaries', async t => {
   const call = await api(t);

@@ -28,8 +28,8 @@ The rules that make them safe:
   updates (old → new value), row deletes, editor changes, and table deletion
   are appended to an append-only audit trail in the same store update as the
   change itself, so data and audit cannot diverge. Deleting a table keeps
-  its audit trail readable (the D-84 retention rule: audit entries are
-  retained).
+  its retained audit trail readable, subject to the count-based retention
+  policy below (D-84).
 
 ## Where they live
 
@@ -39,6 +39,35 @@ default, overridable with `OPENSIGHT_INPUT_TABLE_STORE` — written atomically
 (temp file + rename) and validated strictly on load: a corrupt store fails
 closed at startup with `INPUT_TABLE_STORE_CORRUPT`. The hosted server does
 not expose input tables yet; see `docs/issue-161-gap-notes.md`.
+
+## Audit retention
+
+The local JSON store keeps the newest **1,000 audit entries per table** and
+the newest **10,000 audit entries overall**, across all tables and namespaces
+(#220). Each append first prunes that table's oldest excess entries, then
+prunes the oldest excess entries overall. The just-appended entry always
+survives. Retained entries stay in append order; the overall cap may leave a
+table with fewer than 1,000 entries. Pruning and the data change persist in
+the same atomic store update.
+
+This count-based policy implements [D-84](idd/D-84-tenant-erasure-audit-retention.md):
+deleting a table does not erase its audit history; normal retention expires
+the oldest entries as new entries arrive. There is no time-based expiry or
+archive in this local store. A deleted table's audit endpoint remains readable
+while it has retained entries; after all its entries are pruned it returns 404.
+Legacy stores above either cap still load without pruning or failing closed;
+the caps apply on append (per table for the table receiving the entry, then
+overall).
+
+Row-add and row-delete audit details keep the complete row, and updates keep
+old and new cell values. With at most 32 columns and 10,000 characters per
+text cell, row payloads are bounded; together with the existing metadata
+limits, the entry-count caps also provide a finite byte bound for audit
+history written through the API. This is not a separate byte quota.
+
+Single-table and audit reads clone only the requested table or its audit
+entries. List and prep paths still read the whole store, and mutations still
+clone and atomically rewrite it.
 
 ## API
 
@@ -55,7 +84,19 @@ All routes are namespace-scoped; a table in another namespace is a 404.
 | `PATCH /api/input-tables/:id/rows/:rowId` | Update cells (editors). Body: `values`, optional `expectedVersion`; the merged row is revalidated. |
 | `DELETE /api/input-tables/:id/rows/:rowId` | Delete a row (editors). |
 | `DELETE /api/input-tables/:id` | Delete the table (owner or administrator). Audit is retained. |
-| `GET /api/input-tables/:id/audit` | The append-only audit entries, oldest first. Works after deletion. |
+| `GET /api/input-tables/:id/audit` | Retained audit entries, oldest first; optional `limit` and `offset`. Works after deletion while entries remain. |
+
+Without pagination parameters, the audit response stays `{ entries }` and
+includes all retained entries for that table. Supplying `limit` or `offset`
+returns `{ entries, total, limit, offset }`: `total` is the table's retained
+entry count before slicing. `limit` is an integer from 1 to 1,000 (default
+1,000 when only `offset` is supplied); `offset` is a nonnegative safe integer
+(default 0). For example, `?limit=2&offset=2` returns the third and fourth
+oldest retained entries. Offsets at or beyond `total` return an empty page.
+Invalid or repeated pagination values return 400
+`INPUT_TABLE_AUDIT_PAGINATION_INVALID`. Unknown query parameters are rejected,
+and every input-table route except this audit GET still rejects query
+parameters. Namespace checks apply before slicing, including after deletion.
 
 Row PATCH merges and validates against the latest committed row inside the
 serialized store mutation. Audit old values come from that same row.

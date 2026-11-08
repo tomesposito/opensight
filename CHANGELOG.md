@@ -172,6 +172,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Input-table audit history now retains the newest 1,000 entries per table and 10,000 overall, with optional pagination; single-table and audit reads clone only the requested slices. Legacy stores still load and retained row details remain intact (#220).
+
 - Concurrent input-table cell edits preserve each other's changes and record accurate audit values. Optional version checks reject stale saves, and the row editor uses them to prevent overwriting newer table data (#219).
 
 - The open-economics guard (#165) now exercises executable checks instead of prose alone: behavior tests prove row-level security, the audit log, basic embedding and the identity verifier seam work under every billing tier's entitlement, the entitlement parsers reject governance feature-flag fields, and the site guard scans every published site page, pricing and comparison pages included (#215).
