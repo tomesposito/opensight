@@ -212,18 +212,26 @@ export class InputTableRoutes {
           send(response, 200, result);
           return true;
         }
-        const raw = body(await readBody(request), ['values']);
+        const raw = body(await readBody(request), ['values', 'expectedVersion']);
         if (!isObject(raw.values) || !Object.keys(raw.values).length) throw new InputTableError('INPUT_TABLE_INVALID_BODY', 400, 'values must be a non-empty object keyed by column name.');
-        const existing = current.rows.find(r => r.id === rowId)!;
-        const merged = mergeRowPatch(current.columns, existing.values, raw.values as Record<string, unknown>);
-        // Validate each patched cell too so type errors keep their precise named codes.
-        for (const col of current.columns) if (Object.hasOwn(raw.values, col.name)) validateCellValue(col, (raw.values as Record<string, unknown>)[col.name]);
+        const expectedVersion = raw.expectedVersion;
+        if (Object.hasOwn(raw, 'expectedVersion') && (typeof expectedVersion !== 'number' || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1)) {
+          throw new InputTableError('INPUT_TABLE_INVALID_VERSION', 400, 'expectedVersion must be a positive safe integer.');
+        }
+        const patch = raw.values as Record<string, unknown>;
         const result = await this.store.change(draft => {
           const table = draft.tables.find(t => t.id === id && t.namespaceId === principal.namespaceId);
           if (!table) throw new InputTableError('INPUT_TABLE_NOT_FOUND', 404, 'Input table not found');
           this.requireEdit(this.principal(identity), table);
           const row = table.rows.find(r => r.id === rowId);
           if (!row) throw new InputTableError('INPUT_TABLE_ROW_NOT_FOUND', 404, 'Row not found');
+          if (expectedVersion !== undefined && expectedVersion !== table.version) {
+            throw new InputTableError('INPUT_TABLE_VERSION_CONFLICT', 412, 'Input table has changed. Reload the table before saving.');
+          }
+          // Merge and audit against the latest committed row, after any queued writes (#219).
+          const merged = mergeRowPatch(table.columns, row.values, patch);
+          // Validate each patched cell too so type errors keep their precise named codes.
+          for (const col of table.columns) if (Object.hasOwn(patch, col.name)) validateCellValue(col, patch[col.name]);
           row.values = structuredClone(merged.values);
           table.version++; table.updatedAt = nowIso();
           appendAudit(draft, table, principal.userId, 'row_updated', { rowId, changes: merged.changes });
