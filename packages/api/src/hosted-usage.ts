@@ -20,6 +20,11 @@ export interface Entitlement {
   aiCostCentsPerMillionTokens?: number;
 }
 export interface Entitlements { defaults: Entitlement | null; tenants: Record<string, Entitlement> }
+export interface EgressReservation {
+  readonly scope: Readonly<Scope>;
+  /** Null for uncapped admissions, which have no durable reservation row. */
+  readonly id: string | null;
+}
 /** Durable monthly billing shape for D-81. Counts and bytes only; no customer content.
  * A null storageAsOf denotes an explicit empty read before the first rollup. */
 export interface MonthlyUsage {
@@ -71,6 +76,11 @@ export async function initializeUsage(db: Database): Promise<void> {
       event_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, created_at TEXT NOT NULL,
       metric TEXT NOT NULL, unit TEXT NOT NULL, amount BIGINT NOT NULL, outcome TEXT NOT NULL,
       FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id))`);
+    await c.query(`CREATE TABLE IF NOT EXISTS h8_egress_reservations (
+      id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, period TEXT NOT NULL,
+      reserved_bytes BIGINT NOT NULL, created_at TEXT NOT NULL,
+      FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id))`);
+    await c.query('CREATE INDEX IF NOT EXISTS h8_egress_reservations_scope ON h8_egress_reservations (tenant_id, namespace_id, period)');
     await c.query(`CREATE TABLE IF NOT EXISTS h8_monthly_usage (
       tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, period TEXT NOT NULL,
       api_calls_admitted BIGINT NOT NULL, api_calls_denied BIGINT NOT NULL,
@@ -96,6 +106,7 @@ export async function resourceBytes(c: SqlConnection, scope: Scope): Promise<num
  * Storage uses the caller's H1 tenant transaction; no private SQL grants are needed. */
 export class HostedUsage {
   readonly config: Entitlements;
+  private readonly egressFinishes = new WeakMap<EgressReservation, Promise<void>>();
   /** Optional billing tier override (issue #194): when the hosted server has
    * Stripe billing configured, a tenant's durable billing tier entitlement
    * wins over the operator snapshot. Wired by composition only; unset in
@@ -248,52 +259,106 @@ export class HostedUsage {
     });
     if (denied) throw new MetadataError('USAGE_LIMIT_EXCEEDED', 429);
   }
-  /**
-   * Pre-routing egress gate (fail closed), check-before / record-after like
-   * the AI spend cap: when an egressBytes cap is configured and the current
-   * UTC calendar month's recorded admitted egress already meets/exceeds it,
-   * USAGE_LIMIT_EXCEEDED (429) is thrown and the caller must not route the
-   * request. The response that crosses the cap is admitted and recorded via
-   * recordEgressBytes; the next request is denied. A denial records no
-   * admitted bytes, so monthly admitted totals (which sum admitted only) are
-   * never distorted by denied requests. Absent cap never denies. Corrupt or
-   * unsafe counter values fail closed with ENTITLEMENT_UNRESOLVED (503).
-   */
-  async checkEgress(scope: Scope): Promise<void> {
-    const entitlement = this.entitlement(scope);
-    const cap = entitlement.egressBytes;
+  private egressCap(scope: Scope): number | undefined {
+    const cap = this.entitlement(scope).egressBytes;
     if (cap !== undefined && (!Number.isSafeInteger(cap) || cap < 0)) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+    return cap;
+  }
+  /** Admission accounting only: reservations never enter usage, events or metrics. */
+  private async committedEgress(c: SqlConnection, scope: Scope, month: string): Promise<number> {
+    const rows = await c.query(`SELECT admitted, denied FROM h8_usage
+      WHERE tenant_id = ? AND namespace_id = ? AND period >= ? AND period <= ?
+      AND metric = 'egressBytes'`, [scope.tenantId, scope.namespaceId, `${month}-01`, `${month}-31`]);
+    let total = 0;
+    for (const row of rows) {
+      usageInteger(row.denied);
+      total = usageInteger(total + usageInteger(row.admitted));
+    }
+    const reservations = await c.query('SELECT reserved_bytes FROM h8_egress_reservations WHERE tenant_id = ? AND namespace_id = ? AND period = ?',
+      [scope.tenantId, scope.namespaceId, month]);
+    for (const row of reservations) total = usageInteger(total + usageInteger(row.reserved_bytes));
+    return total;
+  }
+  /** Check recorded plus reserved monthly bytes without claiming allowance.
+   * Denials record nothing. Absent cap never denies; corrupt/unsafe counters
+   * fail closed. Concurrent hosted requests must use reserveEgress instead. */
+  async checkEgress(scope: Scope): Promise<void> {
+    const cap = this.egressCap(scope);
     const month = new Date(this.clock()).toISOString().slice(0, 7);
     const denied = await this.db.transaction(async c => {
       await this.lockAiScope(c, scope);
-      const rows = await c.query(`SELECT admitted, denied FROM h8_usage
-        WHERE tenant_id = ? AND namespace_id = ? AND period >= ? AND period <= ?
-        AND metric = 'egressBytes'`, [scope.tenantId, scope.namespaceId, `${month}-01`, `${month}-31`]);
-      let total = 0;
-      for (const row of rows) {
-        usageInteger(row.denied);
-        total = usageInteger(total + usageInteger(row.admitted));
-      }
+      const total = await this.committedEgress(c, scope, month);
       return cap !== undefined && total >= cap;
     }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
     if (denied) throw new MetadataError('USAGE_LIMIT_EXCEEDED', 429);
   }
+  /** Claim the ENTIRE remainder: response size is unknown at admission. While
+   * a capped response is in flight, concurrent admissions for its scope get
+   * 429. This bounds overshoot to the one permitted crossing response. */
+  async reserveEgress(scope: Scope): Promise<EgressReservation> {
+    return this.db.transaction(async c => {
+      await this.lockAiScope(c, scope);
+      const cap = this.egressCap(scope);
+      if (cap === undefined) return { scope: { tenantId: scope.tenantId, namespaceId: scope.namespaceId }, id: null };
+      const now = new Date(this.clock()).toISOString(), month = now.slice(0, 7);
+      const committed = await this.committedEgress(c, scope, month);
+      if (committed >= cap) throw new MetadataError('USAGE_LIMIT_EXCEEDED', 429);
+      const id = randomUUID();
+      await c.query('INSERT INTO h8_egress_reservations (id, tenant_id, namespace_id, period, reserved_bytes, created_at) VALUES (?,?,?,?,?,?)',
+        [id, scope.tenantId, scope.namespaceId, month, cap - committed, now]);
+      return { scope: { tenantId: scope.tenantId, namespaceId: scope.namespaceId }, id };
+    }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
+  }
+  /** Record actual bytes and remove the claim atomically. A failed transaction
+   * retains the full claim, including after restart; never release on failure. */
+  settleEgress(handle: EgressReservation, actualBytes: number): Promise<void> {
+    return this.finishEgress(handle, { bytes: actualBytes });
+  }
+  /** Only for admissions that never reached the counted response path. */
+  releaseEgress(handle: EgressReservation): Promise<void> {
+    return this.finishEgress(handle);
+  }
+  private finishEgress(handle: EgressReservation, settlement?: { bytes: number }): Promise<void> {
+    const existing = this.egressFinishes.get(handle);
+    if (existing) return existing;
+    const finishing = this.db.transaction(async c => {
+      const { scope, id } = handle;
+      if (!settlement && id === null) return;
+      await this.lockAiScope(c, scope);
+      // The tenant lock and durable row also prevent duplicate capped settlement
+      // through another HostedUsage instance. Rollback restores a deleted claim.
+      if (id !== null && !(await c.query('DELETE FROM h8_egress_reservations WHERE id = ? AND tenant_id = ? AND namespace_id = ? RETURNING id',
+        [id, scope.tenantId, scope.namespaceId])).length) return;
+      if (settlement) {
+        const { bytes } = settlement;
+        if (!Number.isSafeInteger(bytes) || bytes < 0) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+        this.entitlement(scope);
+        await this.recordEgressIn(c, scope, bytes, new Date(this.clock()).toISOString());
+      }
+    }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
+    // Cache failures too: an accidental release after failed settlement must
+    // never erase the retained reservation. Weak keys do not retain requests.
+    this.egressFinishes.set(handle, finishing);
+    return finishing;
+  }
+  private async recordEgressIn(c: SqlConnection, scope: Scope, bytes: number, now: string): Promise<void> {
+    const args = [scope.tenantId, scope.namespaceId, now.slice(0, 10), 'egressBytes'];
+    await c.query('INSERT INTO h8_usage VALUES (?,?,?,?,0,0) ON CONFLICT (tenant_id, namespace_id, period, metric) DO NOTHING', args);
+    const row = (await c.query('SELECT admitted, denied FROM h8_usage WHERE tenant_id = ? AND namespace_id = ? AND period = ? AND metric = ?', args))[0]!;
+    usageInteger(usageInteger(row.admitted) + bytes);
+    usageInteger(row.denied);
+    await c.query('UPDATE h8_usage SET admitted = admitted + ? WHERE tenant_id = ? AND namespace_id = ? AND period = ? AND metric = ?', [bytes, ...args]);
+    await c.query('INSERT INTO h8_usage_events VALUES (?,?,?,?,?,?,?,?)', [randomUUID(), scope.tenantId, scope.namespaceId, now, 'egressBytes', 'byte', bytes, 'admitted']);
+  }
   /** Record actual transferred bytes from a caller that knows the amount.
-   * The hosted tenant path supplies this with real response body bytes;
-   * never infer egress from API calls or estimates. */
+   * Never infer egress from API calls or estimates. */
   async recordEgressBytes(scope: Scope, bytes: number): Promise<void> {
     if (!Number.isSafeInteger(bytes) || bytes < 0) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
     this.entitlement(scope);
-    const now = new Date(this.clock()).toISOString(), period = now.slice(0, 10);
+    const now = new Date(this.clock()).toISOString();
     await this.db.transaction(async c => {
       await this.lockAiScope(c, scope);
-      const args = [scope.tenantId, scope.namespaceId, period, 'egressBytes'];
-      await c.query('INSERT INTO h8_usage VALUES (?,?,?,?,0,0) ON CONFLICT (tenant_id, namespace_id, period, metric) DO NOTHING', args);
-      const row = (await c.query('SELECT admitted, denied FROM h8_usage WHERE tenant_id = ? AND namespace_id = ? AND period = ? AND metric = ?', args))[0]!;
-      usageInteger(usageInteger(row.admitted) + bytes);
-      usageInteger(row.denied);
-      await c.query('UPDATE h8_usage SET admitted = admitted + ? WHERE tenant_id = ? AND namespace_id = ? AND period = ? AND metric = ?', [bytes, ...args]);
-      await c.query('INSERT INTO h8_usage_events VALUES (?,?,?,?,?,?,?,?)', [randomUUID(), scope.tenantId, scope.namespaceId, now, 'egressBytes', 'byte', bytes, 'admitted']);
+      await this.recordEgressIn(c, scope, bytes, now);
     }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
   }
   /** Derived spend in cents for a token total under an entitlement. Zero when no price is configured. */

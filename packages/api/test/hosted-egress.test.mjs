@@ -167,3 +167,162 @@ test('hosted HTTP hard-stops authenticated tenant responses at the egress cap an
   assert.ok(records['tenant-two'].egressBytes > 0);
   await drainHostedServer(server);
 });
+
+const reservations = f => f.db.transaction(c => c.query('SELECT * FROM h8_egress_reservations ORDER BY id'));
+const egressEvents = f => f.db.transaction(c => c.query("SELECT * FROM h8_usage_events WHERE metric = 'egressBytes' ORDER BY created_at"));
+
+test('reservation claims the whole remainder, excludes usage reporting, and reconciles only actual bytes', async t => {
+  const f = await setup(t, { ...base, egressBytes: 100 });
+  await f.usage.recordEgressBytes(one, 20);
+  const metrics = await f.usage.metrics(), events = await egressEvents(f);
+  const handle = await f.usage.reserveEgress(one);
+  const [row] = await reservations(f);
+  assert.deepEqual({ ...row }, { id: handle.id, tenant_id: one.tenantId, namespace_id: one.namespaceId,
+    period: '2026-10', reserved_bytes: 80, created_at: '2026-10-03T00:00:00.000Z' });
+  await assert.rejects(f.usage.checkEgress(one), exceeded);
+  await assert.rejects(f.usage.reserveEgress(one), exceeded);
+  assert.equal((await f.usage.rollupMonthlyUsage(one, '2026-10')).egressBytes, 20);
+  assert.equal(await f.usage.metrics(), metrics);
+  assert.deepEqual(await egressEvents(f), events);
+  await f.usage.settleEgress(handle, 5);
+  await f.usage.checkEgress(one);
+  assert.equal((await f.usage.rollupMonthlyUsage(one, '2026-10')).egressBytes, 25);
+  const next = await f.usage.reserveEgress(one);
+  assert.equal((await reservations(f))[0].reserved_bytes, 75);
+  await f.usage.releaseEgress(next);
+});
+
+test('eight parallel reservations across usage instances admit exactly one capped request', async t => {
+  const f = await setup(t, { ...base, egressBytes: 100 });
+  const other = new HostedUsage(f.db, f.usage.config, f.usage.clock);
+  const results = await Promise.allSettled(Array.from({ length: 8 }, (_, i) => (i % 2 ? f.usage : other).reserveEgress(one)));
+  assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
+  const denied = results.filter(r => r.status === 'rejected');
+  assert.equal(denied.length, 7);
+  for (const { reason } of denied) assert.deepEqual({ code: reason.code, status: reason.status }, exceeded);
+  assert.equal((await reservations(f)).length, 1);
+  await f.usage.checkEgress(two);
+  const otherTenant = await f.usage.reserveEgress(two);
+  await f.usage.releaseEgress(otherTenant);
+  await assert.rejects(f.usage.reserveEgress({ ...one, namespaceId: two.namespaceId }), unresolved);
+});
+
+test('settlement admits one full crossing response and is idempotent across instances', async t => {
+  const f = await setup(t, { ...base, egressBytes: 100 });
+  await f.usage.recordEgressBytes(one, 90);
+  const handle = await f.usage.reserveEgress(one);
+  const other = new HostedUsage(f.db, f.usage.config, f.usage.clock);
+  await Promise.all([f.usage.settleEgress(handle, 25), other.settleEgress(handle, 25), f.usage.settleEgress(handle, 25)]);
+  await f.usage.releaseEgress(handle);
+  assert.deepEqual(await reservations(f), []);
+  assert.equal((await f.usage.rollupMonthlyUsage(one, '2026-10')).egressBytes, 115);
+  assert.deepEqual((await egressEvents(f)).map(e => [e.amount, e.unit, e.outcome]), [[90, 'byte', 'admitted'], [25, 'byte', 'admitted']]);
+  await assert.rejects(f.usage.checkEgress(one), exceeded);
+  await assert.rejects(f.usage.reserveEgress(one), exceeded);
+});
+
+test('failed settlement rolls back recording and retains a durable fail-closed claim after the fault is removed', async t => {
+  const f = await setup(t, { ...base, egressBytes: 100 });
+  const handle = await f.usage.reserveEgress(one), before = await reservations(f);
+  await f.db.transaction(c => c.query("CREATE TRIGGER fail_egress BEFORE INSERT ON h8_usage_events BEGIN SELECT RAISE(ABORT, 'unavailable'); END"));
+  await assert.rejects(f.usage.settleEgress(handle, 125), unresolved);
+  assert.deepEqual(await reservations(f), before);
+  assert.deepEqual(await egressEvents(f), []);
+  assert.equal((await f.usage.rollupMonthlyUsage(one, '2026-10')).egressBytes, 0);
+  await assert.rejects(f.usage.checkEgress(one), exceeded);
+  await assert.rejects(f.usage.reserveEgress(one), exceeded);
+  await f.db.transaction(c => c.query('DROP TRIGGER fail_egress'));
+  const restarted = new HostedUsage(f.db, f.usage.config, f.usage.clock);
+  await initializeUsage(f.db);
+  await assert.rejects(restarted.checkEgress(one), exceeded);
+  await assert.rejects(restarted.reserveEgress(one), exceeded);
+  assert.deepEqual(await reservations(f), before);
+});
+
+test('release is idempotent, frees the allowance and never records usage', async t => {
+  const f = await setup(t, { ...base, egressBytes: 100 });
+  const handle = await f.usage.reserveEgress(one);
+  await Promise.all([f.usage.releaseEgress(handle), f.usage.releaseEgress(handle)]);
+  await f.usage.settleEgress(handle, 25);
+  assert.equal((await f.usage.rollupMonthlyUsage(one, '2026-10')).egressBytes, 0);
+  assert.deepEqual(await egressEvents(f), []);
+  await f.usage.checkEgress(one);
+  await f.usage.reserveEgress(one);
+  assert.equal((await reservations(f))[0].reserved_bytes, 100);
+});
+
+test('reservations reset by admission month; settlement records its actual UTC date including zero bytes', async t => {
+  const f = await setup(t, { ...base, egressBytes: 100 });
+  f.at('2026-10-31T23:59:59.999Z');
+  const october = await f.usage.reserveEgress(one);
+  f.at('2026-11-01T00:00:00.000Z');
+  await f.usage.checkEgress(one);
+  const november = await f.usage.reserveEgress(one);
+  assert.deepEqual((await reservations(f)).map(r => r.period).sort(), ['2026-10', '2026-11']);
+  await f.usage.settleEgress(october, 5);
+  await f.usage.settleEgress(november, 0);
+  assert.equal((await f.usage.rollupMonthlyUsage(one, '2026-10')).egressBytes, 0);
+  assert.equal((await f.usage.rollupMonthlyUsage(one, '2026-11')).egressBytes, 5);
+  assert.deepEqual((await egressEvents(f)).map(e => [e.amount, e.created_at]), [[5, '2026-11-01T00:00:00.000Z'], [0, '2026-11-01T00:00:00.000Z']]);
+  assert.deepEqual(await reservations(f), []);
+});
+
+test('uncapped reservations create no rows, allow concurrency and settle or release exactly once', async t => {
+  const f = await setup(t, base);
+  const handles = await Promise.all(Array.from({ length: 8 }, () => f.usage.reserveEgress(one)));
+  assert.ok(handles.every(h => h.id === null));
+  assert.deepEqual(await reservations(f), []);
+  await f.usage.releaseEgress(handles[0]);
+  await f.usage.settleEgress(handles[0], 100);
+  await Promise.all(handles.slice(1).flatMap(h => [f.usage.settleEgress(h, 0), f.usage.settleEgress(h, 0)]));
+  assert.equal((await egressEvents(f)).length, 7);
+  assert.ok((await egressEvents(f)).every(e => e.amount === 0));
+  assert.equal((await f.usage.rollupMonthlyUsage(one, '2026-10')).egressBytes, 0);
+});
+
+test('zero or invalid caps and reservation storage failure fail admission without recording', async t => {
+  const f = await setup(t, { ...base, egressBytes: 0 });
+  await assert.rejects(f.usage.reserveEgress(one), exceeded);
+  for (const cap of [-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '2', null]) {
+    f.usage.config.defaults.egressBytes = cap;
+    await assert.rejects(f.usage.reserveEgress(one), unresolved);
+    await assert.rejects(f.usage.checkEgress(one), unresolved);
+  }
+  f.usage.config.defaults.egressBytes = 100;
+  await f.db.transaction(c => c.query("CREATE TRIGGER fail_reservation BEFORE INSERT ON h8_egress_reservations BEGIN SELECT RAISE(ABORT, 'unavailable'); END"));
+  await assert.rejects(f.usage.reserveEgress(one), unresolved);
+  assert.deepEqual(await reservations(f), []);
+  assert.deepEqual(await egressEvents(f), []);
+});
+
+test('corrupt reservations and combined monthly overflow fail both admission methods closed', async t => {
+  const f = await setup(t, { ...base, egressBytes: 100 });
+  await f.usage.reserveEgress(one);
+  for (const amount of [-1, 0.5, 'bad', Number.MAX_SAFE_INTEGER + 1]) {
+    await f.db.transaction(c => c.query('UPDATE h8_egress_reservations SET reserved_bytes = ?', [amount]));
+    await assert.rejects(f.usage.checkEgress(one), unresolved);
+    await assert.rejects(f.usage.reserveEgress(one), unresolved);
+  }
+  await f.db.transaction(c => c.query('UPDATE h8_egress_reservations SET reserved_bytes = ?', [Number.MAX_SAFE_INTEGER]));
+  await f.usage.recordEgressBytes(one, 1);
+  await assert.rejects(f.usage.checkEgress(one), unresolved);
+  await assert.rejects(f.usage.reserveEgress(one), unresolved);
+});
+
+test('invalid settlements and corrupt or overflowing daily counters preserve reservations atomically', async t => {
+  for (const amount of [-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '2', null, undefined]) {
+    const f = await setup(t, { ...base, egressBytes: 100 });
+    const handle = await f.usage.reserveEgress(one), before = await reservations(f);
+    await assert.rejects(f.usage.settleEgress(handle, amount), unresolved);
+    assert.deepEqual(await reservations(f), before);
+    assert.deepEqual(await egressEvents(f), []);
+  }
+  for (const [admitted, denied] of [[-1, 0], [0, -1], [Number.MAX_SAFE_INTEGER, 0]]) {
+    const f = await setup(t, { ...base, egressBytes: 100 });
+    const handle = await f.usage.reserveEgress(one), before = await reservations(f);
+    await f.db.transaction(c => c.query('INSERT INTO h8_usage VALUES (?,?,?,?,?,?)', [one.tenantId, one.namespaceId, '2026-10-03', 'egressBytes', admitted, denied]));
+    await assert.rejects(f.usage.settleEgress(handle, 1), unresolved);
+    assert.deepEqual(await reservations(f), before);
+    assert.deepEqual(await egressEvents(f), []);
+  }
+});
