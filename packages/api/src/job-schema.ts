@@ -87,7 +87,7 @@ export async function initializeJobs(db: Database): Promise<void> {
       FOREIGN KEY (tenant_id, namespace_id, initiated_by) REFERENCES h2_memberships(tenant_id, namespace_id, user_id))`);
     await c.query(`CREATE TABLE IF NOT EXISTS h7_deliveries (
       tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, delivery_id TEXT NOT NULL, job_id TEXT NOT NULL, occurrence_id TEXT NOT NULL, recipient_id TEXT NOT NULL,
-      state TEXT NOT NULL CHECK (state IN ('pending','sending','sent','cancelled')), attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0), next_attempt TEXT NOT NULL,
+      state TEXT NOT NULL CHECK (state IN ('pending','sending','sent','cancelled','dead')), attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0), next_attempt TEXT NOT NULL,
       error_code TEXT, message TEXT, sent_at TEXT, PRIMARY KEY (tenant_id, namespace_id, delivery_id),
       UNIQUE (tenant_id, namespace_id, occurrence_id, recipient_id),
       FOREIGN KEY (tenant_id, namespace_id, occurrence_id) REFERENCES h7_occurrences(tenant_id, namespace_id, occurrence_id),
@@ -95,5 +95,36 @@ export async function initializeJobs(db: Database): Promise<void> {
       FOREIGN KEY (tenant_id, namespace_id, recipient_id) REFERENCES h2_memberships(tenant_id, namespace_id, user_id))`);
     await c.query(`CREATE TABLE IF NOT EXISTS h7_migrations (tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, checksum TEXT NOT NULL,
       PRIMARY KEY (tenant_id, namespace_id), FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id))`);
+    await ensureDeliveryDeadState(c, db.dialect ?? 'sqlite');
   });
+}
+
+const deliveryColumns = `tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, delivery_id TEXT NOT NULL, job_id TEXT NOT NULL, occurrence_id TEXT NOT NULL, recipient_id TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('pending','sending','sent','cancelled','dead')), attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0), next_attempt TEXT NOT NULL,
+  error_code TEXT, message TEXT, sent_at TEXT, PRIMARY KEY (tenant_id, namespace_id, delivery_id),
+  UNIQUE (tenant_id, namespace_id, occurrence_id, recipient_id),
+  FOREIGN KEY (tenant_id, namespace_id, occurrence_id) REFERENCES h7_occurrences(tenant_id, namespace_id, occurrence_id),
+  FOREIGN KEY (tenant_id, namespace_id, job_id) REFERENCES h7_jobs(tenant_id, namespace_id, job_id),
+  FOREIGN KEY (tenant_id, namespace_id, recipient_id) REFERENCES h2_memberships(tenant_id, namespace_id, user_id)`;
+
+/** Upgrade the delivery state constraint for databases created before the
+ * dead-letter state (#233), without losing rows. Mirrors ensureMetricKind. */
+export async function ensureDeliveryDeadState(c: SqlConnection, dialect: 'sqlite' | 'postgres'): Promise<void> {
+  if (dialect === 'postgres') {
+    const checks = await c.query("SELECT conname, pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid = 'h7_deliveries'::regclass AND contype = 'c'");
+    for (const row of checks) {
+      const definition = String(row.definition), name = String(row.conname);
+      if (!definition.includes("'pending'") || definition.includes("'dead'")) continue;
+      if (!/^[a-zA-Z0-9_]+$/.test(name)) throw new Error('Unexpected jobs constraint name');
+      await c.query(`ALTER TABLE h7_deliveries DROP CONSTRAINT "${name}"`);
+      await c.query(`ALTER TABLE h7_deliveries ADD CONSTRAINT "${name}" ${definition.replace("'cancelled'::text", "'cancelled'::text, 'dead'::text")}`);
+    }
+    return;
+  }
+  const rows = await c.query("SELECT sql FROM sqlite_master WHERE name = 'h7_deliveries'");
+  if (String(rows[0]?.sql).includes("'dead'")) return;
+  await c.query(`CREATE TABLE h7_deliveries_dead (${deliveryColumns})`);
+  await c.query('INSERT INTO h7_deliveries_dead SELECT * FROM h7_deliveries');
+  await c.query('DROP TABLE h7_deliveries');
+  await c.query('ALTER TABLE h7_deliveries_dead RENAME TO h7_deliveries');
 }
