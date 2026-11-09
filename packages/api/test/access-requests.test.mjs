@@ -9,7 +9,7 @@ import { createHostedApiServer } from '../dist/hosted-server.js';
 import { createRuntime } from '../dist/runtime.js';
 import { adaptGatewayRequest, authorizeIngress, validateViewerRequest } from '../dist/runtime-ingress.js';
 import { runtimeEnv, event, context, payload } from './runtime-helpers.mjs';
-import { accessRequestNotifyTo, accessRequestRate, initializeAccessRequests, limitAccessRequests, listAccessRequests, notifyAccessRequests, storeAccessRequest } from '../dist/access-requests.js';
+import { ACCESS_REQUEST_NOTIFY_CLAIM_MS, accessRequestNotifyTo, accessRequestRate, initializeAccessRequests, limitAccessRequests, listAccessRequests, notifyAccessRequests, storeAccessRequest } from '../dist/access-requests.js';
 
 const path = '/api/access-requests';
 const valid = { name: ' Synthetic Applicant ', email: ' Applicant@EXAMPLE.COM ', organization: ' Example Organization ', note: ' Example use case ' };
@@ -286,4 +286,62 @@ test('initializer adds notified_at to a pre-notification table without losing ro
   await initializeAccessRequests(f.db); await initializeAccessRequests(f.db);
   const [row] = await listAccessRequests(f.db);
   assert.equal(row.id, 'legacy-1'); assert.equal(row.notifiedAt, null);
+});
+
+test('concurrent notification calls claim first: each pending row is sent exactly once through a non-deduping transport (issue #232)', async t => {
+  const f = await h8Fixture(t);
+  await initializeAccessRequests(f.db);
+  await storeAccessRequest(f.db, { name: 'First', email: 'first@example.com', now: Date.UTC(2026, 9, 30) });
+  await storeAccessRequest(f.db, { name: 'Second', email: 'second@example.com', now: Date.UTC(2026, 9, 31) });
+  // The transport records every call and never deduplicates: any duplicate
+  // delivery would show up as an extra call with a repeated dedupe key.
+  const calls = [];
+  const transport = { configured: true, async send(message) { calls.push(message); await new Promise(resolve => setTimeout(resolve, 25)); } };
+  const now = Date.now();
+  const results = await Promise.all([
+    notifyAccessRequests(f.db, transport, 'ops@example.com', now),
+    notifyAccessRequests(f.db, transport, 'ops@example.com', now),
+    notifyAccessRequests(f.db, transport, 'ops@example.com', now),
+  ]);
+  assert.equal(calls.length, 2);
+  assert.equal(new Set(calls.map(m => m.dedupeKey)).size, 2);
+  assert.equal(results.reduce((sum, n) => sum + n, 0), 2);
+  assert.ok((await listAccessRequests(f.db)).every(r => r.notifiedAt !== null));
+});
+
+test('an unexpired claim blocks other senders; an expired claim is recovered and delivered (issue #232)', async t => {
+  const f = await h8Fixture(t);
+  await initializeAccessRequests(f.db);
+  const request = await storeAccessRequest(f.db, { name: 'Claimed', email: 'claimed@example.com', now: Date.UTC(2026, 10, 8) });
+  const now = Date.UTC(2026, 10, 9, 12);
+  // Another sender holds a live claim (e.g. it is mid-send right now).
+  await f.db.transaction(c => c.query(
+    'UPDATE h8_access_requests SET notify_claim_token = ?, notify_claim_expires_at = ? WHERE id = ?',
+    ['other-sender', new Date(now + ACCESS_REQUEST_NOTIFY_CLAIM_MS).toISOString(), request.id]));
+  const mail = new StubMailTransport();
+  assert.equal(await notifyAccessRequests(f.db, mail, 'ops@example.com', now), 0);
+  assert.deepEqual(mail.messages, []);
+  assert.equal((await listAccessRequests(f.db))[0].notifiedAt, null);
+  // The lease lapses with no stamp — the earlier sender died mid-send — so
+  // the next call takes the row over, delivers it, and clears the claim.
+  assert.equal(await notifyAccessRequests(f.db, mail, 'ops@example.com', now + ACCESS_REQUEST_NOTIFY_CLAIM_MS), 1);
+  assert.equal(mail.messages.length, 1);
+  const [stored] = await listAccessRequests(f.db);
+  assert.notEqual(stored.notifiedAt, null);
+  const [raw] = await f.db.transaction(c => c.query('SELECT notify_claim_token, notify_claim_expires_at FROM h8_access_requests WHERE id = ?', [request.id]));
+  assert.equal(raw.notify_claim_token, null); assert.equal(raw.notify_claim_expires_at, null);
+});
+
+test('initializer adds the claim columns to a pre-claim table without losing rows (issue #232)', async t => {
+  const f = await h8Fixture(t);
+  await f.db.transaction(c => c.query(`CREATE TABLE h8_access_requests (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, organization TEXT, note TEXT,
+    created_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', notified_at TEXT)`));
+  await f.db.transaction(c => c.query(`INSERT INTO h8_access_requests (id, name, email, organization, note, created_at, status)
+    VALUES ('legacy-2', 'Legacy Two', 'legacy2@example.com', NULL, NULL, '2026-10-30T00:00:00.000Z', 'pending')`));
+  await initializeAccessRequests(f.db); await initializeAccessRequests(f.db);
+  const mail = new StubMailTransport();
+  assert.equal(await notifyAccessRequests(f.db, mail, 'ops@example.com', Date.now()), 1);
+  const [row] = await listAccessRequests(f.db);
+  assert.equal(row.id, 'legacy-2'); assert.notEqual(row.notifiedAt, null);
 });
