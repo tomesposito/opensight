@@ -17,7 +17,8 @@ export class JobRunner {
   private pending?: Promise<void>;
   private stopping = false;
   stop(): void { this.stopping = true; }
-  constructor(readonly store: JobStore, readonly executor: JobExecutor, readonly mail: MailTransport) {}
+  constructor(readonly store: JobStore, readonly executor: JobExecutor, readonly mail: MailTransport,
+    readonly checkAccess?: (tenantId: string) => Promise<void>) {}
   async recover(): Promise<void> {
     await this.store.db.transaction(async c => {
       await c.query("UPDATE h7_occurrences SET state = 'queued' WHERE state = 'running'");
@@ -32,6 +33,8 @@ export class JobRunner {
       if (this.stopping) return;
       const job = readJob(raw);
       try {
+        // Trial expiry may write billing state, so check outside the job transaction.
+        await this.checkAccess?.(job.tenantId);
         await this.store.db.transaction(async c => {
           await lockTenant(c, job); const current = await this.store.find(c, job, job.id);
           if (current.version !== job.version || current.nextRun !== job.nextRun || current.stopped || current.spec.kind === 'alert') return;
@@ -48,6 +51,8 @@ export class JobRunner {
         });
       } catch (error) {
         const code = errorCode(error);
+        // Leave the schedule due and intact: resolving billing admits the next tick.
+        if (['TRIAL_EXPIRED', 'BILLING_ACCESS_PAUSED'].includes(code)) continue;
         if (!['TENANT_UNAVAILABLE', 'JOB_PRINCIPAL_UNAVAILABLE', 'JOB_STOPPED'].includes(code)) throw error;
         await this.store.db.transaction(async c => {
           await cancelJob(c, job, job.id, code, this.store.clock().toISOString());
