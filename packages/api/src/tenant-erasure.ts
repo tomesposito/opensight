@@ -1,8 +1,9 @@
+import { aiReceiptTables } from './hosted-ai-receipts.js';
 import { MetadataError, type Database, type SqlConnection } from './metadata-db.js';
 
 
 // Additive hosted stores are optional on older and non-billing installations.
-export const optionalTenantDeletionTables = ['h8_egress_reservations', 'h9_billing_operations', 'h9_billing_links', 'h9_billing_events', 'h9_billing', 'h10_mail_usage', 'h10_mail_receipts'] as const;
+export const optionalTenantDeletionTables = [...aiReceiptTables, 'h8_egress_reservations', 'h9_billing_operations', 'h9_billing_links', 'h9_billing_events', 'h9_billing', 'h10_mail_usage', 'h10_mail_receipts'] as const;
 export async function hasErasureTable(c: SqlConnection, table: string): Promise<boolean> {
   await c.query('SAVEPOINT erasure_optional_table');
   let present = true;
