@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { MetadataError, type Database, type SqlConnection } from './metadata-db.js';
 import { identifier } from './metadata-resources.js';
@@ -34,8 +34,8 @@ export interface BillingConfig {
   tierEntitlements: Readonly<Partial<Record<BillingTier, Entitlement>>>;
 }
 export interface StripeClient {
-  createCheckoutSession?(input: { priceId: string; tenantId: string; tier: BillingTier; origin: string }): Promise<{ id: string; url: string }>;
-  createPaymentLink(input: { priceId: string; tenantId: string; tier: BillingTier }): Promise<{ id: string; url: string }>;
+  createCheckoutSession?(input: { priceId: string; tenantId: string; tier: BillingTier; origin: string; idempotencyKey: string }): Promise<{ id: string; url: string }>;
+  createPaymentLink(input: { priceId: string; tenantId: string; tier: BillingTier; idempotencyKey: string }): Promise<{ id: string; url: string }>;
 }
 export type StripeFetcher = (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
@@ -86,20 +86,20 @@ export function billingConfig(env: NodeJS.ProcessEnv = process.env): BillingConf
  * payment page). The official SDK is deliberately not a dependency. */
 export function httpStripeClient(apiKey: string, fetcher: StripeFetcher = fetch as unknown as StripeFetcher): StripeClient {
   return {
-    async createCheckoutSession({ priceId, tenantId, tier, origin }) {
+    async createCheckoutSession({ priceId, tenantId, tier, origin, idempotencyKey }) {
       const form = new URLSearchParams({ mode: 'subscription', 'line_items[0][price]': priceId, 'line_items[0][quantity]': '1',
         'metadata[tenant_id]': tenantId, 'metadata[tier]': tier,
         'subscription_data[metadata][tenant_id]': tenantId, 'subscription_data[metadata][tier]': tier,
         success_url: `${origin}/#/admin/billing`, cancel_url: `${origin}/#/admin/billing` });
       try {
         const response = await fetcher('https://api.stripe.com/v1/checkout/sessions', { method: 'POST',
-          headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/x-www-form-urlencoded' }, body: form.toString() });
+          headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/x-www-form-urlencoded', 'Idempotency-Key': idempotencyKey }, body: form.toString() });
         const result = nested(await response.json());
         if (!response.ok || typeof result.id !== 'string' || typeof result.url !== 'string' || !result.url.startsWith('https://checkout.stripe.com/')) throw new Error();
         return { id: result.id, url: result.url };
       } catch { throw new MetadataError('STRIPE_REQUEST_FAILED', 502); }
     },
-    async createPaymentLink({ priceId, tenantId, tier }) {
+    async createPaymentLink({ priceId, tenantId, tier, idempotencyKey }) {
       const form = new URLSearchParams({
         'line_items[0][price]': priceId, 'line_items[0][quantity]': '1',
         'metadata[tenant_id]': tenantId, 'metadata[tier]': tier,
@@ -108,7 +108,7 @@ export function httpStripeClient(apiKey: string, fetcher: StripeFetcher = fetch 
       try {
         response = await fetcher('https://api.stripe.com/v1/payment_links', {
           method: 'POST',
-          headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/x-www-form-urlencoded' },
+          headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/x-www-form-urlencoded', 'Idempotency-Key': idempotencyKey },
           body: form.toString(),
         });
       } catch { throw new MetadataError('STRIPE_REQUEST_FAILED', 502); }
@@ -337,7 +337,7 @@ export class HostedBilling {
       if (!(await c.query("SELECT tenant_id FROM h1_tenants WHERE tenant_id = ? AND state <> 'deleted'", [tenantId])).length)
         throw new MetadataError('TENANT_UNAVAILABLE', 403);
     });
-    const link = await this.stripe.createPaymentLink({ priceId: this.config.priceIds[paidTier], tenantId, tier: paidTier });
+    const link = await this.stripe.createPaymentLink({ priceId: this.config.priceIds[paidTier], tenantId, tier: paidTier, idempotencyKey: randomUUID() });
     await this.db.transaction(async c => {
       await c.query('INSERT INTO h9_billing_links (link_id, tenant_id, tier, created_at) VALUES (?,?,?,?)', [link.id, tenantId, paidTier, this.nowIso()]);
       await appendOperatorAudit(c, { action: 'billing.payment_link.created', tenantId, subject: link.id, detail: { tier: paidTier, priceCents: TIER_PRICE_CENTS[paidTier] } }, this.clock());
@@ -352,7 +352,7 @@ export class HostedBilling {
     const record = await this.state(tenantId);
     if (!('status' in record) && record.stripeSubscriptionId && !['canceled', 'incomplete_expired'].includes(record.subscriptionStatus ?? '')) throw new MetadataError('BILLING_SUBSCRIPTION_EXISTS', 409);
     const paidTier = tier as 'light' | 'regular' | 'heavy';
-    const session = await this.stripe.createCheckoutSession({ tenantId, tier: paidTier, priceId: this.config.priceIds[paidTier], origin: this.options.origin });
+    const session = await this.stripe.createCheckoutSession({ tenantId, tier: paidTier, priceId: this.config.priceIds[paidTier], origin: this.options.origin, idempotencyKey: randomUUID() });
     await this.db.transaction(c => appendOperatorAudit(c, { action: 'billing.checkout.created', tenantId, subject: session.id, detail: { tier: paidTier } }, this.clock()));
     return session;
   }
