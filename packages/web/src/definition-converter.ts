@@ -163,6 +163,7 @@ const visualBody: Schema = {
       Comparison: ['comparison', { ComparisonMethod: ['comparisonMethod'], ComparisonFormat: ['comparisonFormat', numberFormat] }],
       VisualLayoutOptions: ['visualLayoutOptions', { StandardLayout: ['standardLayout', members('Type')] }],
     }],
+    ForecastConfigurations: ['forecastConfigurations', members('PeriodsForward PeriodsBackward PredictionInterval Seasonality CustomSeasonalityValue UpperBoundary LowerBoundary')],
     DonutOptions: ['donutOptions', { ArcOptions: ['arcOptions', { ArcThickness: ['arcThickness'] }] }],
     DataLabels: ['dataLabels', labels],
     Legend: ['legend', members('Visibility Position Width')],

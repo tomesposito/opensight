@@ -15,6 +15,7 @@ import { assembleQsBundle, parseBundleJson, parseQsBundle, summarizeQsBundle, ZI
 import type { BundleDefinition, BundleSheet, BundleVisual, QsBundle } from '@opensight/bundle-parser';
 import { defaults, emptyDraft, serializeDraft, serializeVisual, grouped, noDimensions, singleMeasure, validateDraft, dataFields, calculationError, sheetParameters, multiplesOptionsValid } from './authoring.js';
 import type { AuthorDraft, AuthorSheet, AuthorVisual, CalculatedField, CategoryFilter, ImportResult, ImportedVisual, Placement, TooltipExtraField } from './authoring.js';
+import { forecastConfigValid, type ForecastConfig } from './forecast.js';
 
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Obj : {};
@@ -207,6 +208,25 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const importedBreakdownLimit = kind === 'waterfall' && Number.isInteger(breakdownItemsLimit) && (breakdownItemsLimit as number) >= 1 && (breakdownItemsLimit as number) <= 100 &&
     (breakdownOtherCategories === undefined || breakdownOtherCategories === 'INCLUDE' || breakdownOtherCategories === 'EXCLUDE')
     ? { count: breakdownItemsLimit as number, includeOther: breakdownOtherCategories !== 'EXCLUDE' } : undefined;
+  // QuickSight ForecastConfigurations[0] imports into the draft (line charts;
+  // issue #235). Fail-closed on shape: a malformed configuration stays out of
+  // the draft and the differences check reports it as retained, read-only.
+  const forecastObj = obj(list(config.forecastConfigurations)[0]);
+  const importedForecast = kind === 'line' && list(config.forecastConfigurations).length ? ((): ForecastConfig | undefined => {
+    const intIn = (v: unknown, fallback: number): number | undefined =>
+      v === undefined ? fallback : typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 100 ? v : undefined;
+    const periodsForward = intIn(forecastObj.periodsForward, 3), periodsBackward = intIn(forecastObj.periodsBackward, 0);
+    const interval = forecastObj.predictionInterval === undefined ? 95 : forecastObj.predictionInterval;
+    const seasonalityRaw = forecastObj.seasonality === undefined ? 'AUTOMATIC' : forecastObj.seasonality;
+    const seasonality = seasonalityRaw === 'AUTOMATIC' ? 'auto' as const : seasonalityRaw === 'NONE' ? 'none' as const
+      : seasonalityRaw === 'CUSTOM' && Number.isInteger(forecastObj.customSeasonalityValue) && (forecastObj.customSeasonalityValue as number) >= 2 && (forecastObj.customSeasonalityValue as number) <= 366
+        ? forecastObj.customSeasonalityValue as number : undefined;
+    if (periodsForward === undefined || periodsBackward === undefined || ![80, 90, 95].includes(interval as number) || seasonality === undefined) return undefined;
+    const candidate: ForecastConfig = { enabled: true, periodsForward, periodsBackward, predictionInterval: interval as 80 | 90 | 95, seasonality,
+      ...(typeof forecastObj.lowerBoundary === 'number' && Number.isFinite(forecastObj.lowerBoundary) ? { lowerBoundary: forecastObj.lowerBoundary } : {}),
+      ...(typeof forecastObj.upperBoundary === 'number' && Number.isFinite(forecastObj.upperBoundary) ? { upperBoundary: forecastObj.upperBoundary } : {}) };
+    return forecastConfigValid(candidate) ? candidate : undefined;
+  })() : undefined;
   if (body.opensightO !== undefined && !validOProvenance(body.opensightO)) throw new Error('Invalid Ask O provenance.');
   const visual: AuthorVisual = { ...defaults(), ...(validOProvenance(body.opensightO) ? { o: copy(body.opensightO) } : {}), ...(validInsight && body.insightConfiguration !== undefined ? { insightConfiguration: copy(obj(body.insightConfiguration)) } : {}), ...(paletteValid(body.opensightPalette) ? { palette: [...body.opensightPalette] } : {}), id, kind, title: string(obj(obj(body.title).formatText).plainText),
     ...(formattingValid(body.opensightFormatting) ? { formatting: copy(body.opensightFormatting) } : {}),
@@ -223,6 +243,8 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     // OpenSight extension: imported waterfall breakdown limit imports into the
     // draft. The compiler validates on import that a Breakdowns field exists.
     ...(importedBreakdownLimit ? { breakdownLimit: importedBreakdownLimit } : {}),
+    // QuickSight ForecastConfigurations[0] imports into the draft (line only).
+    ...(importedForecast ? { forecast: importedForecast } : {}),
     // QuickSight Breakdowns well imports into the draft (waterfall only; the
     // compiler validates the field shape and count on import).
     ...(kind === 'waterfall' ? { breakdowns: names(wells.breakdowns).slice(0, 1) } : {}),
@@ -386,6 +408,7 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
         const meta = v.imported!;
         for (const name of [v.dimension, ...v.rows, ...v.columns, ...v.measures]) if (name && calculationProblems.has(name)) meta.issues.push(`Calculated field ${name}: ${calculationProblems.get(name)}`);
         messages.push(`Visual ${meta.visualId} (${meta.variant}): ${meta.local ? 'local sales binding' : `unresolved dataset ${meta.dataSets.map(d => d.arn ?? d.identifier).join(', ') || '(none)'}`}.`);
+        if (v.forecast) messages.push(`Visual ${meta.visualId}: forecast configuration mapped (statistical forecast, ${v.forecast.periodsForward} period(s) forward, ${v.forecast.predictionInterval}% prediction interval).`);
         for (const value of d.filterGroups ?? []) {
           const group = obj(value);
           if (!scopeResolved(group, d) && group.status !== 'DISABLED') {
