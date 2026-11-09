@@ -40,7 +40,9 @@ binds: per-run drop + dependent-visual failure, byte eviction retaining 2 of
 refusal at the notebook budget, and `validateNotebookState` rejecting
 run-, notebook- and store-level aggregate overruns.
 
-Full root suite: pending — recorded in the issue close comment.
+Full root suite: 4,999 tests across 11 suites — 4,963 passed, 0 failed, 36
+skipped, exit 0 (independently run by the supervisor; the 36 skips are the
+usual live-Postgres and opt-in cases).
 
 ## Static demo review
 
