@@ -7,6 +7,30 @@ export const NOTEBOOK_MAX_CELLS = 100;
 export const NOTEBOOK_TEXT_LIMIT = 10_000;
 export const NOTEBOOK_RUN_RETENTION = 20;
 export const NOTEBOOK_SNAPSHOT_LIMIT = 100;
+/**
+ * Aggregate retained-result byte budgets (#230). The per-cell bounds alone let
+ * one notebook retain ~15 GiB (100 cells × 20 runs of individually valid
+ * results), so retention is also bounded by the JSON byte size of the result
+ * payloads themselves (`data` of run results and snapshots; metadata, cell
+ * text and JavaScript object overhead are not counted — the retry-store
+ * accounting rule). Defaults: one run may retain as much as the #159 8 MiB
+ * cache-entry budget; a notebook (runs + snapshots combined) 64 MiB; the
+ * whole store 256 MiB.
+ */
+export interface NotebookResultLimits { runBytes: number; notebookBytes: number; storeBytes: number }
+function positiveLimit(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const raw = env[name];
+  if (raw === undefined) return fallback;
+  if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(Number(raw))) throw new Error(`${name} must be a positive integer`);
+  return Number(raw);
+}
+export function notebookResultLimits(env: NodeJS.ProcessEnv = process.env): NotebookResultLimits {
+  const limits = { runBytes: positiveLimit(env, 'OPENSIGHT_NOTEBOOK_RUN_BYTES', 8 * 1024 * 1024),
+    notebookBytes: positiveLimit(env, 'OPENSIGHT_NOTEBOOK_NOTEBOOK_BYTES', 64 * 1024 * 1024),
+    storeBytes: positiveLimit(env, 'OPENSIGHT_NOTEBOOK_STORE_BYTES', 256 * 1024 * 1024) };
+  if (limits.runBytes > limits.notebookBytes || limits.notebookBytes > limits.storeBytes) throw new Error('Notebook result byte budgets must satisfy run <= notebook <= store');
+  return limits;
+}
 export interface NotebookParameter { name: string; type: 'string' | 'number' | 'date'; default?: string | number }
 export interface NotebookChart { type: 'bar' | 'line' | 'pie' | 'table'; dimension: string; measure: string; aggregation: 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX' }
 export type NotebookCell = { id: string; kind: 'markdown'; text: string }
@@ -34,6 +58,45 @@ export interface NotebookSnapshot extends NotebookData {
   asOf: string; datasetRefs: string[]; accessStamp: string;
 }
 export interface NotebookState { version: 1; notebooks: Notebook[]; runs: NotebookRun[]; snapshots: NotebookSnapshot[] }
+/** JSON bytes of one retained result payload; the unit every #230 budget counts. */
+export function notebookDataBytes(data: NotebookData): number { return Buffer.byteLength(JSON.stringify(data)); }
+export function notebookRunBytes(run: NotebookRun): number {
+  return run.results.reduce((total, r) => total + (r.data ? notebookDataBytes(r.data) : 0), 0);
+}
+export function notebookSnapshotBytes(snapshot: NotebookSnapshot): number {
+  const { columns, rows, rowCount, truncated } = snapshot;
+  return notebookDataBytes({ columns, rows, rowCount, truncated });
+}
+/** Retained result bytes for one notebook (runs + snapshots), or the whole store when no notebook is named. */
+export function notebookRetainedBytes(state: NotebookState, notebookId?: string): number {
+  return state.runs.reduce((total, r) => total + (notebookId === undefined || r.notebookId === notebookId ? notebookRunBytes(r) : 0), 0)
+    + state.snapshots.reduce((total, s) => total + (notebookId === undefined || s.notebookId === notebookId ? notebookSnapshotBytes(s) : 0), 0);
+}
+/**
+ * Byte-based eviction after a new run is appended (#230). Count retention runs
+ * first (caller); this evicts the notebook's oldest runs until its combined
+ * runs + snapshots fit the notebook budget, then evicts the store's oldest
+ * runs (any notebook; snapshots are explicit saves and are never evicted)
+ * until the store fits. If snapshots alone leave no room, the new run is not
+ * retained. Returns whether the new run survived.
+ */
+export function evictNotebookRunsForBytes(draft: NotebookState, limits: NotebookResultLimits, newRun: NotebookRun): boolean {
+  const dropOldest = (candidates: NotebookRun[]): boolean => {
+    const victim = candidates[0];
+    if (!victim) return false;
+    draft.runs = draft.runs.filter(r => r !== victim); return true;
+  };
+  while (notebookRetainedBytes(draft, newRun.notebookId) > limits.notebookBytes) {
+    if (!dropOldest(draft.runs.filter(r => r.notebookId === newRun.notebookId && r !== newRun))) break;
+  }
+  while (notebookRetainedBytes(draft) > limits.storeBytes) {
+    if (!dropOldest(draft.runs.filter(r => r !== newRun))) break;
+  }
+  if (notebookRetainedBytes(draft, newRun.notebookId) > limits.notebookBytes || notebookRetainedBytes(draft) > limits.storeBytes) {
+    draft.runs = draft.runs.filter(r => r !== newRun); return false;
+  }
+  return true;
+}
 export interface NotebookPrincipal extends Identity { role?: Role }
 export class NotebookError extends Error {
   constructor(readonly code: string, readonly status: number, message: string) { super(message); this.name = 'NotebookError'; }
@@ -133,7 +196,7 @@ function data(raw: unknown): NotebookData {
   if (integer(d.rowCount, 0) !== rows.length) notebookFail('NOTEBOOK_INVALID_RESULT', 'Invalid result count.');
   return { columns, rows, rowCount: rows.length, truncated: boolean(d.truncated) };
 }
-export function validateNotebookState(raw: unknown): NotebookState {
+export function validateNotebookState(raw: unknown, limits: NotebookResultLimits = notebookResultLimits()): NotebookState {
   try {
     const s = notebookObject(raw, ['version', 'notebooks', 'runs', 'snapshots']);
     if (s.version !== 1) notebookFail('NOTEBOOK_INVALID_VERSION', 'Unknown store version.');
@@ -166,15 +229,23 @@ export function validateNotebookState(raw: unknown): NotebookState {
       return { id: unique(s.id), notebookId: scope(s.notebookId, s.namespaceId), namespaceId: id(s.namespaceId), cellId: id(s.cellId), runId: id(s.runId), ownerId: text(s.ownerId, 512), asOf: stamp(s.asOf), datasetRefs: refs(s.datasetRefs), accessStamp: text(s.accessStamp, 128), ...data({ columns: s.columns, rows: s.rows, rowCount: s.rowCount, truncated: s.truncated }) };
     });
     for (const n of notebooks) if (runs.filter(r => r.notebookId === n.id).length > NOTEBOOK_RUN_RETENTION || snapshots.filter(s => s.notebookId === n.id).length > NOTEBOOK_SNAPSHOT_LIMIT) notebookFail('NOTEBOOK_LIMIT_EXCEEDED', 'Retention exceeded.');
-    return { version: 1, notebooks, runs, snapshots };
+    // Aggregate byte budgets (#230): each result below is individually valid,
+    // so only the summed payload bytes can reject the state here.
+    const state: NotebookState = { version: 1, notebooks, runs, snapshots };
+    for (const r of runs) if (notebookRunBytes(r) > limits.runBytes) notebookFail('NOTEBOOK_LIMIT_EXCEEDED', 'Run result byte budget exceeded.');
+    for (const n of notebooks) if (notebookRetainedBytes(state, n.id) > limits.notebookBytes) notebookFail('NOTEBOOK_LIMIT_EXCEEDED', 'Notebook result byte budget exceeded.');
+    if (notebookRetainedBytes(state) > limits.storeBytes) notebookFail('NOTEBOOK_LIMIT_EXCEEDED', 'Store result byte budget exceeded.');
+    return state;
   } catch { throw new NotebookError('NOTEBOOK_STORE_CORRUPT', 500, 'NOTEBOOK_STORE_CORRUPT: invalid notebook store.'); }
 }
 export class NotebookStore {
-  private constructor(private readonly store: AutomationStore<NotebookState>) {}
+  readonly limits: NotebookResultLimits;
+  private constructor(private readonly store: AutomationStore<NotebookState>, limits: NotebookResultLimits) { this.limits = limits; }
   static async load(path?: string): Promise<NotebookStore> {
-    try { return new NotebookStore(await AutomationStore.load<NotebookState>({ version: 1, notebooks: [], runs: [], snapshots: [] }, path, validateNotebookState)); }
+    const limits = notebookResultLimits();
+    try { return new NotebookStore(await AutomationStore.load<NotebookState>({ version: 1, notebooks: [], runs: [], snapshots: [] }, path, raw => validateNotebookState(raw, limits)), limits); }
     catch { throw new NotebookError('NOTEBOOK_STORE_CORRUPT', 500, 'NOTEBOOK_STORE_CORRUPT: unable to load notebook store.'); }
   }
   read(): NotebookState { return this.store.read(); }
-  change<R>(update: (draft: NotebookState) => R): Promise<R> { return this.store.change(draft => { const result = update(draft); validateNotebookState(draft); return result; }); }
+  change<R>(update: (draft: NotebookState) => R): Promise<R> { return this.store.change(draft => { const result = update(draft); validateNotebookState(draft, this.limits); return result; }); }
 }

@@ -5,7 +5,7 @@ import { method, send } from './automation-routes.js';
 import { blazeLimits } from './blaze.js';
 import { readBody, RequestError } from './query.js';
 import { SecurityError, type Identity, type SecurityService } from './security.js';
-import { NotebookStore, NotebookError, notebookFail, notebookObject, notebookAuthor, notebookBindings, validateNotebookContent, canViewNotebook, canEditNotebook, canManageNotebook, NOTEBOOK_RUN_RETENTION, NOTEBOOK_SNAPSHOT_LIMIT, type Notebook, type NotebookPrincipal, type NotebookRun, type NotebookSnapshot, type NotebookCellResult } from './notebooks.js';
+import { NotebookStore, NotebookError, notebookFail, notebookObject, notebookAuthor, notebookBindings, validateNotebookContent, canViewNotebook, canEditNotebook, canManageNotebook, NOTEBOOK_RUN_RETENTION, NOTEBOOK_SNAPSHOT_LIMIT, notebookDataBytes, notebookSnapshotBytes, notebookRetainedBytes, evictNotebookRunsForBytes, type Notebook, type NotebookPrincipal, type NotebookRun, type NotebookSnapshot, type NotebookCellResult } from './notebooks.js';
 
 export interface NotebookDependencies {
   security?: SecurityService; localIdentity?: Identity;
@@ -92,6 +92,17 @@ export class NotebookRoutes {
         try { await this.assertRefs(this.principal(p), result.datasetRefs, run.accessStamp); }
         catch { delete result.data; result.error = { code: 'NOTEBOOK_DATASET_ACCESS_DENIED', message: denial().message }; }
       }
+      // Aggregate per-run byte budget (#230): individually valid cell results
+      // are retained in cell order until the run budget is spent; a result
+      // that does not fit loses its data and records the budget error, so the
+      // dependency pass below fails its visuals instead of reusing it.
+      let retainedBytes = 0;
+      for (const result of run.results) {
+        if (!result.data) continue;
+        const bytes = notebookDataBytes(result.data);
+        if (retainedBytes + bytes > this.store.limits.runBytes) { delete result.data; result.error = { code: 'NOTEBOOK_RESULT_BUDGET_EXCEEDED', message: 'This result was not retained: the run reached its aggregate result byte budget.' }; }
+        else retainedBytes += bytes;
+      }
       for (const result of run.results) if (result.sourceCellId && run.results.find(r => r.cellId === result.sourceCellId)?.error) result.error = { code: 'NOTEBOOK_DEPENDENCY_FAILED', message: 'The source SQL cell failed.' };
       await this.store.change(draft => {
         this.find(this.principal(p), n.id, false, draft);
@@ -99,6 +110,7 @@ export class NotebookRoutes {
         draft.runs.push(run);
         const retained = draft.runs.filter(r => r.notebookId === n.id).slice(-NOTEBOOK_RUN_RETENTION);
         draft.runs = draft.runs.filter(r => r.notebookId !== n.id || retained.includes(r));
+        evictNotebookRunsForBytes(draft, this.store.limits, run);
       });
       return run;
     } finally { this.busy = false; }
@@ -156,6 +168,11 @@ export class NotebookRoutes {
           if (this.deps.accessStamp(p) !== run.accessStamp) throw denial();
           if (current.version !== n.version) notebookFail('NOTEBOOK_VERSION_CONFLICT', 'Notebook changed; rerun before saving.', 409);
           if (draft.snapshots.filter(s => s.notebookId === id).length >= NOTEBOOK_SNAPSHOT_LIMIT) notebookFail('NOTEBOOK_SNAPSHOT_LIMIT_EXCEEDED', 'At most 100 snapshots per notebook.', 409);
+          // Snapshots are explicit saves and are never byte-evicted, so one
+          // that would push the notebook or the store over its #230 result
+          // byte budget is refused instead.
+          const snapshotBytes = notebookSnapshotBytes(snapshot);
+          if (notebookRetainedBytes(draft, id) + snapshotBytes > this.store.limits.notebookBytes || notebookRetainedBytes(draft) + snapshotBytes > this.store.limits.storeBytes) notebookFail('NOTEBOOK_SNAPSHOT_LIMIT_EXCEEDED', 'This snapshot would exceed the retained result byte budget.', 409);
           draft.snapshots.push(snapshot);
         });
         send(response, 201, this.snapshotSummary(snapshot)); return;
