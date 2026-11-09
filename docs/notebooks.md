@@ -34,7 +34,22 @@ another owner's draft through GET/list. Cross-namespace requests return 404.
 PATCH requires the current `version`, otherwise `NOTEBOOK_VERSION_CONFLICT`.
 
 The store retains the latest **20 runs per notebook**, append-only until retention
-removes an old run, and up to **100 snapshots per notebook**. Runs record the
+removes an old run, and up to **100 snapshots per notebook**. Retained results
+are also bounded by aggregate byte budgets (#230): bytes are the JSON size of
+the result payloads (`data` of run results and snapshots), counted separately
+from metadata and cell text. One run retains at most **8 MiB** of results
+(`OPENSIGHT_NOTEBOOK_RUN_BYTES`) — results are kept in cell order and a result
+that does not fit loses its data to `NOTEBOOK_RESULT_BUDGET_EXCEEDED`, failing
+any dependent visual. Each notebook retains at most **64 MiB** across its runs
+and snapshots combined (`OPENSIGHT_NOTEBOOK_NOTEBOOK_BYTES`), and the whole
+store at most **256 MiB** (`OPENSIGHT_NOTEBOOK_STORE_BYTES`); the budgets must
+satisfy run ≤ notebook ≤ store. When a new run would exceed the notebook or
+store budget, the oldest runs are evicted first (snapshots are explicit saves
+and are never evicted); if snapshots alone leave no room, the new run is
+executed and returned but not retained. A snapshot save that would exceed the
+notebook or store budget is refused with `NOTEBOOK_SNAPSHOT_LIMIT_EXCEEDED`.
+The same budgets are enforced when a persisted store is loaded, so an
+over-budget file fails closed as `NOTEBOOK_STORE_CORRUPT`. Runs record the
 executing user, notebook version, time, and each cell's outcome. GET history
 returns newest first. Other callers see run metadata, never its result data.
 Own historical results are withheld if current access or the security policy
