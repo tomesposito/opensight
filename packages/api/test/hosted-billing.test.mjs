@@ -48,15 +48,33 @@ test('Stripe client posts a form-encoded payment link request and validates the 
     seen = { url, init };
     return { ok: true, status: 200, json: async () => ({ id: 'plink_1', url: 'https://buy.stripe.com/plink_1' }) };
   });
-  const link = await client.createPaymentLink({ priceId: 'price_light', tenantId: 'tenant-one', tier: 'light' });
+  const link = await client.createPaymentLink({ priceId: 'price_light', tenantId: 'tenant-one', tier: 'light', idempotencyKey: 'operation_link' });
   assert.deepEqual(link, { id: 'plink_1', url: 'https://buy.stripe.com/plink_1' });
   assert.equal(seen.url, 'https://api.stripe.com/v1/payment_links');
   assert.equal(seen.init.headers.authorization, 'Bearer sk_test_placeholder');
+  assert.equal(seen.init.headers['Idempotency-Key'], 'operation_link');
   const form = new URLSearchParams(seen.init.body);
   assert.equal(form.get('line_items[0][price]'), 'price_light');
   assert.equal(form.get('metadata[tenant_id]'), 'tenant-one');
   const failing = httpStripeClient('sk_test_placeholder', async () => ({ ok: false, status: 402, json: async () => ({ error: {} }) }));
-  await assert.rejects(failing.createPaymentLink({ priceId: 'price_light', tenantId: 'tenant-one', tier: 'light' }), { code: 'STRIPE_REQUEST_FAILED' });
+  await assert.rejects(failing.createPaymentLink({ priceId: 'price_light', tenantId: 'tenant-one', tier: 'light', idempotencyKey: 'operation_link' }), { code: 'STRIPE_REQUEST_FAILED' });
+});
+
+test('227 Stripe client forwards the checkout idempotency key and preserves named failures', async () => {
+  const input = { priceId: 'price_light', tenantId: 'tenant-one', tier: 'light', origin: 'https://opensight.example', idempotencyKey: 'operation_checkout' };
+  const session = { id: 'cs_key', url: 'https://checkout.stripe.com/c/pay/key' };
+  const client = httpStripeClient('sk_test_placeholder', async (url, init) => {
+    assert.equal(url, 'https://api.stripe.com/v1/checkout/sessions');
+    assert.equal(init.method, 'POST');
+    assert.equal(init.headers['Idempotency-Key'], input.idempotencyKey);
+    return { ok: true, status: 200, json: async () => session };
+  });
+  assert.deepEqual(await client.createCheckoutSession(input), session);
+  for (const fetcher of [async () => { throw new Error('timeout'); }, async () => ({ ok: false, status: 500, json: async () => ({}) })]) {
+    const failing = httpStripeClient('sk_test_placeholder', fetcher);
+    await assert.rejects(failing.createCheckoutSession(input), { code: 'STRIPE_REQUEST_FAILED', status: 502 });
+    await assert.rejects(failing.createPaymentLink(input), { code: 'STRIPE_REQUEST_FAILED', status: 502 });
+  }
 });
 
 async function billingFixture(t, now = Date.UTC(2026, 10, 3, 12)) {

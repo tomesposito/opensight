@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { MetadataError, type Database, type SqlConnection } from './metadata-db.js';
 import { identifier } from './metadata-resources.js';
@@ -17,7 +17,11 @@ export const TIER_PRICE_CENTS: Readonly<Record<BillingTier, number>> = Object.fr
 export const PAID_TIERS: readonly BillingTier[] = ['light', 'regular', 'heavy'];
 
 export const DAY_MS = 86_400_000;
+// Count from successful result persistence, so a delayed reconciliation never
+// shortens the lifetime of a session Stripe may only just have created.
+export const CHECKOUT_REUSE_MS = DAY_MS;
 export const PAUSED_RESOLUTIONS = ['pay', 'export', 'close'] as const;
+type BillingOperationKind = 'payment_link' | 'checkout_session';
 
 export type BillingAccessState = 'active' | 'paused';
 export interface BillingRecord {
@@ -34,8 +38,8 @@ export interface BillingConfig {
   tierEntitlements: Readonly<Partial<Record<BillingTier, Entitlement>>>;
 }
 export interface StripeClient {
-  createCheckoutSession?(input: { priceId: string; tenantId: string; tier: BillingTier; origin: string }): Promise<{ id: string; url: string }>;
-  createPaymentLink(input: { priceId: string; tenantId: string; tier: BillingTier }): Promise<{ id: string; url: string }>;
+  createCheckoutSession?(input: { priceId: string; tenantId: string; tier: BillingTier; origin: string; idempotencyKey: string }): Promise<{ id: string; url: string }>;
+  createPaymentLink(input: { priceId: string; tenantId: string; tier: BillingTier; idempotencyKey: string }): Promise<{ id: string; url: string }>;
 }
 export type StripeFetcher = (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
@@ -86,20 +90,20 @@ export function billingConfig(env: NodeJS.ProcessEnv = process.env): BillingConf
  * payment page). The official SDK is deliberately not a dependency. */
 export function httpStripeClient(apiKey: string, fetcher: StripeFetcher = fetch as unknown as StripeFetcher): StripeClient {
   return {
-    async createCheckoutSession({ priceId, tenantId, tier, origin }) {
+    async createCheckoutSession({ priceId, tenantId, tier, origin, idempotencyKey }) {
       const form = new URLSearchParams({ mode: 'subscription', 'line_items[0][price]': priceId, 'line_items[0][quantity]': '1',
         'metadata[tenant_id]': tenantId, 'metadata[tier]': tier,
         'subscription_data[metadata][tenant_id]': tenantId, 'subscription_data[metadata][tier]': tier,
         success_url: `${origin}/#/admin/billing`, cancel_url: `${origin}/#/admin/billing` });
       try {
         const response = await fetcher('https://api.stripe.com/v1/checkout/sessions', { method: 'POST',
-          headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/x-www-form-urlencoded' }, body: form.toString() });
+          headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/x-www-form-urlencoded', 'Idempotency-Key': idempotencyKey }, body: form.toString() });
         const result = nested(await response.json());
         if (!response.ok || typeof result.id !== 'string' || typeof result.url !== 'string' || !result.url.startsWith('https://checkout.stripe.com/')) throw new Error();
         return { id: result.id, url: result.url };
       } catch { throw new MetadataError('STRIPE_REQUEST_FAILED', 502); }
     },
-    async createPaymentLink({ priceId, tenantId, tier }) {
+    async createPaymentLink({ priceId, tenantId, tier, idempotencyKey }) {
       const form = new URLSearchParams({
         'line_items[0][price]': priceId, 'line_items[0][quantity]': '1',
         'metadata[tenant_id]': tenantId, 'metadata[tier]': tier,
@@ -108,7 +112,7 @@ export function httpStripeClient(apiKey: string, fetcher: StripeFetcher = fetch 
       try {
         response = await fetcher('https://api.stripe.com/v1/payment_links', {
           method: 'POST',
-          headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/x-www-form-urlencoded' },
+          headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/x-www-form-urlencoded', 'Idempotency-Key': idempotencyKey },
           body: form.toString(),
         });
       } catch { throw new MetadataError('STRIPE_REQUEST_FAILED', 502); }
@@ -201,6 +205,15 @@ export async function initializeBilling(db: Database): Promise<void> {
     }
     await c.query(`CREATE TABLE IF NOT EXISTS h9_billing_links (
       link_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES h1_tenants(tenant_id), tier TEXT NOT NULL, created_at TEXT NOT NULL)`);
+    await c.query(`CREATE TABLE IF NOT EXISTS h9_billing_operations (
+      operation_id TEXT PRIMARY KEY, idempotency_key TEXT NOT NULL UNIQUE,
+      tenant_id TEXT NOT NULL REFERENCES h1_tenants(tenant_id),
+      kind TEXT NOT NULL CHECK (kind IN ('payment_link', 'checkout_session')),
+      tier TEXT NOT NULL CHECK (tier IN ('light', 'regular', 'heavy')),
+      status TEXT NOT NULL CHECK (status IN ('pending', 'completed', 'failed')),
+      price_id TEXT NOT NULL, checkout_origin TEXT,
+      stripe_object_id TEXT, stripe_url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+    await c.query('CREATE INDEX IF NOT EXISTS h9_billing_operations_tenant ON h9_billing_operations (tenant_id, kind, tier)');
     await c.query(`CREATE TABLE IF NOT EXISTS h9_billing_events (
       event_id TEXT PRIMARY KEY, tenant_id TEXT, type TEXT NOT NULL, outcome TEXT NOT NULL, created_at TEXT NOT NULL)`);
   });
@@ -332,29 +345,71 @@ export class HostedBilling {
   async createPaymentLink(tenantId: string, tier: unknown): Promise<{ id: string; url: string; tier: BillingTier }> {
     identifier(tenantId);
     if (typeof tier !== 'string' || !(PAID_TIERS as readonly string[]).includes(tier)) throw new MetadataError('BILLING_TIER_INVALID', 400);
-    const paidTier = tier as 'light' | 'regular' | 'heavy';
-    await this.db.transaction(async c => {
-      if (!(await c.query("SELECT tenant_id FROM h1_tenants WHERE tenant_id = ? AND state <> 'deleted'", [tenantId])).length)
-        throw new MetadataError('TENANT_UNAVAILABLE', 403);
+    return this.createBillingObject(tenantId, tier as 'light' | 'regular' | 'heavy', 'payment_link');
+  }
+  private async lockBillingTenant(c: SqlConnection, tenantId: string, kind: BillingOperationKind): Promise<void> {
+    if (this.db.dialect === 'postgres') await c.query('SELECT tenant_id FROM h1_tenants WHERE tenant_id = ? FOR UPDATE', [tenantId]);
+    const tenant = (await c.query('SELECT state FROM h1_tenants WHERE tenant_id = ?', [tenantId]))[0];
+    if (!tenant || (kind === 'checkout_session' ? tenant.state !== 'active' : tenant.state === 'deleted'))
+      throw new MetadataError('TENANT_UNAVAILABLE', 403);
+    if (kind === 'checkout_session') {
+      const record = asRecord((await c.query('SELECT * FROM h9_billing WHERE tenant_id = ?', [tenantId]))[0]);
+      if (record?.stripeSubscriptionId && !['canceled', 'incomplete_expired'].includes(record.subscriptionStatus ?? ''))
+        throw new MetadataError('BILLING_SUBSCRIPTION_EXISTS', 409);
+    }
+  }
+  private async createBillingObject(tenantId: string, tier: 'light' | 'regular' | 'heavy', kind: BillingOperationKind): Promise<{ id: string; url: string; tier: BillingTier }> {
+    // Commit the reservation BEFORE Stripe: a rollback/process crash during the
+    // second transaction must leave the original key and request available.
+    const operationId = await this.db.transaction(async c => {
+      await this.lockBillingTenant(c, tenantId, kind);
+      const existing = (await c.query(`SELECT operation_id FROM h9_billing_operations WHERE tenant_id = ? AND kind = ?
+        AND ${kind === 'payment_link' ? 'tier = ?' : "(status <> 'completed' OR updated_at > ?)"}
+        ORDER BY created_at DESC, operation_id DESC LIMIT 1`,
+      [tenantId, kind, kind === 'payment_link' ? tier : new Date(this.clock() - CHECKOUT_REUSE_MS).toISOString()]))[0];
+      if (existing) return String(existing.operation_id);
+      const id = randomUUID(), now = this.nowIso();
+      await c.query(`INSERT INTO h9_billing_operations
+        (operation_id, idempotency_key, tenant_id, kind, tier, status, price_id, checkout_origin, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
+      [id, id, tenantId, kind, tier, this.config.priceIds[tier], kind === 'checkout_session' ? this.options.origin! : null, now, now]);
+      return id;
     });
-    const link = await this.stripe.createPaymentLink({ priceId: this.config.priceIds[paidTier], tenantId, tier: paidTier });
-    await this.db.transaction(async c => {
-      await c.query('INSERT INTO h9_billing_links (link_id, tenant_id, tier, created_at) VALUES (?,?,?,?)', [link.id, tenantId, paidTier, this.nowIso()]);
-      await appendOperatorAudit(c, { action: 'billing.payment_link.created', tenantId, subject: link.id, detail: { tier: paidTier, priceCents: TIER_PRICE_CENTS[paidTier] } }, this.clock());
+    const outcome = await this.db.transaction(async c => {
+      // Keep the tenant lock through the POST and result commit. Other instances
+      // wait, then see the committed result. No in-memory mutex or stale lease
+      // can strand a reservation: process death releases the database lock.
+      await this.lockBillingTenant(c, tenantId, kind);
+      const operation = (await c.query('SELECT * FROM h9_billing_operations WHERE operation_id = ?', [operationId]))[0]!;
+      const reservedTier = String(operation.tier) as BillingTier;
+      if (operation.status === 'completed') return { result: { id: String(operation.stripe_object_id), url: String(operation.stripe_url), tier: reservedTier } };
+      await c.query("UPDATE h9_billing_operations SET status = 'pending', updated_at = ? WHERE operation_id = ?", [this.nowIso(), operationId]);
+      const input = { tenantId, tier: reservedTier, priceId: String(operation.price_id), idempotencyKey: String(operation.idempotency_key) };
+      let result: { id: string; url: string };
+      try {
+        result = kind === 'payment_link' ? await this.stripe.createPaymentLink(input)
+          : await this.stripe.createCheckoutSession!({ ...input, origin: String(operation.checkout_origin) });
+      } catch {
+        await c.query("UPDATE h9_billing_operations SET status = 'failed', updated_at = ? WHERE operation_id = ?", [this.nowIso(), operationId]);
+        // Throw after commit: a failed attempt retains its original request/key.
+        return { error: new MetadataError('STRIPE_REQUEST_FAILED', 502) };
+      }
+      await c.query("UPDATE h9_billing_operations SET status = 'completed', stripe_object_id = ?, stripe_url = ?, updated_at = ? WHERE operation_id = ?",
+        [result.id, result.url, this.nowIso(), operationId]);
+      if (kind === 'payment_link') await c.query('INSERT INTO h9_billing_links (link_id, tenant_id, tier, created_at) VALUES (?,?,?,?)', [result.id, tenantId, reservedTier, this.nowIso()]);
+      await appendOperatorAudit(c, { action: kind === 'payment_link' ? 'billing.payment_link.created' : 'billing.checkout.created', tenantId, subject: result.id,
+        detail: { tier: reservedTier, ...(kind === 'payment_link' ? { priceCents: TIER_PRICE_CENTS[reservedTier] } : {}) } }, this.clock());
+      return { result: { ...result, tier: reservedTier } };
     });
-    return { ...link, tier: paidTier };
+    if (outcome.error) throw outcome.error;
+    return outcome.result;
   }
   async createCheckoutSession(tenantId: string, tier: unknown): Promise<{ id: string; url: string }> {
     identifier(tenantId);
     if (typeof tier !== 'string' || !PAID_TIERS.includes(tier as BillingTier)) throw new MetadataError('BILLING_TIER_INVALID', 400);
     if (!this.options.origin || !this.stripe.createCheckoutSession) throw new MetadataError('BILLING_CHECKOUT_UNAVAILABLE', 503);
-    if (!(await this.db.transaction(c => c.query("SELECT tenant_id FROM h1_tenants WHERE tenant_id = ? AND state = 'active'", [tenantId]))).length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
-    const record = await this.state(tenantId);
-    if (!('status' in record) && record.stripeSubscriptionId && !['canceled', 'incomplete_expired'].includes(record.subscriptionStatus ?? '')) throw new MetadataError('BILLING_SUBSCRIPTION_EXISTS', 409);
-    const paidTier = tier as 'light' | 'regular' | 'heavy';
-    const session = await this.stripe.createCheckoutSession({ tenantId, tier: paidTier, priceId: this.config.priceIds[paidTier], origin: this.options.origin });
-    await this.db.transaction(c => appendOperatorAudit(c, { action: 'billing.checkout.created', tenantId, subject: session.id, detail: { tier: paidTier } }, this.clock()));
-    return session;
+    const { id, url } = await this.createBillingObject(tenantId, tier as 'light' | 'regular' | 'heavy', 'checkout_session');
+    return { id, url };
   }
   private tierForPrice(priceId: string | null): BillingTier | undefined {
     if (!priceId) return undefined;
