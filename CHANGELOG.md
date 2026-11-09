@@ -310,6 +310,14 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Security
 
+- Notebook retained results are now bounded by aggregate byte budgets, not
+  only per cell: a run retains at most 8 MiB of result payloads
+  (`NOTEBOOK_RESULT_BUDGET_EXCEEDED` past that), each notebook at most 64 MiB
+  across its runs and snapshots, and the store at most 256 MiB, with
+  oldest-run eviction and snapshot saves refused past budget; the budgets are
+  configurable via `OPENSIGHT_NOTEBOOK_RUN_BYTES`,
+  `OPENSIGHT_NOTEBOOK_NOTEBOOK_BYTES` and `OPENSIGHT_NOTEBOOK_STORE_BYTES`
+  (#230).
 - XLSX uploads now validate actual ZIP inflation before spreadsheet parsing,
   enforcing the 16 MiB member and 64 MiB total limits even when headers lie;
   contradictory local/central metadata, data descriptors and ZIP64 overrides
