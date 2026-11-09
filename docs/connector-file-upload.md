@@ -28,10 +28,18 @@ mixed types. All-null columns default to STRING. Optional `columns` specifies th
 exact ordered schema. Declare STRING to retain numeric-looking text IDs or large
 integer strings. JSON retains scalar types instead of coercing strings to numbers.
 Limits: 8 MiB input, 100,000 rows, 256 columns, 20 staged tables per session.
-XLSX workbooks are also bounded by their declared uncompressed ZIP sizes,
-checked from the central directory before parsing: at most 16 MiB per member,
-64 MiB in total, and 1000 members; workbooks whose sizes cannot be bounded
-from the headers (ZIP64) are rejected.
+XLSX workbooks are also bounded by both declared and actual uncompressed ZIP
+sizes before spreadsheet parsing: at most 16 MiB per member, 64 MiB in total,
+and 1000 members. A cheap central-directory check precedes sequential local
+header validation and bounded `node:zlib` DEFLATE inflation; STORED members
+are checked directly. Every member is checked, including unselected sheets.
+Names, compression methods, sizes, stream boundaries and CRC32 must agree.
+Signed and unsigned data descriptors may supply sizes for zero local-header
+placeholders, but must match the central directory and actual output.
+ZIP64 sentinel fields remain unsupported; redundant ZIP64 extras are accepted
+only when their full-precision values match the plain fields and byte limits.
+Malformed or contradictory metadata returns `INVALID_UPLOAD`; exceeded limits
+and unsupported ZIP64 sentinels return `UPLOAD_LIMIT_EXCEEDED` (#221).
 No remote file reads or live database are required.
 
 License verification at build time (2026-09-28): installed `xlsx@0.18.5`

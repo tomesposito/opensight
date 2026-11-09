@@ -294,6 +294,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Security
 
+- XLSX uploads now validate actual ZIP inflation before spreadsheet parsing,
+  enforcing the 16 MiB member and 64 MiB total limits even when headers lie;
+  contradictory local/central metadata, data descriptors and ZIP64 overrides
+  fail closed (#221).
 - Input-table mutations now recheck the caller's editor/manager authorization
   inside the serialized store change, against the current table and current
   role: an editor whose grant is revoked while their request body is in
