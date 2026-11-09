@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { h8Fixture, referenceEnv } from './h8-helpers.mjs';
 import { database } from './hosted-helpers.mjs';
-import { HostedBilling, initializeBilling } from '../dist/hosted-billing.js';
+import { CHECKOUT_REUSE_MS, HostedBilling, initializeBilling } from '../dist/hosted-billing.js';
 import { MetadataError } from '../dist/metadata-db.js';
 import { readOperatorAudit } from '../dist/operator-audit.js';
 import { migrateReference } from '../dist/single-node.js';
@@ -168,4 +168,69 @@ test('227 PostgreSQL contract: reservation and execution lock the tenant before 
   const billing = new HostedBilling(db, config, { stripe: f.stripe, clock: f.now });
   const results = await Promise.all([billing.createPaymentLink('tenant-one', 'light'), billing.createPaymentLink('tenant-one', 'light')]);
   assert.deepEqual(results[0], results[1]); assert.equal(f.calls.length, 1); assert.equal(locks, 4);
+  const checkout = new HostedBilling(db, config, { stripe: f.stripe, clock: f.now, origin });
+  const sessions = await Promise.all([checkout.createCheckoutSession('tenant-one', 'regular'), checkout.createCheckoutSession('tenant-one', 'heavy')]);
+  assert.deepEqual(sessions[0], sessions[1]); assert.equal(f.calls.length, 2); assert.equal(locks, 8);
+});
+
+test('227 checkout: concurrent instances return one reserved session even when another tier is requested', async t => {
+  const f = await fixture(t), entered = Promise.withResolvers(), release = Promise.withResolvers();
+  const create = f.stripe.createCheckoutSession;
+  f.stripe.createCheckoutSession = async input => { const result = await create(input); entered.resolve(); await release.promise; return result; };
+  const first = f.billing.createCheckoutSession('tenant-one', 'light');
+  await entered.promise;
+  const second = f.makeBilling().createCheckoutSession('tenant-one', 'heavy');
+  release.resolve();
+  const results = await Promise.all([first, second]);
+  assert.deepEqual(results[0], results[1]); assert.deepEqual(Object.keys(results[0]).sort(), ['id', 'url']);
+  assert.equal(f.calls.length, 1); assert.equal(f.calls[0].tier, 'light');
+  assert.equal((await operations(f.db)).length, 1);
+  assert.equal((await creationAudits(f.db, 'billing.checkout.created')).length, 1);
+  assert.equal((await f.db.transaction(c => c.query('SELECT * FROM h9_billing_links'))).length, 0);
+});
+
+test('227 checkout: reuse ends exactly 24 hours after completion, then a fresh key/session is reserved', async t => {
+  const f = await fixture(t);
+  assert.equal(CHECKOUT_REUSE_MS, 24 * 60 * 60 * 1000);
+  const first = await f.billing.createCheckoutSession('tenant-one', 'light');
+  f.advance(CHECKOUT_REUSE_MS - 1);
+  assert.deepEqual(await f.makeBilling().createCheckoutSession('tenant-one', 'heavy'), first);
+  assert.equal(f.calls.length, 1);
+  f.advance(1);
+  const next = await f.billing.createCheckoutSession('tenant-one', 'heavy');
+  assert.notEqual(next.id, first.id); assert.notEqual(f.calls[0].idempotencyKey, f.calls[1].idempotencyKey);
+  assert.equal(f.calls[1].tier, 'heavy'); assert.equal(f.calls.length, 2);
+  assert.equal((await operations(f.db)).length, 2);
+  assert.equal((await creationAudits(f.db, 'billing.checkout.created')).length, 2);
+});
+
+test('227 checkout: tenant isolation and existing validation/subscription errors remain intact', async t => {
+  const f = await fixture(t);
+  for (const method of ['createPaymentLink', 'createCheckoutSession']) {
+    for (const tier of ['free', 'invalid', null, 1]) await assert.rejects(f.billing[method]('tenant-one', tier), { code: 'BILLING_TIER_INVALID', status: 400 });
+    await assert.rejects(f.billing[method]('tenant-missing', 'light'), { code: 'TENANT_UNAVAILABLE', status: 403 });
+  }
+  await assert.rejects(f.makeBilling({ origin: undefined }).createCheckoutSession('tenant-one', 'light'), { code: 'BILLING_CHECKOUT_UNAVAILABLE', status: 503 });
+  await assert.rejects(f.makeBilling({ stripe: { createPaymentLink: f.stripe.createPaymentLink } }).createCheckoutSession('tenant-one', 'light'), { code: 'BILLING_CHECKOUT_UNAVAILABLE', status: 503 });
+  const first = await f.billing.createCheckoutSession('tenant-one', 'light');
+  assert.notEqual((await f.billing.createCheckoutSession('tenant-two', 'light')).id, first.id);
+  await f.billing.handleEvent({ id: 'evt_reserved_checkout', created: 1, type: 'checkout.session.completed', object: {
+    subscription: 'sub_reserved', customer: 'cus_reserved', metadata: { tenant_id: 'tenant-one', tier: 'light' }, payment_status: 'paid',
+  } });
+  for (const status of [null, 'active', 'incomplete', 'past_due', 'unpaid', 'trialing']) {
+    await f.db.transaction(c => c.query('UPDATE h9_billing SET subscription_status = ? WHERE tenant_id = ?', [status, 'tenant-one']));
+    await assert.rejects(f.billing.createCheckoutSession('tenant-one', 'regular'), { code: 'BILLING_SUBSCRIPTION_EXISTS', status: 409 });
+  }
+  f.advance(CHECKOUT_REUSE_MS);
+  await assert.rejects(f.billing.createCheckoutSession('tenant-one', 'regular'), { code: 'BILLING_SUBSCRIPTION_EXISTS', status: 409 });
+  for (const status of ['canceled', 'incomplete_expired']) {
+    await f.db.transaction(c => c.query('UPDATE h9_billing SET subscription_status = ? WHERE tenant_id = ?', [status, 'tenant-one']));
+    await f.billing.createCheckoutSession('tenant-one', 'regular');
+    f.advance(CHECKOUT_REUSE_MS);
+  }
+  for (const state of ['suspended', 'provisioning', 'deleting', 'deleted']) {
+    await f.db.transaction(c => c.query('UPDATE h1_tenants SET state = ?, tombstone = ? WHERE tenant_id = ?', [state, state === 'deleted' ? 'erased' : null, 'tenant-one']));
+    await assert.rejects(f.billing.createCheckoutSession('tenant-one', 'light'), { code: 'TENANT_UNAVAILABLE', status: 403 });
+  }
+  await assert.rejects(f.billing.createPaymentLink('tenant-one', 'light'), { code: 'TENANT_UNAVAILABLE', status: 403 });
 });

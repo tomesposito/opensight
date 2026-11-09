@@ -408,13 +408,8 @@ export class HostedBilling {
     identifier(tenantId);
     if (typeof tier !== 'string' || !PAID_TIERS.includes(tier as BillingTier)) throw new MetadataError('BILLING_TIER_INVALID', 400);
     if (!this.options.origin || !this.stripe.createCheckoutSession) throw new MetadataError('BILLING_CHECKOUT_UNAVAILABLE', 503);
-    if (!(await this.db.transaction(c => c.query("SELECT tenant_id FROM h1_tenants WHERE tenant_id = ? AND state = 'active'", [tenantId]))).length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
-    const record = await this.state(tenantId);
-    if (!('status' in record) && record.stripeSubscriptionId && !['canceled', 'incomplete_expired'].includes(record.subscriptionStatus ?? '')) throw new MetadataError('BILLING_SUBSCRIPTION_EXISTS', 409);
-    const paidTier = tier as 'light' | 'regular' | 'heavy';
-    const session = await this.stripe.createCheckoutSession({ tenantId, tier: paidTier, priceId: this.config.priceIds[paidTier], origin: this.options.origin, idempotencyKey: randomUUID() });
-    await this.db.transaction(c => appendOperatorAudit(c, { action: 'billing.checkout.created', tenantId, subject: session.id, detail: { tier: paidTier } }, this.clock()));
-    return session;
+    const { id, url } = await this.createBillingObject(tenantId, tier as 'light' | 'regular' | 'heavy', 'checkout_session');
+    return { id, url };
   }
   private tierForPrice(priceId: string | null): BillingTier | undefined {
     if (!priceId) return undefined;
