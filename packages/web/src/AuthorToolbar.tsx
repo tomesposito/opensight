@@ -181,7 +181,7 @@ export function AuthorToolbar({ canUndo = false, canRedo = false, onUndo, onRedo
         <AuthorMenuItem label="Style" run={() => focus('.sheet-object-properties input')} reason={selectedObject ? undefined : needsVisual ?? 'Per-visual card styling is not supported yet. Use Analysis themes and visual palettes in Properties.'} />
         <AuthorMenuItem label="Rules" reason={needsVisual ?? 'Visibility rules need a hosted rule engine. All visuals are always visible in this editor.'} />
         <hr />
-        <AuthorMenuItem label="Forecast" reason={needsVisual ?? 'Forecasts are set per chart: select a line chart with a date dimension and use the Forecast section in Properties. The forecast is statistical (exponential smoothing), not ML.'} />
+        <AuthorMenuItem label="Forecast" reason={needsVisual ?? 'Forecasts need a line chart with a date dimension: set them per chart in the Forecast section in Properties. The forecast is statistical (exponential smoothing), not ML.'} />
         <AuthorMenuItem label="Anomaly" reason={needsVisual ?? 'Anomaly detection needs an ML backend, which OpenSight does not include. No anomalies are computed or shown.'} />
         <hr />
         <AuthorMenuItem label="Export Visual to CSV" reason={needsVisual} run={() => {
