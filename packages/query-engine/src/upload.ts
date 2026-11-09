@@ -4,6 +4,7 @@ import type { PrepSource } from './prep.js';
 import { randomUUID } from 'node:crypto';
 import { mkdir, chmod } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { crc32, inflateRawSync } from 'node:zlib';
 import { DuckDBInstance, type DuckDBConnection } from '@duckdb/node-api';
 import * as XLSX from 'xlsx';
 import { validateConnectorConfig } from './connectors.js';
@@ -23,17 +24,42 @@ export class UploadError extends Error {
 const invalid = (path: string, message: string): never => { throw new UploadError('INVALID_UPLOAD', path, message); };
 const mismatch = (path: string, message: string): never => { throw new UploadError('UPLOAD_SCHEMA_MISMATCH', path, message); };
 const MAX_ROWS = 100_000, MAX_COLUMNS = 256, MAX_BYTES = 8 * 1024 * 1024;
-/** Declared uncompressed-size ceilings for XLSX (ZIP) members, checked from the
- * central directory before SheetJS inflates anything — the same ceilings as
+/** Declared and actual uncompressed-size ceilings for XLSX (ZIP) members,
+ * enforced before SheetJS parses anything — the same ceilings as
  * ZIP_LIMITS in @opensight/bundle-parser (member 16 MiB / total 64 MiB / 1000). */
 const XLSX_MEMBER_BYTES = 16 * 1024 * 1024, XLSX_TOTAL_BYTES = 64 * 1024 * 1024, XLSX_MEMBERS = 1000;
 const limit = (message: string): never => { throw new UploadError('UPLOAD_LIMIT_EXCEEDED', '$.data', message); };
-/** Scan only the ZIP end-of-central-directory and central directory headers
- * (never inflate) and reject a workbook whose declared uncompressed sizes
- * exceed the ceilings. A workbook that hides its sizes behind ZIP64
- * sentinels cannot be bounded this way, so it is rejected as over the limit
- * (fail closed); a malformed directory is an invalid upload. */
-function checkXlsxDeclaredSizes(b: Uint8Array): void {
+interface XlsxZipEntry {
+  name: Uint8Array; flags: number; method: number; crc: number;
+  compressed: number; uncompressed: number;
+}
+const zip64Limit = (): never => limit('Excel workbook uses unsupported ZIP64 size fields');
+/** SheetJS honors ZIP64 extras even without sentinels. Only redundant, bounded
+ * values may pass; decode as bigint so high words cannot lose precision. */
+function checkXlsxExtra(view: DataView, start: number, end: number, compressed: number, uncompressed: number, local?: number): void {
+  let zip64 = false;
+  while (start < end) {
+    if (start + 4 > end) invalid('$.data', 'Invalid Excel workbook: truncated ZIP extra field');
+    const type = view.getUint16(start, true), size = view.getUint16(start + 2, true);
+    start += 4;
+    if (start + size > end) invalid('$.data', 'Invalid Excel workbook: truncated ZIP extra field');
+    if (type === 0x0001) {
+      // Both sizes are required: partial extras are ambiguous to SheetJS.
+      if (zip64 || !(size === 16 || local !== undefined && (size === 24 || size === 28))) invalid('$.data', 'Invalid Excel workbook: ambiguous ZIP64 extra field');
+      zip64 = true;
+      const actualUncompressed = view.getBigUint64(start, true), actualCompressed = view.getBigUint64(start + 8, true);
+      if (actualUncompressed > BigInt(XLSX_MEMBER_BYTES) || actualCompressed > BigInt(MAX_BYTES)) limit('Excel workbook ZIP64 extra field exceeds the byte limits');
+      if (actualUncompressed !== BigInt(uncompressed) || actualCompressed !== BigInt(compressed) ||
+          size >= 24 && view.getBigUint64(start + 16, true) !== BigInt(local!) ||
+          size === 28 && view.getUint32(start + 24, true) !== 0) invalid('$.data', 'Invalid Excel workbook: ZIP64 extra field contradicts header');
+    }
+    start += size;
+  }
+}
+/** Cheap declared-size rejection precedes bounded inflation. Return the checked
+ * directory so every local member can be matched before SheetJS sees the ZIP.
+ * ZIP64 sentinels remain over-limit; contradictory metadata is invalid. */
+function checkXlsxDeclaredSizes(b: Uint8Array): { centralStart: number; entries: Map<number, XlsxZipEntry> } {
   const view = new DataView(b.buffer, b.byteOffset, b.byteLength);
   const u16 = (offset: number) => view.getUint16(offset, true);
   const u32 = (offset: number) => view.getUint32(offset, true);
@@ -41,23 +67,103 @@ function checkXlsxDeclaredSizes(b: Uint8Array): void {
   while (end >= Math.max(0, b.byteLength - 65557) && (u32(end) !== 0x06054b50 || end + 22 + u16(end + 20) !== b.byteLength)) end--;
   if (end < 0 || end < b.byteLength - 65557) invalid('$.data', 'Invalid Excel workbook: missing ZIP end of central directory');
   const count = u16(end + 10), centralSize = u32(end + 12), centralStart = u32(end + 16);
-  if (count === 65535 || centralSize === 0xffffffff || centralStart === 0xffffffff) limit('Excel workbook uses ZIP64 size fields; its uncompressed size cannot be bounded before parsing');
+  if (count === 65535 || u16(end + 8) === 65535 || centralSize === 0xffffffff || centralStart === 0xffffffff) zip64Limit();
   if (u16(end + 4) || u16(end + 6) || u16(end + 8) !== count) invalid('$.data', 'Multi-disk Excel workbooks are unsupported');
   if (count > XLSX_MEMBERS) limit('Excel workbook exceeds the 1000-member ZIP limit');
   if (centralStart + centralSize !== end) invalid('$.data', 'Invalid Excel workbook: central directory size mismatch');
+  // SheetJS searches backwards for the last signature, including inside comments.
+  for (let i = end + 4; i + 4 <= b.byteLength; i++) {
+    if (u32(i) === 0x06054b50) invalid('$.data', 'Invalid Excel workbook: ambiguous ZIP end of central directory');
+  }
+  const entries = new Map<number, XlsxZipEntry>();
   let offset = centralStart, total = 0;
   for (let index = 0; index < count; index++) {
     if (offset + 46 > end || u32(offset) !== 0x02014b50) invalid('$.data', 'Invalid Excel workbook: central directory entry');
-    const uncompressed = u32(offset + 24);
-    const next = offset + 46 + u16(offset + 28) + u16(offset + 30) + u16(offset + 32);
+    const flags = u16(offset + 8), method = u16(offset + 10), crc = u32(offset + 16);
+    const compressed = u32(offset + 20), uncompressed = u32(offset + 24), local = u32(offset + 42);
+    const nameEnd = offset + 46 + u16(offset + 28);
+    const next = nameEnd + u16(offset + 30) + u16(offset + 32);
     if (next > end) invalid('$.data', 'Invalid Excel workbook: truncated central directory');
-    if (uncompressed === 0xffffffff) limit('Excel workbook uses ZIP64 size fields; its uncompressed size cannot be bounded before parsing');
+    if (compressed === 0xffffffff || uncompressed === 0xffffffff || local === 0xffffffff || u16(offset + 34) === 65535) zip64Limit();
+    if (u16(offset + 34)) invalid('$.data', 'Multi-disk Excel workbooks are unsupported');
+    if (flags & 0x2041) invalid('$.data', 'Encrypted Excel workbooks are unsupported');
+    if (method !== 0 && method !== 8) invalid('$.data', 'Unsupported Excel ZIP compression method');
     if (uncompressed > XLSX_MEMBER_BYTES) limit('Excel workbook member exceeds the 16 MiB uncompressed limit');
     total += uncompressed;
     if (total > XLSX_TOTAL_BYTES) limit('Excel workbook exceeds the 64 MiB total uncompressed limit');
+    checkXlsxExtra(view, nameEnd, nameEnd + u16(offset + 30), compressed, uncompressed, local);
+    if (local >= centralStart || entries.has(local)) invalid('$.data', 'Invalid Excel workbook: duplicate or invalid local header offset');
+    entries.set(local, { name: b.subarray(offset + 46, nameEnd), flags, method, crc, compressed, uncompressed });
     offset = next;
   }
   if (offset !== end) invalid('$.data', 'Invalid Excel workbook: central directory count mismatch');
+  return { centralStart, entries };
+}
+/** Walk local headers in physical order, validating every member (including
+ * unused sheets) under actual output caps before the permissive SheetJS parser. */
+function checkXlsxInflation(b: Uint8Array): void {
+  const { centralStart, entries } = checkXlsxDeclaredSizes(b);
+  const view = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const u16 = (offset: number) => view.getUint16(offset, true);
+  const u32 = (offset: number) => view.getUint32(offset, true);
+  let offset = 0, total = 0;
+  while (offset < centralStart) {
+    const entry = entries.get(offset);
+    if (!entry || offset + 30 > centralStart || u32(offset) !== 0x04034b50) return invalid('$.data', 'Invalid Excel workbook: local header');
+    entries.delete(offset);
+    const flags = u16(offset + 6), method = u16(offset + 8), crc = u32(offset + 14);
+    const compressed = u32(offset + 18), uncompressed = u32(offset + 22);
+    if (compressed === 0xffffffff || uncompressed === 0xffffffff) zip64Limit();
+    if (uncompressed > XLSX_MEMBER_BYTES) limit('Excel workbook member exceeds the 16 MiB uncompressed limit');
+    const nameEnd = offset + 30 + u16(offset + 26), start = nameEnd + u16(offset + 28);
+    const end = start + entry.compressed;
+    if (end > centralStart) invalid('$.data', 'Invalid Excel workbook: truncated local member');
+    const name = b.subarray(offset + 30, nameEnd), descriptor = Boolean(flags & 8);
+    if (flags !== entry.flags || method !== entry.method || name.length !== entry.name.length || name.some((byte, i) => byte !== entry.name[i])) invalid('$.data', 'Invalid Excel workbook: local/central name, flags or method mismatch');
+    if ((!descriptor || compressed !== 0) && compressed !== entry.compressed ||
+        (!descriptor || uncompressed !== 0) && uncompressed !== entry.uncompressed ||
+        (!descriptor || crc !== 0) && crc !== entry.crc) invalid('$.data', 'Invalid Excel workbook: local/central size or CRC32 mismatch');
+    checkXlsxExtra(view, nameEnd, start, compressed, uncompressed);
+    const cap = Math.min(XLSX_MEMBER_BYTES, XLSX_TOTAL_BYTES - total);
+    const exceeded = (): never => limit(cap < XLSX_MEMBER_BYTES
+      ? 'Excel workbook exceeds the 64 MiB total uncompressed limit'
+      : 'Excel workbook member exceeds the 16 MiB uncompressed limit');
+    let data: Uint8Array;
+    if (method === 0) {
+      if (entry.compressed > cap) exceeded();
+      data = b.subarray(start, end);
+    } else {
+      try {
+        // Node's types omit the info:true return shape. bytesWritten verifies
+        // the stream ends at the declared boundary, not inside another member.
+        const result = inflateRawSync(b.subarray(start, end), { maxOutputLength: Math.max(1, cap), info: true }) as unknown as { buffer: Buffer; engine: { bytesWritten: number } };
+        data = result.buffer;
+        if (data.length > cap) exceeded(); // A zero remaining budget permits only an empty stream.
+        if (result.engine.bytesWritten !== entry.compressed) invalid('$.data', 'Invalid Excel workbook: deflate compressed size mismatch');
+      } catch (error) {
+        if (error instanceof UploadError) throw error;
+        if (error instanceof Error && 'code' in error && error.code === 'ERR_BUFFER_TOO_LARGE') exceeded();
+        return invalid('$.data', 'Invalid Excel workbook: invalid deflate stream');
+      }
+    }
+    total += data.length;
+    if (data.length !== entry.uncompressed) invalid('$.data', 'Invalid Excel workbook: actual uncompressed size mismatch');
+    if (crc32(data) !== entry.crc) invalid('$.data', 'Invalid Excel workbook: member CRC32 mismatch');
+    offset = end;
+    if (descriptor) {
+      // Both signed and unsigned classic descriptors are supported. Central
+      // sizes govern zero local placeholders; descriptors must confirm them.
+      if (offset + 12 > centralStart) invalid('$.data', 'Invalid Excel workbook: truncated data descriptor');
+      // An unsigned descriptor's CRC can itself equal the optional signature.
+      const unsigned = u32(offset) === entry.crc && u32(offset + 4) === entry.compressed && u32(offset + 8) === entry.uncompressed;
+      if (!unsigned && u32(offset) === 0x08074b50) offset += 4;
+      if (offset + 12 > centralStart) invalid('$.data', 'Invalid Excel workbook: truncated data descriptor');
+      if (u32(offset + 4) === 0xffffffff || u32(offset + 8) === 0xffffffff) zip64Limit();
+      if (u32(offset) !== entry.crc || u32(offset + 4) !== entry.compressed || u32(offset + 8) !== entry.uncompressed) invalid('$.data', 'Invalid Excel workbook: data descriptor mismatch');
+      offset += 12;
+    }
+  }
+  if (offset !== centralStart || entries.size) invalid('$.data', 'Invalid Excel workbook: local/central member count mismatch');
 }
 const numeric = /^[+-]?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
 const date = /^\d{4}-\d\d-\d\d(?:T\d\d:\d\d:\d\d(?:\.\d{1,3})?Z)?$/;
@@ -144,8 +250,8 @@ export function parseUpload(request: UploadRequest): { columns: UploadColumn[]; 
     // Prevent SheetJS's permissive text fallback from treating arbitrary text as Excel.
     const b = request.data;
     if (config.format === 'xlsx' ? !(b[0] === 0x50 && b[1] === 0x4b) : ![0xd0, 0x09].includes(b[0]!)) invalid('$.data', 'File does not match the selected Excel format');
-    // Bound the inflated size from the ZIP headers before SheetJS parses (#182).
-    if (config.format === 'xlsx') checkXlsxDeclaredSizes(b);
+    // Check declared metadata and bounded actual inflation before SheetJS (#221).
+    if (config.format === 'xlsx') checkXlsxInflation(b);
     let workbook: XLSX.WorkBook;
     try { workbook = XLSX.read(b, { type: 'array', cellDates: true, cellFormula: true, sheetRows: MAX_ROWS + 2 }); }
     catch { return invalid('$.data', 'Unable to parse Excel workbook'); }
