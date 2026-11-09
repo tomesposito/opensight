@@ -194,7 +194,7 @@ uses one idempotency key and disables submission while working. Invitations are
 emailed by the server; these operator pages never show invitation tokens.
 
 Usage comes from the existing per-tenant usage route. Its additive `overview`
-contains current daily UTC API/query counts and quotas, live logical storage,
+contains current monthly UTC API/query counts and quotas, live logical storage,
 and monthly NLQ usage/quota. Quotas come from the billing override or configured
 entitlements, never hardcoded plan numbers. Stored monthly `records` keep their
 existing rollup semantics. The overview is null for past months. Missing usage

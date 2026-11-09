@@ -45,7 +45,7 @@ test('H8 fresh install, migration, restart and encrypted held restore drill', as
   const op = new MetadataOperator(restart), tenant = await op.tenant('tenant-one'); await op.transition('resume-reviewed', 'tenant-one', 'resume', tenant.version);
   const usage = new HostedUsage(restart, JSON.parse(referenceEnv.OPENSIGHT_ENTITLEMENTS)), metadata = new TenantMetadata(restart, restart, usage);
   const context = await metadata.authenticate(null, async () => ({ namespaceId: 'one', userId: 'admin' }));
-  await assert.rejects(usage.consume(metadata, context, 'apiCalls'), { code: 'USAGE_LIMIT_EXCEEDED' }); // conservative current-day restore fence
+  await assert.rejects(usage.consume(metadata, context, 'apiCalls'), { code: 'USAGE_LIMIT_EXCEEDED' }); // restore-day ledger fence exhausts the current month
   t.diagnostic(`H8 SQLite drill: ${backup.rows} rows, ${backup.bytes} encrypted bytes, ${Math.round(performance.now() - start)} ms`);
 });
 test('H8 deletion purges managed backups and private tenant state; old files cannot resurrect a tenant', async t => {
