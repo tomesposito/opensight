@@ -1,9 +1,10 @@
+import { aiReceiptTables } from './hosted-ai-receipts.js';
 import { randomUUID } from 'node:crypto';
 import { MetadataError, type Database, type SqlConnection, type SqlRow } from './metadata-db.js';
 import { checksum } from './metadata-operator.js';
 import { coordinationNow, type CoordinationDialect } from './coordination-schema.js';
 import { appendOperatorAudit } from './operator-audit.js';
-import { databaseInventory, inventoryTables, snapshotInventory, upgradedAudit, currentInventory, namedWorkspaces, aiWarnings, usageTracking, monthlyBilling, durableAuthoring, accessRequestCapture, ideaCapture, egressReservations } from './serverless-backup-schema.js';
+import { databaseInventory, inventoryTables, snapshotInventory, upgradedAudit, currentInventory, namedWorkspaces, aiWarnings, usageTracking, monthlyBilling, durableAuthoring, accessRequestCapture, ideaCapture, egressReservations, aiReceipts } from './serverless-backup-schema.js';
 
 export interface CloudSnapshot {
   version: 1; id: string; deployment: string; epoch: number; createdAt: number; expiresAt: number;
@@ -176,6 +177,9 @@ export async function migrateRegistered(db: Database, env: NodeJS.ProcessEnv, sn
         if (fingerprint(await c.query(`SELECT * FROM ${table} LIMIT 100001`)) !== fingerprint(baseline)) denied('MIGRATION_PRESERVATION_FAILED');
       }
       if (upgraded && !namedWorkspaces(sourceInventory) && (await c.query('SELECT 1 FROM h2_login_selections LIMIT 1')).length) denied('MIGRATION_PRESERVATION_FAILED');
+      if (upgraded && !aiReceipts(sourceInventory)) for (const table of aiReceiptTables) {
+        if ((await c.query(`SELECT 1 FROM ${table} LIMIT 1`)).length) denied('MIGRATION_PRESERVATION_FAILED');
+      }
       if (upgraded && !ideaCapture(sourceInventory) && (await c.query('SELECT 1 FROM h8_ideas LIMIT 1')).length) denied('MIGRATION_PRESERVATION_FAILED');
       if (upgraded && !accessRequestCapture(sourceInventory) && (await c.query('SELECT 1 FROM h8_access_requests LIMIT 1')).length) denied('MIGRATION_PRESERVATION_FAILED');
       if (upgraded && !egressReservations(sourceInventory) && (await c.query('SELECT 1 FROM h8_egress_reservations LIMIT 1')).length) denied('MIGRATION_PRESERVATION_FAILED');

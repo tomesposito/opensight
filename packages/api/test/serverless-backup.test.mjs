@@ -250,3 +250,24 @@ test('Ideas survive backup/restore and registered pre-Ideas migrations preserve 
  assert.equal((await migrateRegistered(legacy.db, legacy.env, old, registry, operation, 'sqlite')).replayed, true);
  assert.deepEqual(await listIdeas(legacy.db), []);
 });
+
+test('#229 serverless backups preserve answer receipts and migrate pre-receipt inventories', async t => {
+ const { HostedAIReceipts, aiReceiptTables } = await import('../dist/hosted-ai-receipts.js');
+ const f = await fixture(t), context = { tenantId: 'tenant-one', namespaceId: 'one', userId: 'admin' };
+ await new HostedAIReceipts(f.db).run(context, '/api/o/generate', 'answer', 'hash', async a => { await a.pending({ question: 'sum revenue' }, 1, true, { authorization: 1, policy: 1, configuration: 1 }); await a.committed(); });
+ const snapshot = await snapshotServerless(f.db, 'test', randomUUID(), Date.now()+3600000, ['a'.repeat(32)], 'sqlite');
+ const registry = { ...f.registry, backups: { [snapshot.id]: checksum(snapshot) } };
+ await restoreServerless(f.target, snapshot, registry, 'sqlite');
+ assert.deepEqual(await f.target.transaction(c => c.query('SELECT * FROM ai_answer_receipts')), snapshot.tables.ai_answer_receipts);
+ const legacy = await fixture(t);
+ await legacy.db.transaction(async c => { for (const table of aiReceiptTables) await c.query(`DROP TABLE ${table}`); });
+ const old = await snapshotServerless(legacy.db, 'test', randomUUID(), Date.now()+3600000, ['a'.repeat(32)], 'sqlite');
+ assert.equal(Object.hasOwn(old.tables, 'ai_answer_receipts'), false);
+ await restoreServerless(legacy.target, old, { ...legacy.registry, backups: { [old.id]: checksum(old) } }, 'sqlite');
+ assert.deepEqual(await legacy.target.transaction(c => c.query('SELECT * FROM ai_answer_receipts')), []);
+ const { migrateRegistered } = await import('../dist/serverless-backup.js');
+ const oldRegistry = { ...legacy.registry, epoch: 1, backups: { [old.id]: checksum(old) } }, operation = randomUUID();
+ assert.equal((await migrateRegistered(legacy.db, legacy.env, old, oldRegistry, operation, 'sqlite')).replayed, false);
+ assert.equal((await migrateRegistered(legacy.db, legacy.env, old, oldRegistry, operation, 'sqlite')).replayed, true);
+ for (const table of aiReceiptTables) assert.deepEqual(await legacy.db.transaction(c => c.query(`SELECT * FROM ${table}`)), []);
+});

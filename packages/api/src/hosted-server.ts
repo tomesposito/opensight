@@ -1,3 +1,4 @@
+import { HostedAIReceipts, initializeAiAnswerReceipts } from './hosted-ai-receipts.js';
 import { DigestStore } from './digest-store.js';
 import { unsubscribeRoute } from './digest-routes.js';
 import { initializeIdeas, limitIdeas, listIdeas, myIdeas, submitIdea, transitionIdea } from './ideas.js';
@@ -169,7 +170,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   if (!options.invocation) await initializeAnalytics(options.membershipDatabase);
   if (!options.invocation) await initializeAccessRequests(options.membershipDatabase);
   if (!options.invocation && billingCfg) await initializeBilling(options.membershipDatabase);
-  if (!options.invocation) await initializeIdeas(options.membershipDatabase);
+  if (!options.invocation) { await initializeIdeas(options.membershipDatabase); await initializeAiAnswerReceipts(options.membershipDatabase); }
   const analytics = options.analytics ?? new Analytics(new AnalyticsStore(options.membershipDatabase), {
     ...analyticsFromEnvironment(options.env), deliveryMode: options.invocation ? 'deferred' : 'inline',
   });
@@ -182,7 +183,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const invocation = options.invocation?.compose?.(metadata, budgets, options.builtinAuth, usage?.aiMeter(), analytics);
   const jobs = invocation?.jobs ?? new JobStore(options.membershipDatabase, metadata);
   const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets, undefined, undefined, analytics), jobs);
-  const ai = invocation?.ai ?? new HostedAI(data, config.encryptionKey.toString('base64'), options.env ?? process.env, usage?.aiMeter(), options.ai);
+  const ai = invocation?.ai ?? new HostedAI(data, config.encryptionKey.toString('base64'), options.env ?? process.env, usage?.aiMeter(), options.ai, new HostedAIReceipts(options.membershipDatabase));
   const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets, undefined, undefined, analytics));
   const mail = invocation?.mail ?? options.mailTransport ?? smtpFromEnvironment(options.env);
   // Stripe billing (issue #194) composes on the single-node hosted server;

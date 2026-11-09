@@ -1,5 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { request as httpRequest } from 'node:http';
+import { HostedAIReceipts } from '../dist/hosted-ai-receipts.js';
+import { HostedAI } from '../dist/hosted-ai.js';
+import { Analytics } from '../dist/analytics.js';
 import { randomBytes } from 'node:crypto';
 import { h8Fixture, serveH8, referenceEnv } from './h8-helpers.mjs';
 import { initializeUsage, HostedUsage } from '../dist/hosted-usage.js';
@@ -16,7 +20,7 @@ import { serverlessDataPath } from '../dist/serverless-application.js';
 const limits = { apiCalls: 10000, storageBytes: 10000000, computeAttempts: 100, aiCallsPerMonth: 10, aiSpendCapCents: 1000, aiCostCentsPerMillionTokens: 1000000 };
 const query = { dimensions: [{ fieldId: 'region', columnName: 'region' }], measures: [{ fieldId: 'revenue', columnName: 'revenue', aggregation: 'SUM' }], filters: [] };
 const providerResponse = (text, bedrock = true) => Response.json(bedrock ? { output: { message: { content: [{ text }] } }, usage: { inputTokens: 2, outputTokens: 3 } } : { output: [{ type: 'message', content: [{ type: 'output_text', text }] }], usage: { input_tokens: 2, output_tokens: 3 } });
-async function fixture(t, { managed = true, entitlement = {}, stub = false } = {}) {
+async function fixture(t, { managed = true, entitlement = {}, stub = false, analytics } = {}) {
   const cleanup = [], owner = { after: fn => cleanup.push(fn) }; t.after(async () => { for (const fn of cleanup.reverse()) await fn(); });
   const f = await h8Fixture(owner); await initializeUsage(f.db);
   await f.db.transaction(async c => { await c.query("INSERT INTO h2_identities (subject,email,status) VALUES ('other','other@example.test','active')"); await c.query("INSERT INTO h2_memberships (subject,tenant_id,namespace_id,user_id,status) VALUES ('other','tenant-one','one','other','active')"); });
@@ -40,12 +44,12 @@ async function fixture(t, { managed = true, entitlement = {}, stub = false } = {
   await metadata.put(await login(), { kind: 'dashboard', id: 'daily' }, { definition: describeDashboard(record), published: record, datasets: [{ kind: 'prepared-dataset', id: 'sales', ownerId: 'admin' }], folderId: null, grants: [{ principal: { type: 'user', id: 'other' }, role: 'viewer' }] });
   let text = '{"question":"sum revenue by region"}', fail = false, pending;
   const calls = [];
-  const { request } = await serveH8(owner, f, { security: { authenticate: async r => ['one', 'two', 'other'].includes(r.headers.authorization) ? { namespaceId: r.headers.authorization === 'two' ? 'two' : 'one', userId: r.headers.authorization === 'other' ? 'other' : 'admin' } : undefined },
+  const { server, request } = await serveH8(owner, f, { analytics, security: { authenticate: async r => ['one', 'two', 'other'].includes(r.headers.authorization) ? { namespaceId: r.headers.authorization === 'two' ? 'two' : 'one', userId: r.headers.authorization === 'other' ? 'other' : 'admin' } : undefined },
     ai: { bedrock: { region: 'us-east-1', credentials: async () => ({ accessKeyId: 'test', secretAccessKey: 'test' }) }, fetcher: async (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); await pending?.(); if (fail) return new Response('private error', { status: 500 }); return providerResponse(text, url.includes('bedrock')); } } });
   const api = (path, body, user = 'one') => request(path, { method: body === undefined ? 'GET' : 'POST', headers: { authorization: user }, body });
   const role = async role => { const c = await login(), r = await metadata.get(c, { kind: 'user', id: 'other' }); await metadata.put(c, { kind: 'user', id: 'other' }, { name: 'Other', role }, r.version); };
   const usage = new HostedUsage(f.db, { defaults: { ...limits, ...entitlement }, tenants: {} });
-  return { ...f, api, metadata, login, role, calls, usage, setText: value => { text = value; }, fail: value => { fail = value; }, pending: value => { pending = value; } };
+  return { ...f, api, server, metadata, login, role, calls, usage, setText: value => { text = value; }, fail: value => { fail = value; }, pending: value => { pending = value; } };
 }
 const ask = { question: 'Which region drove revenue?', dashboardId: 'daily' };
 test('#190 hosted status, grounded answer, reader result visual query and calculation share scope', async t => {
@@ -173,5 +177,181 @@ for (const path of ['/api/o/plan', '/api/o/revise']) test(`#196 hosted ${path} r
   f.setText(JSON.stringify(path.endsWith('plan') ? { questions: ['sum revenue'] } : { question: 'sum revenue' }));
   const pending = f.api(path, { ...ask, ...(path.endsWith('revise') ? { currentQuestion: 'sum revenue' } : {}) }, 'other');
   await started; await f.role('author'); release(); assert.equal((await pending).status, 403);
+  assert.equal((await f.api('/api/o/status')).body.credits.used, 0);
+});
+
+// Raw node:http exposes socket destruction and replay headers without changing
+// the shared h8 helper used by the existing unkeyed contracts.
+function rawAnswer(f, path, body, { key = 'receipt-key', user = 'one', disconnectOnData = false } = {}) {
+  let req;
+  const result = new Promise((resolve, reject) => {
+    const bytes = JSON.stringify(body);
+    req = httpRequest({ host: '127.0.0.1', port: f.server.address().port, path, method: 'POST', headers: {
+      host: 'opensight.example', authorization: user, 'Idempotency-Key': key, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bytes),
+    } }, res => {
+      const chunks = [];
+      res.on('data', chunk => {
+        chunks.push(chunk);
+        if (disconnectOnData) { resolve({ status: res.statusCode, headers: res.headers }); req.destroy(); }
+      });
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: JSON.parse(Buffer.concat(chunks).toString()) }));
+      res.on('error', reject);
+    });
+    req.on('error', reject); req.end(bytes);
+  });
+  return { req, result };
+}
+const keyed = (f, body = ask, options, path = '/api/o/generate') => rawAnswer(f, path, body, options).result;
+async function receipts(f) { return f.db.transaction(c => c.query('SELECT * FROM ai_answer_receipts')); }
+function gate(f) {
+  let enter, release;
+  const started = new Promise(r => { enter = r; }), waiting = new Promise(r => { release = r; });
+  f.pending(async () => { enter(); await waiting; });
+  return { started, release };
+}
+async function idleReceipts(f) {
+  for (let i = 0; i < 200; i++) {
+    if (!(await f.db.transaction(c => c.query('SELECT * FROM ai_answer_receipt_reservations'))).length) return;
+    await new Promise(r => setTimeout(r, 10));
+  }
+  assert.fail('receipt request did not finish');
+}
+function serverClosed(f) { return new Promise(resolve => f.server.once('request', (_req, res) => res.once('close', resolve))); }
+
+test('#229 disconnect before provider completion charges nothing and retry regenerates', async t => {
+  const f = await fixture(t), g = gate(f), closed = serverClosed(f);
+  const raw = rawAnswer(f, '/api/o/generate', ask), lost = raw.result.catch(e => e);
+  await g.started; raw.req.destroy(); await closed; g.release(); await lost; await idleReceipts(f);
+  assert.equal((await f.api('/api/o/status')).body.credits.used, 0);
+  assert.equal((await receipts(f)).length, 0);
+  const retry = await keyed(f); assert.equal(retry.status, 200, JSON.stringify(retry));
+  assert.equal(f.calls.length, 2); assert.equal((await f.api('/api/o/status')).body.credits.used, 1);
+});
+test('#229 response loss replays the identical answer without provider, credit or analytics recount', async t => {
+  const analytics = new Analytics(), track = t.mock.method(analytics, 'track');
+  const f = await fixture(t, { analytics });
+  const first = await keyed(f), second = await keyed(f, { dashboardId: ask.dashboardId, question: ask.question });
+  assert.equal(first.status, 200, JSON.stringify(first)); assert.deepEqual(second.body, first.body);
+  assert.equal(second.headers['idempotent-replayed'], 'true'); assert.equal(f.calls.length, 1);
+  assert.equal((await f.api('/api/o/status')).body.credits.used, 1);
+  assert.equal(track.mock.calls.filter(c => c.arguments[1]?.name === 'ask_o_asked').length, 1);
+  const rows = await receipts(f); assert.equal(rows[0].state, 'committed'); assert.deepEqual(JSON.parse(rows[0].answer), first.body);
+});
+test('#229 disconnect after credit commit recovers the answer with one total charge', async t => {
+  const f = await fixture(t);
+  // First response data can only arrive after the durable credit/receipt writes.
+  // It may contain the entire response; destroying here models loss at that edge.
+  const lost = await rawAnswer(f, '/api/o/generate', ask, { disconnectOnData: true }).result;
+  assert.equal(lost.status, 200); assert.equal((await f.api('/api/o/status')).body.credits.used, 1);
+  const retry = await keyed(f); assert.equal(retry.status, 200, JSON.stringify(retry));
+  assert.equal(retry.body.question, 'sum revenue by region'); assert.equal(retry.headers['idempotent-replayed'], 'true');
+  assert.equal(f.calls.length, 1); assert.equal((await f.api('/api/o/status')).body.credits.used, 1);
+});
+test('#229 changed request and simultaneous same-key attempts conflict before provider or charge', async t => {
+  const f = await fixture(t), g = gate(f), first = keyed(f);
+  await g.started;
+  const overlap = await keyed(f); assert.equal(overlap.status, 409); assert.equal(overlap.body.errorCode, 'IDEMPOTENCY_CONFLICT');
+  assert.equal(f.calls.length, 1); g.release(); assert.equal((await first).status, 200);
+  const changed = await keyed(f, { ...ask, question: 'a different question' });
+  assert.equal(changed.status, 409); assert.equal(changed.body.errorCode, 'IDEMPOTENCY_CONFLICT');
+  assert.equal(f.calls.length, 1); assert.equal((await f.api('/api/o/status')).body.credits.used, 1);
+});
+test('#229 receipt keys isolate reader users', async t => {
+  const f = await fixture(t); await f.role('reader_ai');
+  assert.equal((await keyed(f)).status, 200);
+  const other = await keyed(f, ask, { user: 'other' }); assert.equal(other.status, 200, JSON.stringify(other));
+  assert.equal(other.headers['idempotent-replayed'], undefined); assert.equal(f.calls.length, 2);
+  assert.equal((await receipts(f)).length, 2);
+  assert.equal((await f.api('/api/o/status')).body.credits.used, 2);
+});
+test('#229 expired receipt regenerates and charges a fresh answer', async t => {
+  const f = await fixture(t); assert.equal((await keyed(f)).status, 200);
+  const rows = await receipts(f);
+  assert.equal(Date.parse(rows[0].expires_at) - Date.parse(rows[0].created_at), 3600000);
+  await f.db.transaction(c => c.query("UPDATE ai_answer_receipts SET expires_at = '2000-01-01T00:00:00.000Z' WHERE user_id = 'admin'"));
+  f.setText('{"question":"sum revenue"}'); const fresh = await keyed(f);
+  assert.equal(fresh.status, 200); assert.equal(fresh.body.question, 'sum revenue'); assert.equal(fresh.headers['idempotent-replayed'], undefined);
+  assert.equal(f.calls.length, 2); assert.equal((await f.api('/api/o/status')).body.credits.used, 2);
+});
+test('#229 pending receipt survives credit failure and retry completes its stored count', async t => {
+  const f = await fixture(t), original = HostedUsage.prototype.recordAiUsage; let fail = true;
+  t.mock.method(HostedUsage.prototype, 'recordAiUsage', async function(scope, tokens, estimated, managed, count) {
+    if (count > 0 && fail) { fail = false; throw Error('synthetic credit failure'); }
+    return original.call(this, scope, tokens, estimated, managed, count);
+  });
+  const first = await keyed(f); assert.equal(first.status, 500);
+  const rows = await receipts(f); assert.equal(rows[0].state, 'pending');
+  assert.equal((await f.api('/api/o/status')).body.credits.used, 0);
+  const retry = await keyed(f); assert.equal(retry.status, 200, JSON.stringify(retry));
+  assert.deepEqual(retry.body, JSON.parse(rows[0].answer)); assert.equal(retry.headers['idempotent-replayed'], 'true');
+  assert.equal((await receipts(f))[0].state, 'committed'); assert.equal(f.calls.length, 1);
+  assert.equal((await f.api('/api/o/status')).body.credits.used, 1);
+});
+test('#229 cancellation after validation keeps a pending receipt for a credit-only retry', async t => {
+  const f = await fixture(t), original = HostedAIReceipts.prototype.run, closed = serverClosed(f);
+  let raw;
+  t.mock.method(HostedAIReceipts.prototype, 'run', function(context, route, key, fingerprint, work) {
+    return original.call(this, context, route, key, fingerprint, attempt => work({ ...attempt, pending: async (...args) => {
+      await attempt.pending(...args); raw.req.destroy(); await closed;
+    } }));
+  });
+  raw = rawAnswer(f, '/api/o/generate', ask); await raw.result.catch(() => {}); await idleReceipts(f);
+  assert.equal((await receipts(f))[0].state, 'pending'); assert.equal((await f.api('/api/o/status')).body.credits.used, 0);
+  const retry = await keyed(f); assert.equal(retry.status, 200); assert.equal(retry.headers['idempotent-replayed'], 'true');
+  assert.equal(f.calls.length, 1); assert.equal((await f.api('/api/o/status')).body.credits.used, 1);
+});
+for (const kind of ['calculation', 'plan', 'revise']) test(`#229 ${kind} receipt replays the whole validated result and original credit count`, async t => {
+  const f = await fixture(t), path = `/api/o/${kind}`;
+  f.setText(JSON.stringify(kind === 'calculation' ? { name: 'Double', expression: '{revenue} * 2', role: 'measure', explanation: 'Double.' } : kind === 'plan' ? { sheetTitle: 'Overview', questions: ['sum revenue', 'sum missing', 'sum revenue by region'] } : { question: 'sum revenue' }));
+  const body = { ...ask, ...(kind === 'revise' ? { currentQuestion: 'sum revenue by region' } : {}) };
+  const first = await keyed(f, body, undefined, path), replay = await keyed(f, body, undefined, path);
+  assert.equal(first.status, 200, JSON.stringify(first)); assert.deepEqual(replay.body, first.body); assert.equal(replay.headers['idempotent-replayed'], 'true');
+  assert.equal(f.calls.length, 1); assert.equal((await f.api('/api/o/status')).body.credits.used, kind === 'plan' ? 2 : 1);
+});
+test('#229 invalid keys and rejected provider answers never create receipts or charges', async t => {
+  const f = await fixture(t);
+  for (const key of ['', 'bad.key', 'x'.repeat(513)]) {
+    const r = await keyed(f, ask, { key }); assert.equal(r.status, 400); assert.equal(r.body.errorCode, 'METADATA_INVALID');
+  }
+  assert.equal(f.calls.length, 0);
+  for (const text of ['not-json', '{"question":"sum missing"}']) { f.setText(text); assert.ok((await keyed(f)).status >= 400); }
+  f.fail(true); assert.equal((await keyed(f)).body.errorCode, 'AI_PROVIDER_FAILED'); f.fail(false);
+  const count = f.calls.length;
+  const pii = await keyed(f, { ...ask, calculatedFields: [{ name: 'test.person@example.com', expression: '{revenue}', role: 'measure' }] });
+  assert.equal(pii.body.errorCode, 'AI_FIELD_NAME_PII'); assert.equal(f.calls.length, count);
+  assert.equal((await receipts(f)).length, 0); assert.equal((await f.api('/api/o/status')).body.credits.used, 0);
+});
+test('#229 authorization revocation blocks generated and replayed receipts', async t => {
+  const f = await fixture(t); await f.role('reader_ai');
+  const g = gate(f), pending = keyed(f, ask, { user: 'other' });
+  await g.started; await f.role('reader'); g.release(); assert.equal((await pending).status, 403);
+  assert.equal((await receipts(f)).length, 0); assert.equal((await f.api('/api/o/status')).body.credits.used, 0);
+  await f.role('reader_ai'); assert.equal((await keyed(f, ask, { user: 'other' })).status, 200);
+  await f.role('reader'); const replay = await keyed(f, ask, { user: 'other' });
+  assert.equal(replay.status, 403); assert.equal(replay.body.errorCode, 'SECURITY_AI_REQUIRED');
+  assert.equal(f.calls.length, 2); assert.equal((await f.api('/api/o/status')).body.credits.used, 1);
+});
+test('#229 policy revisions block stale answer replay even while AI capability remains', async t => {
+  const f = await fixture(t); await f.role('reader_ai');
+  assert.equal((await keyed(f, ask, { user: 'other' })).status, 200);
+  await f.role('author_ai');
+  const replay = await keyed(f, ask, { user: 'other' }); assert.equal(replay.status, 403); assert.equal(replay.body.errorCode, 'METADATA_REVISED');
+  assert.equal(f.calls.length, 1); assert.equal((await f.api('/api/o/status')).body.credits.used, 1);
+});
+test('#229 keyed requests without a configured receipt store retain unkeyed behavior', async t => {
+  const original = HostedAI.prototype.route;
+  t.mock.method(HostedAI.prototype, 'route', function(...args) { this.receipts = undefined; return original.apply(this, args); });
+  const f = await fixture(t);
+  for (let i = 0; i < 2; i++) { const r = await keyed(f); assert.equal(r.status, 200); assert.equal(r.headers['idempotent-replayed'], undefined); }
+  assert.equal(f.calls.length, 2); assert.equal((await receipts(f)).length, 0);
+  assert.equal((await f.api('/api/o/status')).body.credits.used, 2);
+});
+test('#229 BYO receipts replay without managed credits or additional provider calls', async t => {
+  const f = await fixture(t);
+  await f.api('/api/admin/ai', { mode: 'byo', provider: 'openai', model: 'test' });
+  await f.api('/api/admin/ai/key', { key: randomBytes(20).toString('hex') });
+  const first = await keyed(f), retry = await keyed(f);
+  assert.equal(first.status, 200); assert.deepEqual(retry.body, first.body); assert.equal(retry.headers['idempotent-replayed'], 'true');
+  assert.equal(f.calls.length, 1); assert.equal((await receipts(f))[0].managed, 0);
   assert.equal((await f.api('/api/o/status')).body.credits.used, 0);
 });

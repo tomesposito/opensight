@@ -172,6 +172,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Hosted Ask O checks cancellation before charging and preserves validated answers with optional Idempotency-Key receipts, allowing retries after response loss without another generation or charge (#229).
+
 - Ask O conversational revision no longer silently overwrites manual edits: if a stamped tile's filters or field assignments were changed with the normal editors after Ask O created it, revision is blocked with a VISUAL_EDITED explanation before any AI call or credit, instead of replacing the tile from the older interpretation (#228).
 
 - Stripe payment-link and checkout retries now reuse durable operations and idempotency keys; concurrent requests share one result, payment links remain reusable, and checkout reservations expire 24 hours after result persistence (#227).

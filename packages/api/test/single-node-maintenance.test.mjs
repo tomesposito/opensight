@@ -98,3 +98,16 @@ test('#190 retention preserves the current monthly managed credit ledger', async
   await f.maintenance.retain(0, 1, Date.UTC(2026, 9, 31));
   assert.deepEqual((await f.db.transaction(c => c.query('SELECT period, metric FROM h8_usage'))).map(r => [r.period, r.metric]), [['2026-10-01', 'aiCalls']]);
 });
+
+test('#229 single-node backup restores optional durable answer receipts into older installations', async t => {
+  const { HostedAIReceipts, initializeAiAnswerReceipts } = await import('../dist/hosted-ai-receipts.js');
+  const f = await fixture(t); await initializeAiAnswerReceipts(f.db);
+  await new HostedAIReceipts(f.db).run({ tenantId: 'tenant-one', namespaceId: 'one', userId: 'admin' }, '/api/o/generate', 'answer', 'hash', async a => {
+    await a.pending({ question: 'sum revenue' }, 1, true, { authorization: 1, policy: 1, configuration: 1 }); await a.committed();
+  });
+  const before = await f.db.transaction(c => c.query('SELECT * FROM ai_answer_receipts')), backup = await f.maintenance.backup();
+  const target = new SqliteMetadataDatabase(join(f.dir, 'receipts-restore.sqlite')); t.after(() => target.close());
+  await migrateReference(target, referenceEnv, 'sqlite');
+  const restore = await ReferenceMaintenance.open(target, f.backups, f.key, 'frozen'); await restore.restore(backup.id);
+  assert.deepEqual(await target.transaction(c => c.query('SELECT * FROM ai_answer_receipts')), before);
+});

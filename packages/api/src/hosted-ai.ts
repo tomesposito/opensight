@@ -13,6 +13,10 @@ import { dashboardQuestion } from './metric-consumption.js';
 import { boundColumns } from './source-schema.js';
 import type { HostedDataRoutes } from './hosted-data-routes.js';
 import type { TenantContext } from './metadata.js';
+import { HostedAIReceipts } from './hosted-ai-receipts.js';
+import { checksum } from './metadata-operator.js';
+import { identifier } from './metadata-resources.js';
+import { MetadataError } from './metadata-db.js';
 import type { AiMeter } from './ai-settings.js';
 
 function columns(input: readonly { name: string; type: string }[]) {
@@ -23,7 +27,7 @@ function columns(input: readonly { name: string; type: string }[]) {
 }
 export class HostedAI {
   readonly settings: HostedAISettings;
-  constructor(private readonly routes: HostedDataRoutes, encryptionKey: string, env: NodeJS.ProcessEnv, meter?: AiMeter, options?: HostedAIOptions) {
+  constructor(private readonly routes: HostedDataRoutes, encryptionKey: string, env: NodeJS.ProcessEnv, meter?: AiMeter, options?: HostedAIOptions, private readonly receipts?: HostedAIReceipts) {
     this.settings = new HostedAISettings(routes.data.sources.metadata, encryptionKey, env, meter, options);
   }
   private get metadata() { return this.routes.data.sources.metadata; }
@@ -95,8 +99,29 @@ export class HostedAI {
       const output = await this.routes.output(request, context, 200, result, check); send(response, output.status, output.body);
     } else {
       const answer = path === '/api/o/plan' ? planAnswer : path === '/api/o/revise' ? reviseAnswer : (body: Record<string, unknown>, ...args: Parameters<typeof planAnswer> extends [unknown, ...infer Rest] ? Rest : never) => generateAnswer(body, calculation, ...args);
-      const result = await answer(body, source, input => this.settings.complete(context, input), check,
-        (count = 1) => this.routes.data.analytics.track(context, { name: 'ask_o_asked', props: { count } }));
+      const rawKey = request.headers['idempotency-key'], key = rawKey === undefined ? undefined : identifier(rawKey);
+      const checkCancelled = () => { if (this.routes.data.signal(context)?.aborted) throw new MetadataError('EXECUTION_CANCELLED', 409); };
+      const generate = (receipt?: Parameters<typeof planAnswer>[6]) => answer(body, source, input => this.settings.complete(context, input), check,
+        (count = 1) => this.routes.data.analytics.track(context, { name: 'ask_o_asked', props: { count } }), checkCancelled, receipt);
+      const result = key === undefined || !this.receipts ? await generate() : await this.receipts.run(context, path, key, checksum({ path, body }), async attempt => {
+        if (attempt.receipt) {
+          await check();
+          // The saved schema authority must still hold, including CLS/metric
+          // changes since creation that a new request's revision stamp cannot see.
+          await this.metadata.assertRevisions(context, attempt.receipt.revisions);
+          await source.securitySchema();
+          if (attempt.receipt.state === 'pending') {
+            await attempt.beforeCommit();
+            checkCancelled();
+            await this.settings.commitReceipt(context, attempt.receipt.chargedCount, attempt.receipt.managed);
+            await attempt.committed();
+          }
+          checkCancelled();
+          response.setHeader('Idempotent-Replayed', 'true');
+          return attempt.receipt.answer;
+        }
+        return generate({ pending: (value, count, completion) => attempt.pending(value, count, completion.managed === true, stamp), committed: () => attempt.committed() });
+      });
       send(response, 200, result);
     }
     return true;
