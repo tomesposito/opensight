@@ -55,6 +55,53 @@ test('H7 restart recovery never resurrects a dead delivery and a recovered sendi
   assert.equal((await f.store.deliveries(c, 'job'))[0].state, 'dead');
 });
 
+test('H7 operator retry restarts a dead delivery in place and the occurrence can still succeed', async t => {
+  const mail = failingMail(), f = await jobFixture(t, executor(), mail); await f.put('job');
+  const c = await f.login(), run = await f.store.enqueue(c, 'job');
+  await attemptTicks(f, f.runner, MAX_DELIVERY_ATTEMPTS);
+  const dead = (await f.store.deliveries(c, 'job'))[0]; assert.equal(dead.state, 'dead');
+  const retried = await f.store.retryDelivery(c, 'job', dead.delivery_id);
+  assert.equal(retried.delivery_id, dead.delivery_id); assert.equal(retried.state, 'pending'); assert.equal(retried.attempts, 0);
+  assert.equal((await f.store.deliveries(c, 'job')).length, 1);
+  assert.equal((await f.store.history(c, 'job'))[0].state, 'delivering');
+  await assert.rejects(f.store.retryDelivery(c, 'job', dead.delivery_id), { code: 'DELIVERY_NOT_DEAD' });
+  const stub = new StubMailTransport(); mail.send = stub.send.bind(stub); await f.runner.tick();
+  const sent = (await f.store.deliveries(c, 'job'))[0];
+  assert.equal(sent.state, 'sent'); assert.equal(sent.delivery_id, dead.delivery_id); assert.equal(sent.attempts, 1);
+  const history = await f.store.history(c, 'job');
+  assert.equal(history[0].id, run.id); assert.equal(history[0].state, 'succeeded'); assert.equal(history[0].errorCode, null);
+  await assert.rejects(f.store.retryDelivery(c, 'job', dead.delivery_id), { code: 'DELIVERY_NOT_DEAD' });
+});
+
+test('H7 delivery retry is owner/administrator only and refuses stopped or revised jobs', async t => {
+  const f = await jobFixture(t, executor(), failingMail()); await f.put('job');
+  const c = await f.login(); await f.store.enqueue(c, 'job');
+  await attemptTicks(f, f.runner, MAX_DELIVERY_ATTEMPTS);
+  const dead = (await f.store.deliveries(c, 'job'))[0]; assert.equal(dead.state, 'dead');
+  // Both fixture users start as administrators; demote 'other' to a plain
+  // author so the owner/administrator visibility rule is what refuses it.
+  await f.metadata.put(c, { kind: 'user', id: 'other' }, { name: 'Other', role: 'author' }, 1);
+  await assert.rejects(f.store.retryDelivery(await f.login('one', 'other'), 'job', dead.delivery_id), { code: 'RESOURCE_NOT_FOUND' });
+  const admin = await f.login();
+  await assert.rejects(f.store.retryDelivery(admin, 'job', 'missing-delivery'), { code: 'RESOURCE_NOT_FOUND' });
+  await f.store.stop(admin, 'job', 1);
+  await assert.rejects(f.store.retryDelivery(admin, 'job', dead.delivery_id), { code: 'JOB_STOPPED' });
+  // An administrator may retry another owner's dead delivery on a live job.
+  const g = await jobFixture(t, executor(), failingMail()); await g.put('job', report, 'one', 'other');
+  const owner = await g.login('one', 'other'); await g.store.enqueue(owner, 'job');
+  await attemptTicks(g, g.runner, MAX_DELIVERY_ATTEMPTS);
+  const foreign = (await g.store.deliveries(owner, 'job'))[0]; assert.equal(foreign.state, 'dead');
+  const retried = await g.store.retryDelivery(await g.login(), 'job', foreign.delivery_id);
+  assert.equal(retried.state, 'pending'); assert.equal(retried.delivery_id, foreign.delivery_id);
+  // Revising the job after dead-lettering fences the retry out.
+  const h = await jobFixture(t, executor(), failingMail()); await h.put('job');
+  const hc = await h.login(); await h.store.enqueue(hc, 'job');
+  await attemptTicks(h, h.runner, MAX_DELIVERY_ATTEMPTS);
+  const stale = (await h.store.deliveries(hc, 'job'))[0]; assert.equal(stale.state, 'dead');
+  await h.put('job', { ...report, dashboardId: 'changed' }, 'one', 'admin', 1);
+  await assert.rejects(h.store.retryDelivery(hc, 'job', stale.delivery_id), { code: 'JOB_REVISED' });
+});
+
 test('H7 mixed outcomes settle by the worst terminal state: dead beats cancelled beats sent', async t => {
   const two = { ...report, recipients: ['admin', 'other'] };
   for (const [code, expected] of [['SMTP_SEND_FAILED', 'JOB_DELIVERY_EXHAUSTED'], ['SMTP_SEND_INVALID', 'JOB_DELIVERY_CANCELLED']]) {

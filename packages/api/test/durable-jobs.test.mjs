@@ -112,6 +112,25 @@ test('SR3 an expired delivery event dead-letters instead of cancelling', async t
   const occurrence = (await f.rows('h7_occurrences'))[0];
   assert.equal(occurrence.state, 'failed'); assert.equal(occurrence.error_code, 'JOB_DELIVERY_EXHAUSTED');
 });
+test('SR3 operator retry rearms a dead delivery event in place and the same dedupe key delivers', async t => {
+  const messages = [], mail = { configured: false, async send(message, authorize) { await authorize(); messages.push(structuredClone(message)); } };
+  const f = await delivery(t, { mail });
+  for (let i = 0; i < 4; i++) await assert.rejects(f.jobs.run(f.envelope), { code: 'SMTP_NOT_CONFIGURED' });
+  await f.jobs.run(f.envelope);
+  const dead = (await f.rows('h7_deliveries'))[0]; assert.equal(dead.state, 'dead');
+  const eventId = f.envelope.eventId;
+  mail.configured = true;
+  const retried = await f.store.retryDelivery(f.contexts[0], 'report', dead.delivery_id);
+  assert.equal(retried.delivery_id, dead.delivery_id); assert.equal(retried.state, 'pending'); assert.equal(retried.attempts, 0);
+  assert.equal((await f.rows('h7_deliveries')).length, 1);
+  assert.equal((await f.rows('h7_occurrences'))[0].state, 'delivering');
+  const outbox = (await f.rows('sr_outbox')).find(r => r.kind === 'job-deliver');
+  assert.equal(outbox.event_id, eventId); assert.notEqual(outbox.state, 'terminal');
+  await f.jobs.run(await f.event('job-deliver'));
+  assert.equal(messages.length, 1); assert.equal(messages[0].dedupeKey, dead.delivery_id);
+  assert.equal((await f.rows('h7_deliveries'))[0].state, 'sent');
+  assert.equal((await f.rows('h7_occurrences'))[0].state, 'succeeded');
+});
 test('SR3 a non-retryable delivery failure still cancels instead of dead-lettering', async t => {
   const f = await delivery(t);
   f.executor.verifyDelivery = async () => { throw new MetadataError('BLAZE_INVALIDATED', 409); };

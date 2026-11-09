@@ -373,6 +373,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   const jobRecipients = () => resource<{ id: string; name: string; email: string }[]>('/api/job-recipients');
   const jobHistory = (id: string) => resource<JobHistory[]>(`/api/jobs/${encodeURIComponent(id)}/runs`);
   const jobDeliveries = (id: string) => resource<JobDelivery[]>(`/api/jobs/${encodeURIComponent(id)}/deliveries`);
+  const retryJobDelivery = (id: string, deliveryId: string) => resource<JobDelivery>(`/api/jobs/${encodeURIComponent(id)}/deliveries/${encodeURIComponent(deliveryId)}/retry`, 'POST', {});
   const runJob = (id: string) => resource<JobHistory>(`/api/jobs/${encodeURIComponent(id)}/runs`, 'POST', {});
   const saveUser = (id: string, body: { name: string; role: Role }) => resource<Session>(`/api/users/${encodeURIComponent(id)}`, 'PUT', body);
   const deleteUser = (id: string) => resource<{ deleted: true }>(`/api/users/${encodeURIComponent(id)}`, 'DELETE');
@@ -583,7 +584,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     saveHostedAnalysis, publishAnalysis,
     onDemand, connect, subscribeAvailability,
     checkout, exportWorkspace, closeWorkspace, enroll, acceptEnrollment, login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
-    listJobs, jobRecipients, jobHistory, jobDeliveries, runJob,
+    listJobs, jobRecipients, jobHistory, jobDeliveries, runJob, retryJobDelivery,
     listPrepTemplates, proposePrepTemplate, publishPrepTemplate, createFromPrepTemplate, promoteCalculation, metricDatasets, listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, planO, reviseO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     listNotebooks, getNotebook, createNotebook, updateNotebook, deleteNotebook, runNotebook, notebookDatasets, notebookRuns, snapshotNotebookCell,
     listInputTables, getInputTable, createInputTable, updateInputTable, deleteInputTable, setInputTableEditors, addInputTableRow, updateInputTableRow, deleteInputTableRow, getInputTableAudit,

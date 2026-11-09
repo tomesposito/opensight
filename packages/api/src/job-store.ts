@@ -10,7 +10,7 @@ import type { ExecutionSettings } from './blaze.js';
 import { object } from './metadata-resources.js';
 import { appendMetadataEvent } from './metadata-outbox.js';
 import { nextRun } from './schedule.js';
-import { DurableDispatch } from './dispatch.js';
+import { DurableDispatch, type EventInput } from './dispatch.js';
 import { jobDueEvent, jobExecutionEvent } from './job-dispatch.js';
 import { cancelJob, jobSpec, lockTenant, member, readJob, readOccurrence, revisions, scoped, scopeArgs, type Job, type JobSpec, type Occurrence } from './job-schema.js';
 
@@ -21,7 +21,7 @@ export class JobStore {
     if ((await revisions(c, context)).authorization !== context.authorizationRevision) throw new MetadataError('AUTHORIZATION_REVISED', 403);
     return work(c, user.role === 'administrator');
   }
-  private async change<T>(context: TenantContext, jobId: string, request: unknown, work: (c: SqlConnection, administrator: boolean) => Promise<T>, occurrence = false, digest = false): Promise<T> {
+  private async change<T>(context: TenantContext, jobId: string, request: unknown, work: (c: SqlConnection, administrator: boolean) => Promise<T>, occurrence = false, digest = false, deliverEvent?: (now: number) => EventInput[]): Promise<T> {
     if (!this.dispatch) return this.checked(context, work);
     const revisions = await this.metadata.revisions(context), key = randomUUID();
     const preparation = await this.dispatch.prepare(context, { kind: digest ? 'digest-write' : 'job-write', revisions, requestDigest: checksum([jobId, request]), idempotencyKey: key });
@@ -32,7 +32,7 @@ export class JobStore {
       const job = row ? readJob(row) : undefined;
       // The only occurrence-producing caller is enqueue; read its durable ID after the SQL callback.
       const run = occurrence ? result as Occurrence : undefined;
-      let events = run ? [jobExecutionEvent(run, now)] : job ? await jobDueEvent(c, this.dispatch!.deployment, job) : [];
+      let events = deliverEvent ? deliverEvent(now) : run ? [jobExecutionEvent(run, now)] : job ? await jobDueEvent(c, this.dispatch!.deployment, job) : [];
       if (run && (await c.query(`SELECT event_id FROM sr_outbox WHERE deployment = ? AND ${scoped} AND owner_id = ? AND aggregate_id = ? AND aggregate_revision = ? AND kind = 'job-execute'`,
         [this.dispatch!.deployment, ...scopeArgs(context), context.userId, run.id, run.jobVersion])).length) events = [];
       return { receipt: { id: run?.id ?? jobId, revision: job?.version ?? 1 }, events };
@@ -149,6 +149,49 @@ export class JobStore {
     return this.checked(context, async (c, admin) => { const job = await this.find(c, context, id); if (!admin && job.ownerId !== context.userId) missing();
       return c.query(`SELECT delivery_id, occurrence_id, recipient_id, state, attempts, error_code, sent_at FROM h7_deliveries WHERE ${scoped} AND job_id = ? ORDER BY delivery_id`, [...scopeArgs(context), id]);
     });
+  }
+  /** Operator retry of a dead-lettered delivery (#233): the SAME delivery row
+   * starts a new bounded sequence — delivery identity (the dedupe key) never
+   * changes and no new delivery row is created. This is a deliberate domain
+   * action, distinct from dispatch replay, which never resets counters. */
+  async retryDelivery(context: TenantContext, id: string, deliveryId: string) {
+    identifier(deliveryId);
+    const requested = await this.checked(context, async (c, admin) => {
+      const job = await this.find(c, context, id); if (!admin && job.ownerId !== context.userId) missing(); return job;
+    });
+    let rearmed: { intentId: string; epoch: number } | undefined, needsEvent = false;
+    const result = await this.change(context, id, { action: 'retry-delivery', deliveryId }, async (c, admin) => {
+      const job = await this.find(c, context, id); if (!admin && job.ownerId !== context.userId) missing();
+      const row = (await c.query(`SELECT * FROM h7_deliveries WHERE ${scoped} AND job_id = ? AND delivery_id = ?`, [...scopeArgs(context), id, deliveryId]))[0];
+      if (!row) missing();
+      if (String(row.state) !== 'dead') throw new MetadataError('DELIVERY_NOT_DEAD', 409);
+      const occurrence = (await c.query(`SELECT * FROM h7_occurrences WHERE ${scoped} AND occurrence_id = ?`, [...scopeArgs(context), String(row.occurrence_id)]))[0];
+      if (!occurrence) missing();
+      const run = readOccurrence(occurrence);
+      if (job.stopped) throw new MetadataError('JOB_STOPPED', 409);
+      if (!job.spec.enabled || job.version !== run.jobVersion || job.ownerId !== run.ownerId) throw new MetadataError('JOB_REVISED', 403);
+      await c.query(`UPDATE h7_deliveries SET state = 'pending', attempts = 0, next_attempt = ?, error_code = NULL, message = NULL WHERE ${scoped} AND delivery_id = ?`, [this.clock().toISOString(), ...scopeArgs(context), deliveryId]);
+      await c.query(`UPDATE h7_occurrences SET state = 'delivering', error_code = NULL, finished_at = NULL WHERE ${scoped} AND occurrence_id = ? AND state = 'failed' AND error_code = 'JOB_DELIVERY_EXHAUSTED'`, [...scopeArgs(context), run.id]);
+      await appendMetadataEvent(c, job, 'job.delivery.retried');
+      if (this.dispatch) {
+        const outbox = (await c.query(`SELECT event_id, intent_id, control_epoch, state FROM sr_outbox WHERE deployment = ? AND ${scoped} AND owner_id = ? AND aggregate_id = ? AND aggregate_revision = ? AND kind = 'job-deliver'`,
+          [this.dispatch.deployment, ...scopeArgs(context), job.ownerId, deliveryId, run.jobVersion]))[0];
+        if (outbox && String(outbox.state) === 'terminal') {
+          // The original event cannot be re-appended (outbox uniqueness), so
+          // rearm it in place with a fresh window; deleting the execution
+          // claim record (attempts are CHECK-bound to 1..5) lets the next
+          // claim start a fresh bounded sequence for the same event.
+          const now = this.clock().getTime();
+          await c.query(`UPDATE sr_outbox SET state = 'pending', due_at = ?, expires_at = ? WHERE deployment = ? AND event_id = ?`, [now, now + 86400000, this.dispatch.deployment, String(outbox.event_id)]);
+          await c.query(`DELETE FROM sr_execution WHERE deployment = ? AND event_id = ?`, [this.dispatch.deployment, String(outbox.event_id)]);
+          rearmed = { intentId: String(outbox.intent_id), epoch: Number(outbox.control_epoch) };
+        } else if (!outbox) needsEvent = true;
+      }
+      return { delivery_id: deliveryId, occurrence_id: run.id, recipient_id: String(row.recipient_id), state: 'pending', attempts: 0, error_code: null, sent_at: null };
+    }, false, requested.spec.kind === 'digest',
+      now => needsEvent ? [{ aggregateId: deliveryId, aggregateRevision: requested.version, kind: 'job-deliver', dueAt: now, expiresAt: now + 86400000 }] : []);
+    if (rearmed) await this.dispatch!.flush(rearmed.intentId, rearmed.epoch);
+    return result;
   }
   async enqueue(context: TenantContext, id: string): Promise<Occurrence> {
     const requested = await this.checked(context, async (c, admin) => {
