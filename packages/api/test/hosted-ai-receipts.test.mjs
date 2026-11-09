@@ -48,3 +48,13 @@ test('#229 receipt fingerprints conflict, scope isolates keys and TTL regenerate
   await save(context);
   assert.equal(checksum({ path: 'generate', body: { question: 'sales', calculatedFields: [{ name: 'x', role: 'measure' }] } }), checksum({ body: { calculatedFields: [{ role: 'measure', name: 'x' }], question: 'sales' }, path: 'generate' }));
 });
+test('#229 active receipt reservations renew with fake timers and reject overlapping workers', async t => {
+  const f = await fixture(t); t.mock.timers.enable({ apis: ['setInterval'] });
+  await f.store.run(context, '/api/o/generate', 'key', 'hash', async () => {
+    for (let i = 0; i < 4; i++) {
+      f.advance(20000); t.mock.timers.tick(20000);
+      await new Promise(r => setImmediate(r));
+    }
+    await assert.rejects(f.nextStore().run(context, '/api/o/generate', 'key', 'hash', async () => assert.fail()), { code: 'IDEMPOTENCY_CONFLICT' });
+  });
+});
