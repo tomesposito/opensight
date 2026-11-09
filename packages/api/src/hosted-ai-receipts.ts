@@ -10,6 +10,7 @@ export interface AiAnswerReceipt { state: 'pending' | 'committed'; answer: unkno
 export interface AiAnswerAttempt {
   receipt?: AiAnswerReceipt;
   pending(answer: unknown, chargedCount: number, managed: boolean, revisions: Revisions): Promise<void>;
+  beforeCommit(): Promise<void>;
   committed(): Promise<void>;
 }
 const conflict = (): never => { throw new MetadataError('IDEMPOTENCY_CONFLICT', 409); };
@@ -59,12 +60,12 @@ export class HostedAIReceipts {
       await this.db.transaction(async c => { await renew(c); await operation(c); });
     };
     try {
-      return await work({ receipt,
+      return await work({ receipt, beforeCommit: () => write(async () => {}),
         pending: (answer, chargedCount, managed, revisions) => write(async c => {
-          const created = at();
+          const created = this.clock();
           if (!(await c.query(`INSERT INTO ai_answer_receipts VALUES (?,?,?,?,?,?,'pending',?,?,?,?,?,?)
             ON CONFLICT (tenant_id, namespace_id, user_id, route, idempotency_key) DO NOTHING RETURNING idempotency_key`,
-          [...args, fingerprint, JSON.stringify(answer), chargedCount, managed ? 1 : 0, JSON.stringify(revisions), created, new Date(this.clock() + ttl).toISOString()])).length) conflict();
+          [...args, fingerprint, JSON.stringify(answer), chargedCount, managed ? 1 : 0, JSON.stringify(revisions), new Date(created).toISOString(), new Date(created + ttl).toISOString()])).length) conflict();
         }),
         committed: () => write(async c => {
           if (!(await c.query(`UPDATE ai_answer_receipts SET state = 'committed' WHERE ${scope} AND fingerprint = ? RETURNING idempotency_key`, [...args, fingerprint])).length) conflict();
