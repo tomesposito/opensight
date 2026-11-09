@@ -172,6 +172,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Live-result cache metadata is now bounded by in-flight work: failed query fills release their markers through a token-aware `releaseFill` called from both executors' `finally` paths, and invalidation prefix generations are kept only while an active fill can observe them instead of accumulating forever (#222).
+
 - Input-table audit history now retains the newest 1,000 entries per table and 10,000 overall, with optional pagination; single-table and audit reads clone only the requested slices. Legacy stores still load and retained row details remain intact (#220).
 
 - Concurrent input-table cell edits preserve each other's changes and record accurate audit values. Optional version checks reject stale saves, and the row editor uses them to prevent overwriting newer table data (#219).
