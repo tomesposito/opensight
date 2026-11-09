@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { Duplex } from 'node:stream';
 import { request as httpRequest } from 'node:http';
 import { h8Fixture, serveH8 } from './h8-helpers.mjs';
-import { StubMailTransport } from '../dist/mail.js';
+import { StubMailTransport, smtpFromEnvironment } from '../dist/mail.js';
 import { createHostedApiServer } from '../dist/hosted-server.js';
 import { createRuntime } from '../dist/runtime.js';
 import { adaptGatewayRequest, authorizeIngress, validateViewerRequest } from '../dist/runtime-ingress.js';
@@ -211,7 +213,9 @@ test('notification is emailed after a stored submission and stamps notifiedAt', 
   assert.match(message.subject, /Synthetic Applicant/);
   assert.match(message.html, /applicant@example\.com/);
   assert.match(message.html, /Example Organization/);
-  assert.match(message.dedupeKey, /^access-request:/);
+  assert.match(message.dedupeKey, /^[a-f0-9]{64}$/);
+  const [storedRequest] = await listAccessRequests(f.db);
+  assert.equal(message.dedupeKey, createHash('sha256').update(`access-request:${storedRequest.id}`).digest('hex'));
   const list = await f.request('/api/host/access-requests', { method: 'GET', body: null, headers: f.operator });
   assert.equal(new Date(list.body.requests[0].notifiedAt).toISOString(), list.body.requests[0].notifiedAt);
 });
@@ -235,12 +239,41 @@ test('pending notifications retry on a later call, oldest first, and stop at the
   assert.deepEqual((await listAccessRequests(f.db)).map(r => r.notifiedAt), [null, null]);
   const mail = new StubMailTransport();
   assert.equal(await notifyAccessRequests(f.db, mail, 'ops@example.com', Date.now()), 2);
-  assert.equal(mail.messages[0].dedupeKey, `access-request:${first.id}`);
-  assert.equal(mail.messages[1].dedupeKey, `access-request:${second.id}`);
+  assert.equal(mail.messages[0].dedupeKey, createHash('sha256').update(`access-request:${first.id}`).digest('hex'));
+  assert.equal(mail.messages[1].dedupeKey, createHash('sha256').update(`access-request:${second.id}`).digest('hex'));
   assert.ok((await listAccessRequests(f.db)).every(r => r.notifiedAt !== null));
   assert.equal(await notifyAccessRequests(f.db, mail, 'ops@example.com', Date.now()), 0);
   assert.equal(await notifyAccessRequests(f.db, mail, null, Date.now()), 0);
   assert.equal(await notifyAccessRequests(f.db, { configured: false, async send() { throw new Error('must not be called'); } }, 'ops@example.com', Date.now()), 0);
+});
+
+test('pending notifications deliver through the real SMTP protocol transport (issue #224)', async t => {
+  const f = await h8Fixture(t);
+  await initializeAccessRequests(f.db);
+  const first = await storeAccessRequest(f.db, { name: 'First', email: 'first@example.com', now: Date.UTC(2026, 9, 30) });
+  // Same fake-socket SMTP boundary as serverless-mail.test.mjs: the real
+  // smtpFromEnvironment transport speaks the protocol and validates the
+  // dedupe key itself — the stub transport accepted the old invalid key.
+  const written = [];
+  let body = false;
+  const socket = new Duplex({ read() {}, write(chunk, _encoding, done) {
+    const line = chunk.toString(); written.push(line);
+    if (line.startsWith('QUIT')) { done(); this.destroy(); return; }
+    if (body) { body = false; this.push('250 accepted\r\n'); }
+    else if (line.startsWith('DATA')) { body = true; this.push('354 proceed\r\n'); }
+    else this.push('250 ok\r\n');
+    done();
+  } });
+  socket.setTimeout = () => socket;
+  const connect = () => { queueMicrotask(() => socket.push('220 synthetic\r\n')); return socket; };
+  const transport = smtpFromEnvironment(
+    { OPENSIGHT_SMTP_HOST: 'smtp.example.test', OPENSIGHT_SMTP_FROM: 'ops@example.test' },
+    { timeoutMs: 1000, connect });
+  assert.equal(await notifyAccessRequests(f.db, transport, 'ops@example.com', Date.now()), 1);
+  const expectedKey = createHash('sha256').update(`access-request:${first.id}`).digest('hex');
+  assert.ok(written.some(s => s.includes(`Message-ID: <${expectedKey}@opensight.local>`)));
+  const [stored] = await listAccessRequests(f.db);
+  assert.notEqual(stored.notifiedAt, null);
 });
 
 test('initializer adds notified_at to a pre-notification table without losing rows', async t => {

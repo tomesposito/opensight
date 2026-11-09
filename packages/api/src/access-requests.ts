@@ -89,7 +89,13 @@ export async function notifyAccessRequests(db: Database, mail: MailTransport, to
       `<p>Requested at ${escapeHtml(String(row.created_at))}. Review all requests with GET /api/host/access-requests and provision by hand (D-79).</p>`,
     ].join('');
     try {
-      await mail.send({ to: [to], subject: `OpenSight access request: ${subjectName}`, html: lines, dedupeKey: `access-request:${String(row.id)}` });
+      // The production SMTP transport only accepts a 64-char lowercase hex
+      // dedupe key (it becomes the Message-ID); the raw namespaced key was
+      // rejected before sending and, because the batch stops at the first
+      // failure, permanently blocked every later notification (issue #224).
+      // Hash the namespaced identity into that format — stable per request,
+      // so retries still dedupe.
+      await mail.send({ to: [to], subject: `OpenSight access request: ${subjectName}`, html: lines, dedupeKey: createHash('sha256').update(`access-request:${String(row.id)}`).digest('hex') });
     } catch { break; }
     await db.transaction(c => c.query('UPDATE h8_access_requests SET notified_at = ? WHERE id = ?', [new Date(now).toISOString(), String(row.id)]));
     sent++;
