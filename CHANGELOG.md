@@ -172,6 +172,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Deferred analytics delivery skips disabled and inactive tenants before filling each batch, so their pending events cannot block enabled tenants; retained events become deliverable again when analytics is re-enabled or the tenant returns to active (#223).
+
 - Live-result cache metadata is now bounded by in-flight work: failed query fills release their markers through a token-aware `releaseFill` called from both executors' `finally` paths, and invalidation prefix generations are kept only while an active fill can observe them instead of accumulating forever (#222).
 
 - Input-table audit history now retains the newest 1,000 entries per table and 10,000 overall, with optional pagination; single-table and audit reads clone only the requested slices. Legacy stores still load and retained row details remain intact (#220).

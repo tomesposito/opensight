@@ -146,9 +146,16 @@ server/invocation shutdown, with runtime-specific completion semantics (#175):
   log row is the completion step. `flush()` and `close()` wait only for queued
   persistence, never for the vendor. Each persistence queue completion starts
   one background `drainDeferred()` batch, shared with concurrent drain calls on
-  that Analytics instance. The drain reads at most 32 oldest pending rows by
-  default (or an explicit positive integer limit), rechecks each tenant's
-  enabled switch, and marks only successful vendor responses delivered. Failures
+  that Analytics instance. The drain reads at most 32 oldest eligible pending
+  rows by default (or an explicit positive integer limit). Before ordering by
+  creation time and event ID and applying the limit, selection requires an
+  active tenant, its matching namespace, and enabled analytics using the saved
+  override or the draining instance's configured default (#223). Disabled or
+  inactive tenants' rows stay pending without consuming batch slots, and become
+  eligible again when analytics is re-enabled or the tenant returns to active.
+  The operator/test `undelivered(limit)` view still includes all pending rows.
+  The drain rechecks tenant admission and the enabled switch before each send,
+  and marks only successful vendor responses delivered. Failures
   increment `stats.failed` and remain pending. Later invocations that track
   events piggyback another batch; callers can also explicitly invoke
   `drainDeferred(limit?)`, even after `close()`, to return the number delivered.
