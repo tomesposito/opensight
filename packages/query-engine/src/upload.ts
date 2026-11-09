@@ -34,6 +34,28 @@ interface XlsxZipEntry {
   compressed: number; uncompressed: number;
 }
 const zip64Limit = (): never => limit('Excel workbook uses unsupported ZIP64 size fields');
+/** SheetJS honors ZIP64 extras even without sentinels. Only redundant, bounded
+ * values may pass; decode as bigint so high words cannot lose precision. */
+function checkXlsxExtra(view: DataView, start: number, end: number, compressed: number, uncompressed: number, local?: number): void {
+  let zip64 = false;
+  while (start < end) {
+    if (start + 4 > end) invalid('$.data', 'Invalid Excel workbook: truncated ZIP extra field');
+    const type = view.getUint16(start, true), size = view.getUint16(start + 2, true);
+    start += 4;
+    if (start + size > end) invalid('$.data', 'Invalid Excel workbook: truncated ZIP extra field');
+    if (type === 0x0001) {
+      // Both sizes are required: partial extras are ambiguous to SheetJS.
+      if (zip64 || !(size === 16 || local !== undefined && (size === 24 || size === 28))) invalid('$.data', 'Invalid Excel workbook: ambiguous ZIP64 extra field');
+      zip64 = true;
+      const actualUncompressed = view.getBigUint64(start, true), actualCompressed = view.getBigUint64(start + 8, true);
+      if (actualUncompressed > BigInt(XLSX_MEMBER_BYTES) || actualCompressed > BigInt(MAX_BYTES)) limit('Excel workbook ZIP64 extra field exceeds the byte limits');
+      if (actualUncompressed !== BigInt(uncompressed) || actualCompressed !== BigInt(compressed) ||
+          size >= 24 && view.getBigUint64(start + 16, true) !== BigInt(local!) ||
+          size === 28 && view.getUint32(start + 24, true) !== 0) invalid('$.data', 'Invalid Excel workbook: ZIP64 extra field contradicts header');
+    }
+    start += size;
+  }
+}
 /** Cheap declared-size rejection precedes bounded inflation. Return the checked
  * directory so every local member can be matched before SheetJS sees the ZIP.
  * ZIP64 sentinels remain over-limit; contradictory metadata is invalid. */
@@ -50,7 +72,7 @@ function checkXlsxDeclaredSizes(b: Uint8Array): { centralStart: number; entries:
   if (count > XLSX_MEMBERS) limit('Excel workbook exceeds the 1000-member ZIP limit');
   if (centralStart + centralSize !== end) invalid('$.data', 'Invalid Excel workbook: central directory size mismatch');
   // SheetJS searches backwards for the last signature, including inside comments.
-  for (let i = end + 22; i + 4 <= b.byteLength; i++) {
+  for (let i = end + 4; i + 4 <= b.byteLength; i++) {
     if (u32(i) === 0x06054b50) invalid('$.data', 'Invalid Excel workbook: ambiguous ZIP end of central directory');
   }
   const entries = new Map<number, XlsxZipEntry>();
@@ -69,6 +91,7 @@ function checkXlsxDeclaredSizes(b: Uint8Array): { centralStart: number; entries:
     if (uncompressed > XLSX_MEMBER_BYTES) limit('Excel workbook member exceeds the 16 MiB uncompressed limit');
     total += uncompressed;
     if (total > XLSX_TOTAL_BYTES) limit('Excel workbook exceeds the 64 MiB total uncompressed limit');
+    checkXlsxExtra(view, nameEnd, nameEnd + u16(offset + 30), compressed, uncompressed, local);
     if (local >= centralStart || entries.has(local)) invalid('$.data', 'Invalid Excel workbook: duplicate or invalid local header offset');
     entries.set(local, { name: b.subarray(offset + 46, nameEnd), flags, method, crc, compressed, uncompressed });
     offset = next;
@@ -100,6 +123,7 @@ function checkXlsxInflation(b: Uint8Array): void {
     if ((!descriptor || compressed !== 0) && compressed !== entry.compressed ||
         (!descriptor || uncompressed !== 0) && uncompressed !== entry.uncompressed ||
         (!descriptor || crc !== 0) && crc !== entry.crc) invalid('$.data', 'Invalid Excel workbook: local/central size or CRC32 mismatch');
+    checkXlsxExtra(view, nameEnd, start, compressed, uncompressed);
     const cap = Math.min(XLSX_MEMBER_BYTES, XLSX_TOTAL_BYTES - total);
     const exceeded = (): never => limit(cap < XLSX_MEMBER_BYTES
       ? 'Excel workbook exceeds the 64 MiB total uncompressed limit'
@@ -130,7 +154,9 @@ function checkXlsxInflation(b: Uint8Array): void {
       // Both signed and unsigned classic descriptors are supported. Central
       // sizes govern zero local placeholders; descriptors must confirm them.
       if (offset + 12 > centralStart) invalid('$.data', 'Invalid Excel workbook: truncated data descriptor');
-      if (u32(offset) === 0x08074b50) offset += 4;
+      // An unsigned descriptor's CRC can itself equal the optional signature.
+      const unsigned = u32(offset) === entry.crc && u32(offset + 4) === entry.compressed && u32(offset + 8) === entry.uncompressed;
+      if (!unsigned && u32(offset) === 0x08074b50) offset += 4;
       if (offset + 12 > centralStart) invalid('$.data', 'Invalid Excel workbook: truncated data descriptor');
       if (u32(offset + 4) === 0xffffffff || u32(offset + 8) === 0xffffffff) zip64Limit();
       if (u32(offset) !== entry.crc || u32(offset + 4) !== entry.compressed || u32(offset + 8) !== entry.uncompressed) invalid('$.data', 'Invalid Excel workbook: data descriptor mismatch');

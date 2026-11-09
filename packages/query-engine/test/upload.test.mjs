@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { crc32, deflateRawSync, inflateRawSync } from 'node:zlib';
+import { crc32, deflateRawSync } from 'node:zlib';
 import * as XLSX from 'xlsx';
 import { parseUpload, UploadStaging } from '@opensight/query-engine';
 const input = (data, config = { format: 'csv' }, columns) => ({ config, data: Buffer.from(data), ...(columns ? { columns } : {}) });
@@ -49,6 +49,12 @@ function workbookMembers() {
   return members;
 }
 const parseXlsx = data => parseUpload({ config: { format: 'xlsx' }, data });
+function zip64Extra(uncompressed, compressed) {
+  const extra = Buffer.alloc(20);
+  extra.writeUInt16LE(0x0001); extra.writeUInt16LE(16, 2);
+  extra.writeBigUInt64LE(BigInt(uncompressed), 4); extra.writeBigUInt64LE(BigInt(compressed), 12);
+  return extra;
+}
 for (const delimiter of [',', '\t', ';', '|']) test(`upload sniffs ${JSON.stringify(delimiter)} and stages actual rows`, async () => {
   const stage = await UploadStaging.create();
   try {
@@ -167,6 +173,142 @@ test('xlsx still parses every member of valid STORED and DEFLATE workbooks (#221
     const result = parseXlsx(xlsxZip(members.map(member => ({ ...member, method }))));
     assert.equal(result.sheet, 'Data'); assert.deepEqual(result.rows, [['East', 2]]);
     assert.deepEqual(result.columns, [{ name: 'name', type: 'STRING' }, { name: 'amount', type: 'INTEGER' }]);
+  }
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([['name', 'amount'], ['East', 2]]), 'Data');
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([['name'], ['West']]), 'Other');
+  const data = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx', compression: true });
+  assert.deepEqual(parseUpload({ config: { format: 'xlsx', sheet: 'Data' }, data }).rows, [['East', 2]]);
+});
+test('xlsx accepts signed/unsigned data descriptors with zero or matching local sizes (#221)', () => {
+  for (const descriptor of ['signed', 'unsigned']) for (const placeholders of [true, false]) {
+    const bytes = xlsxZip(workbookMembers().map(member => ({ ...member, descriptor, placeholders })));
+    assert.deepEqual(parseXlsx(bytes).rows, [['East', 2]]);
+  }
+});
+test('xlsx data descriptors cannot bypass actual size checks or inflation caps (#221)', () => {
+  for (const descriptor of ['signed', 'unsigned']) {
+    assert.throws(() => parseXlsx(xlsxZip([{ data: Buffer.alloc(1000), declaredSize: 1, descriptor }])), { code: 'INVALID_UPLOAD', message: /actual uncompressed size mismatch/ });
+    const bytes = xlsxZip([{ data: Buffer.alloc(16 * 1024 * 1024 + 1), declaredSize: 1, descriptor }]);
+    assert.throws(() => parseXlsx(bytes), { code: 'UPLOAD_LIMIT_EXCEEDED', message: /16 MiB/ });
+  }
+});
+test('xlsx rejects contradictory data descriptors and nonzero local placeholders (#221)', () => {
+  for (const descriptor of ['signed', 'unsigned']) {
+    for (const field of [0, 4, 8]) {
+      const bytes = xlsxZip([{ data: Buffer.from('content'), descriptor }]);
+      const central = bytes.readUInt32LE(bytes.length - 6);
+      bytes.writeUInt32LE(1, central - 12 + field);
+      assert.throws(() => parseXlsx(bytes), { code: 'INVALID_UPLOAD', message: /data descriptor mismatch/ });
+    }
+    for (const field of [18, 22]) {
+      const bytes = xlsxZip([{ data: Buffer.from('content'), descriptor }]); bytes.writeUInt32LE(1, field);
+      assert.throws(() => parseXlsx(bytes), { code: 'INVALID_UPLOAD', message: /local\/central size/ });
+    }
+  }
+});
+test('xlsx rejects contradictory or oversized ZIP64 extras in either header (#221)', () => {
+  const data = Buffer.from('content'), size = deflateRawSync(data).length;
+  for (const where of ['localExtra', 'centralExtra']) {
+    for (const [uncompressed, compressed] of [[data.length + 1, size], [data.length, size + 1]]) {
+      const bytes = xlsxZip([{ data, [where]: zip64Extra(uncompressed, compressed) }]);
+      assert.throws(() => parseXlsx(bytes), { code: 'INVALID_UPLOAD', message: /ZIP64 extra field contradicts/ });
+    }
+    for (const [uncompressed, compressed] of [[16 * 1024 * 1024 + 1, size], [data.length, 8 * 1024 * 1024 + 1], [1n << 60n, size]]) {
+      assert.throws(() => parseXlsx(xlsxZip([{ data, [where]: zip64Extra(uncompressed, compressed) }])), { code: 'UPLOAD_LIMIT_EXCEEDED', message: /ZIP64 extra/ });
+    }
+  }
+});
+test('xlsx accepts redundant matching ZIP64 extras without sentinel fields (#221)', () => {
+  for (const where of ['localExtra', 'centralExtra', 'both']) {
+    const bytes = xlsxZip(workbookMembers().map(member => {
+      const extra = zip64Extra(member.data.length, deflateRawSync(member.data).length);
+      return { ...member, ...(where !== 'centralExtra' ? { localExtra: extra } : {}), ...(where !== 'localExtra' ? { centralExtra: extra } : {}) };
+    }));
+    assert.deepEqual(parseXlsx(bytes).rows, [['East', 2]]);
+  }
+});
+test('xlsx rejects malformed, partial and duplicate ZIP64 extra fields (#221)', () => {
+  const data = Buffer.from('content'), extra = zip64Extra(data.length, deflateRawSync(data).length);
+  const partial = Buffer.from(extra.subarray(0, 12)); partial.writeUInt16LE(8, 2);
+  for (const where of ['localExtra', 'centralExtra']) for (const bad of [Buffer.from([1]), extra.subarray(0, 19), partial, Buffer.concat([extra, extra])]) {
+    assert.throws(() => parseXlsx(xlsxZip([{ data, [where]: bad }])), { code: 'INVALID_UPLOAD', message: /extra field/ });
+  }
+});
+test('xlsx rejects ZIP64 sentinel sizes, offsets and counts in every header (#221)', () => {
+  for (const [where, field, width] of [
+    ['local', 18, 4], ['local', 22, 4], ['central', 20, 4], ['central', 24, 4], ['central', 42, 4], ['central', 34, 2],
+    ['end', 8, 2], ['end', 10, 2], ['end', 12, 4], ['end', 16, 4],
+  ]) {
+    const bytes = xlsxZip([{ data: Buffer.from('content') }]);
+    const start = where === 'local' ? 0 : where === 'end' ? bytes.length - 22 : bytes.readUInt32LE(bytes.length - 6);
+    if (width === 4) bytes.writeUInt32LE(0xffffffff, start + field); else bytes.writeUInt16LE(0xffff, start + field);
+    assert.throws(() => parseXlsx(bytes), { code: 'UPLOAD_LIMIT_EXCEEDED', message: /ZIP64/ }, `${where} field ${field}`);
+  }
+});
+test('xlsx rejects unsupported compression, encryption and STORED size lies (#221)', () => {
+  assert.throws(() => parseXlsx(xlsxZip([{ data: Buffer.from('content'), method: 12 }])), { code: 'INVALID_UPLOAD', message: /compression method/ });
+  assert.throws(() => parseXlsx(xlsxZip([{ data: Buffer.from('content'), method: 0, declaredSize: 1 }])), { code: 'INVALID_UPLOAD', message: /actual uncompressed size/ });
+  const bytes = xlsxZip([{ data: Buffer.from('content') }]), central = bytes.readUInt32LE(bytes.length - 6);
+  bytes.writeUInt16LE(1, 6); bytes.writeUInt16LE(1, central + 8);
+  assert.throws(() => parseXlsx(bytes), { code: 'INVALID_UPLOAD', message: /Encrypted/ });
+});
+test('xlsx rejects deflate truncation, trailing compressed bytes and CRC corruption (#221)', () => {
+  for (const kind of ['truncated', 'trailing', 'corrupt', 'crc']) {
+    const bytes = xlsxZip([{ data: Buffer.from('content') }]), central = bytes.readUInt32LE(bytes.length - 6);
+    if (kind === 'crc') { bytes.writeUInt32LE(1, 14); bytes.writeUInt32LE(1, central + 16); }
+    else if (kind === 'corrupt') bytes.fill(0xff, 37, central);
+    else {
+      const size = bytes.readUInt32LE(18) + (kind === 'truncated' ? -1 : 1);
+      bytes.writeUInt32LE(size, 18); bytes.writeUInt32LE(size, central + 20);
+      if (kind === 'trailing') {
+        // Add garbage within the declared payload and adjust the directory offset.
+        const adjusted = Buffer.concat([bytes.subarray(0, central), Buffer.from([0]), bytes.subarray(central)]);
+        adjusted.writeUInt32LE(central + 1, adjusted.length - 6);
+        assert.throws(() => parseXlsx(adjusted), { code: 'INVALID_UPLOAD', message: /deflate compressed size mismatch/ }); continue;
+      }
+    }
+    assert.throws(() => parseXlsx(bytes), { code: 'INVALID_UPLOAD', message: kind === 'crc' ? /CRC32 mismatch/ : /invalid deflate stream/ });
+  }
+});
+test('xlsx bounds member counts and rejects unlisted, overlapping and misdirected local headers (#221)', () => {
+  const data = Buffer.alloc(0);
+  assert.throws(() => parseXlsx(xlsxZip(Array.from({ length: 1001 }, (_, i) => ({ name: `part${i}`, data })))), { code: 'UPLOAD_LIMIT_EXCEEDED', message: /1000-member/ });
+  for (const offset of [0, 1]) {
+    const bytes = xlsxZip([{ name: 'first', data }, { name: 'second', data }]), central = bytes.readUInt32LE(bytes.length - 6);
+    bytes.writeUInt32LE(offset, central + 46 + 5 + 42);
+    assert.throws(() => parseXlsx(bytes), { code: 'INVALID_UPLOAD', message: /local header/ });
+  }
+  const bytes = xlsxZip([{ data }]); bytes.writeUInt32LE(1, bytes.readUInt32LE(bytes.length - 6) + 42);
+  assert.throws(() => parseXlsx(bytes), { code: 'INVALID_UPLOAD', message: /local header/ });
+});
+test('xlsx accepts exact member/aggregate ceilings and checks output with no remaining budget (#221)', () => {
+  const members = workbookMembers(), block = Buffer.alloc(16 * 1024 * 1024, 120);
+  const workbookSize = members.reduce((sum, member) => sum + member.data.length, 0);
+  const full = [...members, ...Array.from({ length: 3 }, (_, i) => ({ name: `padding${i}`, data: block })),
+    { name: 'padding3', data: block.subarray(workbookSize) }, { name: 'empty', data: Buffer.alloc(0) }];
+  assert.deepEqual(parseXlsx(xlsxZip(full)).rows, [['East', 2]]);
+  assert.throws(() => parseXlsx(xlsxZip([...full, { name: 'hidden', data: Buffer.from('x'), declaredSize: 0 }])), { code: 'UPLOAD_LIMIT_EXCEEDED', message: /64 MiB/ });
+});
+test('xlsx accepts reordered central entries and exactly 1000 members (#221)', () => {
+  const members = workbookMembers();
+  while (members.length < 1000) members.push({ name: `empty${members.length}`, data: Buffer.alloc(0) });
+  const bytes = xlsxZip(members), start = bytes.readUInt32LE(bytes.length - 6), entries = [];
+  for (let offset = start; offset < bytes.length - 22;) {
+    const end = offset + 46 + bytes.readUInt16LE(offset + 28) + bytes.readUInt16LE(offset + 30) + bytes.readUInt16LE(offset + 32);
+    entries.push(bytes.subarray(offset, end)); offset = end;
+  }
+  const reordered = Buffer.concat([bytes.subarray(0, start), ...entries.reverse(), bytes.subarray(-22)]);
+  assert.deepEqual(parseXlsx(reordered).rows, [['East', 2]]);
+});
+test('xlsx rejects ambiguous end signatures that could redirect SheetJS to an unchecked directory (#221)', () => {
+  const original = xlsxZip(workbookMembers());
+  for (const length of [22, 0x4b50]) {
+    const bytes = Buffer.concat([original, Buffer.alloc(length)]), end = original.length - 22;
+    bytes.writeUInt16LE(length, end + 20);
+    if (length === 22) { bytes.writeUInt32LE(0x06054b50, original.length); bytes.writeUInt16LE(1, original.length + 20); }
+    else { bytes[original.length] = 5; bytes[original.length + 1] = 6; } // Signature overlaps the comment length.
+    assert.throws(() => parseXlsx(bytes), { code: 'INVALID_UPLOAD', message: /ambiguous ZIP end/ });
   }
 });
 test('staging isolates sessions, escapes SQL identifiers/values, and recovers after rejection', async () => {
