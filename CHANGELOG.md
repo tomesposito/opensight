@@ -172,6 +172,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Digest audience resolution no longer clones the whole workspace catalog once per recipient: metric authorization for previews and scheduled deliveries now uses a targeted read of the principal, groups, metric, dataset and folder chain, with identical errors and grant semantics (#231).
+
 - Hosted Ask O checks cancellation before charging and preserves validated answers with optional Idempotency-Key receipts, allowing retries after response loss without another generation or charge (#229).
 
 - Ask O conversational revision no longer silently overwrites manual edits: if a stamped tile's filters or field assignments were changed with the normal editors after Ask O created it, revision is blocked with a VISUAL_EDITED explanation before any AI call or credit, instead of replacing the tile from the older interpretation (#228).

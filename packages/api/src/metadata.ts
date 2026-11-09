@@ -1,5 +1,5 @@
 import { AssetCatalog, assetKey } from './asset-model.js';
-import { MetricCatalog } from './metric-model.js';
+import { MetricCatalog, metricRecord } from './metric-model.js';
 import { changeDashboard, changeDashboardGrants, describeDashboard, dashboardVersion, type DashboardRecord, type DashboardChange } from './dashboard-model.js';
 import type { AssetGrant } from './organization.js';
 import { hasCapability, type MetricDataset, type MetricResolution, type PublishedMetric } from '@opensight/query-engine';
@@ -244,6 +244,44 @@ export class TenantMetadata {
   }
   async metricVocabulary(context: TenantContext, ref: MetricDataset): Promise<PublishedMetric[]> {
     return this.readMetrics(context, ref, false, (catalog, dataset) => catalog.vocabulary(dataset));
+  }
+  /** Targeted digest authorization (#231): the same checks digestMetricAccess
+   * always ran inside assetTransaction — published state, folder existence and
+   * metric/dataset grants for one principal — over only the rows those checks
+   * read: the principal, every group (grant evaluation needs memberships), the
+   * metric, its dataset and the dataset's folder chain. Audience resolution
+   * calls this once per recipient, so it must never clone the workspace
+   * catalog the way assetTransaction does (#172's scaling problem). */
+  async digestMetricAccess(context: TenantContext, metricId: string): Promise<MetricDataset> {
+    return this.checked(context, async (c, _revisions, user) => {
+      const resources: MetadataResource[] = [{ kind: 'user', id: context.userId, version: 1, body: user }];
+      const groups = await c.query("SELECT * FROM h1_resources WHERE tenant_id = ? AND namespace_id = ? AND kind = 'group'", scopeValues(context));
+      resources.push(...groups.map(resource));
+      const load = async (key: ResourceKey): Promise<MetadataResource | undefined> => {
+        const rows = await c.query(`SELECT * FROM h1_resources WHERE ${predicates}`, keyValues(context, key));
+        if (!rows[0]) return undefined;
+        const entry = resource(rows[0]); resources.push(entry); return entry;
+      };
+      const metric = await load({ kind: 'metric', id: metricId });
+      const ref = metric ? (metric.body as { dataset?: unknown }).dataset : undefined;
+      const datasetKey = ref && typeof ref === 'object' && !Array.isArray(ref) ? ref as { kind?: unknown; id?: unknown; ownerId?: unknown } : undefined;
+      const dataset = datasetKey && typeof datasetKey.kind === 'string' && typeof datasetKey.id === 'string'
+        ? await load({ kind: datasetKey.kind as MetadataKind, id: datasetKey.id, ...(typeof datasetKey.ownerId === 'string' ? { ownerId: datasetKey.ownerId } : {}) })
+        : undefined;
+      // Folder chain: folder() also resolves each ancestor folder's grants.
+      const seen = new Set<string>();
+      for (let folderId = dataset?.body.folderId; folderId != null && !seen.has(String(folderId)); ) {
+        seen.add(String(folderId));
+        const folder = await load({ kind: 'folder', id: String(folderId) });
+        folderId = folder?.body.folderId;
+      }
+      const a = new AssetCatalog(context, resources), catalog = new MetricCatalog(a), record = catalog.get(metricId), b = metricRecord(record);
+      if (b.publishedVersion === null) throw new MetadataError('METRIC_NOT_PUBLISHED', 409);
+      const loaded = catalog.dataset(b.dataset);
+      if (loaded.body.folderId != null) a.folder(String(loaded.body.folderId));
+      if (!a.allows(record.body.grants) || !a.allows(loaded.body.grants)) throw new MetadataError('DIGEST_VIEW_FORBIDDEN', 403);
+      return b.dataset;
+    });
   }
   private async readMetrics<T>(context: TenantContext, ref: MetricDataset, execution: boolean, read: (catalog: MetricCatalog, dataset: MetricDataset) => T): Promise<T> {
     const dataset = { ...ref };
