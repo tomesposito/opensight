@@ -1,8 +1,54 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { crc32, deflateRawSync, inflateRawSync } from 'node:zlib';
 import * as XLSX from 'xlsx';
 import { parseUpload, UploadStaging } from '@opensight/query-engine';
 const input = (data, config = { format: 'csv' }, columns) => ({ config, data: Buffer.from(data), ...(columns ? { columns } : {}) });
+// Small ZIP fixtures keep forged declarations independent of actual payloads.
+function xlsxZip(members) {
+  const locals = [], centrals = []; let offset = 0;
+  for (const { name = 'payload', data, method = 8, declaredSize = data.length, descriptor = false, placeholders = true, localExtra = Buffer.alloc(0), centralExtra = Buffer.alloc(0) } of members) {
+    const filename = Buffer.from(name), compressed = method === 0 ? data : deflateRawSync(data);
+    const local = Buffer.alloc(30), central = Buffer.alloc(46), crc = crc32(data);
+    local.writeUInt32LE(0x04034b50); local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(descriptor ? 8 : 0, 6); local.writeUInt16LE(method, 8);
+    if (!descriptor || !placeholders) {
+      local.writeUInt32LE(crc, 14); local.writeUInt32LE(compressed.length, 18); local.writeUInt32LE(declaredSize, 22);
+    }
+    local.writeUInt16LE(filename.length, 26); local.writeUInt16LE(localExtra.length, 28);
+    central.writeUInt32LE(0x02014b50); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(descriptor ? 8 : 0, 8); central.writeUInt16LE(method, 10);
+    central.writeUInt32LE(crc, 16); central.writeUInt32LE(compressed.length, 20); central.writeUInt32LE(declaredSize, 24);
+    central.writeUInt16LE(filename.length, 28); central.writeUInt16LE(centralExtra.length, 30); central.writeUInt32LE(offset, 42);
+    const trailer = Buffer.alloc(descriptor ? descriptor === 'signed' ? 16 : 12 : 0);
+    if (descriptor) {
+      const start = descriptor === 'signed' ? 4 : 0;
+      if (start) trailer.writeUInt32LE(0x08074b50);
+      trailer.writeUInt32LE(crc, start); trailer.writeUInt32LE(compressed.length, start + 4); trailer.writeUInt32LE(declaredSize, start + 8);
+    }
+    locals.push(local, filename, localExtra, compressed, trailer);
+    centrals.push(central, filename, centralExtra);
+    offset += local.length + filename.length + localExtra.length + compressed.length + trailer.length;
+  }
+  const directory = Buffer.concat(centrals), end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50); end.writeUInt16LE(members.length, 8); end.writeUInt16LE(members.length, 10);
+  end.writeUInt32LE(directory.length, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, directory, end]);
+}
+function workbookMembers() {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([['name', 'amount'], ['East', 2]]), 'Data');
+  const bytes = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }), members = [];
+  for (let offset = 0; bytes.readUInt32LE(offset) === 0x04034b50;) {
+    const size = bytes.readUInt32LE(offset + 18), nameEnd = offset + 30 + bytes.readUInt16LE(offset + 26);
+    const start = nameEnd + bytes.readUInt16LE(offset + 28);
+    assert.equal(bytes.readUInt16LE(offset + 8), 0);
+    members.push({ name: bytes.subarray(offset + 30, nameEnd).toString(), data: bytes.subarray(start, start + size) });
+    offset = start + size;
+  }
+  return members;
+}
+const parseXlsx = data => parseUpload({ config: { format: 'xlsx' }, data });
 for (const delimiter of [',', '\t', ';', '|']) test(`upload sniffs ${JSON.stringify(delimiter)} and stages actual rows`, async () => {
   const stage = await UploadStaging.create();
   try {
@@ -82,6 +128,46 @@ test('xlsx rejects a central directory declaring an oversize member, even when t
   // Declare the first member's uncompressed size just over the 16 MiB ceiling.
   view.setUint32(centralStart + 24, 16 * 1024 * 1024 + 1, true);
   assert.throws(() => parseUpload({ config: { format: 'xlsx' }, data: bytes }), { code: 'UPLOAD_LIMIT_EXCEEDED' });
+});
+test('xlsx rejects actual output contradicting matching small local/central declarations before parsing (#221)', () => {
+  for (const declaredSize of [1, 8193]) {
+    const bytes = xlsxZip([{ data: Buffer.alloc(8192, 120), declaredSize }]);
+    assert.throws(() => parseXlsx(bytes), { code: 'INVALID_UPLOAD', message: /actual uncompressed size mismatch/ });
+  }
+});
+test('xlsx hard-caps high expansion even when both headers lie about output size (#221)', () => {
+  const bytes = xlsxZip([{ data: Buffer.alloc(16 * 1024 * 1024 + 1, 120), declaredSize: 1 }]);
+  assert.ok(bytes.length < 20_000, 'compressed fixture must pass the input limit');
+  assert.throws(() => parseXlsx(bytes), { code: 'UPLOAD_LIMIT_EXCEEDED', message: /16 MiB/ });
+});
+test('xlsx bounds actual aggregate output by the remaining budget during inflation (#221)', () => {
+  const block = Buffer.alloc(16 * 1024 * 1024, 120);
+  const bytes = xlsxZip([
+    ...Array.from({ length: 3 }, (_, i) => ({ name: `part${i}`, data: block })),
+    { name: 'part3', data: block.subarray(0, 15 * 1024 * 1024) },
+    { name: 'part4', data: block.subarray(0, 2 * 1024 * 1024), declaredSize: 1024 * 1024 },
+  ]);
+  assert.throws(() => parseXlsx(bytes), { code: 'UPLOAD_LIMIT_EXCEEDED', message: /64 MiB/ });
+});
+test('xlsx rejects local/central name, method, flags and size contradictions (#221)', () => {
+  for (const [field, mutate] of [
+    ['name', b => { b[30] ^= 1; }],
+    ['method', b => b.writeUInt16LE(0, 8)],
+    ['flags', b => b.writeUInt16LE(8, 6)],
+    ['compressed size', b => b.writeUInt32LE(1, 18)],
+    ['uncompressed size', b => b.writeUInt32LE(2, 22)],
+  ]) {
+    const bytes = xlsxZip([{ data: Buffer.from('content') }]); mutate(bytes);
+    assert.throws(() => parseXlsx(bytes), { code: 'INVALID_UPLOAD', message: /local\/central/ }, field);
+  }
+});
+test('xlsx still parses every member of valid STORED and DEFLATE workbooks (#221)', () => {
+  const members = workbookMembers(); assert.ok(members.length > 1);
+  for (const method of [0, 8]) {
+    const result = parseXlsx(xlsxZip(members.map(member => ({ ...member, method }))));
+    assert.equal(result.sheet, 'Data'); assert.deepEqual(result.rows, [['East', 2]]);
+    assert.deepEqual(result.columns, [{ name: 'name', type: 'STRING' }, { name: 'amount', type: 'INTEGER' }]);
+  }
 });
 test('staging isolates sessions, escapes SQL identifiers/values, and recovers after rejection', async () => {
   const a = await UploadStaging.create(), b = await UploadStaging.create();
