@@ -172,6 +172,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Hosted API-call and query quotas are now enforced per UTC calendar month, matching the published terms and pricing; operator usage shows the same monthly totals (#225).
+
 - Access-request operator notifications now hash their dedupe key into the 64-character hex format the production SMTP transport accepts, so the oldest pending request no longer blocks every later notification in production (#224).
 
 - Deferred analytics delivery skips disabled and inactive tenants before filling each batch, so their pending events cannot block enabled tenants; retained events become deliverable again when analytics is re-enabled or the tenant returns to active (#223).
