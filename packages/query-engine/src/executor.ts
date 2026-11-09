@@ -50,15 +50,21 @@ async function runLocal(request: PlanRequest, options: ExecuteOptions, refresh: 
   // Capture the fill before any await: an invalidation (including refresh)
   // landing while this query runs must keep its rows out of the cache.
   const fill = cache?.cache.beginFill(key);
-  return withLocalTable(bindMetadata(request.dataSet, request.dataSource, request.localData, request.security !== undefined), options, async connection => {
-      const reader = await connection.runAndReadAll(refresh ? `SELECT COUNT(*) AS rows FROM ${q(plan.tableName)}` : plan.sql, refresh ? [] : [...plan.parameters]);
-      const names = reader.columnNames();
-      const rows = reader.getRows().map((values) => Object.fromEntries(names.map((name, i) => [name, resultValue(values[i])])));
-      const resultRows = !refresh && plan.postProcess ? evaluateSqlPlan(plan, rows) : rows;
-      // Cache SQL rows: post-processing is not represented in the SQL cache key.
-      cache?.cache.set(key, rows, cache.ttlMs, fill);
-      return { plan, rows: resultRows, provenance: liveProvenance(plan) };
-  });
+  try {
+    return await withLocalTable(bindMetadata(request.dataSet, request.dataSource, request.localData, request.security !== undefined), options, async connection => {
+        const reader = await connection.runAndReadAll(refresh ? `SELECT COUNT(*) AS rows FROM ${q(plan.tableName)}` : plan.sql, refresh ? [] : [...plan.parameters]);
+        const names = reader.columnNames();
+        const rows = reader.getRows().map((values) => Object.fromEntries(names.map((name, i) => [name, resultValue(values[i])])));
+        const resultRows = !refresh && plan.postProcess ? evaluateSqlPlan(plan, rows) : rows;
+        // Cache SQL rows: post-processing is not represented in the SQL cache key.
+        cache?.cache.set(key, rows, cache.ttlMs, fill);
+        return { plan, rows: resultRows, provenance: liveProvenance(plan) };
+    });
+  } finally {
+    // A failed execution never reaches set; release the fill so its marker
+    // and key are not retained. After a successful set this is a no-op.
+    if (fill) cache?.cache.releaseFill(fill);
+  }
 }
 
 /** Shared trusted CSV ingestion for visual queries and governed notebook materialization. */

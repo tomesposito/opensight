@@ -64,5 +64,9 @@ export async function executePostgres(request: PlanRequest, options: PostgresExe
     if (error instanceof QueryEngineError) throw error;
     // Driver errors may contain credentials or connection details. Never expose them.
     throw new QueryEngineError('EXECUTION_ERROR', '$.postgres', 'Postgres connection or query failed');
+  } finally {
+    // A failed execution never reaches set; release the fill so its marker
+    // and key are not retained. After a successful set this is a no-op.
+    if (fill) cache?.cache.releaseFill(fill);
   }
 }
