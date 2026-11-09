@@ -34,6 +34,17 @@ One API process owns one scheduler. Multi-node scheduling remains H10.
   before receipt commit can still duplicate mail. This is at-least-once delivery,
   not exactly-once SMTP. The stub transport honors dedupe keys, including an
   injected shared receipt set for restart tests.
+- Retry sequences are bounded (#233): after 10 attempts a delivery lands in
+  the terminal `dead` state instead of rescheduling, keeping its last error
+  code. Its occurrence then settles `failed` with `JOB_DELIVERY_EXHAUSTED`,
+  so one persistently failing delivery cannot block the job's later periods.
+  The job owner or a tenant administrator can start a new bounded sequence
+  for the same delivery — same delivery row, same dedupe key, attempts reset
+  — with `POST /api/jobs/:id/deliveries/:deliveryId/retry` or the Retry
+  button in the automation page's deliveries table. Retrying is refused for
+  non-dead deliveries (`DELIVERY_NOT_DEAD`) and for stopped or revised jobs.
+  In the durable-events deployment the retry rearms the delivery's original
+  event in place with a fresh window and execution sequence.
 
 ## User removal
 
@@ -69,7 +80,8 @@ never replays historical notifications. Unresolved owners, recipients or data
 bindings fail closed. Hosted startup refuses unconverted legacy automation.
 
 Tenant routes: `/api/jobs`, `/api/jobs/:id`, `/api/jobs/:id/runs`,
-`/api/jobs/:id/deliveries`, `/api/job-recipients`, `/api/automation-status`.
+`/api/jobs/:id/deliveries`, `/api/jobs/:id/deliveries/:deliveryId/retry`,
+`/api/job-recipients`, `/api/automation-status`.
 Creation derives the owner from the verified session; updates require the job's
 current version. Histories and recipients are tenant scoped. The hosted
 automation page displays jobs, recipients and their run/delivery histories.

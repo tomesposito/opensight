@@ -11,6 +11,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ## [Unreleased]
 
+### Fixed
+
+- Job mail delivery retries are now bounded: after 10 attempts a delivery dead-letters instead of rescheduling forever, its occurrence settles as `JOB_DELIVERY_EXHAUSTED`, and later periods of the job are admitted again. The job owner or a tenant administrator can retry a dead delivery in place — same delivery and dedupe key, fresh attempt sequence — from the automation page or `POST /api/jobs/:id/deliveries/:deliveryId/retry` (#233).
+
 ### Added
 
 - Terms of Service and Privacy Policy published as site pages at `/legal/terms/` and `/legal/privacy/`, linked from every site footer (and from the signup page's terms line) and listed in the sitemap; the pricing page and the open-economics doc no longer promise an SLA (#210).
