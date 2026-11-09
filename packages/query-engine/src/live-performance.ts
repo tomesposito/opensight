@@ -82,8 +82,10 @@ export interface CachedLiveResult {
  * Opaque token for one in-flight cache fill, captured by `beginFill` before
  * execution starts. A fill may store its result only while the token stays
  * current: no matching invalidation has landed since capture and no newer
- * fill for the same key has begun. Tokens are caller-passed values, never
- * accepted from imported assets.
+ * fill for the same key has begun. A fill ends when it stores via `set` or
+ * is abandoned via `releaseFill`; callers whose execution can fail must
+ * release the token in a `finally` so failed fills retain no cache metadata.
+ * Tokens are caller-passed values, never accepted from imported assets.
  */
 export interface LiveCacheFillToken {
   readonly key: string;
@@ -111,6 +113,7 @@ export class LiveResultCache {
   private readonly prefixGenerations = new Map<string, number>();
   private fillSequenceCounter = 0;
   private readonly latestFillByKey = new Map<string, number>();
+  private readonly activeFills = new Map<number, LiveCacheFillToken>();
 
   constructor(options: { now?: () => number; maxEntries?: number; maxBytes?: number; maxEntryBytes?: number } = {}) {
     const opts = object(options, '$.cache');
@@ -155,7 +158,41 @@ export class LiveResultCache {
   beginFill(key: string): LiveCacheFillToken {
     const sequence = ++this.fillSequenceCounter;
     this.latestFillByKey.set(key, sequence);
-    return { key, globalGeneration: this.globalGeneration, prefixGenerations: new Map(this.prefixGenerations), sequence };
+    const fill: LiveCacheFillToken = { key, globalGeneration: this.globalGeneration, prefixGenerations: new Map(this.prefixGenerations), sequence };
+    this.activeFills.set(sequence, fill);
+    return fill;
+  }
+
+  /**
+   * End a fill without storing: drop its latest-fill marker and forget the
+   * token. Token-aware and idempotent — releasing an older or already-ended
+   * fill never disturbs a newer fill for the same key, and a released fill
+   * can no longer store. Callers invoke this from a `finally` around query
+   * execution so a failed fill retains no marker, key, or generation state.
+   */
+  releaseFill(fill: LiveCacheFillToken): void {
+    this.endFill(fill);
+  }
+
+  private endFill(fill: LiveCacheFillToken): void {
+    if (this.activeFills.get(fill.sequence) !== fill) return;
+    this.activeFills.delete(fill.sequence);
+    if (this.latestFillByKey.get(fill.key) === fill.sequence) this.latestFillByKey.delete(fill.key);
+    this.prunePrefixGenerations();
+  }
+
+  /**
+   * A prefix generation only matters to fills that were in flight when the
+   * invalidation landed. Once no active fill's key matches a prefix, its
+   * generation is dropped, so the map stays bounded by active fills instead
+   * of growing with every historical invalidation prefix.
+   */
+  private prunePrefixGenerations(): void {
+    for (const prefix of this.prefixGenerations.keys()) {
+      let needed = false;
+      for (const fill of this.activeFills.values()) if (fill.key.startsWith(prefix)) { needed = true; break; }
+      if (!needed) this.prefixGenerations.delete(prefix);
+    }
   }
 
   private fillIsCurrent(fill: LiveCacheFillToken): boolean {
@@ -173,10 +210,10 @@ export class LiveResultCache {
     positiveInteger(ttlMs, '$.liveCache.ttlMs');
     if (fill !== undefined) {
       // A stale fill stores nothing and must not remove a newer entry.
-      // Currency is checked before releasing the latest-fill marker; this
-      // method is synchronous, so no other fill can begin in between.
+      // Currency is checked before ending the fill; this method is
+      // synchronous, so no other fill can begin in between.
       const current = fill.key === key && this.fillIsCurrent(fill);
-      if (this.latestFillByKey.get(key) === fill.sequence) this.latestFillByKey.delete(key);
+      this.endFill(fill);
       if (!current) return;
     }
     const now = this.now();
@@ -215,7 +252,12 @@ export class LiveResultCache {
       this.entries.clear();
       this.retainedBytes = 0;
     } else {
-      this.prefixGenerations.set(prefix, (this.prefixGenerations.get(prefix) ?? 0) + 1);
+      // Record the generation only while a fill that could observe it is
+      // active; with no matching fill in flight, removing the matching
+      // entries fully applies the invalidation and nothing is retained.
+      let observed = false;
+      for (const fill of this.activeFills.values()) if (fill.key.startsWith(prefix)) { observed = true; break; }
+      if (observed) this.prefixGenerations.set(prefix, (this.prefixGenerations.get(prefix) ?? 0) + 1);
       for (const key of this.entries.keys()) if (key.startsWith(prefix)) this.remove(key);
     }
   }

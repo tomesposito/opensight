@@ -179,6 +179,82 @@ test('an older in-flight fill cannot overwrite a newer fill, before or after the
   assert.deepEqual(cache.get('seq2').rows, [{ total: 5 }]);
 });
 
+test('a released fill cannot store, and releasing an older fill never disturbs a newer fill', () => {
+  const cache = new LiveResultCache();
+  const abandoned = cache.beginFill('key');
+  cache.releaseFill(abandoned);
+  cache.set('key', [{ total: 1 }], 1000, abandoned);
+  assert.equal(cache.get('key'), undefined, 'a released fill must not store');
+  assert.equal(cache.stats().stores, 0);
+  cache.releaseFill(abandoned);
+  assert.equal(cache.stats().stores, 0, 'release is idempotent');
+
+  const older = cache.beginFill('shared');
+  const newer = cache.beginFill('shared');
+  cache.releaseFill(older);
+  cache.set('shared', [{ total: 2 }], 1000, newer);
+  assert.deepEqual(cache.get('shared').rows, [{ total: 2 }], 'newer fill survives the older fill being released');
+  cache.releaseFill(newer);
+  assert.deepEqual(cache.get('shared').rows, [{ total: 2 }], 'release after a successful store removes nothing');
+});
+
+test('many distinct failed fills retain no markers, keys, or generation state', () => {
+  const cache = new LiveResultCache();
+  for (let i = 0; i < 1000; i++) cache.releaseFill(cache.beginFill(`failed:${i}`));
+  assert.deepEqual(cache.stats(), { hits: 0, misses: 0, stores: 0, entries: 0, retainedBytes: 0 });
+  const probe = cache.beginFill('probe');
+  assert.equal(probe.prefixGenerations.size, 0, 'failed fills leave no prefix generations to copy into new tokens');
+  cache.set('probe', [{ total: 1 }], 1000, probe);
+  assert.deepEqual(cache.get('probe').rows, [{ total: 1 }]);
+  for (let i = 0; i < 1000; i += 250) {
+    const fill = cache.beginFill(`failed:${i}`);
+    cache.set(`failed:${i}`, [{ total: i }], 1000, fill);
+    assert.deepEqual(cache.get(`failed:${i}`).rows, [{ total: i }], 'a previously failed key fills and stores normally');
+  }
+});
+
+test('invalidations are retained only while a matching fill is active, then pruned', () => {
+  const cache = new LiveResultCache();
+  for (let i = 0; i < 200; i++) cache.invalidate(`absent:${i}:`);
+  const probe = cache.beginFill('probe');
+  assert.equal(probe.prefixGenerations.size, 0, 'invalidations with no fill in flight accumulate nothing');
+  cache.releaseFill(probe);
+
+  const blocked = cache.beginFill('dataset:a');
+  cache.invalidate('dataset:');
+  cache.set('dataset:a', [{ total: 1 }], 1000, blocked);
+  assert.equal(cache.get('dataset:a'), undefined, 'invalidation during an active fill still blocks its store');
+  cache.releaseFill(blocked);
+  const after = cache.beginFill('dataset:a');
+  assert.equal(after.prefixGenerations.size, 0, 'the prefix generation is pruned once no active fill observes it');
+  cache.set('dataset:a', [{ total: 2 }], 1000, after);
+  assert.deepEqual(cache.get('dataset:a').rows, [{ total: 2 }], 'a fill begun after the invalidation stores normally');
+
+  const bystander = cache.beginFill('dataset:b');
+  const watched = cache.beginFill('other:c');
+  cache.invalidate('other:');
+  cache.releaseFill(bystander);
+  const probe2 = cache.beginFill('dataset:d');
+  assert.equal(probe2.prefixGenerations.get('other:'), 1, 'a generation survives while another active fill still observes it');
+  cache.releaseFill(probe2);
+  cache.releaseFill(watched);
+  const probe3 = cache.beginFill('dataset:e');
+  assert.equal(probe3.prefixGenerations.size, 0);
+  cache.releaseFill(probe3);
+});
+
+test('a failed local execution releases its fill so the next execution stores and serves from cache', async t => {
+  const r = request(), options = { ...temporaryCsv(t, 'bad,header\n'), liveCache: { cache: new LiveResultCache(), ttlMs: 1000 } };
+  const cache = options.liveCache.cache;
+  await assert.rejects(executeLocal(r, options), { code: 'LOCAL_DATA_ERROR' });
+  assert.deepEqual(cache.stats(), { hits: 0, misses: 1, stores: 0, entries: 0, retainedBytes: 0 });
+  writeFileSync(join(options.dataRoot, 'sales.csv'), read('sales.csv'));
+  const first = await executeLocal(r, options);
+  assert.deepEqual(first.provenance, { source: 'live' });
+  assert.equal(cache.stats().stores, 1);
+  assert.equal((await executeLocal(r, options)).provenance.source, 'cache');
+});
+
 test('local execution in flight during dataset invalidation returns live rows but does not repopulate the cache', async t => {
   const r = request(), options = { ...temporaryCsv(t, read('sales.csv')), liveCache: { cache: new LiveResultCache(), ttlMs: 1000 } };
   const cache = options.liveCache.cache;
