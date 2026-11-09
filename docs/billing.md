@@ -31,8 +31,10 @@ those defaults fail-closed, while operator tenants without billing keep them.
 | `OPENSIGHT_TRIAL_ENTITLEMENT` | Trial entitlement JSON, validated by the same shape; trial start requires it. |
 | `OPENSIGHT_BILLING_TIER_ENTITLEMENTS` | Optional JSON mapping tier names (`free`, `light`, `regular`, `heavy`) to entitlement objects in the `OPENSIGHT_ENTITLEMENTS` shape. Paid billing records require their tier entitlement; missing mappings deny fallback. Legacy stored `free` and operator-created tenants without billing preserve their existing operator defaults. |
 
-Keys and price IDs are configuration only. No key, card data, or customer
-payment detail is ever stored in OpenSight or appears in tests.
+API credentials remain configuration only. Billing operations snapshot the
+nonsecret Stripe price ID so a retry uses the original request. No secret key,
+card data, or customer payment detail is stored in billing operations; tests
+use synthetic Stripe identifiers and credentials.
 
 Tom's remaining steps (outside the product): create the Stripe account,
 create the three products/prices, and put the key, webhook secret, and
@@ -58,6 +60,62 @@ price IDs in the deploy environment.
    trail with the Stripe event ID as the reference.
 4. `GET /api/host/tenants/{tenantId}/billing` shows the tenant's current
    tier, subscription status, trial deadline, access state and retention date.
+
+## Retry-safe creation (#227)
+
+Both payment-link and checkout creation first commit a pending row in
+`h9_billing_operations`: operation ID, unique idempotency key, tenant, kind,
+tier, original price ID, checkout origin when applicable, status and timestamps.
+Stripe object ID and URL are recorded on completion. Every Stripe POST sends
+the stored key as `Idempotency-Key`; retries use the stored request, including
+after a configuration change or process restart.
+
+Reservation checks and insertion take the tenant lock used by webhook handling
+(`SELECT ... FOR UPDATE` on PostgreSQL, `BEGIN IMMEDIATE` on SQLite). A second
+transaction takes the same lock, rechecks tenant availability and the checkout
+subscription guard, reads the operation, and holds the lock through the Stripe
+POST and result commit. Concurrent callers wait and then return the committed
+result without another POST. This also coordinates separate service instances.
+The tradeoff is that a slow Stripe request holds a tenant lock on PostgreSQL
+and the metadata writer transaction on SQLite until it finishes. There is no
+in-memory reservation or lease timeout to recover after a process crash.
+
+- **Payment links:** the same tenant and tier reuse the completed `{id, url,
+  tier}` indefinitely. Different tenants or tiers have separate operations.
+  Completion writes `h9_billing_links` and `billing.payment_link.created` in
+  the same transaction, once per creation; reuse writes neither. Legacy link
+  bindings remain valid for webhooks, but their URLs were never stored, so
+  they cannot be reconstructed as reusable operation results.
+- **Checkout:** the second request returns the reserved session's `{id, url}`.
+  While the first POST is running, it waits for the database lock. Reservation
+  is per tenant across all tiers: requesting another tier still returns the
+  original session and its original tier. The completed session is reused for
+  **24 hours from successful result persistence** (`updated_at`), strictly
+  younger than 24 hours. Reuse does not extend that timestamp. Counting from
+  persistence prevents delayed reconciliation from shortening the window for
+  a session Stripe may only just have created. At exactly 24 hours, a fresh
+  operation and fresh key may be created. This is a bounded reservation, not
+  a live check of the Stripe session's expiry or completion; subscription
+  webhooks remain authoritative. `billing.checkout.created` fires once per
+  recorded creation, and checkout does not insert a payment-link binding.
+- **Failure and recovery:** Stripe failures return `STRIPE_REQUEST_FAILED`
+  (502) and commit `failed` with the original key and request. A retry resumes
+  that operation; a timeout or 5xx never authorizes a new key. If a process
+  dies before result commit, the committed reservation survives as pending
+  (or retains its earlier failed state) and the database releases its lock.
+  A subsequent caller can immediately resume it using the same key, including
+  a stale pending operation. Unresolved operations are never discarded by the
+  completed-checkout reuse window. Stripe's retention of its idempotency result
+  bounds recovery of an ambiguous external creation; this table does not
+  provide a separate Stripe-object lookup after that result is forgotten.
+
+The operation table participates in encrypted reference backups and tenant
+erasure. Initialization is additive and repeatable on SQLite and PostgreSQL.
+No new error code is introduced: invalid paid tiers remain
+`BILLING_TIER_INVALID` (400), unavailable tenants `TENANT_UNAVAILABLE` (403),
+missing checkout origin/client support `BILLING_CHECKOUT_UNAVAILABLE` (503),
+and a bound subscription other than `canceled` or `incomplete_expired` remains
+`BILLING_SUBSCRIPTION_EXISTS` (409), including when a reusable session exists.
 
 ## Event reconciliation (#211)
 

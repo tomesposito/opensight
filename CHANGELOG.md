@@ -172,6 +172,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Stripe payment-link and checkout retries now reuse durable operations and idempotency keys; concurrent requests share one result, payment links remain reusable, and checkout reservations expire 24 hours after result persistence (#227).
+
 - Hosted scheduled jobs now honor trial expiry and billing pauses before admission, execution and delivery rendering, avoiding compute charges for work denied by billing and preserving schedules for when access is restored (#226).
 
 - Hosted API-call and query quotas are now enforced per UTC calendar month, matching the published terms and pricing; operator usage shows the same monthly totals (#225).
