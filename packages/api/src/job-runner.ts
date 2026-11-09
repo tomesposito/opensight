@@ -72,20 +72,27 @@ export class JobRunner {
     for (const run of await queued()) { if (this.stopping) return; await this.execute(run); }
     await this.deliver();
   }
+  private async recheck(run: Occurrence): Promise<void> {
+    await this.checkAccess?.(run.tenantId);
+    await this.store.recheck(run);
+  }
   async execute(run: Occurrence): Promise<void> {
     try {
+      await this.checkAccess?.(run.tenantId);
       await this.store.db.transaction(async c => {
         await this.store.checkRun(c, run);
         await c.query(`UPDATE h7_occurrences SET state = 'running' WHERE ${scoped} AND occurrence_id = ? AND state = 'queued'`, [...scopeArgs(run), run.id]);
       });
       const context = await this.store.context(run, run.ownerId);
+      await this.checkAccess?.(run.tenantId);
       await this.store.metadata.usage?.consume(this.store.metadata, context, 'computeAttempts');
-      this.executor.begin(context, () => this.store.recheck(run));
+      this.executor.begin(context, () => this.recheck(run));
       let result: { triggered?: boolean };
       if (run.spec.kind === 'digest' && run.spec.destination === 'shared') {
         if (!this.executor.authorizeSharedDigest) throw new MetadataError('DIGEST_SHARED_RESOLVER_REQUIRED', 503);
         await this.executor.authorizeSharedDigest(context, run.spec, this.store); result = {};
       } else result = await this.executor.execute(context, run.spec, this.store.clock());
+      await this.checkAccess?.(run.tenantId);
       await this.store.db.transaction(async c => {
         const job = await this.store.checkRun(c, run), now = this.store.clock().toISOString();
         const notify = run.spec.kind === 'digest' || run.spec.kind === 'report' || run.spec.kind === 'alert' && result.triggered && job.alertState !== 'triggered';
@@ -124,6 +131,7 @@ export class JobRunner {
       let accepted = false;
       try {
         const verify = async () => {
+          await this.checkAccess?.(run.tenantId);
           await this.store.db.transaction(async c => {
             await this.store.checkRun(c, run); await member(c, run, String(d.recipient_id));
             const delivery = (await c.query(`SELECT state FROM h7_deliveries WHERE ${scoped} AND delivery_id = ?`, [...scopeArgs(run), id]))[0];
@@ -134,6 +142,7 @@ export class JobRunner {
         const claimed = await this.store.db.transaction(c => c.query(`UPDATE h7_deliveries SET state = 'sending', attempts = attempts + 1 WHERE ${scoped} AND delivery_id = ? AND state = 'pending' RETURNING delivery_id`, [...scopeArgs(run), id]));
         if (!claimed.length) continue;
         const owner = await this.store.context(run, run.ownerId);
+        await this.checkAccess?.(run.tenantId);
         if (run.spec.kind === 'digest' && run.spec.destination === 'shared') {
           if (!this.executor.renderSharedDigest) throw new MetadataError('DIGEST_SHARED_RESOLVER_REQUIRED', 503);
           this.executor.begin(owner, verify);
@@ -148,6 +157,7 @@ export class JobRunner {
           this.executor.begin(owner, verify); await this.executor.authorize(owner, run.spec);
           const recipient = await this.store.context(run, String(d.recipient_id));
           this.executor.begin(recipient, verify); await this.executor.authorize(recipient, run.spec);
+          await this.checkAccess?.(run.tenantId);
           if (!d.message) await this.store.metadata.usage?.consume(this.store.metadata, recipient, 'computeAttempts');
           const rendered = d.message && run.spec.kind !== 'digest' ? JSON.parse(String(d.message)) as Pick<MailMessage, 'subject' | 'html'> : await this.executor.render(recipient, run.spec, occurrenceTime(run), run.jobId);
           const message = await this.store.db.transaction(async c => {
