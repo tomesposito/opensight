@@ -11,6 +11,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ## [Unreleased]
 
+### Added
+
+- Statistical forecasting on line charts with a date dimension: a dashed forecast continuation with a shaded prediction interval (80/90/95%), fitted values for trailing periods, and Auto/None/Custom seasonality, computed with exponential smoothing (ETS/Holt-Winters, corrected-AIC model selection) in the web layer so author view, dashboards, small multiples, and PDF export agree. Edited in the Properties panel's Forecast section; QuickSight `ForecastConfigurations` import and export round-trip, with boundaries applied as clamps. Series with fewer than 4 points render actuals with a quiet note instead of a forecast (#235).
+
 ### Fixed
 
 - Job mail delivery retries are now bounded: after 10 attempts a delivery dead-letters instead of rescheduling forever, its occurrence settles as `JOB_DELIVERY_EXHAUSTED`, and later periods of the job are admitted again. The job owner or a tenant administrator can retry a dead delivery in place — same delivery and dedupe key, fresh attempt sequence — from the automation page or `POST /api/jobs/:id/deliveries/:deliveryId/retry` (#233).
