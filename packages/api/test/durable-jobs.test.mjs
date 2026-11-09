@@ -95,12 +95,28 @@ test('SR3 SMTP acceptance with lost receipt stays ambiguous; only explicit reaut
   assert.equal(messages.length, 2); assert.equal(messages[0].dedupeKey, messages[1].dedupeKey);
   assert.equal((await f.rows('h7_deliveries'))[0].message, null);
 });
-test('SR3 unconfigured SMTP fails closed, terminates after five attempts and never caches a body', async t => {
+test('SR3 unconfigured SMTP fails closed, dead-letters after five attempts and never caches a body', async t => {
   const f = await delivery(t, { mail: { configured: false, send: async () => assert.fail('not configured') } });
   for (let i = 0; i < 4; i++) await assert.rejects(f.jobs.run(f.envelope), { code: 'SMTP_NOT_CONFIGURED' });
   await f.jobs.run(f.envelope); await f.jobs.run(f.envelope);
-  const row = (await f.rows('h7_deliveries'))[0]; assert.equal(row.state, 'cancelled'); assert.equal(row.message, null);
-  assert.equal((await f.rows('h7_occurrences'))[0].state, 'failed');
+  const row = (await f.rows('h7_deliveries'))[0]; assert.equal(row.state, 'dead'); assert.equal(row.message, null);
+  const occurrence = (await f.rows('h7_occurrences'))[0];
+  assert.equal(occurrence.state, 'failed'); assert.equal(occurrence.error_code, 'JOB_DELIVERY_EXHAUSTED');
+});
+test('SR3 an expired delivery event dead-letters instead of cancelling', async t => {
+  const f = await delivery(t);
+  f.time.now += 90000000;
+  await f.jobs.run(f.envelope);
+  assert.equal(f.mail.messages.length, 0);
+  const row = (await f.rows('h7_deliveries'))[0]; assert.equal(row.state, 'dead'); assert.equal(row.error_code, 'DISPATCH_EVENT_EXPIRED');
+  const occurrence = (await f.rows('h7_occurrences'))[0];
+  assert.equal(occurrence.state, 'failed'); assert.equal(occurrence.error_code, 'JOB_DELIVERY_EXHAUSTED');
+});
+test('SR3 a non-retryable delivery failure still cancels instead of dead-lettering', async t => {
+  const f = await delivery(t);
+  f.executor.verifyDelivery = async () => { throw new MetadataError('BLAZE_INVALIDATED', 409); };
+  await f.jobs.run(f.envelope);
+  const row = (await f.rows('h7_deliveries'))[0]; assert.equal(row.state, 'cancelled'); assert.equal(row.error_code, 'BLAZE_INVALIDATED');
 });
 test('SR3 construction and idle time create zero background SQL queries or heartbeat timers', async t => {
   const f = await sr3Fixture(t); const count = f.queries.length;

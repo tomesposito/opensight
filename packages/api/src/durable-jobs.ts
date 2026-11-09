@@ -1,4 +1,4 @@
-import { occurrenceTime, deliveryKey, deliveryRecipients } from './digest-delivery.js';
+import { occurrenceTime, deliveryKey, deliveryRecipients, isRetryableDeliveryError } from './digest-delivery.js';
 import { MetadataError, type SqlConnection, type SqlRow } from './metadata-db.js';
 import { checksum } from './metadata-operator.js';
 import { DurableExecution, type ExecutionEvent, type ExecutionHandle } from './durable-execution.js';
@@ -52,9 +52,9 @@ export class DurableJobs {
   private async settle(c: SqlConnection, run: Occurrence, now: number): Promise<void> {
     const rows = await c.query(`SELECT state FROM h7_deliveries WHERE ${scoped} AND occurrence_id = ?`, [...scopeArgs(run), run.id]);
     if (!rows.length || rows.some(r => ['pending', 'sending'].includes(String(r.state)))) return;
-    const failed = rows.some(r => r.state !== 'sent');
+    const failed = rows.some(r => r.state !== 'sent'), dead = rows.some(r => r.state === 'dead');
     await c.query(`UPDATE h7_occurrences SET state = ?, error_code = ?, finished_at = ? WHERE ${scoped} AND occurrence_id = ? AND state = 'delivering'`,
-      [failed ? 'failed' : 'succeeded', failed ? 'JOB_DELIVERY_CANCELLED' : null, new Date(now).toISOString(), ...scopeArgs(run), run.id]);
+      [failed ? 'failed' : 'succeeded', failed ? dead ? 'JOB_DELIVERY_EXHAUSTED' : 'JOB_DELIVERY_CANCELLED' : null, new Date(now).toISOString(), ...scopeArgs(run), run.id]);
   }
   private async terminal(c: SqlConnection, event: ExecutionEvent, code: string, now: number): Promise<void> {
     if (event.kind === 'job-due') {
@@ -66,7 +66,14 @@ export class DurableJobs {
     }
     const { run, delivery } = await this.runRow(c, event);
     if (delivery) {
-      await c.query(`UPDATE h7_deliveries SET state = 'cancelled', message = NULL, error_code = ? WHERE ${scoped} AND delivery_id = ? AND state IN ('pending','sending')`, [code, ...scopeArgs(run), event.aggregateId]);
+      // A delivery whose bounded retry sequence ran out — the execution
+      // expired, hit its attempt bound, or failed its final attempt with a
+      // transient code — dead-letters (#233) so an operator can retry it.
+      // Genuine cancellations (authorization, revision, stop) stay cancelled.
+      const execution = (await c.query('SELECT attempts FROM sr_execution WHERE deployment = ? AND event_id = ?', [this.store.dispatch!.deployment, event.eventId]))[0];
+      const dead = ['DISPATCH_RETRY_EXHAUSTED', 'DISPATCH_EVENT_EXPIRED'].includes(code)
+        || Number(execution?.attempts ?? 0) >= 5 && isRetryableDeliveryError(code);
+      await c.query(`UPDATE h7_deliveries SET state = ?, message = NULL, error_code = ? WHERE ${scoped} AND delivery_id = ? AND state IN ('pending','sending')`, [dead ? 'dead' : 'cancelled', code, ...scopeArgs(run), event.aggregateId]);
       await this.settle(c, run, now); return;
     }
     // A current refresh still owes its next due after a failed compute attempt.
