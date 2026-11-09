@@ -188,7 +188,7 @@ export class HostedUsage {
     for (const scope of await this.billingScopes(tenantId)) records.push(await this.monthlyUsage(scope, period));
     return records;
   }
-  /** Current enforcement view: API/queries are daily caps, NLQ is monthly, storage a live gauge.
+  /** Current enforcement view: API/queries and NLQ are monthly caps, storage a live gauge.
    * Keep the durable monthly billing records unchanged; never present an unrolled snapshot as live usage. */
   async operatorOverview(tenantId: string, period: string) {
     const day = new Date(this.clock()).toISOString().slice(0, 10);
@@ -198,11 +198,9 @@ export class HostedUsage {
     const quotas = this.entitlement(scope);
     return this.db.transaction(async c => {
       await this.billingScope(c, scope);
-      const rows = await c.query('SELECT metric, admitted FROM h8_usage WHERE tenant_id = ? AND namespace_id = ? AND period = ?', [scope.tenantId, scope.namespaceId, day]);
-      const count = (metric: string) => usageInteger(rows.find(row => row.metric === metric)?.admitted ?? 0);
-      return { day, period, apiCalls: count('apiCalls'), queries: count('computeAttempts'), storageBytes: await this.storageBytes(c, scope),
+      return { day, period, apiCalls: await this.monthlyAdmitted(c, scope, period, 'apiCalls'), queries: await this.monthlyAdmitted(c, scope, period, 'computeAttempts'), storageBytes: await this.storageBytes(c, scope),
         nlq: await this.monthlyAiCalls(c, scope, period), quotas: { apiCalls: quotas.apiCalls, queries: quotas.computeAttempts, storageBytes: quotas.storageBytes, nlq: quotas.aiCallsPerMonth ?? null } };
-    });
+    }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
   }
   /** Operator-triggered refresh; each scope commits independently and is safe to retry. */
   async rollupMonthlyUsageForPeriod(month: string, tenantId?: string): Promise<MonthlyUsage[]> {

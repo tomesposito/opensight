@@ -23,8 +23,8 @@ function UsageStrip({ usage }: { usage: UsageOverview }) {
   const number = (value: number) => value.toLocaleString('en-US');
   const bytes = (value: number) => value >= 1_000_000_000 ? `${(value / 1_000_000_000).toFixed(1)} GB` : value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)} MB` : `${number(value)} B`;
   const metrics = [
-    { name: 'API calls', used: usage.apiCalls, cap: usage.quotas.apiCalls, period: usage.day, format: number },
-    { name: 'Queries', used: usage.queries, cap: usage.quotas.queries, period: usage.day, format: number },
+    { name: 'API calls', used: usage.apiCalls, cap: usage.quotas.apiCalls, period: usage.period, format: number },
+    { name: 'Queries', used: usage.queries, cap: usage.quotas.queries, period: usage.period, format: number },
     { name: 'Storage', used: usage.storageBytes, cap: usage.quotas.storageBytes, period: 'Current', format: bytes },
     { name: 'NLQ', used: usage.nlq, cap: usage.quotas.nlq, period: usage.period, format: number },
   ];
@@ -73,7 +73,7 @@ export function OperatorTenant({ tenantId, ...props }: OperatorProps & { tenantI
         <div><dt>Namespace ID</dt><dd><code>{tenant.namespaceId}</code></dd></div><div><dt>Created via operation ID</dt><dd><code>{tenant.createdOperationId ?? 'Unknown'}</code></dd></div>
       </dl>
         {view.usage && <UsageStrip usage={view.usage} />}{!readOnly && !view.usage && <p>Usage unavailable{view.usageError ? `: ${view.usageError}` : ''}.</p>}
-        {view.usage && <p className="operator-note">API calls and queries use daily UTC quotas; NLQ uses the current UTC month. Storage is the current logical-byte gauge.</p>}
+        {view.usage && <p className="operator-note">API calls, queries and NLQ use quotas for the current UTC month. Storage is the current logical-byte gauge.</p>}
         {tenant.tombstone && <p>Deleted at {tenant.tombstone}</p>}
       </section>
       {!readOnly && <><section className="operator-card"><h2>Plan & billing</h2>
