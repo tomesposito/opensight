@@ -201,6 +201,15 @@ export async function initializeBilling(db: Database): Promise<void> {
     }
     await c.query(`CREATE TABLE IF NOT EXISTS h9_billing_links (
       link_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES h1_tenants(tenant_id), tier TEXT NOT NULL, created_at TEXT NOT NULL)`);
+    await c.query(`CREATE TABLE IF NOT EXISTS h9_billing_operations (
+      operation_id TEXT PRIMARY KEY, idempotency_key TEXT NOT NULL UNIQUE,
+      tenant_id TEXT NOT NULL REFERENCES h1_tenants(tenant_id),
+      kind TEXT NOT NULL CHECK (kind IN ('payment_link', 'checkout_session')),
+      tier TEXT NOT NULL CHECK (tier IN ('light', 'regular', 'heavy')),
+      status TEXT NOT NULL CHECK (status IN ('pending', 'completed', 'failed')),
+      price_id TEXT NOT NULL, checkout_origin TEXT,
+      stripe_object_id TEXT, stripe_url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+    await c.query('CREATE INDEX IF NOT EXISTS h9_billing_operations_tenant ON h9_billing_operations (tenant_id, kind, tier)');
     await c.query(`CREATE TABLE IF NOT EXISTS h9_billing_events (
       event_id TEXT PRIMARY KEY, tenant_id TEXT, type TEXT NOT NULL, outcome TEXT NOT NULL, created_at TEXT NOT NULL)`);
   });
