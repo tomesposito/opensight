@@ -120,3 +120,13 @@ remain unchanged. No visual-parity claim is made.
 All commits stay on `work/issue-225-monthly-quotas`. Nothing is merged or pushed.
 `SOLUTION_DESIGN.md`, terms, pricing, tier values and dependency manifests are
 unchanged; no dependencies were added.
+
+## Independent verification addendum (sweep, 2026-11-08)
+
+The Chromium startup failure above is the known exec-context limit (missing
+Hatch WebGL domain policy), not a code failure. The sweep re-ran the full root
+`npm test` independently on this branch with `OPENSIGHT_CHROMIUM` pointed at
+the Playwright headless shell: **4,885 tests, 4,849 passed, 0 failed,
+36 skipped, exit 0** — the complete suite green in one run, including the web
+workspace and the final conformance/site checks. The 36 skips are the
+live-Postgres tests (no DATABASE_URL). Merged on that verification.
