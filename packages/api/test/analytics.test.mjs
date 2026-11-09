@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Analytics, analyticsFromEnvironment, rowCountBucket } from '../dist/analytics.js';
 import { fixture } from './analytics-helpers.mjs';
-import { initializeAnalytics } from '../dist/analytics-store.js';
+import { AnalyticsStore, initializeAnalytics } from '../dist/analytics-store.js';
+import { PostgresMetadataDatabase } from '../dist/metadata-db.js';
 
 test('analytics disabled or unconfigured: no log rows, delivery, or caller errors', async () => {
   const f = await fixture(); let calls = 0;
@@ -148,6 +149,144 @@ test('Issue #175: private analytics outbox is ordered, bounded and excludes ackn
     for (const limit of [0, -1, 1.5, NaN, Infinity]) await assert.rejects(f.store.undelivered(limit), { code: 'ANALYTICS_DRAIN_LIMIT_INVALID' });
   } finally { await f.db.close(); }
 });
+
+test('Issue #223: eligible outbox applies overrides and defaults before the ordered limit', async () => {
+  const f = await fixture();
+  try {
+    for (const [scope, id, createdAt] of [[f.a, 'old', '2026-10-01'], [f.b, 'new-b', '2026-10-02'], [f.b, 'new-a', '2026-10-02']]) {
+      await f.store.append({ ...scope, id, createdAt, name: 'dashboard_viewed', props: {} }, true);
+    }
+    const ids = async (limit, fallback) => (await f.store.undeliveredEligible(limit, fallback)).map(row => row.id);
+    assert.deepEqual(await ids(2, true), ['old', 'new-a']);
+    assert.deepEqual(await ids(2, false), []);
+    await f.store.setEnabled(f.a, false); await f.store.setEnabled(f.b, true);
+    for (const fallback of [false, true]) {
+      assert.deepEqual(await ids(1, fallback), ['new-a']);
+      assert.deepEqual(await ids(2, fallback), ['new-a', 'new-b']);
+    }
+    await f.store.markDelivered('new-a');
+    assert.deepEqual(await ids(2, true), ['new-b']);
+    assert.deepEqual((await f.store.undelivered()).map(row => row.id), ['old', 'new-b']);
+  } finally { await f.db.close(); }
+});
+test('Issue #223: eligible outbox rejects invalid drain limits with the existing named error', async () => {
+  const f = await fixture();
+  try {
+    for (const fallback of [false, true]) for (const limit of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '2', null, undefined]) {
+      await assert.rejects(f.store.undeliveredEligible(limit, fallback), { code: 'ANALYTICS_DRAIN_LIMIT_INVALID', status: 400 });
+    }
+  } finally { await f.db.close(); }
+});
+test('Issue #223: eligible outbox fails closed for missing tenants and missing or crossed namespaces', async () => {
+  const f = await fixture();
+  try {
+    await f.store.append({ ...f.a, id: 'missing-tenant', createdAt: '2026-10-01', name: 'dashboard_viewed', props: {} }, true);
+    await f.store.append({ ...f.b, id: 'valid', createdAt: '2026-10-02', name: 'dashboard_viewed', props: {} }, true);
+    await f.db.transaction(async c => {
+      // Temporarily defer constraints to exercise admission against inconsistent scope mappings.
+      await c.query('PRAGMA defer_foreign_keys = ON');
+      await c.query('DELETE FROM h1_tenants WHERE tenant_id = ?', [f.a.tenantId]);
+      for (const namespaceId of ['missing', f.a.namespaceId]) await c.query(
+        'INSERT INTO analytics_events (event_id, tenant_id, namespace_id, event_name, props, created_at) VALUES (?,?,?,?,?,?)',
+        [`invalid-${namespaceId}`, f.b.tenantId, namespaceId, 'dashboard_viewed', '{}', '2026-10-01']);
+      // An override for a different namespace must not enable the valid row when the default is off.
+      await c.query('INSERT INTO analytics_settings VALUES (?,?,?)', [f.b.tenantId, f.a.namespaceId, 1]);
+      const store = new AnalyticsStore({ transaction: work => work(c), close: async () => {} });
+      assert.deepEqual((await store.undeliveredEligible(1, true)).map(row => row.id), ['valid']);
+      assert.deepEqual(await store.undeliveredEligible(1, false), []);
+      assert.equal((await store.undelivered()).length, 4);
+      await c.query("INSERT INTO h1_tenants (tenant_id,state,version) VALUES (?, 'active', 1)", [f.a.tenantId]);
+      await c.query('DELETE FROM analytics_events WHERE event_id IN (?,?)', ['invalid-missing', `invalid-${f.a.namespaceId}`]);
+      await c.query('DELETE FROM analytics_settings WHERE tenant_id = ?', [f.b.tenantId]);
+    });
+  } finally { await f.db.close(); }
+});
+test('Issue #223: Postgres eligible selection binds the integer fallback and limit', async () => {
+  const selections = [];
+  const db = new PostgresMetadataDatabase({ async connect() { return {
+    async query(sql, values) {
+      if (sql.startsWith('SELECT')) selections.push({ sql, values });
+      return { rows: [] };
+    }, release() {},
+  }; } });
+  const store = new AnalyticsStore(db);
+  await store.undeliveredEligible(3, false); await store.undeliveredEligible(7, true);
+  assert.equal(selections.length, 2);
+  assert.equal(selections[0].sql, selections[1].sql);
+  assert.match(selections[0].sql, /COALESCE\(s.enabled, \$1\) = 1/);
+  assert.match(selections[0].sql, /LIMIT \$2/);
+  assert.deepEqual(selections.map(({ values }) => values), [[0, 3], [1, 7]]);
+});
+test('Issue #223: a full disabled backlog cannot starve enabled tenants and is delivered after re-enabling', async () => {
+  const f = await fixture(), delivered = [];
+  const analytics = new Analytics(f.store, { enabled: true, vendorKey: 'test-only', deliveryMode: 'deferred', transport: async (_url, init) => {
+    const body = JSON.parse(init.body); delivered.push([body.uuid, body.properties.distinct_id]); return { ok: true };
+  } });
+  try {
+    const blockedIds = Array.from({ length: 35 }, (_, i) => `blocked-${String(i).padStart(2, '0')}`);
+    for (const id of blockedIds) await f.store.append({ ...f.a, id, createdAt: '2026-10-01', name: 'dashboard_viewed', props: {} }, true);
+    await analytics.setEnabled(f.a, false);
+    const blocked = await f.store.undelivered(100);
+    for (const id of ['eligible-a', 'eligible-b']) await f.store.append({ ...f.b, id, createdAt: '2026-10-02', name: 'dashboard_viewed', props: {} }, true);
+    assert.equal(await analytics.drainDeferred(), 2);
+    assert.deepEqual(delivered, [['eligible-a', 'b'], ['eligible-b', 'b']]);
+    assert.deepEqual(await f.store.undelivered(100), blocked);
+    assert.equal(await analytics.drainDeferred(), 0);
+    assert.equal(delivered.length, 2); assert.equal(analytics.stats.failed, 0);
+    await analytics.setEnabled(f.a, true);
+    assert.equal(await analytics.drainDeferred(), 32);
+    assert.equal(await analytics.drainDeferred(), 3);
+    assert.deepEqual(delivered.slice(2), blockedIds.map(id => [id, 'a']));
+    assert.deepEqual(await f.store.read(f.metadata, f.a), blocked);
+    assert.deepEqual(await f.store.undelivered(100), []);
+    assert.equal(await analytics.drainDeferred(), 0); assert.equal(analytics.stats.failed, 0);
+  } finally { await analytics.close(); await f.db.close(); }
+});
+for (const state of ['provisioning', 'suspended', 'deleting', 'deleted']) {
+  test(`Issue #223: a full ${state} tenant backlog cannot starve active tenants`, async () => {
+    const f = await fixture(), delivered = [];
+    const analytics = new Analytics(f.store, { enabled: false, vendorKey: 'test-only', deliveryMode: 'deferred', transport: async (_url, init) => {
+      const body = JSON.parse(init.body); delivered.push([body.uuid, body.properties.distinct_id]); return { ok: true };
+    } });
+    try {
+      await analytics.setEnabled(f.a, true); await analytics.setEnabled(f.b, true);
+      for (let i = 0; i < 4; i++) await f.store.append({ ...f.a, id: `blocked-${i}`, createdAt: '2026-10-01', name: 'dashboard_viewed', props: {} }, false);
+      const blocked = await f.store.undelivered();
+      await f.db.transaction(c => c.query('UPDATE h1_tenants SET state = ?, tombstone = ? WHERE tenant_id = ?', [state, state === 'deleted' ? '2026-10-02' : null, f.a.tenantId]));
+      for (const id of ['eligible-a', 'eligible-b']) await f.store.append({ ...f.b, id, createdAt: '2026-10-02', name: 'dashboard_viewed', props: {} }, false);
+      assert.equal(await analytics.drainDeferred(3), 2);
+      assert.deepEqual(delivered, [['eligible-a', 'b'], ['eligible-b', 'b']]);
+      assert.deepEqual(await f.store.undelivered(), blocked);
+      assert.equal(await analytics.drainDeferred(3), 0);
+      assert.equal(delivered.length, 2); assert.equal(analytics.stats.failed, 0);
+      if (state === 'suspended') {
+        await f.db.transaction(c => c.query("UPDATE h1_tenants SET state = 'active' WHERE tenant_id = ?", [f.a.tenantId]));
+        assert.equal(await analytics.drainDeferred(3), 3); assert.equal(await analytics.drainDeferred(3), 1);
+        assert.deepEqual(delivered.slice(2), blocked.map(row => [row.id, 'a']));
+        assert.deepEqual(await f.store.undelivered(), []);
+      }
+    } finally { await analytics.close(); await f.db.close(); }
+  });
+}
+for (const change of ['disable', 'suspend']) {
+  test(`Issue #223: send-time checks suppress a tenant that changes to ${change} after selection`, async () => {
+    const f = await fixture(), delivered = [];
+    const analytics = new Analytics(f.store, { enabled: true, vendorKey: 'test-only', deliveryMode: 'deferred', transport: async (_url, init) => {
+      delivered.push(JSON.parse(init.body).uuid);
+      if (change === 'disable') await f.store.setEnabled(f.a, false);
+      else await f.db.transaction(c => c.query("UPDATE h1_tenants SET state = 'suspended' WHERE tenant_id = ?", [f.a.tenantId]));
+      return { ok: true };
+    } });
+    try {
+      for (const [scope, id] of [[f.b, 'first'], [f.a, 'second']]) await f.store.append({ ...scope, id, createdAt: '2026-10-01', name: 'dashboard_viewed', props: {} }, true);
+      assert.equal(await analytics.drainDeferred(), 1);
+      assert.deepEqual(delivered, ['first']);
+      assert.deepEqual((await f.store.undelivered()).map(row => row.id), ['second']);
+      assert.equal(analytics.stats.failed, change === 'disable' ? 0 : 1);
+      assert.equal(await analytics.drainDeferred(), 0); assert.deepEqual(delivered, ['first']);
+    } finally { await analytics.close(); await f.db.close(); }
+  });
+}
 
 async function promptly(work) {
   let timer;

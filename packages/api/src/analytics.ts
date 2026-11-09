@@ -117,7 +117,7 @@ export class Analytics {
     return this.draining ??= Promise.resolve().then(async () => {
       let delivered = 0;
       try {
-        for (const row of await this.store!.undelivered(limit)) {
+        for (const row of await this.store!.undeliveredEligible(limit, this.defaultEnabled)) {
           try {
             if (!await this.store!.enabled(row, this.defaultEnabled)) continue;
             await this.deliver(row);

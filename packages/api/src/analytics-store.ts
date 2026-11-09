@@ -77,6 +77,16 @@ export class AnalyticsStore {
     return this.db.transaction(async c => (await c.query(
       'SELECT * FROM analytics_events WHERE delivered_at IS NULL ORDER BY created_at, event_id LIMIT ?', [limit])).map(analyticsRow));
   }
+  /** Filter before limiting so blocked tenants retain their rows without starving eligible tenants. */
+  async undeliveredEligible(limit: number, fallbackEnabled: boolean): Promise<AnalyticsRow[]> {
+    if (!Number.isSafeInteger(limit) || limit < 1) throw new MetadataError('ANALYTICS_DRAIN_LIMIT_INVALID', 400);
+    return this.db.transaction(async c => (await c.query(`SELECT e.* FROM analytics_events e
+      JOIN h1_tenants t ON t.tenant_id = e.tenant_id AND t.state = 'active'
+      JOIN h1_namespaces n ON n.tenant_id = e.tenant_id AND n.namespace_id = e.namespace_id
+      LEFT JOIN analytics_settings s ON s.tenant_id = e.tenant_id AND s.namespace_id = e.namespace_id
+      WHERE e.delivered_at IS NULL AND COALESCE(s.enabled, ?) = 1
+      ORDER BY e.created_at, e.event_id LIMIT ?`, [fallbackEnabled ? 1 : 0, limit])).map(analyticsRow));
+  }
   async markDelivered(id: string): Promise<void> {
     await this.db.transaction(c => c.query('UPDATE analytics_events SET delivered_at = ? WHERE event_id = ? AND delivered_at IS NULL', [new Date().toISOString(), id]));
   }
