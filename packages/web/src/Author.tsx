@@ -23,7 +23,7 @@ import { QSidePanel } from './QSidePanel.js';
 import { BuildForMe } from './BuildForMe.js';
 import { FormattingEditor } from './FormattingEditor.js';
 import { PivotOptionsEditor } from './PivotOptionsEditor.js';
-import { CardTitle, CardStyle, CardLayout, MultiplesOptions, GroupColorOptions, BreakdownOptions, LegendOptions, DataLabelsOptions, ReferenceLinesEditor, VisualPlacement } from './PropertiesSections.js';
+import { CardTitle, CardStyle, CardLayout, MultiplesOptions, GroupColorOptions, BreakdownOptions, LegendOptions, DataLabelsOptions, ReferenceLinesEditor, ForecastEditor, VisualPlacement } from './PropertiesSections.js';
 import { cardChromeStyle, type VisualFormatting } from './formatting.js';
 import { LIGHT_THEME, themeValid, type AnalysisTheme } from './themes.js';
 import { functionCatalog } from '@opensight/query-engine/browser';
@@ -624,6 +624,7 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
     <DataLabelsOptions visual={visual} dispatch={dispatch} />
     <VisualPlacement visual={visual} draft={draft} dispatch={dispatch} />
     {['bar', 'bar100', 'line', 'area', 'combo', 'scatter'].includes(visual.kind) && <ReferenceLinesEditor visual={visual} dispatch={dispatch} />}
+    {visual.kind === 'line' && (dataFields(draft.calculatedFields, draft.dataset).find(f => f.name === visual.dimension)?.type === 'DATETIME' || visual.dateGrain !== undefined) && <ForecastEditor visual={visual} dispatch={dispatch} />}
     <PivotOptionsEditor visual={visual} dispatch={dispatch} />
     <FormattingEditor visual={visual} dispatch={dispatch} />
     {visual.imported && <div className="dataset-binding"><h3>Dataset binding</h3><p>{visual.imported.local ? 'Local sales dataset' : authorVisualProblem(visual)}</p>
