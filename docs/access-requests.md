@@ -26,6 +26,15 @@ unconfigured, capture stays pull-only — the operator list is the backstop.
 A malformed `OPENSIGHT_ACCESS_REQUEST_NOTIFY_TO` fails startup, like the
 rate-limit variable.
 
+Before anything is sent, each row is claimed atomically (#232): a
+conditional update stamps a claim token and a five-minute lease on an
+unnotified, unclaimed row, and only the claim's winner sends it. Concurrent
+submissions or maintenance calls therefore never email the operator twice
+about the same request, even through a transport that does not deduplicate.
+The send keeps its stable per-request dedupe key (#224), a failed send
+releases its claim for a prompt retry, and a claim whose sender died
+mid-send becomes claimable again when the lease lapses.
+
 ## Endpoint contract
 
 - `POST /api/access-requests` is public and accepts `application/json`, capped
@@ -79,6 +88,10 @@ the hosted handler. No deployment or AWS calls are part of this build.
 
 The table stores the submitted personal information, a random UUID, an ISO UTC
 creation timestamp, `pending` status, and a nullable `notified_at` timestamp
-(added additively by the initializer for tables created before #177). Serverless backups include the table;
+(added additively by the initializer for tables created before #177), plus
+the notification claim columns `notify_claim_token` and
+`notify_claim_expires_at` (added the same way for tables created before
+#232; both are null except while a notification send is in flight).
+Serverless backups include the table;
 restoring older backups leaves it empty. Automatic retention/deletion and a
 provisioned-status workflow are not implemented in this slice.
