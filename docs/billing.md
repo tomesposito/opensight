@@ -121,6 +121,20 @@ retry-window, cancellation and shared paused-state behavior below.
 - There is no automatic downgrade and no grace window beyond Stripe's
   retry cycle.
 
+## Scheduled work (#226)
+
+The hosted scheduler expires trials and checks billing access before admitting
+due jobs. Paused tenants create no new scheduled occurrences; their jobs stay
+enabled and due so the next tick can run them after payment restores access.
+Already queued occurrences fail with `TRIAL_EXPIRED` or
+`BILLING_ACCESS_PAUSED` before source access or `computeAttempts` admission.
+Execution rechecks and delivery checks also enforce billing, including before
+shared-digest rendering and its compute charge. A pause during work stops it at
+the next recheck; previously admitted compute is not refunded. Delivery denials
+record the billing code on the cancelled delivery without stopping the job.
+The hook is optional for compositions without hosted billing; manual enqueue
+retains its existing request gate and claim semantics.
+
 ## Scope notes
 
 - Composed on the single-node hosted server. The serverless invocation
