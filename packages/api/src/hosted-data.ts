@@ -31,6 +31,7 @@ export class HostedData {
   private readonly publicationChecks = new WeakMap<TenantContext, () => Promise<void>>();
   private readonly signals = new WeakMap<TenantContext, AbortSignal>();
   private readonly admitted = new WeakMap<TenantContext, Set<Admission>>();
+  signal(context: TenantContext): AbortSignal | undefined { return this.signals.get(context); }
   begin(context: TenantContext, signal?: AbortSignal, verify?: () => Promise<void>, beforePublication?: () => Promise<void>): void { if (verify) this.verifiers.set(context, verify); if (beforePublication) this.publicationChecks.set(context, beforePublication); this.admitted.set(context, new Set()); if (signal) this.signals.set(context, signal); }
   async publication(context: TenantContext, revisions: Revisions): Promise<void> { await this.finish(context, [...this.admitted.get(context) ?? []], revisions); }
   constructor(readonly sources: HostedSources, private readonly postgres = streamSourcePostgres, readonly budgets?: TenantBudgets, cache?: HostedCacheAdapter,

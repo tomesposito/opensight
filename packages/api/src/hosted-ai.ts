@@ -13,6 +13,7 @@ import { dashboardQuestion } from './metric-consumption.js';
 import { boundColumns } from './source-schema.js';
 import type { HostedDataRoutes } from './hosted-data-routes.js';
 import type { TenantContext } from './metadata.js';
+import { MetadataError } from './metadata-db.js';
 import type { AiMeter } from './ai-settings.js';
 
 function columns(input: readonly { name: string; type: string }[]) {
@@ -96,7 +97,8 @@ export class HostedAI {
     } else {
       const answer = path === '/api/o/plan' ? planAnswer : path === '/api/o/revise' ? reviseAnswer : (body: Record<string, unknown>, ...args: Parameters<typeof planAnswer> extends [unknown, ...infer Rest] ? Rest : never) => generateAnswer(body, calculation, ...args);
       const result = await answer(body, source, input => this.settings.complete(context, input), check,
-        (count = 1) => this.routes.data.analytics.track(context, { name: 'ask_o_asked', props: { count } }));
+        (count = 1) => this.routes.data.analytics.track(context, { name: 'ask_o_asked', props: { count } }),
+        () => { if (this.routes.data.signal(context)?.aborted) throw new MetadataError('EXECUTION_CANCELLED', 409); });
       send(response, 200, result);
     }
     return true;
