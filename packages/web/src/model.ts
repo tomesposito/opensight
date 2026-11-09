@@ -60,6 +60,9 @@ export interface VisualModel {
   tooltipExtraFields?: { id: string; label?: string; aggregation: 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COUNT' }[];
   legend: boolean;
   referenceLines?: { value: number; label: string; color: string }[];
+  /** Statistical forecast overlay (line charts with a date dimension only;
+   *  issue #235). A stored config on any other chart is ignored with a warning. */
+  forecast?: import('./forecast.js').ForecastConfig;
   sort?: { fieldId: string; direction: 'ASC' | 'DESC' };
   /** Pie slice limit (QuickSight CategoryItemsLimit): show the top N categories,
    *  rolling the rest into an "Other" bucket when includeOther. Applied per facet

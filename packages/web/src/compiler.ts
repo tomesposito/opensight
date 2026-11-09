@@ -1,6 +1,7 @@
 import { validOProvenance } from './o-provenance.js';
 import { formatMetric } from './governed-metrics.js';
-import { formatNumber } from '@opensight/query-engine/browser';
+import { formatNumber, groupedPeriodDate, shiftDate, resultDate } from '@opensight/query-engine/browser';
+import { computeForecast, forecastConfigValid, MIN_FORECAST_POINTS, type ForecastConfig } from './forecast.js';
 import { convertDefinition } from './definition-converter.js';
 import { InsightError, projectInsightBody, normalizeInsight } from './insight-configuration.js';
 import { insightNarrative, type InsightNarrative } from './insight-narrative.js';
@@ -29,6 +30,9 @@ export interface CompiledVisual {
     dimensionCount?: number; measureIndices?: number[][];
     /** Typed row-group path per row (pivot only): subtotal rows carry their prefix, the grand total carries []. */
     rowGroupPaths?: Cell[][] };
+  /** Quiet note rendered under the chart for a render-time forecast state
+   *  (issue #235): insufficient history, or a skipped seasonal fit. */
+  forecastNote?: string;
   state: 'ready' | 'empty' | 'unavailable';
 }
 
@@ -69,6 +73,44 @@ function extensionReferenceLines(value: unknown, path: string): { referenceLines
   return { referenceLines: value
     .filter(line => !!line && typeof line === 'object' && !Array.isArray(line) && typeof (line as { value?: unknown }).value === 'number' && Number.isFinite((line as { value: number }).value))
     .map(line => { const raw = line as { value: number; label?: unknown; color?: unknown }; return { value: raw.value, label: String(raw.label ?? ''), color: String(raw.color ?? '#c0392b') }; }) };
+}
+
+/** QuickSight LineChartConfiguration.ForecastConfigurations[0] → the model's
+ *  forecast config (issue #235). Fail-closed on malformed shapes, like every
+ *  other configuration gate; only the first configuration maps (the rest are
+ *  noted in warnings by the caller-visible parse result). */
+function parseForecastConfigurations(value: unknown, key: (a: string, b: string) => string, path: string): { forecast?: ForecastConfig; extra: number } {
+  if (value === undefined) return { extra: 0 };
+  if (!Array.isArray(value)) fail(path, 'expected an array');
+  if (!value.length) return { extra: 0 };
+  const raw = object(value[0], `${path}[0]`);
+  keys(raw, [key('periodsForward', 'PeriodsForward'), key('periodsBackward', 'PeriodsBackward'), key('predictionInterval', 'PredictionInterval'), key('seasonality', 'Seasonality'), key('customSeasonalityValue', 'CustomSeasonalityValue'), key('upperBoundary', 'UpperBoundary'), key('lowerBoundary', 'LowerBoundary')], `${path}[0]`);
+  const intIn = (v: unknown, fallback: number, name: string): number => {
+    if (v === undefined) return fallback;
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 100) fail(`${path}[0].${name}`, 'expected an integer between 0 and 100');
+    return v as number;
+  };
+  const intervalRaw = raw[key('predictionInterval', 'PredictionInterval')];
+  if (intervalRaw !== undefined && ![80, 90, 95].includes(intervalRaw as number)) fail(`${path}[0].${key('predictionInterval', 'PredictionInterval')}`, 'prediction interval must be 80, 90 or 95');
+  const seasonalityRaw = enumValue(raw[key('seasonality', 'Seasonality')], ['AUTOMATIC', 'NONE', 'CUSTOM'], 'AUTOMATIC', `${path}[0].${key('seasonality', 'Seasonality')}`);
+  const customRaw = raw[key('customSeasonalityValue', 'CustomSeasonalityValue')];
+  if (seasonalityRaw === 'CUSTOM' && (typeof customRaw !== 'number' || !Number.isInteger(customRaw) || customRaw < 2 || customRaw > 366)) fail(`${path}[0].${key('customSeasonalityValue', 'CustomSeasonalityValue')}`, 'a custom seasonality period between 2 and 366 is required');
+  const bound = (v: unknown, name: string): number | undefined => {
+    if (v === undefined) return undefined;
+    if (typeof v !== 'number' || !Number.isFinite(v)) fail(`${path}[0].${name}`, 'expected a finite number');
+    return v as number;
+  };
+  const forecast: ForecastConfig = {
+    enabled: true,
+    periodsForward: intIn(raw[key('periodsForward', 'PeriodsForward')], 3, key('periodsForward', 'PeriodsForward')),
+    periodsBackward: intIn(raw[key('periodsBackward', 'PeriodsBackward')], 0, key('periodsBackward', 'PeriodsBackward')),
+    predictionInterval: (intervalRaw ?? 95) as 80 | 90 | 95,
+    seasonality: seasonalityRaw === 'AUTOMATIC' ? 'auto' : seasonalityRaw === 'NONE' ? 'none' : (customRaw as number),
+    ...(bound(raw[key('lowerBoundary', 'LowerBoundary')], key('lowerBoundary', 'LowerBoundary')) !== undefined ? { lowerBoundary: bound(raw[key('lowerBoundary', 'LowerBoundary')], key('lowerBoundary', 'LowerBoundary')) } : {}),
+    ...(bound(raw[key('upperBoundary', 'UpperBoundary')], key('upperBoundary', 'UpperBoundary')) !== undefined ? { upperBoundary: bound(raw[key('upperBoundary', 'UpperBoundary')], key('upperBoundary', 'UpperBoundary')) } : {}),
+  };
+  if (!forecastConfigValid(forecast)) fail(`${path}[0]`, 'invalid forecast configuration');
+  return { forecast, extra: value.length - 1 };
 }
 
 /** OpenSight extension: per-extra-tooltip-field label and aggregation annotations. Fail-closed on malformed shape. */
@@ -222,6 +264,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const id = text(body[key('visualId', 'VisualId')], p);
   const cpath = `${p}.${key('chartConfiguration', 'ChartConfiguration')}`;
   const config = object(body[key('chartConfiguration', 'ChartConfiguration')], cpath);
+  const lineFamily = kind === 'line';
   if (kind === 'bar' && config[key('barsArrangement', 'BarsArrangement')] === 'STACKED_PERCENT') kind = 'bar100';
   if (kind === 'line' && config[key('type', 'Type')] === 'AREA') kind = 'area';
   const extra = extraKind(kind) ? EXTRA_VISUALS[kind] : undefined;
@@ -233,6 +276,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   if (kind === 'table' || kind === 'pivot') common.push(key('totalOptions', 'TotalOptions'));
   if (kind === 'table') common.push(key('opensightSubtotalOptions', 'OpenSightSubtotalOptions'));
   if (kind === 'area') common.push(key('type', 'Type'));
+  if (lineFamily) common.push(key('forecastConfigurations', 'ForecastConfigurations'));
   if (kind === 'gauge') common.push(key('opensightGauge', 'OpenSightGauge'));
   if (kind === 'histogram') common.push(key('opensightBins', 'OpenSightBins'));
   keys(config, common, cpath);
@@ -405,6 +449,16 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const multiplesKey = key('opensightMultiplesOptions', 'OpenSightMultiplesOptions');
   const multiplesOptions = FACETED_KINDS.includes(kind) && config[multiplesKey] !== undefined
     ? parseMultiplesOptions(config[multiplesKey], `${cpath}.${multiplesKey}`) : undefined;
+  // Forecast configurations (line family only; the key gate above rejects them
+  // elsewhere). A stored config stays on the model even when it cannot apply —
+  // a non-date category or an area chart — so it round-trips; rendering ignores
+  // it and the warnings below say why.
+  const forecastKey = key('forecastConfigurations', 'ForecastConfigurations');
+  const parsedForecast = lineFamily ? parseForecastConfigurations(config[forecastKey], key, `${cpath}.${forecastKey}`) : { extra: 0 } as { forecast?: ForecastConfig; extra: number };
+  const forecast = parsedForecast.forecast;
+  if (parsedForecast.extra > 0) warnings.push(`${cpath}.${forecastKey}: ${parsedForecast.extra} additional forecast configuration${parsedForecast.extra === 1 ? '' : 's'} ignored; only the first is applied.`);
+  if (forecast && kind !== 'line') warnings.push(`${cpath}.${forecastKey}: forecast configurations are not rendered for area charts; the configuration is retained but ignored.`);
+  else if (forecast && !dimensions[0]?.dateGranularity) warnings.push(`${cpath}.${forecastKey}: forecast ignored — the chart's category field is not a date dimension.`);
   const sort = object(config[key('sortConfiguration', 'SortConfiguration')] ?? {}, cpath);
   const sortsKey = key('categorySort', 'CategorySort');
   const breakdownLimitKey = key('breakdownItemsLimit', 'BreakdownItemsLimit');
@@ -478,6 +532,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     ...(breakdownLimit ? { breakdownLimit } : {}),
     ...(facet ? { facet } : {}),
     ...(breakdown ? { breakdown } : {}),
+    ...(forecast ? { forecast } : {}),
     ...(multiplesOptions ? { multiplesOptions } : {}),
     horizontal: (kind === 'bar' || kind === 'bar100') && enumValue(config[key('orientation', 'Orientation')], ['VERTICAL', 'HORIZONTAL'], 'VERTICAL', `${cpath}.${key('orientation', 'Orientation')}`) === 'HORIZONTAL',
     stacked: kind === 'bar' && enumValue(config[key('barsArrangement', 'BarsArrangement')], ['CLUSTERED', 'STACKED'], 'CLUSTERED', `${cpath}.${key('barsArrangement', 'BarsArrangement')}`) === 'STACKED',
@@ -608,6 +663,11 @@ export function compileVisual(input: Input): CompiledVisual {
   // global series index (#125). Carry an explicit mapping from each series,
   // in option.series order, to its facet rows and its measure index.
   let facetSeriesMap: { rows: Row[]; measureIndex: number }[] | undefined;
+  // Line-chart panels for the forecast post-pass (issue #235): rows per panel,
+  // the option.series indices of its measure series, and its axis index.
+  // Forecast extras are appended after every other pass so these indices and
+  // facetSeriesMap stay valid for the passes that consume them.
+  let linePanels: { rows: Row[]; measureSeries: number[]; axisIndex: number }[] | undefined;
   if (model.kind === 'insight') {
     try { narrative = insightNarrative(rows.map(row => ({ category: cell(row, model.dimensions[0]!), values: model.measures.map(f => number(row, f)) })), { category: model.dimensions[0], measures: model.measures, computations: model.insightConfiguration, formatting: model.formatting }); }
     catch (error) { if (error instanceof InsightError) fail(input.path, error.message); throw error; }
@@ -701,6 +761,7 @@ export function compileVisual(input: Input): CompiledVisual {
       option.xAxis = panels.map((panel, i) => ({ ...(model.horizontal ? panel.value : panel.category), gridIndex: i }));
       option.yAxis = panels.map((panel, i) => ({ ...(model.horizontal ? panel.category : panel.value), gridIndex: i }));
       option.series = panels.flatMap((panel, i) => panel.series.map(s => ({ ...s, xAxisIndex: i, yAxisIndex: i })));
+      if (model.kind === 'line') linePanels = shown.map((group, i) => ({ rows: group.rows, measureSeries: model.measures.map((_, mi) => i * model.measures.length + mi), axisIndex: i }));
       option.title = facetTitles(shown, opts, cols, cellH, topPad, theme, displayCell);
       facetSeriesMap = shown.flatMap(group => model.measures.map((_, measureIndex) => ({ rows: group.rows, measureIndex })));
     } else {
@@ -709,6 +770,7 @@ export function compileVisual(input: Input): CompiledVisual {
       option.xAxis = model.horizontal ? value : category;
       option.yAxis = model.horizontal ? category : value;
       option.series = series;
+      if (model.kind === 'line') linePanels = [{ rows, measureSeries: model.measures.map((_, mi) => mi), axisIndex: 0 }];
     }
     option.legend = { show: model.legend, bottom: 0 };
   } else if (model.kind === 'kpi') {
@@ -762,7 +824,93 @@ export function compileVisual(input: Input): CompiledVisual {
     const table = compilePivotTable(model, rows, cell, number, input.path);
     return { model, option, state: state === 'ready' && !table.rows.length ? 'empty' : state, table };
   }
-  return { model, option, state, ...(narrative ? { narrative } : {}), table: { columns: fields.map(f => fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
+  // Forecast post-pass (issue #235): appended extras keep every earlier index
+  // (facet map, conditional formatting, detailed tooltips) valid.
+  let forecastNote: string | undefined;
+  if (model.kind === 'line' && model.forecast?.enabled && linePanels && model.dimensions[0]?.dateGranularity && Array.isArray(option.series)) {
+    const config = model.forecast;
+    const grain = model.dimensions[0].dateGranularity;
+    const dimension = model.dimensions[0];
+    let anyApplied = false, anyInsufficient = false, anySeasonalSkipped = false, anyInapplicable = false;
+    const extras: LineSeriesOption[] = [];
+    for (const panel of linePanels) {
+      if (!panel.rows.length) continue;
+      const dates = panel.rows.map(row => groupedPeriodDate(cell(row, dimension), grain));
+      if (dates.some(d => d === null)) { anyInapplicable = true; continue; }
+      const n = panel.rows.length;
+      const axis = (Array.isArray(option.xAxis) ? option.xAxis[panel.axisIndex] : option.xAxis) as { data?: string[] } | undefined;
+      const labels = axis?.data ?? panel.rows.map(row => displayCell(cell(row, dimension)));
+      const rawLast = String(cell(panel.rows.at(-1)!, dimension));
+      const extended = [...labels];
+      for (let h = 1; h <= config.periodsForward; h++) extended.push(periodLabel(shiftPeriod(dates.at(-1)!, grain, h), grain, rawLast));
+      panel.measureSeries.forEach((seriesIndex, mi) => {
+        const parent = (option.series as LineSeriesOption[])[seriesIndex]!;
+        const measure = model.measures[mi]!;
+        const pts = panel.rows.map((row, idx) => ({ idx, v: number(row, measure) })).filter(p => p.v !== null) as { idx: number; v: number }[];
+        if (pts.length < MIN_FORECAST_POINTS) { anyInsufficient = true; return; }
+        const result = computeForecast(pts.map(p => p.v), grain, config);
+        if (!result) { anyInsufficient = true; return; }
+        if (result.seasonalSkipped) anySeasonalSkipped = true;
+        if (!config.periodsForward && !config.periodsBackward) return;
+        anyApplied = true;
+        const color = (model.palette ?? theme.palette)[seriesIndex % (model.palette ?? theme.palette).length]!;
+        const total = n + config.periodsForward;
+        const last = pts.at(-1)!;
+        type SegDatum = { value: number; forecastKind: 'fit' | 'join' | 'future'; lower?: number; upper?: number } | null;
+        const seg: SegDatum[] = new Array<SegDatum>(total).fill(null);
+        const back = Math.min(config.periodsBackward, pts.length);
+        for (let j = pts.length - back; j < pts.length; j++) {
+          const fitted = result.fitted[j];
+          if (fitted !== null && fitted !== undefined) seg[pts[j]!.idx] = { value: fitted, forecastKind: 'fit' };
+        }
+        seg[last.idx] = { value: last.v, forecastKind: 'join' };
+        result.future.forEach((point, h) => { seg[n + h] = { value: point.value, forecastKind: 'future', lower: point.lower, upper: point.upper }; });
+        const bandLower: (number | null)[] = new Array<number | null>(total).fill(null);
+        const bandDelta: (number | null)[] = new Array<number | null>(total).fill(null);
+        if (config.periodsForward) {
+          bandLower[last.idx] = last.v; bandDelta[last.idx] = 0;
+          result.future.forEach((point, h) => { bandLower[n + h] = point.lower; bandDelta[n + h] = point.upper - point.lower; });
+        }
+        const stack = `forecast-band-${panel.axisIndex}-${mi}`;
+        const axes = model.facet ? { xAxisIndex: panel.axisIndex, yAxisIndex: panel.axisIndex } : {};
+        if (config.periodsForward) extras.push(
+          { type: 'line', id: `forecast-band-lo-${panel.axisIndex}-${mi}`, name: '', stack, data: bandLower, symbol: 'none', silent: true, tooltip: { show: false }, emphasis: { disabled: true }, lineStyle: { opacity: 0 }, itemStyle: { color }, ...axes } as LineSeriesOption,
+          { type: 'line', id: `forecast-band-hi-${panel.axisIndex}-${mi}`, name: '', stack, data: bandDelta, symbol: 'none', silent: true, tooltip: { show: false }, emphasis: { disabled: true }, lineStyle: { opacity: 0 }, itemStyle: { color }, areaStyle: { color, opacity: 0.16 }, ...axes } as LineSeriesOption,
+        );
+        extras.push({
+          type: 'line', id: `forecast-seg-${panel.axisIndex}-${mi}`, name: parent.name as string, data: seg, connectNulls: false, symbolSize: 6,
+          lineStyle: { type: 'dashed', color }, itemStyle: { color }, label: { show: false },
+          ...(mi === 0 && config.periodsForward ? { markLine: { silent: true, symbol: 'none', label: { show: false }, lineStyle: { type: 'solid' as const, width: 1, color: '#98a4ab' }, data: [{ xAxis: n - 1 }] } } : {}),
+          ...axes,
+        } as LineSeriesOption);
+      });
+      if (axis && extended.length !== labels.length) axis.data = extended;
+    }
+    if (extras.length) option.series = [...option.series, ...extras];
+    if (anyInapplicable) model.warnings.push(`${input.path}: forecast was not rendered because the category values are not dates at the chart grain.`);
+    if (!anyApplied && anyInsufficient) forecastNote = 'Not enough history to forecast — showing actuals. A forecast needs at least 4 data points.';
+    else if (anySeasonalSkipped) forecastNote = 'Seasonality was skipped: a seasonal forecast needs at least 2 full cycles of history. Showing a trend forecast instead.';
+    if (anyApplied && model.tooltip && option.tooltip && !Array.isArray(option.tooltip) && !(option.tooltip as { formatter?: unknown }).formatter) {
+      (option.tooltip as { formatter?: unknown }).formatter = (params: unknown) => {
+        const list = (Array.isArray(params) ? params : [params]) as { seriesId?: string; seriesName?: string; value?: unknown; data?: unknown; axisValue?: unknown }[];
+        const fmt = (v: number): string => formatNumber(Math.round(v * 100) / 100);
+        const lines: string[] = [];
+        for (const p of list) {
+          if (p.seriesId?.startsWith('forecast-band')) continue;
+          if (!lines.length && p.axisValue !== undefined) lines.push(richTextEscape(String(p.axisValue)));
+          const d = p.data as { forecastKind?: string; lower?: number; upper?: number } | null;
+          const v = typeof p.value === 'number' ? p.value : null;
+          if (v === null) continue;
+          if (d?.forecastKind === 'future') lines.push(`${richTextEscape(p.seriesName ?? '')} (Forecast): ${fmt(v)} · ${config.predictionInterval}% interval ${fmt(d.lower!)}–${fmt(d.upper!)}`);
+          else if (d?.forecastKind === 'fit') lines.push(`${richTextEscape(p.seriesName ?? '')} (Forecast fit): ${fmt(v)}`);
+          else if (d?.forecastKind === 'join') continue;
+          else lines.push(`${richTextEscape(p.seriesName ?? '')}: ${fmt(v)}`);
+        }
+        return lines.join('\n');
+      };
+    }
+  }
+  return { model, option, state, ...(forecastNote ? { forecastNote } : {}), ...(narrative ? { narrative } : {}), table: { columns: fields.map(f => fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
     ...(model.formatting ? { visibleColumns: fields.map(f => (model.measures.includes(f) ? model.formatting?.valueNamesVisible : model.formatting?.rowNamesVisible) === false ? '' : fieldName(f, model.formatting)) } : {}),
   } };
 }
@@ -827,6 +975,22 @@ function detailedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: R
 
 export function displayCell(value: Cell): string {
   return value === null ? '(null)' : typeof value === 'number' ? formatNumber(value) : String(value);
+}
+
+/** Step a period-start date by whole grain units (forecast axis extension). */
+function shiftPeriod(date: Date, grain: 'DAY' | 'MONTH' | 'QUARTER' | 'YEAR', steps: number): Date {
+  return resultDate(shiftDate(date.toISOString(), steps, { DAY: 'DD', MONTH: 'MM', QUARTER: 'Q', YEAR: 'YYYY' }[grain]));
+}
+
+/** Format a future period in the same shape as the axis' existing labels:
+ *  period strings stay period strings; full ISO timestamps stay ISO. */
+function periodLabel(date: Date, grain: 'DAY' | 'MONTH' | 'QUARTER' | 'YEAR', rawLast: string): string {
+  if (/^\d{4}-\d{2}-\d{2}T/.test(rawLast)) return date.toISOString();
+  const iso = date.toISOString();
+  if (grain === 'YEAR') return iso.slice(0, 4);
+  if (grain === 'MONTH') return iso.slice(0, 7);
+  if (grain === 'QUARTER') return `${iso.slice(0, 4)}-Q${Math.floor(Number(iso.slice(5, 7)) / 3) + 1}`;
+  return iso.slice(0, 10);
 }
 
 interface AxisEntry { cells: Cell[]; kind: 'detail' | 'subtotal' | 'total' }
