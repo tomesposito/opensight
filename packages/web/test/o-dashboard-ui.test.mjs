@@ -125,6 +125,26 @@ test('#196 unstamped and stale governed metric seeds cannot replace', async t =>
   assert.match(JSON.stringify(g.renderer.toJSON()), /METRIC_STALE/); assert.equal(g.calls.length, 0); assert.equal(button(g.renderer, 'Replace'), undefined); assert.equal(JSON.stringify(stale), before);
 });
 
+test('#228 manually edited tiles cannot be conversationally revised over their edits', async t => {
+  // A filter added through the normal editor diverges from the Ask O stamp:
+  // revision must refuse before any AI call (no credit spent), with no Replace.
+  const filtered = stamped(); activeSheet(filtered).visuals[0].filters = [{ columnName: 'region', values: ['West'] }];
+  const f = await mount(t, { draft: filtered }), fBefore = JSON.stringify(filtered); await toggle(f);
+  await act(() => f.renderer.root.findByProps({ 'aria-label': 'Tile follow-up' }).props.onChange({ target: { value: 'make it monthly' } }));
+  await act(() => f.renderer.root.findByType(ORevision).findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.match(JSON.stringify(f.renderer.toJSON()), /VISUAL_EDITED/); assert.equal(f.calls.length, 0); assert.equal(button(f.renderer, 'Replace'), undefined); assert.equal(JSON.stringify(filtered), fBefore);
+  // A field-well edit (measure swapped) diverges the same way.
+  const remeasured = stamped(); activeSheet(remeasured).visuals[0].measures = ['discount'];
+  const g = await mount(t, { draft: remeasured }), gBefore = JSON.stringify(remeasured); await toggle(g);
+  await act(() => g.renderer.root.findByProps({ 'aria-label': 'Tile follow-up' }).props.onChange({ target: { value: 'make it monthly' } }));
+  await act(() => g.renderer.root.findByType(ORevision).findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.match(JSON.stringify(g.renderer.toJSON()), /VISUAL_EDITED/); assert.equal(g.calls.length, 0); assert.equal(button(g.renderer, 'Replace'), undefined); assert.equal(JSON.stringify(remeasured), gBefore);
+  // An untouched stamped tile still revises normally (no false positive).
+  const clean = await mount(t, { draft: stamped() }); await toggle(clean);
+  await act(() => clean.renderer.root.findByProps({ 'aria-label': 'Tile follow-up' }).props.onChange({ target: { value: 'monthly' } }));
+  await act(() => clean.renderer.root.findByType(ORevision).findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.equal(clean.calls.length, 1); assert.ok(button(clean.renderer, 'Replace'));
+});
 test('#196 new-route 404 fails closed as not configured without a local planner', async () => {
   const { createApiClient } = await import('../build/test/api-client.js');
   const client = createApiClient('/', async () => Response.json({ Message: 'Missing route' }, { status: 404 }));

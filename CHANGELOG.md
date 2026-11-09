@@ -172,6 +172,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Ask O conversational revision no longer silently overwrites manual edits: if a stamped tile's filters or field assignments were changed with the normal editors after Ask O created it, revision is blocked with a VISUAL_EDITED explanation before any AI call or credit, instead of replacing the tile from the older interpretation (#228).
+
 - Stripe payment-link and checkout retries now reuse durable operations and idempotency keys; concurrent requests share one result, payment links remain reusable, and checkout reservations expire 24 hours after result persistence (#227).
 
 - Hosted scheduled jobs now honor trial expiry and billing pauses before admission, execution and delivery rendering, avoiding compute charges for work denied by billing and preserving schedules for when access is restored (#226).

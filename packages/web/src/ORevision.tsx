@@ -3,20 +3,35 @@ import type { Interpretation } from '@opensight/o-interpreter';
 import type { AuthorAction, AuthorDraft, AuthorVisual } from './authoring.js';
 import type { QueryClient } from './author-query.js';
 import type { useAI } from './access.js';
-import { prepareOVisual } from './o-authoring.js';
+import { prepareOVisual, type PreparedOVisual } from './o-authoring.js';
 import { editOInterpretation } from './o-dashboard.js';
 import { LiveAuthorVisual } from './LiveAuthorVisual.js';
 import { OSteps } from './OSteps.js';
 import { ApiError } from './api-client.js';
 export const UNSTAMPED_O_MESSAGE = "This visual wasn't created by Ask O, so O can't revise it conversationally. You can edit it with the normal editors, or ask a new question and add a fresh tile.";
+export const DIVERGED_O_MESSAGE = 'VISUAL_EDITED: This tile was edited with the normal editors after Ask O created it. A conversational revision starts from the original Ask O interpretation and would silently replace those edits, so it is blocked. Ask a new question for a fresh tile, or undo the manual edits first.';
+/** The analytical fields an `o-replace` overwrites from the proposal. Manual
+ * edits to exactly these fields are what a revision would silently discard,
+ * so the seed check compares them against a fresh prepare of the stamp. */
+function analyticalShape(visual: AuthorVisual): string {
+  return JSON.stringify({
+    kind: visual.kind, dimension: visual.dimension ?? null,
+    rows: visual.rows ?? [], columns: visual.columns ?? [], measures: visual.measures ?? [],
+    dateGrain: visual.dateGrain ?? null, donut: visual.donut ?? false,
+    filters: (visual.filters ?? []).map(f => ({ columnName: f.columnName, values: [...f.values].sort(), parameterName: f.parameterName ?? null, operator: f.operator ?? null }))
+      .sort((a, b) => a.columnName < b.columnName ? -1 : a.columnName > b.columnName ? 1 : 0),
+  });
+}
 export function revisionSeedProblem(visual: AuthorVisual, draft: AuthorDraft): string | undefined {
   if (!visual.o) return UNSTAMPED_O_MESSAGE;
   for (const used of visual.o.interpretation.grounding.metricsUsed ?? []) {
     const current = draft.dataset?.metrics?.find(m => m.id === used.id);
     if (!current || current.version !== used.version || current.name !== used.name) return 'METRIC_STALE: The governed metric behind this tile changed. Ask a new question using the current metric.';
   }
-  try { prepareOVisual(visual.o.interpretation, draft.calculatedFields, draft.dataset); }
+  let prepared: PreparedOVisual;
+  try { prepared = prepareOVisual(visual.o.interpretation, draft.calculatedFields, draft.dataset); }
   catch (e) { return e instanceof Error ? e.message : String(e); }
+  if (analyticalShape(prepared.visual) !== analyticalShape(visual)) return DIVERGED_O_MESSAGE;
 }
 export function ORevision({ visual, draft, dispatch, client, ai, onPreview, onUnavailable }: { visual: AuthorVisual; draft: AuthorDraft; dispatch: Dispatch<AuthorAction>; client?: QueryClient; ai: ReturnType<typeof useAI>; onPreview?: (id?: string) => void; onUnavailable: () => void }) {
   const [question, setQuestion] = useState(''), [proposal, setProposal] = useState<Interpretation>(), [error, setError] = useState(''), [pending, setPending] = useState(false);
