@@ -188,7 +188,7 @@ export class HostedUsage {
     for (const scope of await this.billingScopes(tenantId)) records.push(await this.monthlyUsage(scope, period));
     return records;
   }
-  /** Current enforcement view: API/queries are daily caps, NLQ is monthly, storage a live gauge.
+  /** Current enforcement view: API/queries and NLQ are monthly caps, storage a live gauge.
    * Keep the durable monthly billing records unchanged; never present an unrolled snapshot as live usage. */
   async operatorOverview(tenantId: string, period: string) {
     const day = new Date(this.clock()).toISOString().slice(0, 10);
@@ -198,11 +198,9 @@ export class HostedUsage {
     const quotas = this.entitlement(scope);
     return this.db.transaction(async c => {
       await this.billingScope(c, scope);
-      const rows = await c.query('SELECT metric, admitted FROM h8_usage WHERE tenant_id = ? AND namespace_id = ? AND period = ?', [scope.tenantId, scope.namespaceId, day]);
-      const count = (metric: string) => usageInteger(rows.find(row => row.metric === metric)?.admitted ?? 0);
-      return { day, period, apiCalls: count('apiCalls'), queries: count('computeAttempts'), storageBytes: await this.storageBytes(c, scope),
+      return { day, period, apiCalls: await this.monthlyAdmitted(c, scope, period, 'apiCalls'), queries: await this.monthlyAdmitted(c, scope, period, 'computeAttempts'), storageBytes: await this.storageBytes(c, scope),
         nlq: await this.monthlyAiCalls(c, scope, period), quotas: { apiCalls: quotas.apiCalls, queries: quotas.computeAttempts, storageBytes: quotas.storageBytes, nlq: quotas.aiCallsPerMonth ?? null } };
-    });
+    }).catch((error: unknown) => { if (error instanceof MetadataError) throw error; throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503); });
   }
   /** Operator-triggered refresh; each scope commits independently and is safe to retry. */
   async rollupMonthlyUsageForPeriod(month: string, tenantId?: string): Promise<MonthlyUsage[]> {
@@ -235,6 +233,18 @@ export class HostedUsage {
     // stream so the tenant role cannot alter private entitlement counters.
     await appendMetadataEvent(c, scope, `usage.storage.bytes:${bytes}`);
   }
+  /** Monthly admission totals from the daily ledger, validating every counter. */
+  private async monthlyAdmitted(c: SqlConnection, scope: Scope, month: string, metric: 'apiCalls' | 'computeAttempts'): Promise<number> {
+    const rows = await c.query(`SELECT admitted, denied FROM h8_usage
+      WHERE tenant_id = ? AND namespace_id = ? AND period >= ? AND period <= ? AND metric = ?`,
+    [scope.tenantId, scope.namespaceId, `${month}-01`, `${month}-31`, metric]);
+    let total = 0;
+    for (const row of rows) {
+      usageInteger(row.denied);
+      total = usageInteger(total + usageInteger(row.admitted));
+    }
+    return total;
+  }
   async consume(metadata: TenantMetadata, context: TenantContext, metric: 'apiCalls' | 'computeAttempts'): Promise<void> {
     metadata.assertContext(context);
     await metadata.revisions(context);
@@ -246,10 +256,10 @@ export class HostedUsage {
       if (Number(r?.authorization) !== context.authorizationRevision) throw new MetadataError('AUTHORIZATION_REVISED', 403);
       const args = [context.tenantId, context.namespaceId, period, metric];
       await c.query('INSERT INTO h8_usage VALUES (?,?,?,?,0,0) ON CONFLICT (tenant_id, namespace_id, period, metric) DO NOTHING', args);
-      const row = (await c.query('SELECT admitted FROM h8_usage WHERE tenant_id = ? AND namespace_id = ? AND period = ? AND metric = ?', args))[0]!;
-      const admitted = Number(row.admitted);
-      if (!Number.isSafeInteger(admitted) || admitted < 0) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+      const admitted = await this.monthlyAdmitted(c, context, period.slice(0, 7), metric);
       const denied = admitted >= limit[metric];
+      const row = (await c.query('SELECT admitted, denied FROM h8_usage WHERE tenant_id = ? AND namespace_id = ? AND period = ? AND metric = ?', args))[0]!;
+      usageInteger(usageInteger(denied ? row.denied : row.admitted) + 1);
       await c.query(`UPDATE h8_usage SET ${denied ? 'denied = denied + 1' : 'admitted = admitted + 1'} WHERE tenant_id = ? AND namespace_id = ? AND period = ? AND metric = ?`, args);
       await c.query('INSERT INTO h8_usage_events VALUES (?,?,?,?,?,?,?,?)', [randomUUID(), context.tenantId, context.namespaceId, now, metric, metric === 'apiCalls' ? 'call' : 'attempt', 1, denied ? 'denied' : 'admitted']);
       return denied;

@@ -129,6 +129,18 @@ test('192 C: detail shows inline usage and billing, link generation keeps tier, 
   await click(button(ui, 'Disconnect')); assert.equal(ui.root.findAllByType('progress').length, 0); assert.doesNotMatch(ui.text(), /Workspace Admin/);
 });
 
+test('225: tenant usage labels API calls, queries and NLQ with the UTC month and storage as current', async t => {
+  const ui = await mount(t, OperatorTenant, detailHandler(), { tenantId: 'tenant-one' });
+  await connect(ui);
+  const strip = ui.root.findByProps({ 'aria-label': 'Tenant usage' });
+  assert.deepEqual(strip.findAllByType('small').map(node => node.children.join('')), [
+    'API calls · 2026-11', 'Queries · 2026-11', 'Storage · Current', 'NLQ · 2026-11',
+  ]);
+  assert.deepEqual(strip.findAllByType('progress').map(node => [node.props.value, node.props.max]), [[8, 100], [2, 10], [512, 1024], [3, 20]]);
+  assert.match(ui.text(), /API calls, queries and NLQ use quotas for the current UTC month/);
+  assert.doesNotMatch(ui.text(), /daily UTC quotas/);
+});
+
 test('197: billing 404 removes controls; paused resolutions exclude drop-to-Free', async t => {
   const missing = await mount(t, OperatorTenant, detailHandler({ billing: null }), { tenantId: 'tenant-one' }); await connect(missing);
   assert.equal(missing.root.findAllByType('button').some(b => b.children.join('').includes('Generate payment link')), false);
