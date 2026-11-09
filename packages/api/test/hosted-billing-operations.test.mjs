@@ -234,3 +234,62 @@ test('227 checkout: tenant isolation and existing validation/subscription errors
   }
   await assert.rejects(f.billing.createPaymentLink('tenant-one', 'light'), { code: 'TENANT_UNAVAILABLE', status: 403 });
 });
+
+test('227 checkout: timeout reconciliation freezes key, price, origin and tier, then starts the reuse window', async t => {
+  const f = await fixture(t), create = f.stripe.createCheckoutSession;
+  let fail = true;
+  f.stripe.createCheckoutSession = async input => {
+    const result = await create(input);
+    if (fail) { fail = false; throw new MetadataError('STRIPE_REQUEST_FAILED', 502); }
+    return result;
+  };
+  await assert.rejects(f.billing.createCheckoutSession('tenant-one', 'light'), { code: 'STRIPE_REQUEST_FAILED', status: 502 });
+  const reserved = (await operations(f.db))[0]; assert.equal(reserved.status, 'failed');
+  assert.equal((await creationAudits(f.db, 'billing.checkout.created')).length, 0);
+  f.advance(CHECKOUT_REUSE_MS - 1);
+  const retry = f.makeBilling({ origin: 'https://changed.example' }, { ...config, priceIds: { ...config.priceIds, light: 'price_changed' } });
+  const reconciled = await retry.createCheckoutSession('tenant-one', 'heavy');
+  assert.deepEqual(f.calls[0], f.calls[1]); assert.equal(f.objects.size, 1);
+  assert.deepEqual(reconciled, f.objects.get(reserved.idempotency_key));
+  f.advance(CHECKOUT_REUSE_MS - 1);
+  assert.deepEqual(await retry.createCheckoutSession('tenant-one', 'regular'), reconciled);
+  assert.equal(f.calls.length, 2);
+  assert.equal((await creationAudits(f.db, 'billing.checkout.created')).length, 1);
+  f.advance(1);
+  assert.notEqual((await retry.createCheckoutSession('tenant-one', 'regular')).id, reconciled.id);
+  assert.notEqual(f.calls[2].idempotencyKey, reserved.idempotency_key);
+});
+
+test('227 checkout: stale pending reservation survives process loss before POST and resumes with the original key', async t => {
+  const f = await fixture(t); let transactions = 0;
+  const db = { dialect: 'sqlite', close: async () => {}, transaction: work => {
+    if (++transactions === 2) throw new Error('simulated process loss after reservation');
+    return f.db.transaction(work);
+  } };
+  const billing = new HostedBilling(db, config, { stripe: f.stripe, clock: f.now, origin });
+  await assert.rejects(billing.createCheckoutSession('tenant-one', 'light'), /simulated process loss/);
+  const reserved = (await operations(f.db))[0]; assert.equal(reserved.status, 'pending'); assert.equal(f.calls.length, 0);
+  f.advance(3 * CHECKOUT_REUSE_MS);
+  const result = await f.makeBilling().createCheckoutSession('tenant-one', 'light');
+  assert.equal(f.calls[0].idempotencyKey, reserved.idempotency_key); assert.equal(f.calls.length, 1);
+  assert.equal((await operations(f.db)).length, 1);
+  assert.deepEqual(await f.billing.createCheckoutSession('tenant-one', 'heavy'), result);
+  assert.equal((await creationAudits(f.db, 'billing.checkout.created')).length, 1);
+});
+
+test('227 checkout: webhook binding between reservation and execution prevents the Stripe POST', async t => {
+  const f = await fixture(t); let reserve = true;
+  const db = { dialect: 'sqlite', close: async () => {}, transaction: async work => {
+    const result = await f.db.transaction(work);
+    if (reserve) {
+      reserve = false;
+      await f.billing.handleEvent({ id: 'evt_between_transactions', created: 1, type: 'checkout.session.completed', object: {
+        subscription: 'sub_bound', customer: 'cus_bound', metadata: { tenant_id: 'tenant-one', tier: 'light' }, payment_status: 'paid',
+      } });
+    }
+    return result;
+  } };
+  const billing = new HostedBilling(db, config, { stripe: f.stripe, clock: f.now, origin });
+  await assert.rejects(billing.createCheckoutSession('tenant-one', 'light'), { code: 'BILLING_SUBSCRIPTION_EXISTS', status: 409 });
+  assert.equal(f.calls.length, 0); assert.equal((await operations(f.db))[0].status, 'pending');
+});
