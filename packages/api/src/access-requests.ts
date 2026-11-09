@@ -102,24 +102,28 @@ export async function notifyAccessRequests(db: Database, mail: MailTransport, to
   const nowIso = new Date(now).toISOString();
   const claimToken = randomUUID();
   const claimExpiresAt = new Date(now + ACCESS_REQUEST_NOTIFY_CLAIM_MS).toISOString();
-  const claimed = await db.transaction(async c => {
-    const candidates = await c.query(
+  // Rows are claimed one at a time, immediately before their send: claiming
+  // a whole batch up front would leave its later rows claimed (and skipped
+  // by other senders) when the batch stops at an early failure.
+  const claimNext = () => db.transaction(async c => {
+    const [candidate] = await c.query(
       `SELECT * FROM h8_access_requests WHERE notified_at IS NULL
         AND (notify_claim_expires_at IS NULL OR notify_claim_expires_at <= ?)
-        ORDER BY created_at ASC, id ASC LIMIT ?`, [nowIso, limit]);
-    const won: typeof candidates = [];
-    for (const row of candidates) {
-      const taken = await c.query(
-        `UPDATE h8_access_requests SET notify_claim_token = ?, notify_claim_expires_at = ?
-          WHERE id = ? AND notified_at IS NULL
-            AND (notify_claim_expires_at IS NULL OR notify_claim_expires_at <= ?) RETURNING id`,
-        [claimToken, claimExpiresAt, String(row.id), nowIso]);
-      if (taken.length) won.push(row);
-    }
-    return won;
+        ORDER BY created_at ASC, id ASC LIMIT 1`, [nowIso]);
+    if (!candidate) return null;
+    const taken = await c.query(
+      `UPDATE h8_access_requests SET notify_claim_token = ?, notify_claim_expires_at = ?
+        WHERE id = ? AND notified_at IS NULL
+          AND (notify_claim_expires_at IS NULL OR notify_claim_expires_at <= ?) RETURNING id`,
+      [claimToken, claimExpiresAt, String(candidate.id), nowIso]);
+    return taken.length ? candidate : 'lost';
   });
   let sent = 0;
-  for (const row of claimed) {
+  for (let processed = 0, races = 0; processed < limit;) {
+    const row = await claimNext();
+    if (row === null) break;
+    if (row === 'lost') { if (++races > 100) break; continue; }
+    processed++;
     const subjectName = String(row.name).replace(/[\x00-\x1f\x7f]+/g, ' ').trim();
     const lines = [
       `<p><strong>${escapeHtml(String(row.name))}</strong> (${escapeHtml(String(row.email))}) requested hosted OpenSight access.</p>`,
