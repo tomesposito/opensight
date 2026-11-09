@@ -172,6 +172,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Access-request operator notifications are now claimed atomically before sending, so concurrent submissions or maintenance calls can no longer email the operator twice about the same request; a claim whose sender died mid-send is recovered when its five-minute lease lapses (#232).
+
 - Digest audience resolution no longer clones the whole workspace catalog once per recipient: metric authorization for previews and scheduled deliveries now uses a targeted read of the principal, groups, metric, dataset and folder chain, with identical errors and grant semantics (#231).
 
 - Hosted Ask O checks cancellation before charging and preserves validated answers with optional Idempotency-Key receipts, allowing retries after response loss without another generation or charge (#229).
