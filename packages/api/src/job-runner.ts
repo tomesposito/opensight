@@ -1,4 +1,4 @@
-import { occurrenceTime, deliveryKey, deliveryRecipients } from './digest-delivery.js';
+import { occurrenceTime, deliveryKey, deliveryRecipients, isRetryableDeliveryError, MAX_DELIVERY_ATTEMPTS } from './digest-delivery.js';
 import { checksum } from './metadata-operator.js';
 import { MetadataError } from './metadata-db.js';
 import { MailError, type MailMessage, type MailTransport } from './mail.js';
@@ -11,7 +11,9 @@ const errorCode = (error: unknown) => error instanceof Error && 'code' in error 
 // Delivery is at-least-once (HQ-13): transient load outcomes — budget
 // pressure, queue waits and execution-budget cancellations under load —
 // retry with backoff instead of cancelling the delivery for good (#199).
-const retryable = (code: string) => ['SMTP_SEND_FAILED', 'SMTP_NOT_CONFIGURED', 'WORKER_EXECUTION_FAILED', 'TENANT_BUDGET_EXCEEDED', 'NODE_BUDGET_EXCEEDED', 'EXECUTION_CANCELLED', 'QUEUE_WAIT_EXCEEDED'].includes(code);
+// The sequence is bounded (#233): at MAX_DELIVERY_ATTEMPTS the delivery
+// dead-letters instead of rescheduling, so its occurrence can settle.
+const retryable = isRetryableDeliveryError;
 /** One scheduler only. Database records make restart durable, not multi-node safe. */
 export class JobRunner {
   private pending?: Promise<void>;
@@ -184,15 +186,19 @@ export class JobRunner {
         // A receipt-store failure after acceptance must leave the durable claim
         // recoverable. Do not turn an ambiguous external effect into a failure.
         if (accepted) throw error;
-        const code = errorCode(error), retry = retryable(code), delay = Math.min(3600000, 1000 * 2 ** Math.min(12, Number(d.attempts)));
+        const code = errorCode(error), retry = retryable(code);
+        // d.attempts counts attempts before the claim that ran this one.
+        const exhausted = retry && Number(d.attempts) + 1 >= MAX_DELIVERY_ATTEMPTS;
+        const state = !retry ? 'cancelled' : exhausted ? 'dead' : 'pending';
+        const delay = Math.min(3600000, 1000 * 2 ** Math.min(12, Number(d.attempts)));
         await this.store.db.transaction(c => c.query(`UPDATE h7_deliveries SET state = ?, error_code = ?, next_attempt = ?, message = CASE WHEN ? = 1 THEN message ELSE NULL END WHERE ${scoped} AND delivery_id = ? AND state IN ('pending','sending')`,
-          [retry ? 'pending' : 'cancelled', code, new Date(this.store.clock().getTime() + delay).toISOString(), retry ? 1 : 0, ...scopeArgs(run), id]));
+          [state, code, new Date(this.store.clock().getTime() + delay).toISOString(), state === 'pending' ? 1 : 0, ...scopeArgs(run), id]));
       }
       await this.store.db.transaction(async c => {
         const rows = await c.query(`SELECT state FROM h7_deliveries WHERE ${scoped} AND occurrence_id = ?`, [...scopeArgs(run), run.id]);
         if (rows.some(r => ['pending', 'sending'].includes(String(r.state)))) return;
-        const failed = rows.some(r => r.state !== 'sent');
-        await c.query(`UPDATE h7_occurrences SET state = ?, error_code = ?, finished_at = ? WHERE ${scoped} AND occurrence_id = ? AND state = 'delivering'`, [failed ? 'failed' : 'succeeded', failed ? 'JOB_DELIVERY_CANCELLED' : null, this.store.clock().toISOString(), ...scopeArgs(run), run.id]);
+        const failed = rows.some(r => r.state !== 'sent'), dead = rows.some(r => r.state === 'dead');
+        await c.query(`UPDATE h7_occurrences SET state = ?, error_code = ?, finished_at = ? WHERE ${scoped} AND occurrence_id = ? AND state = 'delivering'`, [failed ? 'failed' : 'succeeded', failed ? dead ? 'JOB_DELIVERY_EXHAUSTED' : 'JOB_DELIVERY_CANCELLED' : null, this.store.clock().toISOString(), ...scopeArgs(run), run.id]);
       });
     }
   }

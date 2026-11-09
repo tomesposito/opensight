@@ -1,0 +1,72 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { JobRunner } from '../dist/job-runner.js';
+import { MailError, StubMailTransport } from '../dist/mail.js';
+import { MAX_DELIVERY_ATTEMPTS } from '../dist/digest-delivery.js';
+import { jobFixture, executor, report } from './job-helpers.mjs';
+
+const failingMail = () => { const mail = new StubMailTransport(); mail.send = async () => { throw new MailError('SMTP_SEND_FAILED'); }; return mail; };
+/** One attempt per tick; the advance keeps every backoff (capped at 1h) due. */
+const attemptTicks = async (f, runner, n) => { for (let i = 0; i < n; i++) { await runner.tick(); f.advance(3700000); } };
+
+test('H7 a retryable delivery dead-letters at the attempt cap and its occurrence settles exhausted', async t => {
+  const f = await jobFixture(t, executor(), failingMail()); await f.put('job');
+  const c = await f.login(), run = await f.store.enqueue(c, 'job');
+  await attemptTicks(f, f.runner, MAX_DELIVERY_ATTEMPTS - 1);
+  let delivery = (await f.store.deliveries(c, 'job'))[0];
+  assert.equal(delivery.state, 'pending'); assert.equal(delivery.attempts, MAX_DELIVERY_ATTEMPTS - 1);
+  assert.equal((await f.store.history(c, 'job'))[0].state, 'delivering');
+  await attemptTicks(f, f.runner, 1);
+  delivery = (await f.store.deliveries(c, 'job'))[0];
+  assert.equal(delivery.state, 'dead'); assert.equal(delivery.attempts, MAX_DELIVERY_ATTEMPTS);
+  assert.equal(delivery.error_code, 'SMTP_SEND_FAILED');
+  const history = await f.store.history(c, 'job');
+  assert.equal(history.length, 1); assert.equal(history[0].id, run.id);
+  assert.equal(history[0].state, 'failed'); assert.equal(history[0].errorCode, 'JOB_DELIVERY_EXHAUSTED');
+});
+
+test('H7 after dead-lettering, claim admits the next period as a new occurrence', async t => {
+  const f = await jobFixture(t, executor(), failingMail()); await f.put('job');
+  const c = await f.login(), first = await f.store.enqueue(c, 'job');
+  await attemptTicks(f, f.runner, MAX_DELIVERY_ATTEMPTS);
+  assert.equal((await f.store.deliveries(c, 'job'))[0].state, 'dead');
+  const second = await f.store.enqueue(c, 'job');
+  assert.notEqual(second.id, first.id); assert.equal(second.state, 'queued');
+  await f.runner.tick();
+  const deliveries = await f.store.deliveries(c, 'job');
+  assert.equal(deliveries.length, 2);
+  const current = deliveries.find(d => d.occurrence_id === second.id);
+  assert.equal(current.state, 'pending'); assert.equal(current.attempts, 1);
+  assert.equal((await f.store.history(c, 'job')).length, 2);
+});
+
+test('H7 restart recovery never resurrects a dead delivery and a recovered sending delivery at the cap dead-letters on its next failure', async t => {
+  let sends = 0; const mail = new StubMailTransport();
+  mail.send = async () => { sends++; throw new MailError('SMTP_SEND_FAILED'); };
+  const f = await jobFixture(t, executor(), mail); await f.put('job');
+  const c = await f.login(), run = await f.store.enqueue(c, 'job'); await f.runner.execute(run);
+  await f.db.transaction(c => c.query("UPDATE h7_deliveries SET state = 'sending', attempts = ? WHERE job_id = 'job'", [MAX_DELIVERY_ATTEMPTS - 1]));
+  const restarted = new JobRunner(f.store, f.executor, mail); await restarted.recover();
+  assert.equal((await f.store.deliveries(c, 'job'))[0].state, 'pending');
+  await restarted.deliver(); assert.equal(sends, 1);
+  const delivery = (await f.store.deliveries(c, 'job'))[0];
+  assert.equal(delivery.state, 'dead'); assert.equal(delivery.attempts, MAX_DELIVERY_ATTEMPTS);
+  await restarted.recover(); await restarted.deliver(); assert.equal(sends, 1);
+  assert.equal((await f.store.deliveries(c, 'job'))[0].state, 'dead');
+});
+
+test('H7 mixed outcomes settle by the worst terminal state: dead beats cancelled beats sent', async t => {
+  const two = { ...report, recipients: ['admin', 'other'] };
+  for (const [code, expected] of [['SMTP_SEND_FAILED', 'JOB_DELIVERY_EXHAUSTED'], ['SMTP_SEND_INVALID', 'JOB_DELIVERY_CANCELLED']]) {
+    const mail = new StubMailTransport(), original = mail.send.bind(mail);
+    mail.send = async (message, ...rest) => { if (message.to?.includes('one-other@example.test')) throw new MailError(code); return original(message, ...rest); };
+    const f = await jobFixture(t, executor(), mail); await f.put('job', two);
+    const c = await f.login(); await f.store.enqueue(c, 'job');
+    await attemptTicks(f, f.runner, MAX_DELIVERY_ATTEMPTS);
+    const deliveries = await f.store.deliveries(c, 'job');
+    assert.equal(deliveries.find(d => d.recipient_id === 'admin').state, 'sent');
+    assert.equal(deliveries.find(d => d.recipient_id === 'other').state, expected === 'JOB_DELIVERY_EXHAUSTED' ? 'dead' : 'cancelled');
+    const history = await f.store.history(c, 'job');
+    assert.equal(history[0].state, 'failed'); assert.equal(history[0].errorCode, expected);
+  }
+});
