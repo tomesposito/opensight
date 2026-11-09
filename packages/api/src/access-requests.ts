@@ -11,22 +11,28 @@ export async function initializeAccessRequests(db: Database): Promise<void> {
   await db.transaction(async c => {
     await c.query(`CREATE TABLE IF NOT EXISTS h8_access_requests (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, organization TEXT, note TEXT,
-      created_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', notified_at TEXT)`);
-    // Additive upgrade for tables created before notifications (issue #177).
-    // Some callers pass a transaction-scoped Database whose dialect is not
-    // set, so probe for the column under a savepoint instead of branching on
-    // dialect (PRAGMA is SQLite-only; the savepoint pattern is the one the
+      created_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', notified_at TEXT,
+      notify_claim_token TEXT, notify_claim_expires_at TEXT)`);
+    // Additive upgrades for tables created before notifications (issue #177)
+    // and before notification claims (issue #232). Some callers pass a
+    // transaction-scoped Database whose dialect is not set, so probe for
+    // each column under a savepoint instead of branching on dialect
+    // (PRAGMA is SQLite-only; the savepoint pattern is the one the
     // AI-warning code in hosted-usage.ts already uses on both dialects).
-    await c.query('SAVEPOINT opensight_notified_at_check');
-    let hasNotifiedAt = true;
-    try {
-      await c.query('SELECT notified_at FROM h8_access_requests LIMIT 0');
-    } catch {
-      hasNotifiedAt = false;
-      await c.query('ROLLBACK TO SAVEPOINT opensight_notified_at_check');
+    for (const [column, savepoint] of [['notified_at', 'opensight_notified_at_check'],
+      ['notify_claim_token', 'opensight_notify_claim_token_check'],
+      ['notify_claim_expires_at', 'opensight_notify_claim_expires_check']] as const) {
+      await c.query(`SAVEPOINT ${savepoint}`);
+      let hasColumn = true;
+      try {
+        await c.query(`SELECT ${column} FROM h8_access_requests LIMIT 0`);
+      } catch {
+        hasColumn = false;
+        await c.query(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+      }
+      await c.query(`RELEASE SAVEPOINT ${savepoint}`);
+      if (!hasColumn) await c.query(`ALTER TABLE h8_access_requests ADD COLUMN ${column} TEXT`);
     }
-    await c.query('RELEASE SAVEPOINT opensight_notified_at_check');
-    if (!hasNotifiedAt) await c.query('ALTER TABLE h8_access_requests ADD COLUMN notified_at TEXT');
   });
 }
 function invalid(): never { throw new MetadataError('ACCESS_REQUEST_INVALID', 400); }
@@ -68,19 +74,52 @@ export function accessRequestNotifyTo(env: NodeJS.ProcessEnv): string | null {
   return address;
 }
 /**
+ * How long a notification claim is held before another sender may take the
+ * row over. The SMTP transport's own deadline is at most 60 seconds, so a
+ * five-minute lease always outlives a live send while still recovering a
+ * row whose sender died mid-send (issue #232).
+ */
+export const ACCESS_REQUEST_NOTIFY_CLAIM_MS = 5 * 60_000;
+/**
  * Best-effort operator notification for stored access requests (issue #177).
  * Store-first semantics: a request is durable before this runs, and a mail
  * failure never propagates — the row simply stays unnotified (visible in the
  * operator list) and a later call retries it. Oldest first; the batch stops
  * at the first send failure so a dead mail server is not hammered per row.
- * Returns how many notifications this call delivered.
+ *
+ * Each row is claimed atomically before anything is sent (issue #232): the
+ * claim is a conditional UPDATE that only succeeds while the row is
+ * unnotified and unclaimed (or its previous claim's lease has expired, i.e.
+ * that sender died mid-send). Concurrent submissions or maintenance calls
+ * therefore never send the same row twice, even through a transport that
+ * does not deduplicate. The send keeps the stable per-request dedupe key
+ * (#224), so a retry after a crash between send and stamp still carries the
+ * same delivery identity. A failed send releases its claim immediately;
+ * returns how many notifications this call delivered.
  */
 export async function notifyAccessRequests(db: Database, mail: MailTransport, to: string | null, now: number, limit = 20): Promise<number> {
   if (!to || !mail.configured) return 0;
-  const pending = await db.transaction(c => c.query(
-    'SELECT * FROM h8_access_requests WHERE notified_at IS NULL ORDER BY created_at ASC, id ASC LIMIT ?', [limit]));
+  const nowIso = new Date(now).toISOString();
+  const claimToken = randomUUID();
+  const claimExpiresAt = new Date(now + ACCESS_REQUEST_NOTIFY_CLAIM_MS).toISOString();
+  const claimed = await db.transaction(async c => {
+    const candidates = await c.query(
+      `SELECT * FROM h8_access_requests WHERE notified_at IS NULL
+        AND (notify_claim_expires_at IS NULL OR notify_claim_expires_at <= ?)
+        ORDER BY created_at ASC, id ASC LIMIT ?`, [nowIso, limit]);
+    const won: typeof candidates = [];
+    for (const row of candidates) {
+      const taken = await c.query(
+        `UPDATE h8_access_requests SET notify_claim_token = ?, notify_claim_expires_at = ?
+          WHERE id = ? AND notified_at IS NULL
+            AND (notify_claim_expires_at IS NULL OR notify_claim_expires_at <= ?) RETURNING id`,
+        [claimToken, claimExpiresAt, String(row.id), nowIso]);
+      if (taken.length) won.push(row);
+    }
+    return won;
+  });
   let sent = 0;
-  for (const row of pending) {
+  for (const row of claimed) {
     const subjectName = String(row.name).replace(/[\x00-\x1f\x7f]+/g, ' ').trim();
     const lines = [
       `<p><strong>${escapeHtml(String(row.name))}</strong> (${escapeHtml(String(row.email))}) requested hosted OpenSight access.</p>`,
@@ -96,8 +135,17 @@ export async function notifyAccessRequests(db: Database, mail: MailTransport, to
       // Hash the namespaced identity into that format — stable per request,
       // so retries still dedupe.
       await mail.send({ to: [to], subject: `OpenSight access request: ${subjectName}`, html: lines, dedupeKey: createHash('sha256').update(`access-request:${String(row.id)}`).digest('hex') });
-    } catch { break; }
-    await db.transaction(c => c.query('UPDATE h8_access_requests SET notified_at = ? WHERE id = ?', [new Date(now).toISOString(), String(row.id)]));
+    } catch {
+      // Release only our own claim so a later call retries promptly; if the
+      // lease already changed hands the new owner's claim is left alone.
+      await db.transaction(c => c.query(
+        'UPDATE h8_access_requests SET notify_claim_token = NULL, notify_claim_expires_at = NULL WHERE id = ? AND notify_claim_token = ?',
+        [String(row.id), claimToken])).catch(() => {});
+      break;
+    }
+    await db.transaction(c => c.query(
+      `UPDATE h8_access_requests SET notified_at = ?, notify_claim_token = NULL, notify_claim_expires_at = NULL
+        WHERE id = ? AND notify_claim_token = ?`, [new Date(now).toISOString(), String(row.id), claimToken]));
     sent++;
   }
   return sent;
