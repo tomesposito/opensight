@@ -84,6 +84,38 @@ test('docs descriptions use plain first paragraphs and truncate at a word bounda
   assert.ok(long.startsWith(shortened.slice(0, -1) + ' '));
 });
 
+test('docs meta overrides carry the exact approved titles and descriptions (issue #238)', () => {
+  const pages = renderDocs();
+  const metaOf = path => {
+    const page = pages.get(path);
+    return {
+      title: page.match(/<title>([^<]+)<\/title>/)?.[1],
+      description: page.match(/<meta name="description" content="([^"]*)">/)?.[1],
+    };
+  };
+  assert.deepEqual(metaOf('site/docs/index.html'), {
+    title: 'Documentation — OpenSight docs',
+    description: 'Install and run OpenSight, connect data, configure embedding, and understand permissions and row-level security. Plus getting started and migration guides.',
+  });
+  assert.deepEqual(metaOf('site/docs/open-economics/index.html'), {
+    title: 'Open economics: features never paywalled — OpenSight docs',
+    description: 'OpenSight is Apache-2.0. The hosted service charges for running it, not unlocking it: SSO, row-level security and core governance are never paywalled.',
+  });
+  assert.deepEqual(metaOf('site/docs/permissions/index.html'), {
+    title: 'Permissions and row-level security — OpenSight docs',
+    description: 'Access to an OpenSight analysis or dashboard and access to its data are separate permissions. Sharing a definition lets someone open the asset, not the data.',
+  });
+  assert.deepEqual(metaOf('site/docs/migrating-from-quicksight/index.html'), {
+    title: 'Moving from QuickSight to OpenSight — OpenSight docs',
+    description: 'A QuickSight bundle carries four kinds of thing: analyses, dashboards, datasets and data sources. OpenSight imports the bundle file directly. Here is the move.',
+  });
+  // The #238 pages no longer carry an auto-truncated excerpt description.
+  for (const path of ['site/docs/index.html', 'site/docs/open-economics/index.html',
+    'site/docs/permissions/index.html', 'site/docs/migrating-from-quicksight/index.html']) {
+    assert.ok(!metaOf(path).description?.endsWith('…'), `${path}: description must not end mid-sentence`);
+  }
+});
+
 test('docs current sources render complete HTML5 pages and an index with all titles and summaries', () => {
   const pages = renderDocs();
   assert.equal(pages.size, manifest.length + 1);
@@ -99,7 +131,7 @@ test('docs current sources render complete HTML5 pages and an index with all tit
     assert.ok(!/<script\b|<meta[^>]*noindex/i.test(page));
     assert.ok(index.includes(escapeHtml(doc.summary)));
     assert.ok(index.includes(`<h2><a href="/docs/${entry.slug}/">${escapeHtml(doc.title)}</a></h2>`));
-    assert.ok(page.includes(`<title>${escapeHtml(doc.title)} — OpenSight docs</title>`));
+    assert.ok(page.includes(`<title>${escapeHtml(entry.metaTitle ?? doc.title)} — OpenSight docs</title>`));
     for (const other of manifest) assert.ok(page.includes(`href="/docs/${other.slug}/"`));
   }
   assert.match(index, /href="docs.css"/);
@@ -176,7 +208,7 @@ test('site integrity checks catch missing docs, sitemap/canonical drift and exte
     ['docs/permissions/index.html', text => text.replace('Access to an OpenSight', 'Obsolete text about OpenSight'), /stale generated docs/],
     ['pricing/index.html', text => text.replace('$99 a month, $1,188 a year', '$99 a month'), /missing or altered approved copy/],
     ['alternatives/quicksight/index.html', text => text.replace('no licence saving fixes it', 'no license saving fixes it'), /missing or altered approved copy/],
-    ['vs/metabase/index.html', text => text.replace('both free to self-host', 'both free'), /incorrect page title/],
+    ['vs/metabase/index.html', text => text.replace('QuickSight-compatible, Apache-2.0', 'QuickSight-compatible'), /incorrect page title/],
     ['alternatives/tableau/index.html', text => text.replace('costs $0, whether one person uses it', 'costs nothing, whether one person uses it'), /missing or altered approved copy/],
   ];
   for (const [name, change, expected] of cases) {
