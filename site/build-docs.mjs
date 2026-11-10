@@ -292,6 +292,7 @@ function pageHtml({ title, summary, slug = '', article, footer, brand, metaTitle
     <nav class="nav-links" aria-label="Main">
       <a href="/">Home</a>
       <a href="/docs/" aria-current="${slug ? 'true' : 'page'}">Docs</a>
+      <a href="/pricing/">Pricing</a>
       <a href="${github}">GitHub</a>
     </nav>
   </div>
@@ -333,7 +334,7 @@ export function renderDocs(root = repoRoot) {
   })]));
   output.set('site/docs/index.html', pageHtml({
     title: 'Documentation', summary: 'Install and run OpenSight, connect data, configure embedding, and understand permissions and row-level security. Plus getting started and migration guides.',
-    article: `<h1 id="documentation">Documentation</h1>\n<ul class="docs-index">\n${pages.map(page => `  <li><h2><a href="${docsPath(page.slug)}">${escapeHtml(page.title)}</a></h2><p>${escapeHtml(page.summary)}</p></li>`).join('\n')}\n</ul>`,
+    article: `<h1 id="documentation">Documentation</h1>\n<ul class="docs-index">\n${pages.map(page => `  <li><h2><a href="${docsPath(page.slug)}">${escapeHtml(page.title)}</a></h2><p>${escapeHtml(page.summary)}</p></li>`).join('\n')}\n</ul>\n<p>Running OpenSight yourself is free. If you would rather we ran it, the hosted tiers are on the <a href="/pricing/">pricing page</a>.</p>`,
     footer, brand,
   }));
   return output;

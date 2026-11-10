@@ -30,3 +30,5 @@ One more limit, stated plainly: bundles edited in OpenSight carry an `opensightR
 ## Step 5: Sizing the job
 
 Do not count dashboards. Count the two numbers in front of you: the datasets you need to recreate connections for, and the unsupported items in the import report. A bundle whose datasets already exist locally and whose report is short is a small job. A bundle leaning on dataset transformations and unsupported filters is a bigger one, and now you know before you start.
+
+Still deciding whether to move? [The QuickSight alternative page](/alternatives/quicksight/) sets out where QuickSight is the better choice and what running OpenSight costs. If you would rather not run it yourself, the hosted tiers are on the [pricing page](/pricing/).
