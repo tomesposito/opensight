@@ -236,6 +236,10 @@ test('site integrity checks catch missing docs, sitemap/canonical drift and exte
     ['alternatives/quicksight/index.html', text => text.replace('no licence saving fixes it', 'no license saving fixes it'), /missing or altered approved copy/],
     ['vs/metabase/index.html', text => text.replace('QuickSight-compatible, Apache-2.0', 'QuickSight-compatible'), /incorrect page title/],
     ['alternatives/tableau/index.html', text => text.replace('costs $0, whether one person uses it', 'costs nothing, whether one person uses it'), /missing or altered approved copy/],
+    ['docs/permissions/index.html', text => text.replace('<meta property="og:image"', '<meta property="og:removed"'), /incorrect og:image content/],
+    ['docs/permissions/index.html', text => text.replace('<a href="/pricing/">Pricing</a>', '<a href="/docs/">Pricing</a>'), /docs pages must link the pricing page/],
+    ['pricing/index.html', text => text.replace('"price": "29"', '"price": "30"'), /offers must be the hosted tiers/],
+    ['pricing/index.html', text => text.replace('<a href="/alternatives/quicksight/">QuickSight alternative</a>', '<a href="/alternatives/tableau/">QuickSight alternative</a>'), /pricing: missing onward link/],
   ];
   for (const [name, change, expected] of cases) {
     const path = join(root, 'site', name), before = readFileSync(path, 'utf8');

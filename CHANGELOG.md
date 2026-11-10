@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Changed
 
+- Docs pages now carry the full OG/Twitter social block with the shared og-image and each page's own title and description; docs pages link the pricing page, the migration guide links the QuickSight alternative and pricing pages, the alternatives/versus pages cross-link the QuickSight alternative page, pricing links onward to the alternatives and migration pages, and pricing serves a SoftwareApplication JSON-LD with the hosted tier offers (#239).
+
 - Marketing meta batch: the page titles and meta descriptions on the home, pricing, QuickSight/Tableau/Power BI alternatives, Metabase/Superset versus and docs pages now match the approved values exactly — no truncated titles and no auto-truncated excerpt descriptions on those pages; the docs generator carries the approved docs values as explicit meta overrides (#238).
 
 ### Added
