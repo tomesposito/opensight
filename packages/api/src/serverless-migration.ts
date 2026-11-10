@@ -88,7 +88,7 @@ export async function migrateServerless(database: Database, env: NodeJS.ProcessE
     if (tables.some(r => r.name === 'sr_admission') && (await c.query("SELECT attempt_id FROM sr_admission WHERE deployment = ? AND state = 'held' AND hold_until > ? LIMIT 1", [deployment, await coordinationNow(c, dialect)])).length) throw new MetadataError('WORKSPACE_DRAIN_REQUIRED', 503);
     await ensureMetricKind(c, dialect);
     await ensureTenantNaming(c, dialect);
-    await initializeAuth(nested);
+    await initializeAuth(nested, dialect);
     await migrateCoordination(nested, deployment, entitlements, 'frozen', dialect);
     await migrateManifests(nested, deployment, 'frozen', dialect);
     await migrateDispatch(nested, deployment, 'frozen', dialect);

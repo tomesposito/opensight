@@ -2,7 +2,7 @@ import { MetadataError, type Database } from './metadata-db.js';
 import { initializeJobs } from './job-schema.js';
 
 /** Operator/membership database only. Never grant tenant SQL roles access to h2_* tables. */
-export async function initializeAuth(database: Database): Promise<void> {
+export async function initializeAuth(database: Database, dialect: 'sqlite' | 'postgres' = database.dialect ?? 'sqlite'): Promise<void> {
   if (database.durable !== true) throw new MetadataError('DURABLE_MEMBERSHIP_STORE_REQUIRED', 503);
   await database.transaction(async c => {
     for (const sql of [
@@ -36,5 +36,5 @@ export async function initializeAuth(database: Database): Promise<void> {
       `CREATE TABLE IF NOT EXISTS h2_requests (operation_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL)`
     ]) await c.query(sql);
   });
-  await initializeJobs(database);
+  await initializeJobs(database, dialect);
 }
