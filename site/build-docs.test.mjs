@@ -150,6 +150,11 @@ test('site integrity checks catch missing docs, sitemap/canonical drift and exte
   cpSync(resolve(repoRoot, 'site/vs'), join(root, 'site/vs'), { recursive: true });
   cpSync(resolve(repoRoot, 'site/signup'), join(root, 'site/signup'), { recursive: true });
   cpSync(resolve(repoRoot, 'site/legal'), join(root, 'site/legal'), { recursive: true });
+  // Issue #237: check.mjs also verifies the demo builder's noindex injection,
+  // which lives outside site/, so the temp tree needs that one file too.
+  mkdirSync(join(root, 'packages/web/scripts'), { recursive: true });
+  cpSync(resolve(repoRoot, 'packages/web/scripts/build-demo.mjs'),
+    join(root, 'packages/web/scripts/build-demo.mjs'));
   // The existing homepage check only checks asset existence: no media copies needed.
   mkdirSync(join(root, 'site/assets'));
   const home = readFileSync(join(root, 'site/index.html'), 'utf8');
