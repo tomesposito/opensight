@@ -34,7 +34,7 @@ export async function migrateRuntime(db: Database, env: NodeJS.ProcessEnv, diale
     // All initializers share this transaction: an exception rolls back the
     // schema and audit together, rather than leaving half-applied migrations.
     const transaction: Database = { durable: true, transaction: work => work(c), close: async () => {} };
-    await initializeMetadata(transaction, dialect); await initializeAuth(transaction);
+    await initializeMetadata(transaction, dialect); await initializeAuth(transaction, dialect);
     await initializeEmbedding(transaction); await initializeEmbedSessions(transaction);
     await migrateBudgets(transaction, budgets, 'frozen'); await initializeUsage(transaction); await initializeAnalytics(transaction);
     await initializeAccessRequests(transaction);

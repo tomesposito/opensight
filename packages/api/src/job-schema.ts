@@ -68,7 +68,7 @@ export async function cancelJob(c: SqlConnection, s: Scope, id: string, code: st
   await c.query(`UPDATE h7_deliveries SET state = 'cancelled', error_code = ?, message = NULL WHERE ${scoped} AND job_id = ? AND state IN ('pending','sending')`, [code, ...scopeArgs(s), id]);
 }
 /** Private operator-owned tables; no grants to the H1 tenant role. */
-export async function initializeJobs(db: Database): Promise<void> {
+export async function initializeJobs(db: Database, dialect: 'sqlite' | 'postgres' = db.dialect ?? 'sqlite'): Promise<void> {
   await db.transaction(async c => {
     await c.query(`CREATE TABLE IF NOT EXISTS h7_jobs (
       tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, job_id TEXT NOT NULL, owner_id TEXT NOT NULL,
@@ -95,7 +95,7 @@ export async function initializeJobs(db: Database): Promise<void> {
       FOREIGN KEY (tenant_id, namespace_id, recipient_id) REFERENCES h2_memberships(tenant_id, namespace_id, user_id))`);
     await c.query(`CREATE TABLE IF NOT EXISTS h7_migrations (tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, checksum TEXT NOT NULL,
       PRIMARY KEY (tenant_id, namespace_id), FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id))`);
-    await ensureDeliveryDeadState(c, db.dialect ?? 'sqlite');
+    await ensureDeliveryDeadState(c, dialect);
   });
 }
 
