@@ -11,6 +11,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ## [Unreleased]
 
+### Changed
+
+- Marketing meta batch: the page titles and meta descriptions on the home, pricing, QuickSight/Tableau/Power BI alternatives, Metabase/Superset versus and docs pages now match the approved values exactly — no truncated titles and no auto-truncated excerpt descriptions on those pages; the docs generator carries the approved docs values as explicit meta overrides (#238).
+
 ### Added
 
 - Statistical forecasting on line charts with a date dimension: a dashed forecast continuation with a shaded prediction interval (80/90/95%), fitted values for trailing periods, and Auto/None/Custom seasonality, computed with exponential smoothing (ETS/Holt-Winters, corrected-AIC model selection) in the web layer so author view, dashboards, small multiples, and PDF export agree. Edited in the Properties panel's Forecast section; QuickSight `ForecastConfigurations` import and export round-trip, with boundaries applied as clamps. Series with fewer than 4 points render actuals with a quiet note instead of a forecast (#235).

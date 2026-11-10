@@ -1,4 +1,4 @@
-// Integrity check for the marketing site (issues #93, #106, #134, #176, #183, #184, #185, #186, #187, #210, #237).
+// Integrity check for the marketing site (issues #93, #106, #134, #176, #183, #184, #185, #186, #187, #210, #237, #238).
 // Usage: node site/check.mjs  (exit 0 = pass)
 // Verifies: every local asset referenced from index.html exists, no external
 // requests beyond allowlisted links, required sections and AEO artifacts present.
@@ -258,7 +258,7 @@ try {
 const pricingUrl = 'https://getopensight.org/pricing/';
 const pricing = readArtifact('pricing/index.html');
 const stripTags = text => text.replace(/<[^>]+>/g, '');
-check(pricing.match(/<title>([^<]+)<\/title>/)?.[1] === 'Pricing — OpenSight',
+check(pricing.match(/<title>([^<]+)<\/title>/)?.[1] === 'OpenSight pricing: free to self-host, hosted from $29/mo',
   'pricing: incorrect page title');
 check(pricing.match(/<h1>([^<]+)<\/h1>/)?.[1] === 'Pricing', 'pricing: H1 must be Pricing');
 const pricingCanonicals = [...pricing.matchAll(/<link rel="canonical" href="([^"]+)">/g)].map(m => m[1]);
@@ -384,6 +384,7 @@ const competitorPages = [
   {
     dir: 'alternatives/tableau', url: 'https://getopensight.org/alternatives/tableau/',
     title: 'Tableau charges for every seat. OpenSight charges for none.',
+    pageTitle: 'Tableau alternative with no per-seat pricing — OpenSight',
     headings: ['What a 20-person team pays Tableau', 'Your Tableau workbooks do not come with you', 'Where Tableau is the better choice'],
     copy: [
       'Tableau prices people by role. On the Standard edition a Creator is $75 per user per month, an Explorer is $42, and a Viewer is $15, billed annually. Every deployment needs at least one Creator.',
@@ -402,6 +403,7 @@ const competitorPages = [
   {
     dir: 'alternatives/power-bi', url: 'https://getopensight.org/alternatives/power-bi/',
     title: 'First, check whether you already pay for Power BI',
+    pageTitle: 'Power BI alternative with no per-user pricing — OpenSight',
     headings: ['What Power BI costs when you do pay for it', 'The real difference is the surrounding stack', 'What does not convert'],
     copy: [
       'Power BI Pro is included in Microsoft 365 E5. If your company already buys E5, you may already be paying for Power BI, and $0 extra is a hard price to argue with. Check that before you read the rest of this page.',
@@ -418,6 +420,7 @@ const competitorPages = [
   {
     dir: 'vs/metabase', url: 'https://getopensight.org/vs/metabase/',
     title: 'OpenSight vs Metabase: both free to self-host. That is where the similarity ends.',
+    pageTitle: 'OpenSight vs Metabase: QuickSight-compatible, Apache-2.0',
     headings: ['The licences differ, and so does the paid line', 'Where Metabase is the better choice', 'Where OpenSight is the better choice'],
     copy: [
       "Metabase's Open Source edition is free, self-hosted, with unlimited users. So is OpenSight. If price of the open edition is your only question, both answers are $0, and this page is about the questions after that one.",
@@ -435,6 +438,7 @@ const competitorPages = [
   {
     dir: 'vs/superset', url: 'https://getopensight.org/vs/superset/',
     title: 'OpenSight vs Apache Superset: same licence, different job',
+    pageTitle: 'OpenSight vs Apache Superset: same licence, different job',
     headings: ['Superset is built for SQL teams, and it shows', "OpenSight's ground is a format, not a chart count"],
     copy: [
       'Apache Superset is Apache-2.0, like OpenSight. Self-hosted, it costs $0, like OpenSight. Nobody wins this comparison on licence or sticker price, so it comes down to what your team does all day.',
@@ -452,7 +456,7 @@ const closingCopy = 'Try the live demo, or request hosted access — hosted work
 for (const page of competitorPages) {
   const name = `${page.dir}/index.html`;
   const body = readArtifact(name);
-  check(body.match(/<title>([^<]+)<\/title>/)?.[1] === `${page.title} — OpenSight`,
+  check(body.match(/<title>([^<]+)<\/title>/)?.[1] === page.pageTitle,
     `${name}: incorrect page title`);
   check(body.match(/<h1>([^<]+)<\/h1>/)?.[1] === page.title, `${name}: H1 must be the approved page title`);
   const pageCanonicals = [...body.matchAll(/<link rel="canonical" href="([^"]+)">/g)].map(m => m[1]);
@@ -556,6 +560,44 @@ const economics = readArtifact('docs/open-economics/index.html');
 check(!economics.includes('SLA'), 'docs/open-economics: the SLA promise must not return (removed 2026-11-06)');
 check(economics.includes('Paid tiers buy higher usage quotas and support.'),
   'docs/open-economics: paid-tiers sentence must match the SLA-free source doc');
+
+// 18. Marketing meta batch (issue #238): the titles and meta descriptions
+// Tom approved on 2026-11-09 are exact on all 11 audited pages. Title tags
+// are search copy and no longer mirror the H1s on the competitor pages;
+// the generated docs pages carry their approved values as metaTitle /
+// metaDescription overrides in build-docs.mjs, so no docs description is
+// an auto-truncated excerpt ending mid-sentence.
+const metaBatch = [
+  ['index.html', 'OpenSight — the open-source BI platform',
+    'OpenSight is an open-source BI tool: connect data, prepare datasets, build analyses and dashboards, and ask questions in natural language. Self-hosted.'],
+  ['pricing/index.html', 'OpenSight pricing: free to self-host, hosted from $29/mo',
+    'OpenSight is free: run it yourself and it costs nothing. Hosted tiers — Free, Light $29/mo, Regular $99/mo, Heavy $399/mo — differ in quotas, not features.'],
+  ['alternatives/quicksight/index.html', 'A QuickSight alternative you can own — OpenSight',
+    "QuickSight charges per user. OpenSight charges nothing: Apache-2.0, no open-core split, self-hosted, and dashboards stay in QuickSight's definition format."],
+  ['alternatives/tableau/index.html', 'Tableau alternative with no per-seat pricing — OpenSight',
+    'Tableau charges per seat: Creator $75, Explorer $42, Viewer $15 per user/month, billed annually. OpenSight is Apache-2.0 and costs $0 for any number of users.'],
+  ['alternatives/power-bi/index.html', 'Power BI alternative with no per-user pricing — OpenSight',
+    'Power BI Pro is $14 per user/month, paid yearly, and included in Microsoft 365 E5. OpenSight is Apache-2.0, self-hosted, and $0 for any number of users.'],
+  ['vs/metabase/index.html', 'OpenSight vs Metabase: QuickSight-compatible, Apache-2.0',
+    'Metabase and OpenSight are both free to self-host. The licences differ — AGPL v3 vs Apache-2.0 — and row and column security is open in OpenSight, not Pro-only.'],
+  ['vs/superset/index.html', 'OpenSight vs Apache Superset: same licence, different job',
+    'Apache Superset and OpenSight are both Apache-2.0 and free to self-host. Superset is built for SQL teams; OpenSight reads and writes QuickSight definitions.'],
+  ['docs/index.html', 'Documentation — OpenSight docs',
+    'Install and run OpenSight, connect data, configure embedding, and understand permissions and row-level security. Plus getting started and migration guides.'],
+  ['docs/migrating-from-quicksight/index.html', 'Moving from QuickSight to OpenSight — OpenSight docs',
+    'A QuickSight bundle carries four kinds of thing: analyses, dashboards, datasets and data sources. OpenSight imports the bundle file directly. Here is the move.'],
+  ['docs/permissions/index.html', 'Permissions and row-level security — OpenSight docs',
+    'Access to an OpenSight analysis or dashboard and access to its data are separate permissions. Sharing a definition lets someone open the asset, not the data.'],
+  ['docs/open-economics/index.html', 'Open economics: features never paywalled — OpenSight docs',
+    'OpenSight is Apache-2.0. The hosted service charges for running it, not unlocking it: SSO, row-level security and core governance are never paywalled.'],
+];
+for (const [name, expectedTitle, expectedDescription] of metaBatch) {
+  const page = readArtifact(name);
+  check(page.match(/<title>([^<]+)<\/title>/)?.[1] === expectedTitle,
+    `${name}: title must match the approved #238 value exactly`);
+  check(page.match(/<meta name="description" content="([^"]*)">/)?.[1] === expectedDescription,
+    `${name}: meta description must match the approved #238 value exactly`);
+}
 
 if (failures.length) {
   console.error(`site/check.mjs FAILED (${failures.length}):`);

@@ -46,6 +46,14 @@ checker, but the root suite does not. Checks are offline; external URL
 inspection cannot establish live availability. The demo entry point remains
 a deploy-time artifact. Publishing and hosted routing remain operator work.
 
+Page titles and meta descriptions on the audited pages are the exact values
+approved in #238, guarded verbatim by `check.mjs`. On the competitor pages
+the title tag is search copy and no longer mirrors the H1. The generated
+docs pages take theirs from `metaTitle` / `metaDescription` overrides in
+`build-docs.mjs` where approved values exist, so their descriptions are
+complete sentences rather than auto-truncated first-paragraph excerpts;
+pages without an override still derive theirs from the source document.
+
 ## Positioning (Tom's direction, 2026-10-12, from issue #93)
 
 Lead with the vision — a **powerful open-source BI tool** — not the
