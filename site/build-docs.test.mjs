@@ -54,6 +54,8 @@ test('docs links rewrite manifest and repository targets while preserving anchor
     ['security-namespaces.md#row-policies', 'https://github.com/tomesposito/opensight/blob/master/docs/security-namespaces.md#row-policies'],
     ['../packages/api/src/server.ts', 'https://github.com/tomesposito/opensight/blob/master/packages/api/src/server.ts'],
     ['/docs/first-run.md', '/docs/getting-started/'],
+    ['/pricing/', '/pricing/'],
+    ['/alternatives/quicksight/', '/alternatives/quicksight/'],
     ['#configuration', '#configuration'],
     ['https://example.com/a_(b)?x=1&y=2#part', 'https://example.com/a_(b)?x=1&y=2#part'],
     ['http://127.0.0.1:5173', 'http://127.0.0.1:5173'],
@@ -113,6 +115,30 @@ test('docs meta overrides carry the exact approved titles and descriptions (issu
   for (const path of ['site/docs/index.html', 'site/docs/open-economics/index.html',
     'site/docs/permissions/index.html', 'site/docs/migrating-from-quicksight/index.html']) {
     assert.ok(!metaOf(path).description?.endsWith('…'), `${path}: description must not end mid-sentence`);
+  }
+});
+
+test('docs pages carry the full OG/Twitter social block with the shared image (issue #239)', () => {
+  const pages = renderDocs();
+  const shareImage = 'https://getopensight.org/assets/og-image.jpg';
+  for (const [path, page] of pages) {
+    const slug = path === 'site/docs/index.html' ? '' : path.split('/').at(-2);
+    const title = page.match(/<title>([^<]+)<\/title>/)?.[1];
+    const description = page.match(/<meta name="description" content="([^"]*)">/)?.[1];
+    for (const tag of [
+      `<meta property="og:title" content="${title}">`,
+      `<meta property="og:description" content="${description}">`,
+      '<meta property="og:type" content="website">',
+      `<meta property="og:url" content="${canonicalUrl(slug)}">`,
+      `<meta property="og:image" content="${shareImage}">`,
+      '<meta name="twitter:card" content="summary_large_image">',
+      `<meta name="twitter:title" content="${title}">`,
+      `<meta name="twitter:description" content="${description}">`,
+      `<meta name="twitter:image" content="${shareImage}">`,
+      '<meta property="og:image:width" content="2400">',
+      '<meta property="og:image:height" content="1260">',
+      `<meta property="og:image:alt" content="${title}">`,
+    ]) assert.ok(page.includes(tag), `${path}: missing social tag: ${tag}`);
   }
 });
 

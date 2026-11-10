@@ -34,6 +34,10 @@ export function rewriteLink(href, source) {
     throw new Error(`Unsupported documentation link in ${source}: ${href}`);
   }
   const [, path, suffix] = href.match(/^([^?#]*)(.*)$/);
+  // Root-absolute site routes (/pricing/, /alternatives/quicksight/) name
+  // published pages, not repository files: keep them as-is (issue #239).
+  // File-like absolute paths (/docs/first-run.md) keep the mapping below.
+  if (path.startsWith('/') && !/\.[a-z0-9]+$/i.test(path)) return `${path}${suffix}`;
   const target = path.startsWith('/')
     ? posix.normalize(path.slice(1))
     : posix.normalize(posix.join(posix.dirname(source), path));
@@ -252,13 +256,31 @@ export function description(summary) {
 }
 
 function pageHtml({ title, summary, slug = '', article, footer, brand, metaTitle, metaDescription }) {
+  const pageTitle = `${metaTitle ?? title} — OpenSight docs`;
+  const pageDescription = metaDescription ?? description(summary);
+  // The same OG/Twitter block the other site pages carry (issue #239):
+  // og:title / og:description mirror this page's own title and description,
+  // and every docs page shares the one og-image.
+  const shareImage = 'https://getopensight.org/assets/og-image.jpg';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(metaTitle ?? title)} — OpenSight docs</title>
-<meta name="description" content="${escapeHtml(metaDescription ?? description(summary))}">
+<title>${escapeHtml(pageTitle)}</title>
+<meta name="description" content="${escapeHtml(pageDescription)}">
+<meta property="og:title" content="${escapeHtml(pageTitle)}">
+<meta property="og:description" content="${escapeHtml(pageDescription)}">
+<meta property="og:type" content="website">
+<meta property="og:url" content="${canonicalUrl(slug)}">
+<meta property="og:image" content="${shareImage}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${escapeHtml(pageTitle)}">
+<meta name="twitter:description" content="${escapeHtml(pageDescription)}">
+<meta name="twitter:image" content="${shareImage}">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta property="og:image:alt" content="${escapeHtml(pageTitle)}">
 <link rel="canonical" href="${canonicalUrl(slug)}">
 <link rel="stylesheet" href="${slug ? '../' : ''}docs.css">
 </head>
