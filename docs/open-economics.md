@@ -25,3 +25,5 @@ Publishing the rule came with a check of the current product (2026-11-03, issue 
 - Behavior tests in `packages/api/test/open-economics-tiers.test.mjs` (added 2026-11-07, issue #215) exercise the executable side: the entitlement parsers reject any governance feature-flag field, and row-level security, the audit log, basic embedding and the identity verifier seam are exercised under every billing tier's entitlement with a sufficient quantitative allowance. The site guard now scans every published site page — pricing, alternatives, vs, signup and legal included — not just the homepage and the docs.
 
 One older note needed correcting. D-77 (decided 2026-10-16) called SSO and audit logs "the future enterprise lever — decided if a buyer ever asks." A buyer-independent answer arrived on 2026-10-30, when the scope of this rule was confirmed as written. For the four features named above, the lever is settled: they are not one.
+
+The current hosted tiers this rule governs are on the [pricing page](/pricing/).

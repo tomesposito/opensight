@@ -1,4 +1,4 @@
-// Integrity check for the marketing site (issues #93, #106, #134, #176, #183, #184, #185, #186, #187, #210, #237, #238).
+// Integrity check for the marketing site (issues #93, #106, #134, #176, #183, #184, #185, #186, #187, #210, #237, #238, #239).
 // Usage: node site/check.mjs  (exit 0 = pass)
 // Verifies: every local asset referenced from index.html exists, no external
 // requests beyond allowlisted links, required sections and AEO artifacts present.
@@ -398,7 +398,7 @@ const competitorPages = [
       'OpenSight fits the team that has decided the per-seat bill itself is the problem, and is willing to rebuild once to end it.',
     ],
     sources: ['<a href="https://www.tableau.com/pricing/cloud">Tableau pricing</a>'],
-    cross: ['../power-bi/', '../../vs/metabase/', '../../vs/superset/'],
+    cross: ['../quicksight/', '../power-bi/', '../../vs/metabase/', '../../vs/superset/'],
   },
   {
     dir: 'alternatives/power-bi', url: 'https://getopensight.org/alternatives/power-bi/',
@@ -415,7 +415,7 @@ const competitorPages = [
       'Power BI reports do not import into OpenSight. Leaving Power BI means rebuilding reports. The saving starts after that rebuild, not before it.',
     ],
     sources: ['<a href="https://www.microsoft.com/power-platform/products/power-bi/pricing">Microsoft Power BI pricing</a>'],
-    cross: ['../tableau/', '../../vs/metabase/', '../../vs/superset/'],
+    cross: ['../quicksight/', '../tableau/', '../../vs/metabase/', '../../vs/superset/'],
   },
   {
     dir: 'vs/metabase', url: 'https://getopensight.org/vs/metabase/',
@@ -433,7 +433,7 @@ const competitorPages = [
       'The same applies if AGPL terms do not work for your company and Apache-2.0 does.',
     ],
     sources: ['<a href="https://www.metabase.com/pricing/">Metabase pricing</a>'],
-    cross: ['../../alternatives/tableau/', '../../alternatives/power-bi/', '../superset/'],
+    cross: ['../../alternatives/quicksight/', '../../alternatives/tableau/', '../../alternatives/power-bi/', '../superset/'],
   },
   {
     dir: 'vs/superset', url: 'https://getopensight.org/vs/superset/',
@@ -449,7 +449,7 @@ const competitorPages = [
       "If QuickSight is nowhere in your world, that ground is worth nothing to you, and the choice should be made on the tools themselves — where Superset's SQL depth may well win it.",
     ],
     sources: ['<a href="https://superset.apache.org/">Apache Superset</a>', '<a href="https://preset.io/pricing">Preset pricing</a>'],
-    cross: ['../../alternatives/tableau/', '../../alternatives/power-bi/', '../metabase/'],
+    cross: ['../../alternatives/quicksight/', '../../alternatives/tableau/', '../../alternatives/power-bi/', '../metabase/'],
   },
 ];
 const closingCopy = 'Try the live demo, or request hosted access — hosted workspaces are opening in small batches and are set up by hand.';
@@ -597,6 +597,68 @@ for (const [name, expectedTitle, expectedDescription] of metaBatch) {
     `${name}: title must match the approved #238 value exactly`);
   check(page.match(/<meta name="description" content="([^"]*)">/)?.[1] === expectedDescription,
     `${name}: meta description must match the approved #238 value exactly`);
+}
+
+// 19. Docs social tags, internal linking and pricing JSON-LD (issue #239):
+// every docs page serves the full OG/Twitter set with the shared og-image
+// and its own title/description; every docs page links /pricing/; the
+// migration guide links the QuickSight alternative page and pricing; the
+// alternatives/versus cluster cross-links the QuickSight page (section 16);
+// pricing links onward to the alternatives and migration pages and serves
+// a SoftwareApplication JSON-LD whose offers match the decided tiers.
+for (const { slug } of docsPages) {
+  const name = `docs/${slug ? `${slug}/` : ''}index.html`;
+  const page = readArtifact(name);
+  const pageMeta = [...page.matchAll(/<meta\b[^>]*>/g)].map(m =>
+    Object.fromEntries([...m[0].matchAll(/([\w:-]+)="([^"]*)"/g)].map(a => [a[1], a[2]])));
+  const metaContent = (attribute, key) => {
+    const tags = pageMeta.filter(tag => tag[attribute] === key);
+    check(tags.length === 1 && Boolean(tags[0].content?.trim()),
+      `${name}: expected one non-empty meta ${attribute}="${key}"`);
+    return tags[0]?.content;
+  };
+  const pageTitle = page.match(/<title>([^<]+)<\/title>/)?.[1];
+  const pageDescription = metaContent('name', 'description');
+  for (const [key, expected] of Object.entries({
+    'og:title': pageTitle, 'og:description': pageDescription, 'og:type': 'website',
+    'og:url': canonicalUrl(slug), 'og:image': shareImage,
+    'og:image:width': '2400', 'og:image:height': '1260', 'og:image:alt': pageTitle,
+  })) check(metaContent('property', key) === expected, `${name}: incorrect ${key} content`);
+  for (const [key, expected] of Object.entries({
+    'twitter:card': 'summary_large_image', 'twitter:title': pageTitle,
+    'twitter:description': pageDescription, 'twitter:image': shareImage,
+  })) check(metaContent('name', key) === expected, `${name}: incorrect ${key} content`);
+  check(page.includes('href="/pricing/"'), `${name}: docs pages must link the pricing page`);
+}
+check(guide.includes('<a href="/alternatives/quicksight/">The QuickSight alternative page</a>'),
+  'migration guide: missing link to the QuickSight alternative page');
+check(guide.includes('<a href="/pricing/">pricing page</a>'),
+  'migration guide: missing link to the pricing page');
+check(economics.includes('<a href="/pricing/">pricing page</a>'),
+  'docs/open-economics: missing link to the pricing page');
+for (const href of ['/alternatives/quicksight/', '/docs/migrating-from-quicksight/',
+  '/alternatives/tableau/', '/alternatives/power-bi/', '/vs/metabase/', '/vs/superset/']) {
+  check(pricing.includes(`<a href="${href}">`), `pricing: missing onward link to ${href}`);
+}
+const pricingLdRaw = pricing.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)?.[1];
+check(Boolean(pricingLdRaw), 'pricing: missing application/ld+json structured data');
+let pricingLd = null;
+try { pricingLd = pricingLdRaw ? JSON.parse(pricingLdRaw) : null; } catch { /* Reported below. */ }
+check(pricingLd !== null, 'pricing: application/ld+json must parse as JSON');
+if (pricingLd) {
+  check(pricingLd['@context'] === 'https://schema.org', 'pricing JSON-LD @context must be schema.org');
+  check(pricingLd['@type'] === 'SoftwareApplication', 'pricing JSON-LD @type must be SoftwareApplication');
+  check(pricingLd.name === 'OpenSight', 'pricing JSON-LD name must be OpenSight');
+  check(pricingLd.url === pricingUrl, 'pricing JSON-LD url must be the pricing page');
+  check(pricingLd.applicationCategory === 'BusinessApplication', 'pricing JSON-LD applicationCategory');
+  check(pricingLd.license === 'https://www.apache.org/licenses/LICENSE-2.0', 'pricing JSON-LD license');
+  check(pricingLd.codeRepository === 'https://github.com/tomesposito/opensight', 'pricing JSON-LD codeRepository');
+  const offers = Array.isArray(pricingLd.offers) ? pricingLd.offers : [];
+  check(JSON.stringify(offers.map(offer => [offer.name, offer.price])) ===
+    JSON.stringify([['Free', '0'], ['Light', '29'], ['Regular', '99'], ['Heavy', '399']]),
+    'pricing JSON-LD offers must be the hosted tiers Free $0, Light $29, Regular $99, Heavy $399');
+  check(offers.every(offer => offer['@type'] === 'Offer' && offer.priceCurrency === 'USD'),
+    'pricing JSON-LD offers must all be USD Offers');
 }
 
 if (failures.length) {
