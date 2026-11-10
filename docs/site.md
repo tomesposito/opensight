@@ -24,8 +24,14 @@ infrastructure.
 
 `robots.txt` allows all crawlers, explicitly allows `meta-webindexer`, and
 points at `https://getopensight.org/sitemap.xml`. The sitemap lists the
-marketing page, `/demo/`, `https://app.getopensight.org/`, and the six generated
-[documentation pages](documentation-site.md) under `/docs/` (#185). Open Graph and
+marketing page and the generated
+[documentation pages](documentation-site.md) under `/docs/` (#185). It no
+longer lists `/demo/` or the cross-host `https://app.getopensight.org/`:
+both are app shells, not placement pages (#237). The demo artifact itself
+serves `<meta name="robots" content="noindex, follow">`, injected by the
+demo build (`packages/web/scripts/build-demo.mjs`) into the built file
+only — the shared app shell source is unchanged, and the pages that link
+to `/demo/` keep working as CTAs. Open Graph and
 Twitter large-image cards reuse the page title and existing meta description
 and name the absolute URL of `assets/og-image.jpg`. The head also carries a
 canonical link to the homepage, the share image's true dimensions

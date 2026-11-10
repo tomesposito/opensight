@@ -17,6 +17,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Marketing site hygiene: the sitemap no longer lists the `/demo/` app shell or the cross-host `https://app.getopensight.org/` login shell, and the built demo artifact serves a `noindex, follow` robots meta so the app shell stays out of the index while demo links keep working as CTAs (#237).
+
 - Job mail delivery retries are now bounded: after 10 attempts a delivery dead-letters instead of rescheduling forever, its occurrence settles as `JOB_DELIVERY_EXHAUSTED`, and later periods of the job are admitted again. The job owner or a tenant administrator can retry a dead delivery in place — same delivery and dedupe key, fresh attempt sequence — from the automation page or `POST /api/jobs/:id/deliveries/:deliveryId/retry` (#233).
 
 - Decision D-77 now records that its paid-tier SLA commitment is superseded by the #210 Terms, which include no service-level agreement or uptime guarantee in version 1.0, so pricing and implementation work cannot restore the removed promise from the historical decision text (#234).
