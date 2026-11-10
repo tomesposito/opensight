@@ -1,4 +1,4 @@
-// Integrity check for the marketing site (issues #93, #106, #134, #176, #183, #184, #185, #186, #187, #210).
+// Integrity check for the marketing site (issues #93, #106, #134, #176, #183, #184, #185, #186, #187, #210, #237).
 // Usage: node site/check.mjs  (exit 0 = pass)
 // Verifies: every local asset referenced from index.html exists, no external
 // requests beyond allowlisted links, required sections and AEO artifacts present.
@@ -111,12 +111,21 @@ const publicUrls = ['https://getopensight.org/', 'https://getopensight.org/prici
   'https://getopensight.org/alternatives/power-bi/',
   'https://getopensight.org/vs/metabase/',
   'https://getopensight.org/vs/superset/',
-  'https://getopensight.org/demo/', `${APP_ORIGIN}/`,
   canonicalUrl(''), ...manifest.map(page => canonicalUrl(page.slug))];
 check(locations.length === publicUrls.length, `sitemap.xml must list exactly ${publicUrls.length} public entry points`);
 for (const url of publicUrls) {
   check(locations.includes(url), `sitemap.xml missing public entry point: ${url}`);
 }
+// Issue #237: the app shells are not placement pages. /demo/ is a bare app
+// shell and the app subdomain is a login shell on another host, so neither
+// belongs in this sitemap; the demo artifact itself serves noindex instead.
+check(!locations.includes('https://getopensight.org/demo/'),
+  'sitemap.xml must not list the /demo/ app shell (#237)');
+check(!locations.includes(`${APP_ORIGIN}/`),
+  'sitemap.xml must not list the cross-host app subdomain (#237)');
+const demoBuilder = readFileSync(resolve(root, '../packages/web/scripts/build-demo.mjs'), 'utf8');
+check(demoBuilder.includes('<meta name="robots" content="noindex, follow" />'),
+  'the demo build must inject the noindex, follow robots meta into the demo artifact (#237)');
 
 // 9. Social cards reuse the existing title, description and local hero poster.
 const meta = [...html.matchAll(/<meta\b[^>]*>/g)].map(m =>
