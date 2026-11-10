@@ -23,6 +23,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Hosted migrations against Postgres no longer fail with `relation "sqlite_master" does not exist`: the runtime and serverless migration paths now pass their dialect explicitly into the auth/job schema initializers instead of reading it off a transaction connection that does not carry one, so the #233 delivery dead-letter upgrade inspects `pg_constraint` on Postgres (#240).
+
 - Marketing site hygiene: the sitemap no longer lists the `/demo/` app shell or the cross-host `https://app.getopensight.org/` login shell, and the built demo artifact serves a `noindex, follow` robots meta so the app shell stays out of the index while demo links keep working as CTAs (#237).
 
 - Job mail delivery retries are now bounded: after 10 attempts a delivery dead-letters instead of rescheduling forever, its occurrence settles as `JOB_DELIVERY_EXHAUSTED`, and later periods of the job are admitted again. The job owner or a tenant administrator can retry a dead delivery in place — same delivery and dedupe key, fresh attempt sequence — from the automation page or `POST /api/jobs/:id/deliveries/:deliveryId/retry` (#233).
