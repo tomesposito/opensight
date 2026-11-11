@@ -197,6 +197,15 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const importedSliceLimit = kind === 'pie' && Number.isInteger(itemsLimit) && (itemsLimit as number) >= 1 && (itemsLimit as number) <= 100 &&
     (otherCategories === undefined || otherCategories === 'INCLUDE' || otherCategories === 'EXCLUDE')
     ? { count: itemsLimit as number, includeOther: otherCategories !== 'EXCLUDE' } : undefined;
+  // Small multiples panel limits become editable for the faceted kinds. The
+  // compiler and differences check retain malformed/unsupported inputs read-only.
+  const facetLimitObj = obj(obj(config.sortConfiguration).smallMultiplesLimitConfiguration);
+  const facetItemsLimit = facetLimitObj.itemsLimit;
+  const facetOtherCategories = facetLimitObj.otherCategories;
+  const importedFacetLimit = FACETED_KINDS.includes(kind) && Number.isInteger(facetItemsLimit) && (facetItemsLimit as number) >= 1 && (facetItemsLimit as number) <= 100 &&
+    Object.keys(facetLimitObj).every(key => key === 'itemsLimit' || key === 'otherCategories') &&
+    (facetOtherCategories === undefined || facetOtherCategories === 'INCLUDE' || facetOtherCategories === 'EXCLUDE')
+    ? { count: facetItemsLimit as number, includeOther: facetOtherCategories !== 'EXCLUDE' } : undefined;
   // Waterfall breakdown items limit (BreakdownItemsLimit): top-N breakdown
   // values in display order, with the rest rolled into an "Other" bar unless
   // OtherCategories is EXCLUDE. Fail-closed on shape (a malformed limit stays
@@ -240,6 +249,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     ...(importedGroupSort ? { groupSort: importedGroupSort } : {}),
     // OpenSight extension: imported pie slice limit imports into the draft.
     ...(importedSliceLimit ? { sliceLimit: importedSliceLimit } : {}),
+    ...(importedFacetLimit ? { facetLimit: importedFacetLimit } : {}),
     // OpenSight extension: imported waterfall breakdown limit imports into the
     // draft. The compiler validates on import that a Breakdowns field exists.
     ...(importedBreakdownLimit ? { breakdownLimit: importedBreakdownLimit } : {}),
