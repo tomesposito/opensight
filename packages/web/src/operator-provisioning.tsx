@@ -7,7 +7,7 @@ export const titleCase = (value: string) => value === 'free' ? 'Self-hosted' : v
 export interface OperatorProps { baseUrl?: string; fetcher?: typeof fetch }
 export interface TenantSummary { tenantId: string; displayName: string | null; slug: string | null; state: string; tier: Tier; memberCount: number; createdAt: string | null }
 export interface TenantDetail { tenantId: string; displayName: string | null; slug: string | null; state: string; namespaceId: string; version: number; createdOperationId: string | null; tombstone: string | null }
-export interface Billing { trialEndsAt?: string | null; retentionDueAt?: string | null; tier?: Tier | null; subscriptionStatus?: string | null; accessState?: string; status?: 'none' }
+export interface Billing { billingMode?: 'checkout' | 'waitlist'; entitlementSource?: 'stripe' | 'manual' | 'trial'; paidRequest?: (import('./TrialBilling.js').PaidRequestState & { id: string }) | null; trialEndsAt?: string | null; retentionDueAt?: string | null; tier?: Tier | null; subscriptionStatus?: string | null; accessState?: string; status?: 'none' }
 export interface OperatorMember { id: string; name: string; role: string; status: string }
 export interface UsageOverview { day: string; period: string; apiCalls: number; queries: number; storageBytes: number; nlq: number; quotas: { apiCalls: number; queries: number; storageBytes: number; nlq: number | null } }
 export class OperatorError extends Error {

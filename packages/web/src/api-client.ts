@@ -397,6 +397,8 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   const saveAIKey = (key: string) => resource<AIConfig>('/api/admin/ai/key', 'POST', { key });
   const testAIConnection = () => resource<{ ok: true }>('/api/admin/ai/test', 'POST', {});
   const checkout = (tier: 'light' | 'regular' | 'heavy') => resource<{ url: string }>('/api/signup/checkout', 'POST', { tier });
+  const requestPaidPlan = (tier: import('./TrialBilling.js').PaidTier) => resource<{ billing: import('./TrialBilling.js').BillingState }>('/api/billing/paid-request', 'POST', { tier });
+  const withdrawPaidRequest = () => resource<{ billing: import('./TrialBilling.js').BillingState }>('/api/billing/paid-request', 'DELETE');
   const exportWorkspace = () => resource<unknown>('/api/workspace/export');
   const closeWorkspace = (confirmTenantId: string) => resource<{ closed: boolean }>('/api/workspace/close', 'POST', { confirmTenantId });
   async function getSession(signal?: AbortSignal): Promise<Session> {
@@ -583,7 +585,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     listDashboards, getPublishedDashboard, queryDashboardVisual,
     saveHostedAnalysis, publishAnalysis,
     onDemand, connect, subscribeAvailability,
-    checkout, exportWorkspace, closeWorkspace, enroll, acceptEnrollment, login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
+    checkout, requestPaidPlan, withdrawPaidRequest, exportWorkspace, closeWorkspace, enroll, acceptEnrollment, login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob, retryJobDelivery,
     listPrepTemplates, proposePrepTemplate, publishPrepTemplate, createFromPrepTemplate, promoteCalculation, metricDatasets, listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, planO, reviseO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     listNotebooks, getNotebook, createNotebook, updateNotebook, deleteNotebook, runNotebook, notebookDatasets, notebookRuns, snapshotNotebookCell,

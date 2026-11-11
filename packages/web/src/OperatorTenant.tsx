@@ -81,12 +81,24 @@ export function OperatorTenant({ tenantId, ...props }: OperatorProps & { tenantI
           <dl className="operator-facts"><div><dt>Current tier</dt><dd>{tiers[view.billing.tier ?? 'free']}</dd></div><div><dt>Subscription status</dt><dd>{view.billing.subscriptionStatus ?? 'None'}</dd></div><div><dt>Access state</dt><dd>{view.billing.accessState ?? 'active'}</dd></div></dl>
           {view.billing.retentionDueAt && <div className="operator-banner"><p>Retention due: {new Date(view.billing.retentionDueAt).toLocaleString('en-US', { timeZone: 'UTC' })} UTC</p>
             {Date.parse(view.billing.retentionDueAt) <= Date.now() && <button disabled={work.busy} onClick={() => setDialog('delete')}>Start D-84 erasure…</button>}</div>}
-          {view.billing.accessState === 'paused'  && <div className="operator-banner"><p>Access paused. Resolve by paying in Stripe, exporting data, or closing the workspace. Data is retained for 30 days from the pause.</p></div>}
-          <form aria-label="Generate payment link" onSubmit={event => { event.preventDefault(); void work.run(async () => {
+          {view.billing.accessState === 'paused'  && <div className="operator-banner"><p>{view.billing.paidRequest?.state === 'pending' ? 'Waiting for the requested plan. The retention clock is held while this request is pending.' : view.billing.billingMode === 'waitlist' ? 'Access paused. The administrator can request a plan, export data, or close the workspace.' : 'Access paused. Resolve by paying in Stripe, exporting data, or closing the workspace. Data is retained for 30 days from the pause.'}</p></div>}
+          {view.billing.entitlementSource === 'manual' && <p>Manual entitlement. No payment taken and no subscription created.</p>}
+          {view.billing.paidRequest?.state === 'pending' && <div className="operator-banner">
+            <p>{tiers[view.billing.paidRequest.tier]} requested by {view.billing.paidRequest.requestedByEmail}.</p>
+            <button className="operator-primary" disabled={work.busy || tenant.state !== 'active'} onClick={() => void work.run(async () => {
+              await operatorRequest(props, key)(`${path}/billing/paid-request/grant`, 'POST', { requestId: view.billing!.paidRequest!.id });
+              await load(key); work.setMessage('Plan granted. No payment taken and no subscription created.');
+            })}>Grant {tiers[view.billing.paidRequest.tier]} (manual)</button>
+            <button disabled={work.busy || tenant.state !== 'active'} onClick={() => void work.run(async () => {
+              await operatorRequest(props, key)(`${path}/billing/paid-request/decline`, 'POST', { requestId: view.billing!.paidRequest!.id });
+              await load(key); work.setMessage('Request declined. The administrator may request again.');
+            })}>Decline request</button>
+          </div>}
+          {view.billing.billingMode !== 'waitlist' && <><form aria-label="Generate payment link" onSubmit={event => { event.preventDefault(); void work.run(async () => {
             const result = await operatorRequest(props, key)<{ url: string }>(`${path}/billing/payment-link`, 'POST', { tier }); setPayment({ url: result.url, tier });
           }); }}><label>Payment link for tier<select value={tier} disabled={work.busy} onChange={event => setTier(event.target.value as Tier)}>{(['light', 'regular', 'heavy'] as const).map(value => <option value={value} key={value}>{tiers[value]}</option>)}</select></label><button className="operator-primary" disabled={work.busy}>Generate payment link</button></form>
           <p>A payment link does not change the current tier. The plan changes when the customer pays.</p>
-          {payment && <PaymentLink {...payment} work={work} />}
+          {payment && <PaymentLink {...payment} work={work} />}</>}
         </>}
       </section>
       <section className="operator-card"><h2>People</h2>
