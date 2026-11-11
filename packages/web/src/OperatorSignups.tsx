@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { OperatorFrame, operatorRequest, useOperatorWork, type OperatorProps, tiers } from './operator-provisioning.js';
+import { OperatorFrame, operatorRequest, useOperatorWork, type OperatorProps, tiers, titleCase } from './operator-provisioning.js';
 interface PaidQueueEntry { id: string; tenantId: string; displayName: string | null; tier: 'light' | 'regular' | 'heavy'; requestedByEmail: string; createdAt: string; state: 'pending' }
 interface SignupStatus { billingMode: 'checkout' | 'waitlist'; paidRequests: PaidQueueEntry[]; paidRequestsOpen: number; enabled: boolean; paused: boolean; volumeCap: number; trialsToday: number; trialsLast24h: number; convertedToday: number; expiredToday: number; queued: number; pausedAtCap: boolean; retentionDue: { tenantId: string; displayName: string | null; retentionDueAt: string }[] }
 export function OperatorSignups(props: OperatorProps) {
@@ -19,7 +19,7 @@ export function OperatorSignups(props: OperatorProps) {
           <td>{request.requestedByEmail}</td><td>{new Date(request.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</td><td>{request.state}</td>
           <td><button className="operator-primary" disabled={work.busy} onClick={() => void work.run(async () => {
             await operatorRequest(props, key!)(`tenants/${request.tenantId}/billing/paid-request/grant`, 'POST', { requestId: request.id }); await load(key!);
-          })}>Grant {tiers[request.tier]} (manual)</button><button disabled={work.busy} onClick={() => void work.run(async () => {
+          })}>Grant {titleCase(request.tier)} (manual)</button><button disabled={work.busy} onClick={() => void work.run(async () => {
             await operatorRequest(props, key!)(`tenants/${request.tenantId}/billing/paid-request/decline`, 'POST', { requestId: request.id }); await load(key!);
           })}>Decline request</button></td>
         </tr>)}</tbody></table></div> : <p>No pending paid requests.</p>}

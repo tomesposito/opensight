@@ -430,8 +430,12 @@ export class HostedBilling {
             detail: { requestId: id, fromTier: existing.tier, tier } }, this.clock());
         }
       } else {
+        // Preserve lifecycle order even for withdraw/re-request within one
+        // clock tick; UUIDs alone do not order requests in either dialect.
+        const previous = (await c.query('SELECT MAX(created_at) AS latest FROM h11_paid_requests WHERE tenant_id = ?', [tenantId]))[0]?.latest;
+        const createdAt = new Date(Math.max(this.clock(), typeof previous === 'string' ? Date.parse(previous) + 1 : 0)).toISOString();
         await c.query(`INSERT INTO h11_paid_requests (id, tenant_id, tier, requested_by_subject, requested_by_email, state, created_at)
-          VALUES (?, ?, ?, ?, ?, 'pending', ?)`, [id, tenantId, tier, identity.subject!, identity.email, this.nowIso()]);
+          VALUES (?, ?, ?, ?, ?, 'pending', ?)`, [id, tenantId, tier, identity.subject!, identity.email, createdAt]);
         await appendOperatorAudit(c, { action: 'billing.paid_request.created', actor: String(identity.subject), tenantId, subject: id, detail: { requestId: id, tier } }, this.clock());
       }
       await c.query('UPDATE h9_billing SET retention_due_at = NULL, updated_at = ? WHERE tenant_id = ?', [this.nowIso(), tenantId]);
@@ -676,7 +680,8 @@ export class HostedBilling {
           return { duplicate: false, handled: false, tenantId, action: 'ignored' } satisfies BillingEventResult;
         }
         if (conversionAuthorized && next.tier && PAID_TIERS.includes(next.tier)) next.trialEndsAt = null;
-        next.retentionDueAt = next.pauseEffectiveAt ? new Date(Date.parse(next.pauseEffectiveAt) + 30 * DAY_MS).toISOString() : null;
+        const pendingRequest = next.pauseEffectiveAt && (await c.query("SELECT id FROM h11_paid_requests WHERE tenant_id = ? AND state = 'pending'", [tenantId])).length > 0;
+        next.retentionDueAt = next.pauseEffectiveAt && !pendingRequest ? new Date(Date.parse(next.pauseEffectiveAt) + 30 * DAY_MS).toISOString() : null;
         next.updatedAt = this.nowIso();
         next.lastStripeEventCreated = event.created;
         await c.query(`INSERT INTO h9_billing (tenant_id, tier, subscription_status, access_state, pause_effective_at, stripe_customer_id, stripe_subscription_id, updated_at, trial_ends_at, retention_due_at, last_stripe_event_created)

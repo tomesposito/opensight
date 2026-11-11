@@ -88,7 +88,7 @@ export function OperatorTenant({ tenantId, ...props }: OperatorProps & { tenantI
             <button className="operator-primary" disabled={work.busy || tenant.state !== 'active'} onClick={() => void work.run(async () => {
               await operatorRequest(props, key)(`${path}/billing/paid-request/grant`, 'POST', { requestId: view.billing!.paidRequest!.id });
               await load(key); work.setMessage('Plan granted. No payment taken and no subscription created.');
-            })}>Grant {tiers[view.billing.paidRequest.tier]} (manual)</button>
+            })}>Grant {titleCase(view.billing.paidRequest.tier)} (manual)</button>
             <button disabled={work.busy || tenant.state !== 'active'} onClick={() => void work.run(async () => {
               await operatorRequest(props, key)(`${path}/billing/paid-request/decline`, 'POST', { requestId: view.billing!.paidRequest!.id });
               await load(key); work.setMessage('Request declined. The administrator may request again.');

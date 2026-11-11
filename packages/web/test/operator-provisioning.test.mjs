@@ -181,3 +181,24 @@ test('192 C: route guards exclude offline app; operator navigation contains all 
   for (const page of ['OperatorUsers', 'OperatorIdeas']) assert.match(readFileSync(new URL(`../src/${page}.tsx`, import.meta.url), 'utf8'), /OperatorNav current=/);
   for (const page of ['OperatorTenants', 'OperatorTenant', 'operator-provisioning']) assert.doesNotMatch(readFileSync(new URL(`../src/${page}.tsx`, import.meta.url), 'utf8'), /localStorage|sessionStorage|document\.cookie/);
 });
+
+test('241 tenant detail resolves only pending request IDs, refreshes grant/decline, and shows manual entitlement', async t => {
+  for (const action of ['grant', 'decline']) {
+    let billing = { billingMode: 'waitlist', tier: null, accessState: 'paused', paidRequest: { id: 'request-one', tier: 'regular', state: 'pending', requestedByEmail: 'requester@example.test' } };
+    const ui = await mount(t, OperatorTenant, call => {
+      if (call.path.endsWith('/billing')) return response({ billing });
+      if (call.path.endsWith(`/paid-request/${action}`)) {
+        assert.deepEqual(call.input, { requestId: 'request-one' });
+        billing = { ...billing, tier: action === 'grant' ? 'regular' : null, entitlementSource: action === 'grant' ? 'manual' : 'trial', paidRequest: { ...billing.paidRequest, state: action === 'grant' ? 'granted' : 'declined' } };
+        return response({ billing });
+      }
+      return detailHandler()(call);
+    }, { tenantId: 'tenant-one' });
+    await connect(ui); assert.ok(button(ui, 'Grant Regular (manual)')); assert.ok(button(ui, 'Decline request'));
+    assert.equal(ui.root.findAllByProps({ 'aria-label': 'Generate payment link' }).length, 0);
+    await click(button(ui, action === 'grant' ? 'Grant Regular (manual)' : 'Decline request'));
+    assert.equal(button(ui, 'Grant Regular (manual)'), undefined);
+    if (action === 'grant') assert.match(ui.text(), /Manual entitlement/);
+    assert.equal(ui.calls.filter(c => c.path.endsWith(`/paid-request/${action}`)).length, 1);
+  }
+});
