@@ -1,7 +1,33 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { MetadataError, type Database } from './metadata-db.js';
 import type { MailMessage, MailTransport } from './mail.js';
-import type { HostedBilling } from './hosted-billing.js';
+import type { HostedBilling, PaidRequest } from './hosted-billing.js';
+
+const escapeHtml = (text: string) => text.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
+
+/** Store-first courtesy mail. Queue/audit state remains authoritative even when
+ * transport configuration, delivery or the name lookup fails. Identity mail
+ * has no tenantId, so it never spends a workspace's email quota. */
+export async function notifyPaidRequest(db: Database, mail: MailTransport | undefined, operatorEmail: string | null | undefined,
+  request: PaidRequest, kind: 'created' | 'granted'): Promise<void> {
+  try {
+    const to = kind === 'created' ? operatorEmail : request.requestedByEmail;
+    if (!to || !mail?.configured) throw new Error('unavailable');
+    const tenant = (await db.transaction(c => c.query('SELECT display_name FROM h1_tenants WHERE tenant_id = ?', [request.tenantId])))[0];
+    const name = escapeHtml(String(tenant?.display_name ?? request.tenantId));
+    const tier = request.tier[0]!.toUpperCase() + request.tier.slice(1);
+    await mail.send({ to: [to],
+      subject: kind === 'granted' ? `Your OpenSight ${tier} plan is on` : `OpenSight paid request: ${tier}`,
+      html: kind === 'granted'
+        ? `<p>Your workspace ${name} is now on the ${tier} plan. No payment was taken — subscriptions open later, and we'll write again before anything is charged.</p>`
+        : `<p>${name} requested the ${tier} plan.</p><p>Requested by ${escapeHtml(request.requestedByEmail)} on ${escapeHtml(request.createdAt)}.</p><p>Review the Paid requests queue on the operator Signups page. The queue is the system of record; requesting charges nothing.</p>`,
+      dedupeKey: createHash('sha256').update(`paid-request:${request.id}:${kind}`).digest('hex'),
+    });
+  } catch {
+    // Never log transport errors, addresses, message contents or secrets.
+    console.warn(JSON.stringify({ code: 'BILLING_PAID_REQUEST_MAIL_FAILED', requestId: request.id, kind }));
+  }
+}
 
 export const MONTHLY_EMAILS = { free: 100, light: 500, regular: 5000, heavy: 25000 } as const;
 export async function initializeTenantMail(db: Database): Promise<void> {

@@ -6,6 +6,7 @@ import { appendOperatorAudit } from './operator-audit.js';
 import { entitlementConfig, type Entitlement } from './hosted-usage.js';
 import type { MailTransport } from './mail.js';
 import { emailAddress } from './mail.js';
+import { notifyPaidRequest } from './hosted-mail.js';
 
 /** Hosted billing and 14-day trials (#194, #197). Paused workspaces retain
  * data for 30 days; resolution is payment, export, or closure via D-84. */
@@ -361,8 +362,12 @@ export class HostedBilling {
   }
   private async notifyPause(tenantId: string, effectiveAt: string, reason: string): Promise<void> {
     if (!this.options.mail?.configured || !this.options.notifyTo) return;
+    const waiting = (await this.latestPaidRequest(tenantId))?.state === 'pending';
+    const resolution = waiting ? 'A paid request is pending; the retention clock is held. Review the Paid requests queue.'
+      : this.billingMode === 'waitlist' ? 'Data is retained for 30 days. Resolve by requesting a plan, exporting data, or closing the workspace.'
+      : 'data is retained for 30 days. Resolve by paying in Stripe, exporting data, or closing the workspace.';
     await this.options.mail.send({ to: [this.options.notifyTo], subject: `OpenSight billing: tenant ${tenantId} access paused`,
-      html: `<p>Tenant ${tenantId} entered the billing paused state (${reason}). Access pauses at ${effectiveAt}; data is retained for 30 days. Resolve by paying in Stripe, exporting data, or closing the workspace.</p>`,
+      html: `<p>Tenant ${tenantId} entered the billing paused state (${reason}). Access pauses at ${effectiveAt}; ${resolution}</p>`,
       dedupeKey: createHmac('sha256', 'billing-pause').update(`${tenantId}:${effectiveAt}`).digest('hex'),
     }).catch(() => undefined);
   }
@@ -409,7 +414,7 @@ export class HostedBilling {
     if (this.billingMode !== 'waitlist') throw new MetadataError('BILLING_WAITLIST_UNAVAILABLE', 409);
     if (typeof tier !== 'string' || !PAID_TIERS.includes(tier as BillingTier)) throw new MetadataError('BILLING_TIER_INVALID', 400);
     await this.expireTrials();
-    const request = await this.db.transaction(async c => {
+    const outcome = await this.db.transaction(async c => {
       const record = await this.lockPaidRequestTenant(c, identifier(tenantId));
       if (!record.trialEndsAt || record.tier && PAID_TIERS.includes(record.tier) || record.stripeSubscriptionId)
         throw new MetadataError('BILLING_PAID_REQUEST_UNAVAILABLE', 409);
@@ -430,10 +435,11 @@ export class HostedBilling {
         await appendOperatorAudit(c, { action: 'billing.paid_request.created', actor: String(identity.subject), tenantId, subject: id, detail: { requestId: id, tier } }, this.clock());
       }
       await c.query('UPDATE h9_billing SET retention_due_at = NULL, updated_at = ? WHERE tenant_id = ?', [this.nowIso(), tenantId]);
-      return paidRequest((await c.query('SELECT * FROM h11_paid_requests WHERE id = ?', [id]))[0]!);
+      return { request: paidRequest((await c.query('SELECT * FROM h11_paid_requests WHERE id = ?', [id]))[0]!), created: !existing };
     });
     await this.load();
-    return request;
+    if (outcome.created) await notifyPaidRequest(this.db, this.options.mail, this.options.notifyTo, outcome.request, 'created');
+    return outcome.request;
   }
   async resolvePaidRequest(tenantId: string, resolution: 'granted' | 'declined' | 'withdrawn', actor = 'deployment-operator', requestId?: unknown): Promise<PaidRequest> {
     await this.expireTrials();
@@ -458,6 +464,7 @@ export class HostedBilling {
       return { ...request, state: resolution, resolvedAt: now, resolvedBy: actor };
     });
     await this.load();
+    if (resolution === 'granted') await notifyPaidRequest(this.db, this.options.mail, this.options.notifyTo, request, 'granted');
     return request;
   }
   async createPaymentLink(tenantId: string, tier: unknown): Promise<{ id: string; url: string; tier: BillingTier }> {
