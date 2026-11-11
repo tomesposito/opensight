@@ -10,13 +10,14 @@ until the separately authorized rollout.
 ## Configuration
 
 Billing is enabled only when the full Stripe configuration is present in
-the environment. With no Stripe variables set, billing is disabled and
-the product works exactly as before. A partial configuration is an
+the environment. With no Stripe variables set, conversion uses the
+[waiting list](waiting-list-conversion.md) (#241, D-93). Trial and tier quota
+settings are independent of Stripe configuration. A partial configuration is an
 operator error: the hosted server refuses to start
 (`BILLING_CONFIG_INVALID`).
 
-In non-reference, non-invocation hosted deployments, billing configuration also
-composes quota enforcement even when self-serve signup is off (#213). Explicit
+In non-reference, non-invocation hosted deployments, billing always composes
+quota enforcement, including when Stripe and self-serve signup are off (#241). Explicit
 `OPENSIGHT_ENTITLEMENTS` are validated and supply deployment defaults; without
 them, defaults remain unrestricted. Trial and paid tier entitlements override
 those defaults fail-closed, while operator tenants without billing keep them.

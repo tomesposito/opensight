@@ -19,10 +19,10 @@ const env = (extra = {}) => ({
 });
 const sign = (raw, ts, secret = SECRET) => `t=${ts},v1=${createHmac('sha256', secret).update(`${ts}.${raw}`).digest('hex')}`;
 
-test('billing config: disabled with no Stripe variables, fail-closed on partial config', () => {
+test('billing config: no Stripe config selects waitlist, partial Stripe config fails closed', () => {
   assert.equal(billingConfig({}), undefined);
   assert.throws(() => billingConfig({ OPENSIGHT_STRIPE_SECRET_KEY: 'sk_test_placeholder' }), { code: 'BILLING_CONFIG_INVALID' });
-  assert.throws(() => billingConfig({ OPENSIGHT_BILLING_TIER_ENTITLEMENTS: '{}' }), { code: 'BILLING_CONFIG_INVALID' });
+  assert.equal(billingConfig({ OPENSIGHT_BILLING_TIER_ENTITLEMENTS: '{}' }), undefined);
   assert.throws(() => billingConfig(env({ OPENSIGHT_BILLING_TIER_ENTITLEMENTS: '{"bogus":{}}' })), { code: 'BILLING_CONFIG_INVALID' });
   const config = billingConfig(env());
   assert.equal(config.priceIds.light, 'price_light');

@@ -46,7 +46,7 @@ import { jobRoute } from './job-routes.js';
 import { Scheduler } from './schedule.js';
 import { hostedReadiness } from './hosted-health.js';
 import { HostedUsage, usageMonth, initializeUsage, entitlementConfig } from './hosted-usage.js';
-import { billingConfig, HostedBilling, httpStripeClient, initializeBilling, parseStripeEvent, readRawBody, verifyStripeSignature, type StripeFetcher } from './hosted-billing.js';
+import { billingConfig, waitlistBillingConfig, HostedBilling, httpStripeClient, initializeBilling, parseStripeEvent, readRawBody, verifyStripeSignature, type StripeFetcher } from './hosted-billing.js';
 import { initializeTenantMail, TenantMailTransport } from './hosted-mail.js';
 import { SignupOperator } from './hosted-signup-operator.js';
 import { exportWorkspace } from './workspace-export.js';
@@ -144,6 +144,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const clock = options.clock ?? Date.now;
   const signupCfg = signupConfig(options.env ?? process.env, config.origin, config.encryptionKey);
   const billingCfg = billingConfig(options.env ?? process.env);
+  const billingEntitlements = billingCfg ?? waitlistBillingConfig(options.env ?? process.env);
   const accessRate = accessRequestRate(options.env ?? process.env);
   const accessNotifyTo = accessRequestNotifyTo(options.env ?? process.env);
   if (options.membershipDatabase?.durable !== true || options.tenantDatabase?.durable !== true) throw new MetadataError('DURABLE_MEMBERSHIP_STORE_REQUIRED', 503);
@@ -151,12 +152,12 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const authenticate = options.security.authenticate;
   const reference = referenceConfig(options.env ?? process.env);
   if (options.invocation && reference) throw new MetadataError('SERVERLESS_REFERENCE_FORBIDDEN', 503);
-  // Outside reference/invocation modes, entitlements, usable billing or signup
-  // compose quota enforcement independently of the signup rollout flag.
+  // Every single-node hosted deployment composes billing, including waitlist
+  // mode. Keep quota overrides active when Stripe or signup is switched off.
   // Without explicit entitlements, operator defaults remain unrestricted;
   // every trial/paid billing override still resolves fail-closed.
   const configuredEntitlements = (options.env ?? process.env).OPENSIGHT_ENTITLEMENTS;
-  const hostedUsage = !reference && !options.invocation && (configuredEntitlements !== undefined || billingCfg !== undefined || signupCfg.enabled);
+  const hostedUsage = !reference && !options.invocation;
   if (hostedUsage) await initializeUsage(options.membershipDatabase);
   const usage = reference ? new HostedUsage(options.membershipDatabase, reference.entitlements, clock) : hostedUsage
     ? new HostedUsage(options.membershipDatabase, configuredEntitlements !== undefined ? entitlementConfig(configuredEntitlements) : { defaults: { apiCalls: Number.MAX_SAFE_INTEGER, storageBytes: Number.MAX_SAFE_INTEGER, computeAttempts: Number.MAX_SAFE_INTEGER }, tenants: {} }, clock)
@@ -169,7 +170,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   });
   if (!options.invocation) await initializeAnalytics(options.membershipDatabase);
   if (!options.invocation) await initializeAccessRequests(options.membershipDatabase);
-  if (!options.invocation && billingCfg) await initializeBilling(options.membershipDatabase);
+  if (!options.invocation) await initializeBilling(options.membershipDatabase);
   if (!options.invocation) { await initializeIdeas(options.membershipDatabase); await initializeAiAnswerReceipts(options.membershipDatabase); }
   const analytics = options.analytics ?? new Analytics(new AnalyticsStore(options.membershipDatabase), {
     ...analyticsFromEnvironment(options.env), deliveryMode: options.invocation ? 'deferred' : 'inline',
@@ -186,10 +187,10 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const ai = invocation?.ai ?? new HostedAI(data, config.encryptionKey.toString('base64'), options.env ?? process.env, usage?.aiMeter(), options.ai, new HostedAIReceipts(options.membershipDatabase));
   const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets, undefined, undefined, analytics));
   const mail = invocation?.mail ?? options.mailTransport ?? smtpFromEnvironment(options.env);
-  // Stripe billing (issue #194) composes on the single-node hosted server;
+  // Billing and waiting-list conversion compose on the single-node hosted server;
   // invocation mode keeps /api/host closed, so billing stays out of it.
-  const billingService = !options.invocation && billingCfg ? new HostedBilling(options.membershipDatabase, billingCfg,
-    { mail, clock, origin: config.origin, notifyTo: accessNotifyTo, stripe: httpStripeClient(billingCfg.apiKey, options.stripeFetcher) }) : undefined;
+  const billingService = !options.invocation ? new HostedBilling(options.membershipDatabase, billingEntitlements,
+    { mail, clock, origin: config.origin, notifyTo: accessNotifyTo, stripe: billingCfg ? httpStripeClient(billingCfg.apiKey, options.stripeFetcher) : undefined }) : undefined;
   if (billingService) { await billingService.load(); if (usage) usage.tierEntitlement = tenantId => billingService.tierEntitlement(tenantId); }
   if (billingService) await initializeTenantMail(options.membershipDatabase);
   const tenantMail = billingService ? new TenantMailTransport(options.membershipDatabase, billingService, mail) : mail;
@@ -205,7 +206,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const sessions = new EmbedSessions(options.membershipDatabase, metadata, policy, embedSessionKey(options.env ?? process.env), async (context, grant) => { await billingService?.expireTrials(); billingService?.assertAccess(context.tenantId); await embedContent.authorize(context, grant); });
   await sessions.initialize(!options.invocation);
   const provisioning = new HostedProvisioning(options.membershipDatabase, config, tenantMail, clock, ownership, analytics, invocation?.invitations);
-  if (signupCfg.enabled && (!billingService || !billingCfg?.trialEntitlement || !mail.configured)) throw new MetadataError('SIGNUP_CONFIG_INVALID', 503);
+  if (signupCfg.enabled && (!billingService || !billingService.trialConfigured || !mail.configured)) throw new MetadataError('SIGNUP_CONFIG_INVALID', 503);
   if (billingService) await initializeSignups(options.membershipDatabase);
   const signup = billingService ? new HostedSignup(options.membershipDatabase, provisioning, billingService, mail, signupCfg, options.signupChallengeVerifier, clock) : undefined;
   const signupOperator = signup && billingService ? new SignupOperator(options.membershipDatabase, signup, billingService, clock) : undefined;
@@ -316,7 +317,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         const browserMembership = /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/users(?:\/[A-Za-z0-9_-]+)?$/.test(path);
         const browserProvisioning = path === '/api/host/signups' && ['GET', 'PATCH'].includes(request.method ?? '') || (path === '/api/host/tenants' && ['GET', 'POST'].includes(request.method ?? ''))
           || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+$/.test(path) && ['GET', 'DELETE'].includes(request.method ?? '')
-          || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/(?:invitations|suspend|resume|billing\/(?:payment-link))$/.test(path) && request.method === 'POST'
+          || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/(?:invitations|suspend|resume|billing\/(?:payment-link|paid-request\/(?:grant|decline)))$/.test(path) && request.method === 'POST'
           || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/billing$/.test(path) && request.method === 'GET'
           || /^\/api\/host\/usage\/[0-9]{4}-(?:0[1-9]|1[0-2])\/tenants\/[A-Za-z0-9_-]+$/.test(path) && request.method === 'GET';
         if (request.headers.origin !== undefined && !browserMembership && !browserIdeas && !browserProvisioning || !authorization?.startsWith('Operator ') || !equal(authorization.slice(9), config.operatorKey.toString('base64url'))) throw new MetadataError('OPERATOR_REQUIRED', 403);
@@ -368,17 +369,23 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
           const records = request.method === 'POST' ? await usage.rollupMonthlyUsageForPeriod(period, tenantId) : await usage.monthlyUsageForPeriod(period, tenantId);
           send(response, 200, { period, records, ...(tenantId && request.method === 'GET' ? { overview: await usage.operatorOverview(tenantId, period) } : {}) }); return;
         }
-        const billingTenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)\/billing(?:\/(payment-link))?$/.exec(path);
+        const billingTenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)\/billing(?:\/(payment-link|paid-request\/(?:grant|decline)))?$/.exec(path);
         if (billingTenant) {
           if (!billingService) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
           const tenantId = identifier(billingTenant[1]), billingAction = billingTenant[2];
-          if (!billingAction) { method(request, response, ['GET']); send(response, 200, { billing: await billingService.state(tenantId) }); return; }
+          if (!billingAction) { method(request, response, ['GET']); send(response, 200, { billing: { ...await billingService.viewState(tenantId), paidRequest: await billingService.latestPaidRequest(tenantId) } }); return; }
           method(request, response, ['POST']);
           if (billingAction === 'payment-link') {
+            if (!billingCfg) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
             const input = await body(request, ['tier']);
             send(response, 201, await billingService.createPaymentLink(tenantId, input.tier)); return;
           }
-
+          if (billingAction === 'paid-request/grant' || billingAction === 'paid-request/decline') {
+            const input = await body(request, ['requestId']);
+            if (typeof input.requestId !== 'string') throw new MetadataError('METADATA_INVALID', 400);
+            await billingService.resolvePaidRequest(tenantId, billingAction === 'paid-request/grant' ? 'granted' : 'declined', undefined, input.requestId);
+            send(response, 200, { billing: await billingService.viewState(tenantId) }); return;
+          }
         }
         const tenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)(?:\/(suspend|resume|invitations|users)(?:\/([A-Za-z0-9_-]+))?)?$/.exec(path);
         if (tenant) {
@@ -453,13 +460,31 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       // gets no hosted access until an admin resolution reopens it. The
       // tenant's data is untouched; only access pauses.
       await billingService?.expireTrials();
-      const resolutionPath = !!billingService && ['/api/session', '/api/auth/logout', '/api/auth/switch', '/api/billing', '/api/signup/checkout', '/api/workspace/export', '/api/workspace/close'].includes(path);
+      // Waitlist composition must not exempt legacy operator tenants without
+      // billing from their existing API/egress limits. Preserve Stripe's
+      // established resolution boundary and exempt actual trial/paid records.
+      const resolutionPath = !!billingService && (!!billingCfg || billingService.hasRecord(context.tenantId))
+        && ['/api/session', '/api/auth/logout', '/api/auth/switch', '/api/billing', '/api/billing/paid-request', '/api/signup/checkout', '/api/workspace/export', '/api/workspace/close'].includes(path);
       if (billingService && resolutionPath) {
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
-        if (['/api/billing', '/api/signup/checkout', '/api/workspace/export', '/api/workspace/close'].includes(path)) {
+        if (['/api/billing', '/api/billing/paid-request', '/api/signup/checkout', '/api/workspace/export', '/api/workspace/close'].includes(path)) {
           if (!hasCapability(user.body.role as Parameters<typeof hasCapability>[0], 'admin')) throw new MetadataError('SECURITY_ADMIN_REQUIRED', 403);
-          if (path === '/api/billing') { method(request, response, ['GET']); send(response, 200, { billing: await billingService.state(context.tenantId), trial: billingService.trial(context.tenantId), checkoutEnabled: signupCfg.enabled }); return; }
+          if (path === '/api/billing') { method(request, response, ['GET']); send(response, 200, { billing: await billingService.viewState(context.tenantId), trial: billingService.trial(context.tenantId), checkoutEnabled: signupCfg.enabled && !!billingCfg }); return; }
+          if (path === '/api/billing/paid-request') {
+            if (request.headers.origin !== config.origin) throw new MetadataError('UNTRUSTED_ORIGIN', 403);
+            method(request, response, ['POST', 'DELETE']);
+            if (request.method === 'POST') {
+              const input = await body(request, ['tier']);
+              await billingService.requestPaidPlan(context.tenantId, input.tier, context.userId, context.namespaceId);
+            } else {
+              const member = (await options.membershipDatabase.transaction(c => c.query("SELECT subject FROM h2_memberships WHERE tenant_id = ? AND namespace_id = ? AND user_id = ? AND status = 'active'", [context.tenantId, context.namespaceId, context.userId])))[0];
+              if (!member) throw new MetadataError('BILLING_REQUESTER_UNRESOLVED', 403);
+              await billingService.resolvePaidRequest(context.tenantId, 'withdrawn', String(member.subject));
+            }
+            send(response, 200, { billing: await billingService.viewState(context.tenantId) }); return;
+          }
           if (path === '/api/signup/checkout') {
+            if (!billingCfg) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
             if (request.headers.origin !== config.origin) throw new MetadataError('UNTRUSTED_ORIGIN', 403);
             method(request, response, ['POST']); const input = await body(request, ['tier']); send(response, 201, await billingService.createCheckoutSession(context.tenantId, input.tier)); return;
           }
@@ -528,7 +553,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         const tenant = (await options.membershipDatabase.transaction(c => c.query('SELECT display_name, slug FROM h1_tenants WHERE tenant_id = ?', [context.tenantId])))[0];
         const workspaceName = workspaceLabel(tenant?.display_name, context.tenantId);
         const workspaceSlug = typeof tenant?.slug === 'string' ? tenant.slug : null;
-        send(response, 200, { id: user.id, namespaceId: context.namespaceId, tenantId: context.tenantId, workspaceName, workspaceSlug, ...user.body, trial: billingService?.trial(context.tenantId) ?? null, billingPaused: billingService?.accessPaused(context.tenantId) ?? false, ...(billingService ? { billing: await billingService.state(context.tenantId) } : {}), ...(invocation ? { capabilities: invocation.capabilities } : {}) }); return;
+        send(response, 200, { id: user.id, namespaceId: context.namespaceId, tenantId: context.tenantId, workspaceName, workspaceSlug, ...user.body, trial: billingService?.trial(context.tenantId) ?? null, billingPaused: billingService?.accessPaused(context.tenantId) ?? false, ...(billingService ? { billing: await billingService.viewState(context.tenantId) } : {}), ...(invocation ? { capabilities: invocation.capabilities } : {}) }); return;
       }
       if (path === '/api/auth/switch' || path === '/api/auth/logout') {
         if (!options.builtinAuth) throw new MetadataError('BUILTIN_AUTH_UNAVAILABLE', 503);

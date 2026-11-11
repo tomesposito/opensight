@@ -59,12 +59,14 @@ export function OperatorTenant({ tenantId, ...props }: OperatorProps & { tenantI
     }
   });
   const tenant = view?.tenant, readOnly = tenant?.state === 'deleted' || tenant?.state === 'deleting';
+  const billingLabel = view?.billing?.tier ? tiers[view.billing.tier]
+    : view?.billing?.trialEndsAt ? view.billing.accessState === 'paused' ? 'Trial ended' : 'Trial' : 'Operator configured';
   const confirmValue = tenant?.slug ?? tenantId;
   return <OperatorFrame connected={key !== undefined} title="Operator · Tenant details" work={work} connect={async credential => { await load(credential); setKey(credential); }} disconnect={() => {
     setKey(undefined); setView(undefined); setPayment(undefined); setDialog(undefined); setConfirmation(''); setEmail(''); setName(''); setRole('reader'); setTier('regular'); setInviteKey(crypto.randomUUID()); work.setError(''); work.setMessage('Disconnected.');
   }}>
     {key !== undefined && view && tenant && <><p><a href="#operator-tenants">← All tenants</a></p>
-      <div className="operator-title"><h1>{tenant.displayName ?? tenant.tenantId}</h1><StateChip state={tenant.state} />{view.billing && <span className="operator-chip plan">{tiers[view.billing.tier ?? 'free']}</span>}</div>
+      <div className="operator-title"><h1>{tenant.displayName ?? tenant.tenantId}</h1><StateChip state={tenant.state} />{view.billing && <span className="operator-chip plan">{billingLabel}</span>}</div>
       <p>Slug <strong>{tenant.slug ?? 'None'}</strong> · Tenant ID <code>{tenant.tenantId}</code></p>
       {tenant.state === 'suspended' && <p className="operator-banner">Tenant suspended. Access is stopped. Resume in the Danger zone when ready.</p>}
       {readOnly && <p className="operator-banner">{tenant.state === 'deleted' ? 'Deleted tenant. This tombstone is read-only.' : 'Deletion requested. Access is revoked; this tenant is read-only.'}</p>}
@@ -78,15 +80,27 @@ export function OperatorTenant({ tenantId, ...props }: OperatorProps & { tenantI
       </section>
       {!readOnly && <><section className="operator-card"><h2>Plan & billing</h2>
         {view.billingMissing ? <p>Billing is not configured on this deployment</p> : view.billingError ? <p role="alert">Billing unavailable: {view.billingError}</p> : view.billing && <>
-          <dl className="operator-facts"><div><dt>Current tier</dt><dd>{tiers[view.billing.tier ?? 'free']}</dd></div><div><dt>Subscription status</dt><dd>{view.billing.subscriptionStatus ?? 'None'}</dd></div><div><dt>Access state</dt><dd>{view.billing.accessState ?? 'active'}</dd></div></dl>
+          <dl className="operator-facts"><div><dt>Current tier</dt><dd>{billingLabel}</dd></div><div><dt>Subscription status</dt><dd>{view.billing.subscriptionStatus ?? 'None'}</dd></div><div><dt>Access state</dt><dd>{view.billing.accessState ?? 'active'}</dd></div></dl>
           {view.billing.retentionDueAt && <div className="operator-banner"><p>Retention due: {new Date(view.billing.retentionDueAt).toLocaleString('en-US', { timeZone: 'UTC' })} UTC</p>
             {Date.parse(view.billing.retentionDueAt) <= Date.now() && <button disabled={work.busy} onClick={() => setDialog('delete')}>Start D-84 erasure…</button>}</div>}
-          {view.billing.accessState === 'paused'  && <div className="operator-banner"><p>Access paused. Resolve by paying in Stripe, exporting data, or closing the workspace. Data is retained for 30 days from the pause.</p></div>}
-          <form aria-label="Generate payment link" onSubmit={event => { event.preventDefault(); void work.run(async () => {
+          {view.billing.accessState === 'paused'  && <div className="operator-banner"><p>{view.billing.paidRequest?.state === 'pending' ? 'Waiting for the requested plan. The retention clock is held while this request is pending.' : view.billing.billingMode === 'waitlist' ? 'Access paused. The administrator can request a plan, export data, or close the workspace.' : 'Access paused. Resolve by paying in Stripe, exporting data, or closing the workspace. Data is retained for 30 days from the pause.'}</p></div>}
+          {view.billing.entitlementSource === 'manual' && <p>Manual entitlement. No payment taken and no subscription created.</p>}
+          {view.billing.paidRequest?.state === 'pending' && <div className="operator-banner">
+            <p>{tiers[view.billing.paidRequest.tier]} requested by {view.billing.paidRequest.requestedByEmail}.</p>
+            <button className="operator-primary" disabled={work.busy || tenant.state !== 'active'} onClick={() => void work.run(async () => {
+              await operatorRequest(props, key)(`${path}/billing/paid-request/grant`, 'POST', { requestId: view.billing!.paidRequest!.id });
+              await load(key); work.setMessage('Plan granted. No payment taken and no subscription created.');
+            })}>Grant {titleCase(view.billing.paidRequest.tier)} (manual)</button>
+            <button disabled={work.busy || tenant.state !== 'active'} onClick={() => void work.run(async () => {
+              await operatorRequest(props, key)(`${path}/billing/paid-request/decline`, 'POST', { requestId: view.billing!.paidRequest!.id });
+              await load(key); work.setMessage('Request declined. The administrator may request again.');
+            })}>Decline request</button>
+          </div>}
+          {view.billing.billingMode !== 'waitlist' && <><form aria-label="Generate payment link" onSubmit={event => { event.preventDefault(); void work.run(async () => {
             const result = await operatorRequest(props, key)<{ url: string }>(`${path}/billing/payment-link`, 'POST', { tier }); setPayment({ url: result.url, tier });
           }); }}><label>Payment link for tier<select value={tier} disabled={work.busy} onChange={event => setTier(event.target.value as Tier)}>{(['light', 'regular', 'heavy'] as const).map(value => <option value={value} key={value}>{tiers[value]}</option>)}</select></label><button className="operator-primary" disabled={work.busy}>Generate payment link</button></form>
           <p>A payment link does not change the current tier. The plan changes when the customer pays.</p>
-          {payment && <PaymentLink {...payment} work={work} />}
+          {payment && <PaymentLink {...payment} work={work} />}</>}
         </>}
       </section>
       <section className="operator-card"><h2>People</h2>

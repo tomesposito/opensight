@@ -32,8 +32,14 @@ export class SignupOperator {
       const expiredToday = expiryEvents.filter(row => (JSON.parse(String(row.detail)) as { reason?: string }).reason === 'trial_expired').length;
       const trialsLast24h = Number(counts.recent ?? 0);
       const retentionDue = await c.query(`SELECT b.tenant_id, t.display_name, b.retention_due_at FROM h9_billing b JOIN h1_tenants t ON t.tenant_id = b.tenant_id
-        WHERE b.access_state = 'paused' AND b.retention_due_at <= ? AND t.state NOT IN ('deleted','deleting') ORDER BY b.retention_due_at`, [new Date(this.clock()).toISOString()]);
-      return { enabled: this.signup.config.enabled, paused, volumeCap: this.signup.config.volumeCap, trialsToday: Number(counts.today ?? 0), trialsLast24h,
+        WHERE b.access_state = 'paused' AND b.retention_due_at <= ? AND t.state NOT IN ('deleted','deleting')
+        AND NOT EXISTS (SELECT 1 FROM h11_paid_requests r WHERE r.tenant_id = b.tenant_id AND r.state = 'pending') ORDER BY b.retention_due_at`, [new Date(this.clock()).toISOString()]);
+      const paidRequests = (await c.query(`SELECT r.*, t.display_name FROM h11_paid_requests r JOIN h1_tenants t ON t.tenant_id = r.tenant_id
+        WHERE r.state = 'pending' AND t.state NOT IN ('deleted', 'deleting') ORDER BY r.created_at, r.id`)).map(row => ({
+        id: String(row.id), tenantId: String(row.tenant_id), displayName: row.display_name, tier: String(row.tier),
+        requestedByEmail: String(row.requested_by_email), createdAt: String(row.created_at), state: 'pending' as const,
+      }));
+      return { billingMode: this.billing.billingMode, paidRequests, paidRequestsOpen: paidRequests.length, enabled: this.signup.config.enabled, paused, volumeCap: this.signup.config.volumeCap, trialsToday: Number(counts.today ?? 0), trialsLast24h,
         convertedToday, expiredToday, queued: Number(counts.queued ?? 0), pausedAtCap: trialsLast24h >= this.signup.config.volumeCap,
         retentionDue: retentionDue.map(row => ({ tenantId: String(row.tenant_id), displayName: row.display_name, retentionDueAt: String(row.retention_due_at) })) };
     });
