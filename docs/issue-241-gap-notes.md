@@ -2,9 +2,12 @@
 
 Implementation follows the run brief and the approved D-93 design package,
 including all seven decided rules. Neither solution-design file was edited.
-The separately hosted GitHub issue was not fetched: the run explicitly forbids
-network access beyond npm install, so the issue contract reproduced in the
-brief was used together with the full local design and four mockups.
+The original build used the issue contract reproduced in the brief together
+with the full local design and four mockups. After the VM reboot, the requested
+[GitHub issue #241](https://github.com/tomesposito/opensight/issues/241) was read
+through the connected GitHub tool and checked against the implementation. Its
+contract matches the brief, including the hosted-only README media exemption.
+Builds and tests remain offline.
 
 The session request summary includes `requestedByEmail` in addition to the
 specified tier/state/createdAt fields. The waiting copy must identify the
@@ -16,7 +19,7 @@ subscription-linking workflow were added. The existing quota environment
 settings are now usable without Stripe; their validation and values are
 unchanged. Partial Stripe configuration still fails closed.
 
-The static demo was rebuilt locally. Captures in `/tmp/issue-241-captures/`
+The static demo was rebuilt locally. Captures in `/tmp/issue-241-resumed-captures/`
 cover paused request, paused waiting, trial billing, trial pending, declined,
 operator queue, tenant detail and the rebuilt demo. Paused request/waiting and
 the queue also have 390px captures. All requests outside the local capture
@@ -90,8 +93,22 @@ no other test was skipped.
 | Root conformance and site | 110 | 0 | 0 |
 | **Total** | **5,068** | **0** | **36** |
 
-The full local log is `/tmp/issue-241-root-verified.log`. The rebuilt static
-demo and final captures were reviewed before this run. `git diff --check`
-passed; the solution design, dependency manifests/lockfile and pricing files
-are unchanged. All implementation and verification commits remain on
+After the VM reboot, the branch still held all six checkpoint commits and the
+three verification commits with a clean working tree. The temporary logs and
+captures were gone and the demo artifact was stale, so verification artifacts
+were regenerated without redoing any implementation checkpoint. A fresh full
+root `npm test` reproduced every count above and exited **0**. Its initial
+restricted attempt hit the same Node native callback assertion; the successful
+offline run used local process permission for HTTP listeners and Chromium.
+The demo was then rebuilt again and all eleven captures were regenerated and
+reviewed against mockups a–d and the sample-dashboard reference. The same
+findings above hold: no browser exceptions, unexpected API calls or document
+horizontal overflow. The mobile operator queue scrolls within its table.
+Capture inputs were synthetic and external browser requests were blocked.
+
+The current full local log is `/tmp/issue-241-root-resumed-verified.log`.
+The demo build log is `/tmp/issue-241-resumed-demo-build.log`, and capture
+results are in `/tmp/issue-241-resumed-captures/results.json`.
+`git diff --check` passed; the solution design, dependency manifests/lockfile
+and pricing files are unchanged. All implementation and verification commits remain on
 `work/issue-241-waiting-list`; no merge, push or deployment was performed.
