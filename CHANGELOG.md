@@ -19,6 +19,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Hosted workspaces can request Light, Regular or Heavy plans when Stripe is unconfigured, change or withdraw a pending request, and keep their data without a retention countdown while waiting. Operators can review the queue, grant plans immediately or decline requests; request notifications and grant confirmations explain that no payment is taken (#241).
+
 - Statistical forecasting on line charts with a date dimension: a dashed forecast continuation with a shaded prediction interval (80/90/95%), fitted values for trailing periods, and Auto/None/Custom seasonality, computed with exponential smoothing (ETS/Holt-Winters, corrected-AIC model selection) in the web layer so author view, dashboards, small multiples, and PDF export agree. Edited in the Properties panel's Forecast section; QuickSight `ForecastConfigurations` import and export round-trip, with boundaries applied as clamps. Series with fewer than 4 points render actuals with a quiet note instead of a forecast (#235).
 
 ### Fixed
