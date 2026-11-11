@@ -184,7 +184,7 @@ test('192 C: route guards exclude offline app; operator navigation contains all 
 
 test('241 tenant detail resolves only pending request IDs, refreshes grant/decline, and shows manual entitlement', async t => {
   for (const action of ['grant', 'decline']) {
-    let billing = { billingMode: 'waitlist', tier: null, accessState: 'paused', paidRequest: { id: 'request-one', tier: 'regular', state: 'pending', requestedByEmail: 'requester@example.test' } };
+    let billing = { billingMode: 'waitlist', tier: null, accessState: 'paused', trialEndsAt: '2026-11-19T00:00:00Z', paidRequest: { id: 'request-one', tier: 'regular', state: 'pending', requestedByEmail: 'requester@example.test' } };
     const ui = await mount(t, OperatorTenant, call => {
       if (call.path.endsWith('/billing')) return response({ billing });
       if (call.path.endsWith(`/paid-request/${action}`)) {
@@ -194,7 +194,7 @@ test('241 tenant detail resolves only pending request IDs, refreshes grant/decli
       }
       return detailHandler()(call);
     }, { tenantId: 'tenant-one' });
-    await connect(ui); assert.ok(button(ui, 'Grant Regular (manual)')); assert.ok(button(ui, 'Decline request'));
+    await connect(ui); assert.match(ui.text(), /Trial ended/); assert.doesNotMatch(ui.text(), /Self-hosted/); assert.ok(button(ui, 'Grant Regular (manual)')); assert.ok(button(ui, 'Decline request'));
     assert.equal(ui.root.findAllByProps({ 'aria-label': 'Generate payment link' }).length, 0);
     await click(button(ui, action === 'grant' ? 'Grant Regular (manual)' : 'Decline request'));
     assert.equal(button(ui, 'Grant Regular (manual)'), undefined);

@@ -460,7 +460,11 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       // gets no hosted access until an admin resolution reopens it. The
       // tenant's data is untouched; only access pauses.
       await billingService?.expireTrials();
-      const resolutionPath = !!billingService && ['/api/session', '/api/auth/logout', '/api/auth/switch', '/api/billing', '/api/billing/paid-request', '/api/signup/checkout', '/api/workspace/export', '/api/workspace/close'].includes(path);
+      // Waitlist composition must not exempt legacy operator tenants without
+      // billing from their existing API/egress limits. Preserve Stripe's
+      // established resolution boundary and exempt actual trial/paid records.
+      const resolutionPath = !!billingService && (!!billingCfg || billingService.hasRecord(context.tenantId))
+        && ['/api/session', '/api/auth/logout', '/api/auth/switch', '/api/billing', '/api/billing/paid-request', '/api/signup/checkout', '/api/workspace/export', '/api/workspace/close'].includes(path);
       if (billingService && resolutionPath) {
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
         if (['/api/billing', '/api/billing/paid-request', '/api/signup/checkout', '/api/workspace/export', '/api/workspace/close'].includes(path)) {

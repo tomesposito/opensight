@@ -306,6 +306,7 @@ export class HostedBilling {
   }
   get billingMode(): 'checkout' | 'waitlist' { return 'apiKey' in this.config ? 'checkout' : 'waitlist'; }
   get trialConfigured(): boolean { return !!this.config.trialEntitlement; }
+  hasRecord(tenantId: string): boolean { return this.records.has(tenantId); }
   private nowIso(): string { return new Date(this.clock()).toISOString(); }
   async load(): Promise<void> {
     const rows = await this.db.transaction(c => c.query('SELECT * FROM h9_billing'));
