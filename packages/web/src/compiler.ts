@@ -481,11 +481,23 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     }
   }
   const smallLimitKey = key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration');
+  let facetLimit: VisualModel['facetLimit'];
   if (sort[smallLimitKey] !== undefined) {
     const limit = object(sort[smallLimitKey], `${cpath}.${smallLimitKey}`);
-    keys(limit, [key('otherCategories', 'OtherCategories')], `${cpath}.${smallLimitKey}`);
-    enumValue(limit[key('otherCategories', 'OtherCategories')], ['INCLUDE'], 'INCLUDE', cpath);
-    warnings.push(`${cpath}.${smallLimitKey}: no top-N/Other bucket is computed; all supplied result rows are shown.`);
+    keys(limit, [key('otherCategories', 'OtherCategories'), key('itemsLimit', 'ItemsLimit')], `${cpath}.${smallLimitKey}`);
+    const other = enumValue(limit[key('otherCategories', 'OtherCategories')], ['INCLUDE', 'EXCLUDE'], 'INCLUDE', cpath);
+    const count = limit[key('itemsLimit', 'ItemsLimit')];
+    if (count === undefined) {
+      warnings.push(`${cpath}.${smallLimitKey}: no top-N/Other bucket is computed; all supplied result rows are shown.`);
+    } else if (!FACETED_KINDS.includes(kind)) {
+      fail(`${cpath}.${smallLimitKey}`, 'small multiples limits are only computed for faceted visuals');
+    } else if (!Number.isInteger(count) || (count as number) < 1 || (count as number) > 100) {
+      fail(`${cpath}.${smallLimitKey}`, 'small multiples limit count must be an integer between 1 and 100');
+    } else if (!facet) {
+      fail(`${cpath}.${smallLimitKey}`, 'small multiples limits require a SmallMultiples field');
+    } else {
+      facetLimit = { count: count as number, includeOther: other === 'INCLUDE' };
+    }
   }
   // Waterfall breakdown limits (QuickSight BreakdownItemsLimit parity): show the
   // top N breakdown values in first-appearance order, rolling the rest into a
@@ -529,6 +541,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     legendPosition: enumValue(legend[key('position', 'Position')] ?? (formattingValid(formatting) ? formatting.legendPosition : undefined), [...LEGEND_POSITIONS], 'BOTTOM', `${cpath}.legend.position`) as LegendPosition,
     dimensions, rowDimensions, columnDimensions, measures, totals, subtotals, columnTotals, columnSubtotals, innerRadius, sort: fieldSort, warnings,
     ...(sliceLimit ? { sliceLimit } : {}),
+    ...(facetLimit ? { facetLimit } : {}),
     ...(breakdownLimit ? { breakdownLimit } : {}),
     ...(facet ? { facet } : {}),
     ...(breakdown ? { breakdown } : {}),
