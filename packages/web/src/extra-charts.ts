@@ -3,7 +3,7 @@ import { fieldName } from './formatting.js';
 import type { AnalysisTheme } from './themes.js';
 import type { Cell, Field, Row, VisualModel } from './model.js';
 import { countryNames, WORLD_MAP } from './geo/world.js';
-import { facetLayout, facetTitles, groupRowsByFacet } from './facet-layout.js';
+import { facetLayout, facetTitles, groupRowsByFacet, type FacetGroup } from './facet-layout.js';
 
 type CellReader = (row: Row, field: Field) => Cell;
 type NumberReader = (row: Row, field: Field) => number | null;
@@ -20,7 +20,7 @@ const quartile = (values: number[], p: number): number => {
 };
 /** Distributions describe supplied result values; they never pretend to recover raw observations. */
 export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, number: NumberReader, option: EChartsOption, fail: (message: string) => never,
-  context?: { path: string; theme: AnalysisTheme; warn: (message: string) => void }): Row[][] | undefined {
+  context?: { path: string; theme: AnalysisTheme; warn: (message: string) => void; facetGroups?: FacetGroup[] }): Row[][] | undefined {
   const names = rows.map(r => model.dimensions[0] ? label(cell(r, model.dimensions[0])) : '');
   const values = (i = 0) => rows.map(r => number(r, model.measures[i]!));
   const nonnegative = (r: Row, i = 0): number => {
@@ -57,7 +57,7 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
       // Small multiples: one panel per facet value on a grid.
       const opts = model.multiplesOptions;
       const { shown, cols, topPad, cellW, cellH } =
-        facetLayout(groupRowsByFacet(rows, model.facet, cell), opts, context.path, context.warn);
+        facetLayout(context.facetGroups ?? groupRowsByFacet(rows, model.facet, cell), opts, context.path, context.warn);
       const inset = opts?.gutter ? 1.5 : 0;
       option.grid = shown.map((_, i) => {
         const c = i % cols, r = Math.floor(i / cols);
