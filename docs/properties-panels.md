@@ -12,7 +12,7 @@ and definition format.
 | CARD TITLE | Title/subtitle text and visibility; title font size | Custom alt text; charts currently use the title for their accessible description |
 | CARD STYLE | — | Background, border and selection colors/opacity, border width, loading animation setting |
 | CARD LAYOUT | — | Per-card padding |
-| Multiples Options | Existing Small multiples field well remains assignable and saved | Visible rows/columns, panel count, title/size/emphasis/alignment, border/width, gutter and background |
+| Multiples Options | Visible rows/columns, layout panel cap, panel title size/bold/italic/alignment, border/width/color, gutter/background; assigned facets also expose Number of panels displayed and Group the rest as Other | Panel-title underline and dashed/dotted borders are saved but render without underline/with solid borders |
 | Group/Color | Field display name in generated titles and result tables; clearing restores the source name | Separate group title, text styling, Author sort editing, slice limit |
 | Legend | Visibility; Auto/Top/Bottom/Left/Right placement | Separate legend title and its typography; per-visual legend value typography |
 | Data labels | Visibility; decimal precision, including clearing back to automatic | Independent category/metric controls, position, typography and overlap |
@@ -24,9 +24,13 @@ settings. No unsupported property is stored or exported. Typography defaults
 to the analysis theme rather than naming an unavailable downloaded font.
 
 Multiples Options appears for bar, percentage bar, line, area, combo and pie,
-or for a retained Small multiples assignment. Assigning a multiples field still
-blocks preview/export with `SMALL_MULTIPLES_UNSUPPORTED`; removing it restores
-the normal path. This issue does not add a facet renderer.
+or for a retained Small multiples assignment. Supported kinds render facets and
+round-trip their field, layout settings and panel limit. Number of panels
+displayed accepts integers 1–100; invalid edits keep the last valid value and
+empty clears the limit. Remaining groups merge into Other unless excluded;
+the layout cap still applies afterward. See [panel-limit semantics](parity-sm-limit.md).
+Unsupported kinds retain the field but block preview/export with
+`SMALL_MULTIPLES_UNSUPPORTED` until it is removed.
 
 Group/Color appears for the visual types with that well: bar, percentage bar
 and pie. Slice count is pie-specific. The field-name input is disabled until
