@@ -478,10 +478,11 @@ test('Issue 192 B: list, detail, named validation, paid tier, membership counts 
   const detail = await request(`/api/host/tenants/${id}`, { headers });
   assert.equal(detail.body.displayName, 'Public workspace'); assert.equal(detail.body.slug, 'public');
   assert.equal(detail.body.createdOperationId, created.body.operationId);
+  const billingSchemaBeforeList = await f.db.transaction(c => c.query("SELECT name FROM sqlite_schema WHERE name = 'h9_billing'"));
   let list = (await request('/api/host/tenants', { headers })).body.tenants;
   let row = list.find(row => row.tenantId === id);
   assert.equal(list.length, 2); assert.equal(row.tier, 'free'); assert.equal(row.memberCount, 1); assert.ok(Number.isFinite(Date.parse(row.createdAt)));
-  assert.deepEqual(await f.db.transaction(c => c.query("SELECT name FROM sqlite_schema WHERE name = 'h9_billing'")), [], 'listing does not install billing stores');
+  assert.deepEqual(await f.db.transaction(c => c.query("SELECT name FROM sqlite_schema WHERE name = 'h9_billing'")), billingSchemaBeforeList, 'listing does not install billing stores; waitlist startup may already have migrated them');
   const { initializeBilling } = await import('../dist/hosted-billing.js'); await initializeBilling(f.db);
   await f.db.transaction(c => c.query("INSERT INTO h9_billing (tenant_id,tier,access_state,updated_at) VALUES (?,'regular','active',?)", [id, new Date().toISOString()]));
   await request(`/api/host/tenants/${id}/invitations`, { method: 'POST', headers: { ...headers, 'idempotency-key': 'ui-invite' }, body: { name: 'Reader', email: 'reader@example.test', role: 'reader' } });
