@@ -202,7 +202,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const facetLimitObj = obj(obj(config.sortConfiguration).smallMultiplesLimitConfiguration);
   const facetItemsLimit = facetLimitObj.itemsLimit;
   const facetOtherCategories = facetLimitObj.otherCategories;
-  const importedFacetLimit = FACETED_KINDS.includes(kind) && Number.isInteger(facetItemsLimit) && (facetItemsLimit as number) >= 1 && (facetItemsLimit as number) <= 100 &&
+  const importedFacetLimit = FACETED_KINDS.includes(kind) && names(wells.smallMultiples).length === 1 && Number.isInteger(facetItemsLimit) && (facetItemsLimit as number) >= 1 && (facetItemsLimit as number) <= 100 &&
     Object.keys(facetLimitObj).every(key => key === 'itemsLimit' || key === 'otherCategories') &&
     (facetOtherCategories === undefined || facetOtherCategories === 'INCLUDE' || facetOtherCategories === 'EXCLUDE')
     ? { count: facetItemsLimit as number, includeOther: facetOtherCategories !== 'EXCLUDE' } : undefined;
@@ -245,6 +245,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     ...(kind === 'histogram' && binsValid(config.opensightBins) ? { bins: config.opensightBins } : {}),
     // OpenSight extension: faceted kinds' Multiples Options panel state imports into the draft.
     ...(FACETED_KINDS.includes(kind) && multiplesOptionsValid(config.opensightMultiplesOptions) ? { multiplesOptions: copy(config.opensightMultiplesOptions) } : {}),
+    ...(FACETED_KINDS.includes(kind) && wells.smallMultiples !== undefined ? { smallMultiples: names(wells.smallMultiples) } : {}),
     // OpenSight extension: imported Group/Color sort imports into the draft.
     ...(importedGroupSort ? { groupSort: importedGroupSort } : {}),
     // OpenSight extension: imported pie slice limit imports into the draft.
