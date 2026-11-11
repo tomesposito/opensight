@@ -24,7 +24,9 @@ export const PAUSED_RESOLUTIONS = ['pay', 'export', 'close'] as const;
 type BillingOperationKind = 'payment_link' | 'checkout_session';
 
 export type BillingAccessState = 'active' | 'paused';
+export type EntitlementSource = 'stripe' | 'manual' | 'trial';
 export interface BillingRecord {
+  entitlementSource: EntitlementSource;
   tenantId: string; tier: BillingTier | null; subscriptionStatus: string | null;
   accessState: BillingAccessState; pauseEffectiveAt: string | null;
   trialEndsAt: string | null; retentionDueAt: string | null;
@@ -200,7 +202,22 @@ export async function initializeBilling(db: Database): Promise<void> {
     }
     if (!columns.some(row => row.name === 'last_stripe_event_created'))
       await c.query('ALTER TABLE h9_billing ADD COLUMN last_stripe_event_created BIGINT');
-    for (const row of await c.query("SELECT tenant_id, pause_effective_at FROM h9_billing WHERE access_state = 'paused' AND pause_effective_at IS NOT NULL AND retention_due_at IS NULL")) {
+    if (!columns.some(row => row.name === 'entitlement_source')) {
+      await c.query("ALTER TABLE h9_billing ADD COLUMN entitlement_source TEXT NOT NULL DEFAULT 'stripe' CHECK (entitlement_source IN ('stripe', 'manual', 'trial'))");
+      await c.query("UPDATE h9_billing SET entitlement_source = 'trial' WHERE trial_ends_at IS NOT NULL AND (tier IS NULL OR tier = 'free')");
+    }
+    await c.query(`CREATE TABLE IF NOT EXISTS h11_paid_requests (
+      id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES h1_tenants(tenant_id),
+      tier TEXT NOT NULL CHECK (tier IN ('light', 'regular', 'heavy')),
+      requested_by_subject TEXT NOT NULL, requested_by_email TEXT NOT NULL,
+      state TEXT NOT NULL CHECK (state IN ('pending', 'granted', 'declined', 'withdrawn')),
+      created_at TEXT NOT NULL, resolved_at TEXT, resolved_by TEXT)`);
+    // The mutation also locks the tenant before reading the pending row. This
+    // index is a final database guard, supported by both SQLite and Postgres.
+    await c.query("CREATE UNIQUE INDEX IF NOT EXISTS h11_paid_requests_pending ON h11_paid_requests (tenant_id) WHERE state = 'pending'");
+    for (const row of await c.query(`SELECT tenant_id, pause_effective_at FROM h9_billing b WHERE access_state = 'paused'
+      AND pause_effective_at IS NOT NULL AND retention_due_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM h11_paid_requests r WHERE r.tenant_id = b.tenant_id AND r.state = 'pending')`)) {
       await c.query('UPDATE h9_billing SET retention_due_at = ? WHERE tenant_id = ?', [new Date(Date.parse(String(row.pause_effective_at)) + 30 * DAY_MS).toISOString(), row.tenant_id!]);
     }
     await c.query(`CREATE TABLE IF NOT EXISTS h9_billing_links (
@@ -222,6 +239,7 @@ export async function initializeBilling(db: Database): Promise<void> {
 function asRecord(row: Record<string, unknown> | undefined): BillingRecord | undefined {
   if (!row) return undefined;
   return {
+    entitlementSource: String(row.entitlement_source) as EntitlementSource,
     tenantId: String(row.tenant_id), tier: row.tier === null ? null : String(row.tier) as BillingTier,
     subscriptionStatus: row.subscription_status === null ? null : String(row.subscription_status),
     accessState: String(row.access_state) === 'paused' ? 'paused' : 'active',
@@ -290,8 +308,8 @@ export class HostedBilling {
   async startTrialIn(c: SqlConnection, tenantId: string, provisionedAt = this.clock()): Promise<void> {
     if (!this.config.trialEntitlement) throw new MetadataError('TRIAL_ENTITLEMENT_UNRESOLVED', 503);
     const endsAt = new Date(provisionedAt + 14 * DAY_MS).toISOString();
-    const rows = await c.query(`INSERT INTO h9_billing (tenant_id, access_state, trial_ends_at, updated_at)
-      VALUES (?, 'active', ?, ?) ON CONFLICT (tenant_id) DO NOTHING RETURNING tenant_id`, [tenantId, endsAt, new Date(provisionedAt).toISOString()]);
+    const rows = await c.query(`INSERT INTO h9_billing (tenant_id, access_state, trial_ends_at, updated_at, entitlement_source)
+      VALUES (?, 'active', ?, ?, 'trial') ON CONFLICT (tenant_id) DO NOTHING RETURNING tenant_id`, [tenantId, endsAt, new Date(provisionedAt).toISOString()]);
     if (rows.length) await appendOperatorAudit(c, { action: 'billing.trial.started', tenantId, detail: { trialEndsAt: endsAt } }, provisionedAt);
   }
   async startTrial(tenantId: string): Promise<void> {
@@ -304,7 +322,8 @@ export class HostedBilling {
       const rows = await c.query(`UPDATE h9_billing SET access_state = 'paused', pause_effective_at = trial_ends_at,
         updated_at = ? WHERE trial_ends_at <= ? AND (tier IS NULL OR tier = 'free') AND access_state <> 'paused' RETURNING *`, [this.nowIso(), this.nowIso()]);
       for (const row of rows) {
-        const retentionDueAt = new Date(Date.parse(String(row.trial_ends_at)) + 30 * DAY_MS).toISOString();
+        const pending = (await c.query("SELECT id FROM h11_paid_requests WHERE tenant_id = ? AND state = 'pending'", [row.tenant_id!])).length > 0;
+        const retentionDueAt = pending ? null : new Date(Date.parse(String(row.trial_ends_at)) + 30 * DAY_MS).toISOString();
         await c.query('UPDATE h9_billing SET retention_due_at = ? WHERE tenant_id = ?', [retentionDueAt, String(row.tenant_id)]);
         row.retention_due_at = retentionDueAt;
         await appendOperatorAudit(c, { action: 'billing.access.paused', tenantId: String(row.tenant_id),
@@ -493,7 +512,7 @@ export class HostedBilling {
           return { duplicate: false, handled: false, tenantId, action: 'stale' } satisfies BillingEventResult;
         }
         await c.query('UPDATE h9_billing_events SET tenant_id = ?, outcome = ? WHERE event_id = ?', [tenantId, 'applied', event.id]);
-        const next: BillingRecord = existing ? { ...existing } : { tenantId, trialEndsAt: null, retentionDueAt: null, tier: null, subscriptionStatus: null, accessState: 'active', pauseEffectiveAt: null, stripeCustomerId: null, stripeSubscriptionId: null, lastStripeEventCreated: null, updatedAt: this.nowIso() };
+        const next: BillingRecord = existing ? { ...existing } : { entitlementSource: 'stripe', tenantId, trialEndsAt: null, retentionDueAt: null, tier: null, subscriptionStatus: null, accessState: 'active', pauseEffectiveAt: null, stripeCustomerId: null, stripeSubscriptionId: null, lastStripeEventCreated: null, updatedAt: this.nowIso() };
         let action = 'recorded';
         // A trial converts to paid entitlements only on a verified successful
         // billing transition in THIS event (#212): an unpaid checkout or an
@@ -558,6 +577,10 @@ export class HostedBilling {
           stripe_subscription_id = excluded.stripe_subscription_id, updated_at = excluded.updated_at, trial_ends_at = excluded.trial_ends_at, retention_due_at = excluded.retention_due_at,
           last_stripe_event_created = excluded.last_stripe_event_created`,
         [next.tenantId, next.tier, next.subscriptionStatus, next.accessState, next.pauseEffectiveAt, next.stripeCustomerId, next.stripeSubscriptionId, next.updatedAt, next.trialEndsAt, next.retentionDueAt, next.lastStripeEventCreated]);
+        if (conversionAuthorized) {
+          next.entitlementSource = 'stripe';
+          await c.query("UPDATE h9_billing SET entitlement_source = 'stripe' WHERE tenant_id = ?", [tenantId]);
+        }
         if (existing?.trialEndsAt && !next.trialEndsAt && next.tier && PAID_TIERS.includes(next.tier)) await appendOperatorAudit(c, { action: 'billing.trial.converted', tenantId, detail: { tier: next.tier, stripeEventId: event.id } }, this.clock());
         const changed = !existing || existing.tier !== next.tier || existing.accessState !== next.accessState || existing.subscriptionStatus !== next.subscriptionStatus;
         if (changed) await appendOperatorAudit(c, { action: 'billing.entitlement.changed', tenantId, subject: next.stripeSubscriptionId ?? undefined,
