@@ -51,3 +51,10 @@ rendering warning and never breaks saving or viewing.
 Out of scope: anomaly detection, the insight visual's `ForecastComputation`
 (it stays `INSIGHT_FORECAST_UNSUPPORTED`; it is the named v2 reuse of
 `forecast.ts`), Ask O forecast phrasing, and forecasts on other chart types.
+
+The static demo has three date buckets, so enabling a forecast there shows
+the minimum-history note. This capture shows the area chart's Forecast controls:
+
+![Area chart Forecast controls and minimum-history note](images/forecast-area.png)
+
+See [area parity verification and visual review](parity-forecast-area-gap-notes.md).
