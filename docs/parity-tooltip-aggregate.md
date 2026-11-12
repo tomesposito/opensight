@@ -43,3 +43,7 @@ Compiler/editor tests live in `packages/web/test/tooltip-detail.test.mjs` and
 `tooltip-extra-fields.test.mjs`, both included by root `npm test`.
 Visual fidelity is not measured; functional tooltip coverage is not a claim
 of QuickSight pixel equivalence.
+
+Offline captures of the rebuilt static demo:
+[treemap](images/tooltip-treemap.png), [word cloud](images/tooltip-wordCloud.png),
+[box plot](images/tooltip-box.png), [histogram](images/tooltip-histogram.png).

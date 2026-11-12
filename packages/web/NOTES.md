@@ -347,9 +347,7 @@ schema. Parser inventory success grants no execution permission.
   same validated cells through “View data”. Charts have accessible labels and
   the dashboard and sheet selectors support keyboard use.
 
-## Validation and limitations
-
-### Detailed tooltip coverage
+## Detailed tooltip coverage
 
 All 16 kinds accepting field-based tooltip configuration render it: bar, line,
 pie, combo, area, 100% bar, scatter, funnel, gauge, heatmap, filled map, point
@@ -364,6 +362,8 @@ no source-row extras. Box plots show min, Q1, median, Q3 and max of each supplie
 group; empty groups omit statistics. Histograms show the compiled bin range
 and Frequency. Box/histogram extra fields produce an explicit warning because
 there is no single source row. See [tooltip aggregate semantics](../../docs/parity-tooltip-aggregate.md).
+
+## Validation and limitations
 
 `npm test --workspace @opensight/web` runs strict TypeScript checks (including
 `noUncheckedIndexedAccess`), compiles the pure renderer for Node, then runs the
