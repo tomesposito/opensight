@@ -110,7 +110,7 @@ export interface AuthorVisual {
   bins?: number;
   insightConfiguration?: Record<string, unknown>;
   referenceLines?: ReferenceLine[];
-  /** Statistical forecast overlay config (line charts with a date dimension; issue #235). */
+  /** Statistical forecast overlay config (line/area charts with a date dimension; issue #235). */
   forecast?: ForecastConfig;
   id: string; kind: VisualKind; title: string;
   subtitle?: string; subtitleVisible?: boolean;
@@ -1025,6 +1025,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
       ...groupSortConfig,
       ...(visual.kind === 'bar100' ? { barsArrangement: 'STACKED_PERCENT', orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL' } : {}),
       ...(visual.kind === 'area' ? { type: 'AREA' } : {}),
+      ...(visual.kind === 'area' && visual.forecast?.enabled ? { forecastConfigurations: [serializeForecast(visual.forecast)] } : {}),
       ...(visual.kind === 'gauge' && visual.gauge ? { opensightGauge: visual.gauge } : {}),
       ...(visual.kind === 'histogram' && visual.bins !== undefined ? { opensightBins: visual.bins } : {}),
       // OpenSight extension: the Multiples Options panel state round-trips

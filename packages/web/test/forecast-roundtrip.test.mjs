@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseQsBundle } from '@opensight/bundle-parser';
-import { activeSheet, authorReducer, emptyDraft, serializeVisual } from '../build/test/authoring.js';
+import { activeSheet, authorReducer, emptyDraft, serializeVisual, validateDraft } from '../build/test/authoring.js';
 import { buildAuthorVisual } from '../build/test/author-preview.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { importBundle, exportBundle, downloadBundleBytes } from '../build/test/bundle-authoring.js';
@@ -11,6 +11,16 @@ const add = kind => authorReducer(emptyDraft(), { type: 'add', kind });
 const selected = d => activeSheet(d).visuals[0];
 const forecast = { enabled: true, periodsForward: 5, periodsBackward: 1, predictionInterval: 90, seasonality: 'auto' };
 const withForecast = d => authorReducer(d, { type: 'forecast', forecast });
+
+test('area draft validation accepts valid forecasts and rejects malformed stored configs', () => {
+  const draft = withForecast(add('area'));
+  assert.doesNotThrow(() => validateDraft(draft));
+  for (const patch of [{ periodsForward: -1 }, { predictionInterval: 42 }, { seasonality: 1 }, { lowerBoundary: 10, upperBoundary: 5 }, { unknown: true }]) {
+    const invalid = structuredClone(draft);
+    selected(invalid).forecast = { ...forecast, ...patch };
+    assert.throws(() => validateDraft(invalid), /Invalid or unsupported author draft/);
+  }
+});
 
 test('forecast config round-trips through bundle import/export', async () => {
   const d = withForecast(add('line'));
