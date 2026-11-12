@@ -1,11 +1,11 @@
-# Forecasting on line charts — issue #235
+# Forecasting on line and area charts — issue #235
 
-A line chart whose category field is a date dimension can carry a forecast:
+A line or area chart whose category field is a date dimension can carry a forecast:
 a dashed continuation of each series, a shaded prediction interval, and a
 thin divider at the last actual period. The configuration lives on the chart
 (QuickSight `ForecastConfigurations` shape on import/export) and is edited in
-the Properties panel's **Forecast** section, which appears only for line
-charts with a date dimension. Periods forward (default 3), periods back —
+the Properties panel's **Forecast** section, which appears only for line and
+area charts with a date dimension. Periods forward (default 3), periods back —
 which renders the model's fitted values over the trailing periods so a reader
 can judge the fit — prediction interval (80/90/95%, default 95%), and
 seasonality (Auto / None / Custom period) are the controls.
@@ -27,6 +27,16 @@ actual is non-negative the interval's lower edge clamps at 0; imported
 QuickSight `LowerBoundary`/`UpperBoundary` values clamp the forecast and its
 interval. The computation runs in the web layer's chart compiler, so author
 view, dashboards, small multiples, and PDF export all show the same result.
+
+Area charts use the same forecast computation and overlay as line charts,
+including one forecast per measure in each small-multiples panel. Actual
+series keep their area fill; fitted and future forecast segments are unfilled
+dashed lines, joined to the last actual point. Only the prediction-interval
+band has a translucent fill. The category axis extends by the selected date
+grain for future periods. Area forecasts import and export as
+`ForecastConfigurations` on a `LineChartVisual` with `Type: AREA`; disabled
+forecasts remain in the draft and are omitted from the exported definition,
+just as on line charts.
 
 ## Minimums and render-time states
 
