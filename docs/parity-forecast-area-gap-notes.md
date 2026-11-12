@@ -43,3 +43,33 @@ external requests. The area feature capture is `docs/images/forecast-area.png`.
 Browser checks used the installed Playwright Chromium through
 `OPENSIGHT_CHROMIUM`; sandbox process restrictions required local execution
 permission. No browser or dependency was downloaded.
+
+## Full root verification
+
+`TZ=UTC npm test`, with `OPENSIGHT_CHROMIUM` pointing to the installed
+`chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell`,
+completed with exit code **0**. The log is `/tmp/forecast-area-root-test.log`.
+Results: **5,098 passed / 0 failed / 36 skipped**, including 32 Python SDK
+tests. The Node runners reported 5,066 passed, 36 skipped, zero cancelled
+and zero todo. All skips require `DATABASE_URL` or live TLS PostgreSQL;
+the default database environment was unchanged.
+
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 1,294 | 0 | 34 |
+| Bundle parser | 199 | 0 | 0 |
+| CLI | 73 | 0 | 0 |
+| Embedding SDK | 10 | 0 | 0 |
+| Headless SDK | 28 | 0 | 0 |
+| Python headless SDK | 32 | 0 | 0 |
+| MCP server | 74 | 0 | 0 |
+| O interpreter | 42 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 619 | 0 | 2 |
+| Web | 2,606 | 0 | 0 |
+| Root conformance and site | 110 | 0 | 0 |
+| **Total** | **5,098** | **0** | **36** |
+
+`git diff --check` passed. All checkpoints remain on
+`work/parity-forecast-area`; no merge, push, AWS call or deployment occurred.
+`SOLUTION_DESIGN.md`, dependency manifests/lockfile and `.github/` are unchanged.
