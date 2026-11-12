@@ -19,6 +19,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Detailed tooltips for treemaps, word clouds, box plots and histograms, with
+  hierarchy/weight values, group statistics and bin frequencies. Leaf/word
+  extras follow their source rows; box/histogram extras warn instead of showing
+  fabricated values (parity-tooltip-aggregate, phase-plan fallback; no GitHub issue).
+
 - Statistical forecasts on date-based area charts, including each measure in
   small-multiples panels: dashed fitted/future segments, prediction intervals,
   Forecast properties, and editable bundle import/export (parity-forecast-area,

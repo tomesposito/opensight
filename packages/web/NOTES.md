@@ -125,7 +125,7 @@ compiler rejection cannot be bypassed by dropping them. Unsupported root/sheet
 context is preserved without execution; a differing definition cannot reuse rows.
 
 Rendering fallbacks remain explicit: rich titles use plain text or a generated
-field title, subtitles are omitted with a note, detailed tooltips are approximated,
+field title, subtitles are omitted with a note,
 donut radii are approximate and non-limiting `OtherCategories: INCLUDE` shows all
 supplied rows. Top-N, other aggregations, calculations inside wells, nonempty
 actions/drill hierarchies and unsupported wells still fail. No API feature is
@@ -332,8 +332,8 @@ schema. Parser inventory success grants no execution permission.
   0, an empty result set, and unavailable data.
 - The real sample's descending measure sort is honored on a copied row array.
   Its no-count `OtherCategories: INCLUDE` options do not invent a limit or an
-  Other bucket. Located rendering notes disclose this, subtitle omission, and
-  simplified detailed tooltips. Explicit top-N limits are rejected.
+  Other bucket. Located rendering notes disclose this and subtitle omission.
+  Explicit top-N limits are rejected in that original slice.
 - Titles are native React headings (respecting hidden visibility), with a
   measure/category fallback when the export provides no text. Rich-title HTML
   is never injected; it produces a warning and plain fallback. Tooltips use
@@ -348,6 +348,22 @@ schema. Parser inventory success grants no execution permission.
   the dashboard and sheet selectors support keyboard use.
 
 ## Validation and limitations
+
+### Detailed tooltip coverage
+
+All 16 kinds accepting field-based tooltip configuration render it: bar, line,
+pie, combo, area, 100% bar, scatter, funnel, gauge, heatmap, filled map, point
+map, treemap, word cloud, box plot and histogram. Titles, visible fields,
+aggregation labels and governed metric formats follow the configured settings.
+Radar, Sankey, waterfall, insight, KPI, table and pivot retain their existing
+configuration gate.
+
+Treemap paths and word weights come from the hovered datum; extra fields use
+the exact leaf/word source row. Treemap parents show their aggregate size with
+no source-row extras. Box plots show min, Q1, median, Q3 and max of each supplied
+group; empty groups omit statistics. Histograms show the compiled bin range
+and Frequency. Box/histogram extra fields produce an explicit warning because
+there is no single source row. See [tooltip aggregate semantics](../../docs/parity-tooltip-aggregate.md).
 
 `npm test --workspace @opensight/web` runs strict TypeScript checks (including
 `noUncheckedIndexedAccess`), compiles the pure renderer for Node, then runs the
