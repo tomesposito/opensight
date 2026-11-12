@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { activeSheet, authorReducer, emptyDraft, validateDraft, parseDraft, serializeVisual, tooltipExtraFieldsValid } from '../build/test/authoring.js';
 import { buildAuthorVisual, buildAuthorPreview } from '../build/test/author-preview.js';
 import { compileVisual } from '../build/test/compiler.js';
+import { compileExtra } from '../build/test/extra-charts.js';
 import { importBundle, exportBundle, downloadBundleBytes } from '../build/test/bundle-authoring.js';
 import { buildAuthorQuery } from '../build/test/author-query.js';
 import { executeFixtureQuery } from '../build/test/fixture-query.js';
@@ -176,6 +177,76 @@ test('missing extra result column warns loudly and skips the row instead of fail
   const text = compiled.option.tooltip.formatter({ dataIndex: 0 });
   assert.ok(!text.includes('profit'), text);
   assert.ok(text.includes('Sum of revenue: 100'), text);
+});
+
+test('box and histogram warn once for aggregate extras while rendering detailed fields', () => {
+  for (const kind of ['box', 'histogram']) {
+    const v = withExtra({ ...selected(add(kind)), dimension: 'region', rows: ['region'], measures: ['revenue'], bins: 2 });
+    v.tooltipExtraFields.push({ field: 'quantity', aggregation: 'MAX' });
+    const compiled = compileVisual(input(v, [1, 3, 5].map(revenue => ({ region: 'East', revenue, profit: 100, quantity: 99 }))));
+    assert.deepEqual(compiled.model.warnings.filter(w => w.includes('each datum aggregates multiple rows')), [
+      `Extra fields are not shown in ${kind} detailed tooltips because each datum aggregates multiple rows.`,
+    ]);
+    assert.ok(!compiled.model.warnings.some(w => w.includes('using basic tooltips')));
+    const text = compiled.option.tooltip.formatter({ dataIndex: 0 });
+    assert.ok(text.includes('revenue'), text);
+    assert.ok(!text.includes('profit') && !text.includes('quantity'), text);
+    // Existing missing-column diagnostics are retained alongside the aggregate warning.
+    const missing = compileVisual(input(v, [{ region: 'East', revenue: 1 }]));
+    assert.equal(missing.model.warnings.filter(w => w.includes('each datum aggregates multiple rows')).length, 1);
+    assert.equal(missing.model.warnings.filter(w => w.includes('has no data in this result')).length, 2);
+  }
+});
+
+test('treemap leaf extras follow explicit source indices and parents never borrow a row', () => {
+  const v = withExtra({ ...selected(add('treemap')), rows: ['region', 'category'], measures: ['revenue'] });
+  const rows = [
+    { region: 'East', category: 'Hardware', revenue: 10, profit: 2 },
+    { region: 'East', category: 'Software', revenue: 30, profit: 9 },
+  ];
+  const compiled = compileVisual(input(v, rows));
+  const parent = compiled.option.series[0].data[0], leaf = parent.children[1];
+  const path = [{ name: 'root' }, { name: 'East' }, { name: 'Software' }];
+  const params = { dataIndex: 999, data: leaf, value: leaf.value, name: leaf.name, treePathInfo: path };
+  assert.equal(compiled.option.tooltip.formatter(params), 'East\nregion: East\ncategory: Software\nSum of revenue: 30\nAvg of Avg profit: 9');
+  assert.equal(compiled.option.tooltip.formatter({ dataIndex: 0, data: parent, name: 'East', value: 40, treePathInfo: path.slice(0, 2) }), 'East\nregion: East\nSum of revenue: 40');
+  // A missing leaf source index cannot fall back to a guessed ECharts dataIndex.
+  assert.equal(compiled.option.tooltip.formatter({ ...params, dataIndex: 0, data: {} }), 'East\nregion: East\ncategory: Software\nSum of revenue: 30');
+  const missing = compileVisual(input(v, rows.map(({ profit, ...row }) => row)));
+  assert.equal(missing.model.warnings.filter(w => w.includes("tooltip field 'profit' has no data")).length, 1);
+  assert.ok(!missing.option.tooltip.formatter(params).includes('profit'));
+});
+
+test('treemap overwritten display paths keep the later leaf value and extra row together', () => {
+  const v = withExtra({ ...selected(add('treemap')), rows: ['region'], measures: ['revenue'] });
+  // Distinct typed categories have the same display label in the existing builder.
+  const rows = [{ region: null, revenue: 10, profit: 1 }, { region: '(null)', revenue: 20, profit: 7 }];
+  const compiled = compileVisual(input(v, rows)), data = compiled.option.series[0].data[0];
+  assert.equal(data.sourceRowIndex, 1);
+  assert.equal(compiled.option.tooltip.formatter({ data, value: data.value, treePathInfo: [{ name: 'root' }, { name: '(null)' }] }), '(null)\nregion: (null)\nSum of revenue: 20\nAvg of Avg profit: 7');
+  const duplicates = rows.map(row => ({ ...row, region: 'East' }));
+  assert.throws(() => compileVisual(input(v, duplicates)), /duplicate categories/);
+  // Lower-level hierarchy behavior stays later-row-wins even for identical paths.
+  const option = {};
+  compileExtra(compiled.model, duplicates, (row, field) => row[field.column], (row, field) => row[field.column], option, message => { throw new Error(message); });
+  assert.deepEqual(option.series[0].data, [{ name: 'East', value: 20, sourceRowIndex: 1 }]);
+});
+
+test('word cloud extras follow their own row through sorting and the 80-word cap', () => {
+  const v = withExtra({ ...selected(add('wordCloud')), dimension: 'region', measures: ['revenue'] });
+  const rows = Array.from({ length: 83 }, (_, i) => ({ region: `word${i}`, revenue: i * 37 % 83, profit: 1000 + i }));
+  const compiled = compileVisual(input(v, rows)), data = compiled.option.series[0].data;
+  assert.equal(data.length, 80);
+  assert.equal(data[0].name, 'word74');
+  assert.equal(data[79].name, 'word27');
+  for (const dataIndex of [0, 1, 40, 79]) {
+    const datum = data[dataIndex], original = rows.find(row => row.region === datum.name);
+    assert.equal(compiled.option.tooltip.formatter({ dataIndex, data: datum, name: datum.name, value: datum.value }),
+      `${original.region}\nregion: ${original.region}\nSum of revenue: ${original.revenue}\nAvg of Avg profit: ${original.profit.toLocaleString('en-US')}`);
+  }
+  const plain = compileVisual(input({ ...v, tooltipAggregations: false, tooltipExtraFields: [{ field: 'profit', label: '{Profit|raw}', aggregation: 'MAX' }] }, rows));
+  const datum = plain.option.series[0].data[0];
+  assert.equal(plain.option.tooltip.formatter({ data: datum, name: datum.name, value: datum.value }), 'word74\nregion: word74\nrevenue: 82\n｛Profit|raw｝: 1,074');
 });
 
 test('author preview computes extras through the query engine instead of pinned oracles', () => {

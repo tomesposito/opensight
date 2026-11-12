@@ -834,9 +834,16 @@ export function compileVisual(input: Input): CompiledVisual {
   }
   applyDisplayOptions(model, option, theme);
   if (model.tooltip && model.tooltipDetail?.type === 'detailed') {
+    if (['box', 'histogram'].includes(model.kind) && model.tooltipExtraFields?.length) {
+      model.warnings.push(`Extra fields are not shown in ${model.kind} detailed tooltips because each datum aggregates multiple rows.`);
+    }
     if (DETAILED_TOOLTIP_KINDS.includes(model.kind)) {
       option.tooltip = { ...(typeof option.tooltip === 'object' && !Array.isArray(option.tooltip) ? option.tooltip : {}),
-        formatter: detailedTooltipFormatter(model, rows, cell, availableExtras, facetSeriesMap) };
+        formatter: ['treemap', 'wordCloud'].includes(model.kind)
+          ? transformedTooltipFormatter(model, rows, cell, availableExtras)
+          : ['box', 'histogram'].includes(model.kind)
+            ? distributionTooltipFormatter(model, option)
+            : detailedTooltipFormatter(model, rows, cell, availableExtras, facetSeriesMap) };
     } else {
       model.warnings.push(`detailed tooltips are not rendered for ${model.kind} visuals; using basic tooltips.`);
     }
@@ -966,15 +973,15 @@ export function compileVisual(input: Input): CompiledVisual {
   } };
 }
 
-/** Kinds whose series data maps 1:1 to result rows, so a per-row detailed tooltip is exact.
+/** Kinds with exact detailed tooltips, either per-row or from compiled datums.
  *  scatter, funnel, heatmap, filledMap and pointMap build their series with rows.map
  *  (index-preserving); gauge renders a single datum from the single aggregate row.
- *  treemap (hierarchy flattens rows), box (per-group quartiles), histogram (bins)
- *  and wordCloud (sorted/sliced remap) are aggregate and keep the basic fallback. */
-const DETAILED_TOOLTIP_KINDS = ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap'];
+ *  treemap and wordCloud retain leaf/word source indices for extra fields;
+ *  box and histogram resolve compiled statistics/bins, without source-row extras. */
+const DETAILED_TOOLTIP_KINDS = ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud', 'box', 'histogram'];
 /** Kinds whose tooltip config accepts the detailed keys (mirrors the chartConfiguration gate). */
 export const tooltipDetailKinds = (kind: VisualKind): boolean => !['insight', 'kpi', 'table', 'pivot', 'radar', 'sankey', 'waterfall'].includes(kind);
-/** Kinds where a detailed tooltip actually renders (others fall back to basic with a warning). */
+/** All config-accepting kinds now render detailed tooltips. */
 export const detailedTooltipKinds = (kind: VisualKind): boolean => DETAILED_TOOLTIP_KINDS.includes(kind);
 
 /** Escape richText markup characters in dynamic tooltip text (display encoding; table data stays exact). */
@@ -1019,6 +1026,93 @@ function detailedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: R
       const name = extra.label ?? fieldName(extra.field, model.formatting);
       const label = detail.aggregations ? `${TOOLTIP_AGGREGATION_WORD[extra.aggregation]} of ${name}` : name;
       lines.push(`${richTextEscape(label)}: ${richTextEscape(displayCell(cell(row, extra.field)))}`);
+    }
+    return lines.join('\n');
+  };
+}
+
+/** Transformed datums carry their own displayed values. Only explicit leaf/word
+ * source indices can resolve extras; an ECharts dataIndex is never a row index. */
+function transformedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: Row, field: Field) => Cell, extraFields: Field[]): (params: unknown) => string {
+  const detail = model.tooltipDetail!;
+  const measure = model.measures[0]!;
+  const titleField = model.dimensions[0] ?? measure;
+  const visible = (field: Field): boolean => !detail.hiddenFields.includes(field.id);
+  const line = (field: Field, value: Cell): string => {
+    const governed = model.formatting?.metricFormats?.[field.column];
+    const name = fieldName(field, model.formatting);
+    const label = detail.aggregations && field === measure && !governed ? `Sum of ${name}` : name;
+    return `${richTextEscape(label)}: ${richTextEscape(formatMetric(value, governed) ?? displayCell(value))}`;
+  };
+  const extras = (model.tooltipExtraFields ?? []).flatMap(extra => {
+    const field = extraFields.find(f => f.id === extra.id);
+    return field ? [{ ...extra, field }] : [];
+  });
+  return (params: unknown): string => {
+    const first = (Array.isArray(params) ? params[0] : params) as {
+      name?: string; value?: unknown;
+      data?: { sourceRowIndex?: number; children?: unknown[] };
+      treePathInfo?: { name: string }[];
+    } | undefined;
+    if (!first) return '';
+    // ECharts prepends the synthetic series root to the treemap path.
+    const path = model.kind === 'treemap' ? first.treePathInfo?.slice(1).map(node => node.name) : [first.name];
+    const value = model.kind === 'wordCloud' && Array.isArray(first.value) ? first.value[2] : first.value;
+    if (!path?.length || path[0] === undefined || typeof value !== 'number' || !Number.isFinite(value)) return '';
+    const lines = [richTextEscape(detail.titleType === 'primaryValue' ? path[0] : fieldName(titleField, model.formatting))];
+    model.dimensions.forEach((field, i) => {
+      const value = path[i];
+      if (value !== undefined && visible(field)) lines.push(line(field, value));
+    });
+    if (visible(measure)) lines.push(line(measure, value));
+    const index = first.data?.sourceRowIndex;
+    const row = !first.data?.children?.length && typeof index === 'number' && Number.isInteger(index) ? rows[index] : undefined;
+    if (row) for (const extra of extras) {
+      const name = extra.label ?? fieldName(extra.field, model.formatting);
+      const label = detail.aggregations ? `${TOOLTIP_AGGREGATION_WORD[extra.aggregation]} of ${name}` : name;
+      lines.push(`${richTextEscape(label)}: ${richTextEscape(displayCell(cell(row, extra.field)))}`);
+    }
+    return lines.join('\n');
+  };
+}
+
+/** Distributions describe compiled groups/bins, never any particular input row.
+ * Read the compiled series: ECharts may add a category coordinate to box values. */
+function distributionTooltipFormatter(model: VisualModel, option: EChartsOption): (params: unknown) => string {
+  const detail = model.tooltipDetail!;
+  const measure = model.measures[0]!;
+  const dimension = model.dimensions[0];
+  const titleField = model.kind === 'box' ? dimension ?? measure : measure;
+  const axis = Array.isArray(option.xAxis) ? option.xAxis[0] : option.xAxis;
+  const categories = axis && 'data' in axis ? axis.data : undefined;
+  const series = Array.isArray(option.series) ? option.series[0] : option.series;
+  const data: readonly unknown[] = series && 'data' in series && Array.isArray(series.data) ? series.data : [];
+  const measureName = fieldName(measure, model.formatting);
+  const governed = model.formatting?.metricFormats?.[measure.column];
+  return (params: unknown): string => {
+    const first = (Array.isArray(params) ? params[0] : params) as { dataIndex?: number } | undefined;
+    const index = first?.dataIndex;
+    if (typeof index !== 'number' || !Number.isInteger(index)) return '';
+    const category = categories?.[index];
+    if (typeof category !== 'string') return '';
+    const lines = [richTextEscape(detail.titleType === 'primaryValue' ? category : fieldName(titleField, model.formatting))];
+    const value = data?.[index];
+    if (model.kind === 'box') {
+      if (dimension && !detail.hiddenFields.includes(dimension.id)) {
+        lines.push(`${richTextEscape(fieldName(dimension, model.formatting))}: ${richTextEscape(category)}`);
+      }
+      // Empty groups contain five '-': preserve their identity, omit statistics.
+      if (!detail.hiddenFields.includes(measure.id) && Array.isArray(value)) {
+        ['min', 'Q1', 'median', 'Q3', 'max'].forEach((stat, i) => {
+          const n: unknown = value[i];
+          if (typeof n === 'number' && Number.isFinite(n)) {
+            lines.push(`${richTextEscape(measureName)} ${stat}: ${richTextEscape(formatMetric(n, governed) ?? displayCell(n))}`);
+          }
+        });
+      }
+    } else {
+      if (!detail.hiddenFields.includes(measure.id)) lines.push(`${richTextEscape(measureName)}: ${richTextEscape(category)}`);
+      if (typeof value === 'number' && Number.isFinite(value)) lines.push(`Frequency: ${richTextEscape(displayCell(value))}`);
     }
     return lines.join('\n');
   };

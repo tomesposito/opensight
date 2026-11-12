@@ -8,6 +8,7 @@ import { compileVisual, tooltipDetailKinds, detailedTooltipKinds } from '../buil
 import { importBundle, exportBundle, downloadBundleBytes } from '../build/test/bundle-authoring.js';
 import { parseQsBundle } from '@opensight/bundle-parser';
 import { TooltipSection } from '../build/test/TooltipEditor.js';
+import { init } from '../build/test/echarts.js';
 
 const add = kind => authorReducer(emptyDraft(), { type: 'add', kind });
 const selected = d => activeSheet(d).visuals[0];
@@ -144,22 +145,134 @@ test('detailed tooltips render exact rows for index-mapped extra kinds', () => {
   assert.equal(pointMap.option.tooltip.formatter({ dataIndex: 0 }), '48\norder_id: 48\nregion: 2\nSum of revenue: 100');
 });
 
-test('detailed tooltips on kinds without renderer support fall back to basic with a warning', () => {
-  for (const kind of ['scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap']) {
+test('detailed tooltip rendering gates agree with implemented kinds', () => {
+  for (const kind of ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud', 'box', 'histogram']) {
     assert.equal(detailedTooltipKinds(kind), true, kind);
     assert.equal(tooltipDetailKinds(kind), true, kind);
   }
-  for (const kind of ['treemap', 'box', 'histogram', 'wordCloud']) {
+  for (const kind of ['insight', 'kpi', 'table', 'pivot', 'radar', 'sankey', 'waterfall']) {
+    assert.equal(tooltipDetailKinds(kind), false, kind);
     assert.equal(detailedTooltipKinds(kind), false, kind);
-    assert.equal(tooltipDetailKinds(kind), true, kind);
   }
-  assert.equal(tooltipDetailKinds('radar'), false);
-  assert.equal(tooltipDetailKinds('kpi'), false);
-  const v = { ...selected(add('treemap')), dimension: 'region', rows: ['region'], measures: ['revenue'] };
-  const compiled = compileVisual(input({ ...v, tooltipType: 'detailed' }, [{ region: 'East', revenue: 10 }]));
-  assert.equal(compiled.model.tooltipDetail.type, 'detailed');
-  assert.equal(typeof compiled.option.tooltip.formatter, 'undefined');
-  assert.ok(compiled.model.warnings.some(w => w.includes('treemap')), JSON.stringify(compiled.model.warnings));
+  for (const kind of ['treemap', 'wordCloud', 'box', 'histogram']) {
+    const v = { ...selected(add(kind)), dimension: 'region', rows: ['region'], measures: ['revenue'], tooltipType: 'detailed' };
+    const compiled = compileVisual(input(v, [{ region: 'East', revenue: 10 }]));
+    assert.equal(compiled.model.tooltipDetail.type, 'detailed');
+    assert.equal(typeof compiled.option.tooltip.formatter, 'function');
+    assert.ok(!compiled.model.warnings.some(w => w.includes('using basic tooltips')), JSON.stringify(compiled.model.warnings));
+  }
+});
+
+test('treemap details use hierarchy levels and the hovered node value', () => {
+  const v = { ...selected(add('treemap')), rows: ['region', 'category'], measures: ['revenue'], tooltipType: 'detailed' };
+  const rows = [{ region: 'East', category: 'Hardware', revenue: 10 }, { region: 'East', category: 'Software', revenue: 20 }];
+  const compiled = compileVisual(input(v, rows));
+  const parent = compiled.option.series[0].data[0];
+  const leaf = parent.children[0];
+  const path = [{ name: 'root' }, { name: 'East' }, { name: 'Hardware' }];
+  const params = { name: leaf.name, value: leaf.value, data: leaf, treePathInfo: path };
+  assert.equal(compiled.option.tooltip.formatter(params), 'East\nregion: East\ncategory: Hardware\nSum of revenue: 10');
+  assert.equal(compiled.option.tooltip.formatter({ name: 'East', value: 30, data: parent, treePathInfo: path.slice(0, 2) }), 'East\nregion: East\nSum of revenue: 30');
+  const hidden = compileVisual(input({ ...v, tooltipHiddenFields: ['region'], tooltipTitleType: 'fieldId', tooltipAggregations: false }, rows));
+  assert.equal(hidden.option.tooltip.formatter(params), 'region\ncategory: Hardware\nrevenue: 10');
+});
+
+test('word cloud details display the word and compiled weight after sorting', () => {
+  const v = { ...selected(add('wordCloud')), dimension: 'region', measures: ['revenue'], tooltipType: 'detailed' };
+  const compiled = compileVisual(input(v, [{ region: 'East', revenue: 10 }, { region: 'West', revenue: 30 }, { region: 'North', revenue: 20 }]));
+  const data = compiled.option.series[0].data[0];
+  assert.equal(data.sourceRowIndex, 1);
+  assert.equal(compiled.option.tooltip.formatter({ name: data.name, value: data.value, data }), 'West\nregion: West\nSum of revenue: 30');
+});
+
+test('box details use compiled group quartiles and omit empty or hidden statistics', () => {
+  const v = { ...selected(add('box')), rows: ['region'], measures: ['revenue'], tooltipType: 'detailed' };
+  const rows = [2, 6, 10, 14, 18].map(revenue => ({ region: 'West', revenue })).concat([{ region: 'Empty', revenue: null }]);
+  const compiled = compileVisual(input(v, rows));
+  assert.equal(compiled.option.tooltip.formatter({ dataIndex: 0, value: [0, 2, 6, 10, 14, 18] }), 'West\nregion: West\nrevenue min: 2\nrevenue Q1: 6\nrevenue median: 10\nrevenue Q3: 14\nrevenue max: 18');
+  // dataIndex 1 is the second compiled group, not the second source row.
+  assert.equal(compiled.option.tooltip.formatter({ dataIndex: 1 }), 'Empty\nregion: Empty');
+  const hidden = compileVisual(input({ ...v, tooltipHiddenFields: ['revenue'], tooltipTitleType: 'fieldId' }, rows));
+  assert.equal(hidden.option.tooltip.formatter({ dataIndex: 0 }), 'region\nregion: West');
+});
+
+test('histogram details use compiled bin ranges and frequencies', () => {
+  const v = { ...selected(add('histogram')), dimension: null, measures: ['revenue'], bins: 2, tooltipType: 'detailed' };
+  const rows = [0, 1, 2, 4].map(revenue => ({ revenue }));
+  const compiled = compileVisual(input(v, rows));
+  assert.deepEqual(compiled.option.xAxis.data, ['0–2', '2–4']);
+  assert.equal(compiled.option.tooltip.formatter([{ dataIndex: 1 }]), '2–4\nrevenue: 2–4\nFrequency: 2');
+  const hidden = compileVisual(input({ ...v, tooltipHiddenFields: ['revenue'], tooltipTitleType: 'fieldId' }, rows));
+  assert.equal(hidden.option.tooltip.formatter({ dataIndex: 0 }), 'revenue\nFrequency: 2');
+});
+
+test('transformed details honor field labels, governed formats, visibility and rich-text escaping', () => {
+  for (const kind of ['treemap', 'wordCloud']) {
+    const v = { ...selected(add(kind)), rows: ['region'], dimension: 'region', measures: ['revenue'], tooltipType: 'detailed', tooltipTitleType: 'fieldId',
+      formatting: { names: { region: '{Region|label}', revenue: '{Revenue|label}' }, metricFormats: { revenue: { style: 'currency', currency: 'USD', decimalPlaces: 2 } } } };
+    const rows = [{ region: '{East|value}', revenue: 1234.5 }];
+    const compiled = compileVisual(input(v, rows)), data = compiled.option.series[0].data[0];
+    const params = { data, name: data.name, value: data.value, treePathInfo: [{ name: 'root' }, { name: data.name }] };
+    assert.equal(compiled.option.tooltip.formatter(params), '｛Region|label｝\n｛Region|label｝: ｛East|value｝\n｛Revenue|label｝: $1,234.50');
+    const hidden = compileVisual(input({ ...v, tooltipHiddenFields: ['region', 'revenue'], tooltipTitleType: 'primaryValue' }, rows));
+    assert.equal(hidden.option.tooltip.formatter(params), '｛East|value｝');
+    const noAgg = compileVisual(input({ ...v, formatting: undefined, tooltipAggregations: false }, rows));
+    assert.equal(noAgg.option.tooltip.formatter(params), 'region\nregion: ｛East|value｝\nrevenue: 1,234.5');
+  }
+});
+
+test('box statistics interpolate, skip nulls, format metrics and honor hidden dimensions', () => {
+  const v = { ...selected(add('box')), rows: ['region'], measures: ['revenue'], tooltipType: 'detailed', tooltipHiddenFields: ['region'],
+    formatting: { names: { revenue: '{Value|label}' }, metricFormats: { revenue: { style: 'currency', currency: 'USD', decimalPlaces: 2 } } } };
+  const rows = [0, 10, null, 20, 30].map(revenue => ({ region: '{West|value}', revenue }));
+  const compiled = compileVisual(input(v, rows));
+  const expected = '｛West|value｝\n｛Value|label｝ min: $0.00\n｛Value|label｝ Q1: $7.50\n｛Value|label｝ median: $15.00\n｛Value|label｝ Q3: $22.50\n｛Value|label｝ max: $30.00';
+  assert.equal(compiled.option.tooltip.formatter({ dataIndex: 0 }), expected);
+  assert.equal(compileVisual(input({ ...v, tooltipAggregations: false }, rows)).option.tooltip.formatter({ dataIndex: 0 }), expected);
+});
+
+test('histogram sample dimensions never replace the measure title or format frequencies as metrics', () => {
+  const v = { ...selected(add('histogram')), dimension: 'region', measures: ['revenue'], tooltipType: 'detailed', tooltipTitleType: 'fieldId',
+    formatting: { names: { revenue: '{Value|label}' }, metricFormats: { revenue: { style: 'currency', currency: 'USD', decimalPlaces: 2 } } } };
+  const compiled = compileVisual(input(v, [{ region: 'A', revenue: 5 }, { region: 'B', revenue: null }, { region: 'C', revenue: 5 }]));
+  assert.equal(compiled.option.tooltip.formatter({ dataIndex: 0 }), '｛Value|label｝\n｛Value|label｝: 5–6\nFrequency: 2');
+});
+
+test('transformed formatters tolerate missing hover data and unavailable results', () => {
+  for (const kind of ['treemap', 'wordCloud', 'box', 'histogram']) {
+    const v = { ...selected(add(kind)), rows: ['region'], dimension: 'region', measures: ['revenue'], tooltipType: 'detailed' };
+    for (const rows of [[], null]) {
+      const compiled = compileVisual(input(v, rows));
+      for (const params of [undefined, null, [], {}, { dataIndex: -1 }, { dataIndex: 999 }]) assert.equal(compiled.option.tooltip.formatter(params), '', kind);
+    }
+  }
+});
+
+test('real ECharts datum parameters render detailed treemap, word, box and histogram tooltips', () => {
+  for (const kind of ['treemap', 'wordCloud', 'box', 'histogram']) {
+    const v = { ...selected(add(kind)), rows: ['region', ...(kind === 'treemap' ? ['category'] : [])], dimension: 'region', measures: ['revenue'], tooltipType: 'detailed', bins: 2,
+      tooltipExtraFields: ['treemap', 'wordCloud'].includes(kind) ? [{ field: 'profit', aggregation: 'AVG' }] : [] };
+    const rows = [{ region: 'East', category: 'Hardware', revenue: 10, profit: 2 }, { region: 'East', category: 'Software', revenue: 30, profit: 9 }];
+    if (kind === 'wordCloud') rows[1].region = 'West';
+    const compiled = compileVisual(input(v, rows));
+    const chart = init(null, undefined, { renderer: 'svg', ssr: true, width: 600, height: 360 });
+    try {
+      chart.setOption(compiled.option);
+      const series = chart.getModel().getSeriesByIndex(0);
+      if (kind === 'treemap') {
+        const tree = series.getData().tree, parent = tree.root.children[0], leaf = parent.children[1];
+        assert.equal(compiled.option.tooltip.formatter(series.getDataParams(parent.dataIndex)), 'East\nregion: East\nSum of revenue: 40');
+        assert.equal(compiled.option.tooltip.formatter(series.getDataParams(leaf.dataIndex)), 'East\nregion: East\ncategory: Software\nSum of revenue: 30\nAvg of profit: 9');
+      } else {
+        const expected = {
+          wordCloud: 'West\nregion: West\nSum of revenue: 30\nAvg of profit: 9',
+          box: 'East\nregion: East\nrevenue min: 10\nrevenue Q1: 15\nrevenue median: 20\nrevenue Q3: 25\nrevenue max: 30',
+          histogram: '10–20\nrevenue: 10–20\nFrequency: 1',
+        }[kind];
+        assert.equal(compiled.option.tooltip.formatter(series.getDataParams(0)), expected);
+      }
+    } finally { chart.dispose(); }
+  }
 });
 
 test('tooltip section renders for supported kinds and hides for others', () => {
@@ -170,7 +283,8 @@ test('tooltip section renders for supported kinds and hides for others', () => {
   assert.equal(kpi, '');
   const radar = renderToStaticMarkup(createElement(TooltipSection, { visual: selected(add('radar')), dispatch() {} }));
   assert.equal(radar, '');
-  // Kinds that accept detailed config but don't render it get the honest hint naming the supported set.
+  // Treemap now renders detailed tooltips and no longer needs a fallback hint.
   const treemapDetailed = renderToStaticMarkup(createElement(TooltipSection, { visual: { ...selected(add('treemap')), tooltipType: 'detailed' }, dispatch() {} }));
-  assert.ok(treemapDetailed.includes('Detailed tooltips render for bar, line, pie, combo, area, 100% bar, scatter, funnel, gauge, heatmap and map visuals'), treemapDetailed.slice(0, 500));
+  assert.ok(!treemapDetailed.includes('other visual types use basic tooltips'), treemapDetailed);
+  assert.ok(treemapDetailed.includes('Primary value as title'), treemapDetailed);
 });

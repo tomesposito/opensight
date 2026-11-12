@@ -290,15 +290,19 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
     option.series = [{ type: 'gauge', min: model.gaugeMin, max: model.gaugeMax, progress: { show: true }, detail: { formatter: '{value}', fontSize: 22 }, data: rows.length && values()[0] !== null ? [{ name: fieldName(model.measures[0]!, model.formatting), value: values()[0]! }] : [] }];
     if (rows.length && values()[0] === null) model.warnings.push('Gauge measure is null; no needle value is shown.');
   } else if (model.kind === 'treemap') {
-    type Node = { name: string; value?: number; children?: Node[] };
+    type Node = { name: string; value?: number; children?: Node[]; sourceRowIndex?: number };
     const root: Node[] = [];
-    rows.forEach(r => {
+    rows.forEach((r, sourceRowIndex) => {
       let level = root;
       model.dimensions.forEach((f, i) => {
         const name = label(cell(r, f));
         let node = level.find(n => n.name === name);
         if (!node) { node = { name }; level.push(node); }
-        if (i === model.dimensions.length - 1) node.value = nonnegative(r);
+        if (i === model.dimensions.length - 1) {
+          node.value = nonnegative(r);
+          // Only leaves have a source row; overwritten paths keep the winning row.
+          if (model.tooltipDetail?.type === 'detailed') node.sourceRowIndex = sourceRowIndex;
+        }
         else { node.children ??= []; level = node.children; }
       });
     });
@@ -326,7 +330,9 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
     // A fixed virtual grid makes the layout deterministic in SSR and responsive in browsers.
     option.xAxis = { show: false, min: 0, max: 100 }; option.yAxis = { show: false, min: 0, max: 100 }; option.grid = { left: 5, right: 5, top: 5, bottom: 5 };
     const columns = Math.min(4, Math.ceil(Math.sqrt(words.length || 1))), lines = Math.ceil(words.length / columns);
-    option.series = [{ type: 'scatter', symbolSize: 0, data: words.map((w, i) => ({ name: w.name, value: [(i % columns + .5) * 100 / columns, 100 - (Math.floor(i / columns) + .5) * 100 / lines, w.value], label: { show: true, position: 'inside', formatter: w.name.length > 22 ? w.name.slice(0, 21) + '…' : w.name, fontSize: Math.min(30, 11 + 19 * Math.sqrt(w.value / max), 160 / Math.max(1, w.name.length)), color: Array.isArray(option.color) ? option.color[i % option.color.length] as string : '#157f88' } })) }];
+    option.series = [{ type: 'scatter', symbolSize: 0, data: words.map((w, i) => ({ name: w.name, value: [(i % columns + .5) * 100 / columns, 100 - (Math.floor(i / columns) + .5) * 100 / lines, w.value],
+      ...(model.tooltipDetail?.type === 'detailed' ? { sourceRowIndex: w.i } : {}),
+      label: { show: true, position: 'inside', formatter: w.name.length > 22 ? w.name.slice(0, 21) + '…' : w.name, fontSize: Math.min(30, 11 + 19 * Math.sqrt(w.value / max), 160 / Math.max(1, w.name.length)), color: Array.isArray(option.color) ? option.color[i % option.color.length] as string : '#157f88' } })) }];
     if (rows.length > 80) model.warnings.push(`Word cloud displays 80 of ${rows.length} words; View data retains all supplied rows.`);
   } else if (model.kind === 'filledMap') {
     const unknown = names.filter(n => !countryNames.has(n));
