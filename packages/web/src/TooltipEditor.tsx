@@ -1,5 +1,5 @@
 import { useState, type Dispatch } from 'react';
-import { detailedTooltipKinds, tooltipDetailKinds } from './compiler.js';
+import { tooltipDetailKinds } from './compiler.js';
 import { dataFields, visualDimensions, TOOLTIP_AGGREGATIONS, type AuthorAction, type AuthorDataset, type AuthorVisual, type CalculatedField, type TooltipExtraField } from './authoring.js';
 
 /** Fields the detailed tooltip can show: the visual's own dimensions then measures. */
@@ -46,7 +46,6 @@ export function TooltipSection({ visual, dispatch, dataset, calculations = [] }:
   if (!tooltipDetailKinds(visual.kind)) return null;
   const fields = tooltipFieldNames(visual);
   const detailed = visual.tooltipType === 'detailed';
-  const rendersDetailed = detailedTooltipKinds(visual.kind);
   const patch = (p: Partial<Pick<AuthorVisual, 'tooltipType' | 'tooltipTitleType' | 'tooltipAggregations' | 'tooltipHiddenFields' | 'tooltipExtraFields'>>) =>
     dispatch({ type: 'tooltip', patch: p });
   const toggleField = (name: string) => patch({ tooltipHiddenFields: visual.tooltipHiddenFields.includes(name)
@@ -59,7 +58,6 @@ export function TooltipSection({ visual, dispatch, dataset, calculations = [] }:
         <option value="basic">Basic</option>
         <option value="detailed">Detailed</option>
       </select></label>
-      {detailed && !rendersDetailed && <p className="field-hint">Detailed tooltips render for bar, line, pie, combo, area, 100% bar, scatter, funnel, gauge, heatmap and map visuals; other visual types use basic tooltips.</p>}
       {detailed && <>
         <label className="toggle"><input type="checkbox" checked={visual.tooltipTitleType === 'primaryValue'}
           onChange={e => patch({ tooltipTitleType: e.target.checked ? 'primaryValue' : 'fieldId' })} />Primary value as title</label>
