@@ -14,7 +14,7 @@ import type { Cell, Field, FixtureVisual, MultiplesOptions, Row, VisualModel } f
 import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
 import { applyDisplayOptions, legendTextStyle } from './display-options.js';
-import { FACETED_KINDS, facetLayout, facetPanelGrids, facetTitles, groupRowsByFacet } from './facet-layout.js';
+import { FACETED_KINDS, applyFacetLimit, facetLayout, facetPanelGrids, facetTitles, groupRowsByFacet, type FacetGroup } from './facet-layout.js';
 
 export const DATA_REQUIRED_LABEL = 'Needs data';
 
@@ -481,11 +481,23 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     }
   }
   const smallLimitKey = key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration');
+  let facetLimit: VisualModel['facetLimit'];
   if (sort[smallLimitKey] !== undefined) {
     const limit = object(sort[smallLimitKey], `${cpath}.${smallLimitKey}`);
-    keys(limit, [key('otherCategories', 'OtherCategories')], `${cpath}.${smallLimitKey}`);
-    enumValue(limit[key('otherCategories', 'OtherCategories')], ['INCLUDE'], 'INCLUDE', cpath);
-    warnings.push(`${cpath}.${smallLimitKey}: no top-N/Other bucket is computed; all supplied result rows are shown.`);
+    keys(limit, [key('otherCategories', 'OtherCategories'), key('itemsLimit', 'ItemsLimit')], `${cpath}.${smallLimitKey}`);
+    const other = enumValue(limit[key('otherCategories', 'OtherCategories')], ['INCLUDE', 'EXCLUDE'], 'INCLUDE', cpath);
+    const count = limit[key('itemsLimit', 'ItemsLimit')];
+    if (count === undefined) {
+      warnings.push(`${cpath}.${smallLimitKey}: no top-N/Other bucket is computed; all supplied result rows are shown.`);
+    } else if (!FACETED_KINDS.includes(kind)) {
+      fail(`${cpath}.${smallLimitKey}`, 'small multiples limits are only computed for faceted visuals');
+    } else if (!Number.isInteger(count) || (count as number) < 1 || (count as number) > 100) {
+      fail(`${cpath}.${smallLimitKey}`, 'small multiples limit count must be an integer between 1 and 100');
+    } else if (!facet) {
+      fail(`${cpath}.${smallLimitKey}`, 'small multiples limits require a SmallMultiples field');
+    } else {
+      facetLimit = { count: count as number, includeOther: other === 'INCLUDE' };
+    }
   }
   // Waterfall breakdown limits (QuickSight BreakdownItemsLimit parity): show the
   // top N breakdown values in first-appearance order, rolling the rest into a
@@ -529,6 +541,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     legendPosition: enumValue(legend[key('position', 'Position')] ?? (formattingValid(formatting) ? formatting.legendPosition : undefined), [...LEGEND_POSITIONS], 'BOTTOM', `${cpath}.legend.position`) as LegendPosition,
     dimensions, rowDimensions, columnDimensions, measures, totals, subtotals, columnTotals, columnSubtotals, innerRadius, sort: fieldSort, warnings,
     ...(sliceLimit ? { sliceLimit } : {}),
+    ...(facetLimit ? { facetLimit } : {}),
     ...(breakdownLimit ? { breakdownLimit } : {}),
     ...(facet ? { facet } : {}),
     ...(breakdown ? { breakdown } : {}),
@@ -603,6 +616,42 @@ export function compileVisual(input: Input): CompiledVisual {
     const categories = rows.map(row => JSON.stringify(keyFields.map(f => cell(row, f))));
     if (new Set(categories).size !== categories.length) fail(input.path, 'duplicate categories: expected aggregated result rows');
   }
+  // Compute facet limits once, before any of the three layout paths or per-panel
+  // slice limits. Explicit groups keep a retained literal "Other" facet distinct
+  // from the extra panel, even though both have the fixed English title.
+  let facetGroups: FacetGroup[] | undefined;
+  if (model.facet && model.facetLimit) {
+    const facet = model.facet;
+    const groups = groupRowsByFacet(rows, facet, cell);
+    facetGroups = applyFacetLimit(groups, model.facetLimit, rest => {
+      const merged = new Map<string, Record<string, Cell>>();
+      for (const row of rest) {
+        const key = JSON.stringify(model.dimensions.map(field => cell(row, field)));
+        let other = merged.get(key);
+        if (!other) {
+          other = { ...row, [extraColumn(facet)]: 'Other' };
+          for (const measure of model.measures) other[extraColumn(measure)] = null;
+          // As with slice limits, extra tooltip values cannot be inferred from
+          // already aggregated rows. Never inherit one source facet's value.
+          for (const extra of extraFields) other[extraColumn(extra)] = null;
+          merged.set(key, other);
+        }
+        for (const measure of model.measures) {
+          const value = number(row, measure);
+          if (value !== null) {
+            const total = (number(other, measure) ?? 0) + value;
+            if (!Number.isFinite(total)) fail(input.path, 'small multiples Other totals must be finite');
+            other[extraColumn(measure)] = total;
+          }
+        }
+      }
+      return [...merged.values()];
+    });
+    if (facetGroups !== groups) {
+      rows.length = 0;
+      rows.push(...facetGroups.flatMap(group => group.rows));
+    }
+  }
   // Pie slice limit (QuickSight CategoryItemsLimit parity): keep the top N rows
   // in display order per facet group, rolling the rest into one "Other" bucket
   // (per-measure SUM, null when every contributing value is null) or dropping
@@ -618,7 +667,8 @@ export function compileVisual(input: Input): CompiledVisual {
       groups.get(k)!.push(row);
     }
     const limited: Row[] = [];
-    for (const group of groups.values()) {
+    for (const group of facetGroups?.map(group => group.rows) ?? groups.values()) {
+      const start = limited.length;
       if (group.length <= limit.count) { limited.push(...group); continue; }
       const kept = group.slice(0, limit.count), rest = group.slice(limit.count);
       // Fold a retained literal "Other" into this facet's bucket (#126).
@@ -643,6 +693,7 @@ export function compileVisual(input: Input): CompiledVisual {
         for (const extra of extraFields) other[alias(extra)] = null;
         limited.push(other);
       }
+      if (facetGroups) group.splice(0, group.length, ...limited.slice(start));
     }
     rows.length = 0;
     rows.push(...limited);
@@ -678,7 +729,7 @@ export function compileVisual(input: Input): CompiledVisual {
     // area/combo/bar100, whose panels each emit one series per measure in
     // panel order — expand those groups into the per-series map.
     const extraGroups = compileExtra(model, rows, cell, number, option, message => fail(input.path, message),
-      { path: input.path, theme, warn: message => model.warnings.push(message) });
+      { path: input.path, theme, warn: message => model.warnings.push(message), facetGroups });
     if (extraGroups) facetSeriesMap = extraGroups.flatMap(groupRows => model.measures.map((_, measureIndex) => ({ rows: groupRows, measureIndex })));
   } else if (model.kind === 'pie') {
     const measure = model.measures[0]!;
@@ -698,7 +749,7 @@ export function compileVisual(input: Input): CompiledVisual {
       // Small multiples: one pie per facet value on a grid, first-appearance order.
       const opts = model.multiplesOptions;
       const { shown, cols, topPad, cellW, cellH } =
-        facetLayout(groupRowsByFacet(rows, model.facet, cell), opts, input.path, w => model.warnings.push(w));
+        facetLayout(facetGroups ?? groupRowsByFacet(rows, model.facet, cell), opts, input.path, w => model.warnings.push(w));
       // Gutter opens an inter-panel gap by shrinking each panel's content (and
       // insetting its chrome below); the factor is an OpenSight approximation
       // of the reference spacing, not measured QuickSight geometry.
@@ -738,7 +789,7 @@ export function compileVisual(input: Input): CompiledVisual {
       // Small multiples: one cartesian panel per facet value on a grid.
       const opts = model.multiplesOptions;
       const { shown, cols, topPad, cellW, cellH } =
-        facetLayout(groupRowsByFacet(rows, model.facet, cell), opts, input.path, w => model.warnings.push(w));
+        facetLayout(facetGroups ?? groupRowsByFacet(rows, model.facet, cell), opts, input.path, w => model.warnings.push(w));
       const inset = opts?.gutter ? 1.5 : 0;
       option.grid = shown.map((_, i) => {
         const c = i % cols, r = Math.floor(i / cols);

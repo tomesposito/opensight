@@ -124,6 +124,8 @@ export interface AuthorVisual {
   groupSort?: GroupSort;
   /** Pie slice limit: top-N categories with an optional "Other" bucket. Renders through sortConfiguration. */
   sliceLimit?: SliceLimit;
+  /** Small multiples panel limit, applied before the layout's panel cap. */
+  facetLimit?: FacetLimit;
   /** Waterfall breakdown limit: top-N breakdown values with an optional per-category
    *  "Other" delta bar. Renders through sortConfiguration. Waterfall only. */
   breakdownLimit?: BreakdownLimit;
@@ -234,6 +236,14 @@ export function groupSortValid(value: unknown): value is GroupSort {
 export interface SliceLimit { count: number; includeOther: boolean }
 /** Fail-closed structural validation for the pie slice limit. */
 export function sliceLimitValid(value: unknown): value is SliceLimit {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return Object.keys(v).length === 2 && Number.isInteger(v.count) && (v.count as number) >= 1 && (v.count as number) <= 100 && typeof v.includeOther === 'boolean';
+}
+/** Small multiples limit: first N facet groups and an optional "Other" panel. */
+export interface FacetLimit { count: number; includeOther: boolean }
+/** Fail-closed structural validation for the small multiples panel limit. */
+export function facetLimitValid(value: unknown): value is FacetLimit {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const v = value as Record<string, unknown>;
   return Object.keys(v).length === 2 && Number.isInteger(v.count) && (v.count as number) >= 1 && (v.count as number) <= 100 && typeof v.includeOther === 'boolean';
@@ -353,6 +363,7 @@ export type AuthorAction =
   | { type: 'group-title'; title: GroupTitle | undefined }
   | { type: 'group-sort'; sort: GroupSort | undefined }
   | { type: 'slice-limit'; limit: SliceLimit | undefined }
+  | { type: 'facet-limit'; limit: FacetLimit | undefined }
   | { type: 'breakdown-limit'; limit: BreakdownLimit | undefined }
   | { type: 'legend-value-style'; style: LegendTextStyle | undefined }
   | { type: 'data-labels'; labels: DataLabels | undefined }
@@ -734,6 +745,13 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         else next.sliceLimit = structuredClone(action.limit);
         return next;
       }
+      case 'facet-limit': {
+        if (action.limit !== undefined && !facetLimitValid(action.limit)) return visual;
+        const next = { ...visual };
+        if (action.limit === undefined) delete next.facetLimit;
+        else next.facetLimit = structuredClone(action.limit);
+        return next;
+      }
       case 'breakdown-limit': {
         if (action.limit !== undefined && !breakdownLimitValid(action.limit)) return visual;
         const next = { ...visual };
@@ -833,7 +851,11 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         return { ...visual, filters: action.values === null ? filters : [...filters, { columnName: action.columnName, values: [...new Set(action.values)] }] };
       }
       case 'unassign': {
-        if (action.well === 'smallMultiples') return { ...visual, smallMultiples: visual.smallMultiples?.filter(f => f !== action.field) };
+        if (action.well === 'smallMultiples') {
+          const next = { ...visual, smallMultiples: visual.smallMultiples?.filter(f => f !== action.field) };
+          if (!next.smallMultiples?.length) delete next.facetLimit;
+          return next;
+        }
         if (action.well === 'breakdown') {
           const next = { ...visual, breakdowns: visual.breakdowns?.filter(f => f !== action.field) };
           if (!next.breakdowns?.length) delete next.breakdownLimit;
@@ -850,6 +872,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         // A breakdown limit is meaningless without a Breakdowns field; drop it when the last one is unassigned.
         const next = { ...visual, ...unassigned };
         if (hadBreakdowns && !breakdowns?.length) delete next.breakdownLimit;
+        if (visual.smallMultiples?.length && !next.smallMultiples?.length) delete next.facetLimit;
         return next;
       }
       case 'assign': {
@@ -980,14 +1003,15 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   const tableTotals = { totalOptions: totalVisibility(visual.totals), opensightSubtotalOptions: totalVisibility(visual.subtotals) };
   const pivotTotals = { totalOptions: { rowTotalOptions: totalVisibility(visual.totals), columnTotalOptions: totalVisibility(visual.totals),
     rowSubtotalOptions: totalVisibility(visual.subtotals), columnSubtotalOptions: totalVisibility(visual.subtotals) } };
-  // Group/Color sort and slice/breakdown limits serialize as SortConfiguration; the
-  // compiler parses them back into the model. The slice limit is pie-scoped,
-  // the breakdown limit is waterfall-with-breakdowns-scoped.
+  // Sort and limits share SortConfiguration; each limit serializes only for
+  // its supported kind and (where required) an assigned field well.
   const sortConfiguration = {
     ...(visual.groupSort && ['bar', 'bar100', 'pie'].includes(visual.kind)
       ? { categorySort: [{ fieldSort: { fieldId: visual.groupSort.fieldId, direction: visual.groupSort.direction } }] } : {}),
     ...(visual.sliceLimit && visual.kind === 'pie'
       ? { categoryItemsLimit: { itemsLimit: visual.sliceLimit.count, otherCategories: visual.sliceLimit.includeOther ? 'INCLUDE' : 'EXCLUDE' } } : {}),
+    ...(visual.facetLimit && FACETED_KINDS.includes(visual.kind) && visual.smallMultiples?.length
+      ? { smallMultiplesLimitConfiguration: { itemsLimit: visual.facetLimit.count, otherCategories: visual.facetLimit.includeOther ? 'INCLUDE' : 'EXCLUDE' } } : {}),
     ...(visual.breakdownLimit && visual.kind === 'waterfall' && visual.breakdowns?.length
       ? { breakdownItemsLimit: { itemsLimit: visual.breakdownLimit.count, otherCategories: visual.breakdownLimit.includeOther ? 'INCLUDE' : 'EXCLUDE' } } : {}),
   };
@@ -1017,7 +1041,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
       ...(visual.multiplesOptions ? { opensightMultiplesOptions: visual.multiplesOptions } : {}),
     } } };
     case 'bar': return { barChartVisual: { ...body, chartConfiguration: { ...display, orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL', barsArrangement: visual.stacked ? 'STACKED' : 'CLUSTERED', ...groupSortConfig, ...(visual.multiplesOptions ? { opensightMultiplesOptions: visual.multiplesOptions } : {}), fieldWells: { barChartAggregatedFieldWells: { category, values, ...multiples } } } } };
-    case 'line': return { lineChartVisual: { ...body, chartConfiguration: { ...display, ...(visual.multiplesOptions ? { opensightMultiplesOptions: visual.multiplesOptions } : {}), ...(visual.forecast?.enabled ? { forecastConfigurations: [serializeForecast(visual.forecast)] } : {}), fieldWells: { lineChartAggregatedFieldWells: { category, values, ...multiples } } } } };
+    case 'line': return { lineChartVisual: { ...body, chartConfiguration: { ...display, ...groupSortConfig, ...(visual.multiplesOptions ? { opensightMultiplesOptions: visual.multiplesOptions } : {}), ...(visual.forecast?.enabled ? { forecastConfigurations: [serializeForecast(visual.forecast)] } : {}), fieldWells: { lineChartAggregatedFieldWells: { category, values, ...multiples } } } } };
     case 'table': return { tableVisual: { ...body, chartConfiguration: { ...tableTotals, fieldWells: { tableAggregatedFieldWells: { groupBy: category, values } } } } };
     case 'pivot': return { pivotTableVisual: { ...body, chartConfiguration: { ...pivotTotals, fieldWells: { pivotTableAggregatedFieldWells: { rows: visual.rows.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), columns: visual.columns.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), values } } } } };
     case 'kpi': return { kpiVisual: { ...body, chartConfiguration: { fieldWells: { values } } } };
@@ -1152,7 +1176,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported || unresolvedAllowed ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['o', 'id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'breakdowns', 'multiplesOptions', 'groupSort', 'sliceLimit', 'breakdownLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', 'forecast', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['o', 'id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'breakdowns', 'multiplesOptions', 'groupSort', 'sliceLimit', 'facetLimit', 'breakdownLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', 'forecast', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if (v.o !== undefined && !validOProvenance(v.o)) return fail();
       if (v.referenceLines !== undefined && (!Array.isArray(v.referenceLines) || !v.referenceLines.every(referenceLineValid))) return fail();
       if (v.forecast !== undefined && !forecastConfigValid(v.forecast)) return fail();
@@ -1161,6 +1185,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       if (v.multiplesOptions !== undefined && !multiplesOptionsValid(v.multiplesOptions)) return fail();
       if (v.groupSort !== undefined && !groupSortValid(v.groupSort)) return fail();
       if (v.sliceLimit !== undefined && !sliceLimitValid(v.sliceLimit)) return fail();
+      if (v.facetLimit !== undefined && !facetLimitValid(v.facetLimit)) return fail();
       if (v.breakdownLimit !== undefined && !breakdownLimitValid(v.breakdownLimit)) return fail();
       if ((v.kind === 'radar' || v.kind === 'sankey') && !v.imported && (v.rows.length > 1 || v.columns.length > 1)) return fail();
       if (singleMeasure(v.kind as VisualKind) && v.measures.length > 1 || noDimensions(v.kind as VisualKind) && v.dimension !== null || v.kind !== 'pie' && v.donut || !splitDimensions(v.kind as VisualKind) && v.columns.length || (grouped(v.kind as VisualKind) ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();

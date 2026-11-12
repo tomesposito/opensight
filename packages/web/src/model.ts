@@ -68,6 +68,10 @@ export interface VisualModel {
    *  rolling the rest into an "Other" bucket when includeOther. Applied per facet
    *  group for faceted pies. Absent means no limit: all result rows are shown. */
   sliceLimit?: { count: number; includeOther: boolean };
+  /** SmallMultiplesLimitConfiguration: retain the first N facet groups, then
+   *  optionally merge the remaining groups into one "Other" panel. Applied
+   *  before layout caps; absent means every supplied facet is retained. */
+  facetLimit?: { count: number; includeOther: boolean };
   /** Waterfall breakdown limit (QuickSight BreakdownItemsLimit): show the top N
    *  breakdown values in first-appearance order, rolling the rest into a per-category
    *  "Other" delta bar when includeOther. Waterfall with a Breakdowns field only.

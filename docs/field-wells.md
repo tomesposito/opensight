@@ -34,12 +34,15 @@ manual/auto-save path, and restored on reload. Existing drafts need no migration
 Assignments survive visual-type changes and remain removable even if the new
 type cannot accept new Small multiples assignments.
 
-Faceted rendering is not implemented. An assigned Small multiples field blocks
-preview queries and JSON/.qs export with `SMALL_MULTIPLES_UNSUPPORTED`; the
-field remains saved in the local draft. The UI explains how to remove it to
-resume preview. A hosted API does not remove this compiler limitation. Existing
-native bundle features continue through the existing preservation/import-report
-path. This issue does not add a faceted renderer or change its semantics.
+Bar, percentage bar, line, area, combo and pie render one panel per facet and
+support JSON/.qs export and editable import. Other visual types retain the
+assignment in the draft but block preview/export with `SMALL_MULTIPLES_UNSUPPORTED`.
+
+With a facet assigned, Multiples Options offers **Number of panels displayed**
+(1–100) and **Group the rest as Other**. The first N groups in display order
+remain; remaining groups merge into one Other panel or are excluded. Clearing
+the count removes the limit. The existing layout panel cap (at most 20) and
+visible grid capacity apply afterward. See [panel-limit semantics and review](parity-sm-limit.md).
 
 ## Verification
 
