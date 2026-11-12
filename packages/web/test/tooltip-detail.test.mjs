@@ -144,12 +144,12 @@ test('detailed tooltips render exact rows for index-mapped extra kinds', () => {
   assert.equal(pointMap.option.tooltip.formatter({ dataIndex: 0 }), '48\norder_id: 48\nregion: 2\nSum of revenue: 100');
 });
 
-test('detailed tooltips on kinds without renderer support fall back to basic with a warning', () => {
-  for (const kind of ['scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap']) {
+test('detailed tooltip rendering gates agree with implemented kinds', () => {
+  for (const kind of ['scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud']) {
     assert.equal(detailedTooltipKinds(kind), true, kind);
     assert.equal(tooltipDetailKinds(kind), true, kind);
   }
-  for (const kind of ['treemap', 'box', 'histogram', 'wordCloud']) {
+  for (const kind of ['box', 'histogram']) {
     assert.equal(detailedTooltipKinds(kind), false, kind);
     assert.equal(tooltipDetailKinds(kind), true, kind);
   }
@@ -158,8 +158,30 @@ test('detailed tooltips on kinds without renderer support fall back to basic wit
   const v = { ...selected(add('treemap')), dimension: 'region', rows: ['region'], measures: ['revenue'] };
   const compiled = compileVisual(input({ ...v, tooltipType: 'detailed' }, [{ region: 'East', revenue: 10 }]));
   assert.equal(compiled.model.tooltipDetail.type, 'detailed');
-  assert.equal(typeof compiled.option.tooltip.formatter, 'undefined');
-  assert.ok(compiled.model.warnings.some(w => w.includes('treemap')), JSON.stringify(compiled.model.warnings));
+  assert.equal(typeof compiled.option.tooltip.formatter, 'function');
+  assert.ok(!compiled.model.warnings.some(w => w.includes('using basic tooltips')), JSON.stringify(compiled.model.warnings));
+});
+
+test('treemap details use hierarchy levels and the hovered node value', () => {
+  const v = { ...selected(add('treemap')), rows: ['region', 'category'], measures: ['revenue'], tooltipType: 'detailed' };
+  const rows = [{ region: 'East', category: 'Hardware', revenue: 10 }, { region: 'East', category: 'Software', revenue: 20 }];
+  const compiled = compileVisual(input(v, rows));
+  const parent = compiled.option.series[0].data[0];
+  const leaf = parent.children[0];
+  const path = [{ name: 'root' }, { name: 'East' }, { name: 'Hardware' }];
+  const params = { name: leaf.name, value: leaf.value, data: leaf, treePathInfo: path };
+  assert.equal(compiled.option.tooltip.formatter(params), 'East\nregion: East\ncategory: Hardware\nSum of revenue: 10');
+  assert.equal(compiled.option.tooltip.formatter({ name: 'East', value: 30, data: parent, treePathInfo: path.slice(0, 2) }), 'East\nregion: East\nSum of revenue: 30');
+  const hidden = compileVisual(input({ ...v, tooltipHiddenFields: ['region'], tooltipTitleType: 'fieldId', tooltipAggregations: false }, rows));
+  assert.equal(hidden.option.tooltip.formatter(params), 'region\ncategory: Hardware\nrevenue: 10');
+});
+
+test('word cloud details display the word and compiled weight after sorting', () => {
+  const v = { ...selected(add('wordCloud')), dimension: 'region', measures: ['revenue'], tooltipType: 'detailed' };
+  const compiled = compileVisual(input(v, [{ region: 'East', revenue: 10 }, { region: 'West', revenue: 30 }, { region: 'North', revenue: 20 }]));
+  const data = compiled.option.series[0].data[0];
+  assert.equal(data.sourceRowIndex, 1);
+  assert.equal(compiled.option.tooltip.formatter({ name: data.name, value: data.value, data }), 'West\nregion: West\nSum of revenue: 30');
 });
 
 test('tooltip section renders for supported kinds and hides for others', () => {
@@ -170,7 +192,8 @@ test('tooltip section renders for supported kinds and hides for others', () => {
   assert.equal(kpi, '');
   const radar = renderToStaticMarkup(createElement(TooltipSection, { visual: selected(add('radar')), dispatch() {} }));
   assert.equal(radar, '');
-  // Kinds that accept detailed config but don't render it get the honest hint naming the supported set.
+  // Treemap now renders detailed tooltips and no longer needs a fallback hint.
   const treemapDetailed = renderToStaticMarkup(createElement(TooltipSection, { visual: { ...selected(add('treemap')), tooltipType: 'detailed' }, dispatch() {} }));
-  assert.ok(treemapDetailed.includes('Detailed tooltips render for bar, line, pie, combo, area, 100% bar, scatter, funnel, gauge, heatmap and map visuals'), treemapDetailed.slice(0, 500));
+  assert.ok(!treemapDetailed.includes('other visual types use basic tooltips'), treemapDetailed);
+  assert.ok(treemapDetailed.includes('Primary value as title'), treemapDetailed);
 });
