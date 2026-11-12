@@ -17,6 +17,13 @@ const section = page.locator('.property-section').filter({ has: page.locator('su
 const count = () => section.getByLabel('Number of panels displayed', { exact: true });
 const other = () => section.getByLabel('Group the rest as Other', { exact: true });
 const chart = page.locator('.author-card .chart svg');
+async function openMultiples() {
+  for (const details of await page.locator('.properties-panel details.property-section').all()) {
+    if (await details.getAttribute('open') !== null && await details.locator('summary').first().textContent() !== 'Multiples Options') await details.locator('summary').first().click();
+  }
+  await openPropertySection(page, 'Multiples Options');
+  await page.locator('.properties-panel').evaluate(node => { node.scrollTop = 0; });
+}
 async function capture(name) {
   await page.mouse.move(1438, 2);
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -29,7 +36,9 @@ try {
   await page.locator('.build-panel').getByRole('button', { name: 'Add visual', exact: true }).click();
   await page.getByLabel('Assign Group/Color', { exact: true }).selectOption('category');
   await page.getByRole('button', { name: 'Assign revenue', exact: true }).click();
-  await openPropertySection(page, 'Multiples Options');
+  await openPropertySection(page, 'Data labels');
+  await page.getByLabel('Show data labels', { exact: true }).uncheck();
+  await openMultiples();
   assert.equal(await count().count(), 0);
   await page.getByRole('button', { name: 'Select SMALL MULTIPLES well', exact: true }).click();
   await page.getByRole('button', { name: 'Assign region', exact: true }).click();
@@ -56,11 +65,11 @@ try {
   await other().check();
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   await page.reload();
-  await openPropertySection(page, 'Multiples Options');
+  await openMultiples();
   assert.equal(await count().inputValue(), '1');
   assert.equal(await other().isChecked(), true);
   assert.match(await chart.textContent(), /Other/);
-  await page.getByLabel('Change visual type', { exact: true }).selectOption('bar');
+  await page.locator('.change-type select').selectOption('bar');
   assert.match(await chart.textContent(), /Other/);
   await capture('bar-include');
   await count().fill('');
