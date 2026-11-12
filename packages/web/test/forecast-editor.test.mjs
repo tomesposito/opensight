@@ -35,7 +35,7 @@ test('Forecast section appears for a line chart with a date dimension, and its t
   assert.match(section.findByType('p').props.children, /Statistical forecast \(exponential smoothing\)/);
 });
 
-test('Forecast section is absent for non-line charts and for line charts without a date dimension', async t => {
+test('Forecast section is absent for bar charts and for line charts without a date dimension', async t => {
   const bar = await mount(t, add('bar'));
   assert.ok(!bar.sections().includes('Forecast'));
   // Reassign the line chart's dimension to a text field: the section disappears.
@@ -44,4 +44,20 @@ test('Forecast section is absent for non-line charts and for line charts without
   await line.dispatch({ type: 'assign', field: 'region', well: 'category' });
   assert.notEqual(selected(line.state()).dimension, 'order_date');
   assert.ok(!line.sections().includes('Forecast'), `sections: ${line.sections().join(', ')}`);
+});
+
+test('Forecast mounts for a dated area, stores its toggle, and disappears for a non-date area', async t => {
+  const ui = await mount(t, add('area'));
+  assert.ok(ui.sections().includes('Forecast'));
+  const section = ui.panel().findAllByType('details').find(n => n.props.className === 'property-section' && n.findByType('summary').props.children === 'Forecast');
+  const toggle = section.findAllByType('input').find(n => n.props.type === 'checkbox');
+  await act(() => toggle.props.onChange({ target: { checked: true } }));
+  const expected = { enabled: true, periodsForward: 3, periodsBackward: 0, predictionInterval: 95, seasonality: 'auto' };
+  assert.deepEqual(selected(ui.state()).forecast, expected);
+  await ui.dispatch({ type: 'assign', field: 'region', well: 'category' });
+  assert.equal(selected(ui.state()).dimension, 'region');
+  assert.ok(!ui.sections().includes('Forecast'));
+  assert.deepEqual(selected(ui.state()).forecast, expected, 'the stored forecast is retained when the date dimension is removed');
+  await ui.dispatch({ type: 'assign', field: 'order_date', well: 'category' });
+  assert.ok(ui.sections().includes('Forecast'));
 });
