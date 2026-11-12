@@ -1,5 +1,5 @@
 /**
- * Statistical forecasting for line charts (issue #235): classical exponential
+ * Statistical forecasting for line/area charts (issue #235): classical exponential
  * smoothing (ETS) over the chart's own series — deterministic, no DOM, no
  * ECharts types, no ML. The product labels this a "statistical forecast"
  * everywhere it appears; QuickSight's forecast is proprietary ML and this is
