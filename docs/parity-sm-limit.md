@@ -47,27 +47,48 @@ in `field-wells.md`, `properties-panels.md` and the README are updated here.
 
 ## Verification and visual review
 
-The focused renderer, authoring, import/export and component run passed
-**117 passed / 0 failed / 0 skipped**. The new test file contributes 20 cases.
-`npm run build:demo --workspace @opensight/web` passed, including strict
-TypeScript and the embed builds. Logs are `/tmp/opensight-sm-limit-focused.log`
-and `/tmp/opensight-sm-limit-demo.log`.
+The web workspace passed **2,596 passed / 0 failed / 0 skipped**, including the
+20 new small-multiples-limit cases and the existing Chromium interaction tests.
+The final full-root verification is recorded separately below after the media
+refresh. `npm run build:demo --workspace @opensight/web` passed, including strict
+TypeScript and the embed builds; the log is `/tmp/opensight-parity-sm-limit-demo.log`.
 
-Reviewed the local reference `qs-2026/qs-pie-small-multiples.jpg`: the Data →
-Visuals → canvas order, facet titles and one shared legend remain the intended
-structure. The new controls reuse the existing Multiples Options dock styles;
-layout geometry is unchanged. This is not a screenshot comparison or a
-measured fidelity claim.
+The default `/opt/meta-chromium/chrome` still cannot start in this environment.
+The already-installed Playwright Chromium works through the existing
+`OPENSIGHT_CHROMIUM` setting, without a download or dependency change:
 
-Fresh browser verification and README media refresh are blocked by this
-environment: `/opt/meta-chromium/chrome` exits before opening the demo with
-`Hatch WebGL domain policy is required for browser startup`, both inside the
-sandbox and on an approved retry outside it. No browser assertion or capture
-ran. The existing README media is unchanged. The runnable offline acceptance
-script is `packages/web/scripts/capture-small-multiples-limit.mjs`; the adapted
-required `readme-gif.mjs` storyboard is staged under `/tmp/opensight-sm-limit/`
-against the rebuilt demo. The startup log is `/tmp/opensight-sm-limit-browser.log`.
-Refresh the hero and capture the new controls once Chromium can start.
+```sh
+export OPENSIGHT_CHROMIUM=/home/hatch/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
+TZ=UTC npm test
+```
 
-The demo is a local static artifact, not a deployed server. No GitHub action,
-push or merge was performed; this slice has no GitHub issue.
+The offline acceptance script `packages/web/scripts/capture-small-multiples-limit.mjs`
+passed against the rebuilt demo: INCLUDE/EXCLUDE, invalid-count retention,
+clearing, save/reload, pie-to-bar conversion and field-removal cleanup. Light and
+dark captures have 12px Arial controls, no horizontal overflow at 1440px, zero
+page errors and zero external requests. Captures and `acceptance.json` are under
+`.opensight/parity-sm-limit/browser/`. The script now uses the current chart-type
+selector and closes other Properties sections for a readable comparison.
+
+Compared those captures with local references `qs-2026/qs-pie-small-multiples.jpg`
+and `qs-2026/qs-properties-multiples.jpg`. Data → Visuals → canvas ordering,
+per-panel titles, one shared legend and the docked Multiples Options section
+remain intact. The new count and Other toggle use the existing compact controls
+and precede the layout cap, which is still displayed separately. No measured
+visual-fidelity claim is made.
+
+Remaining look-and-feel work for the next parity fallback: improve faceted-pie
+sizing and label placement in the default narrow card. The default labels can
+crowd that card; documentation captures disable labels through the normal UI.
+This renderer geometry predates the panel-limit slice. No GitHub issue was filed,
+as the brief explicitly prohibits GitHub access and this slice has no issue.
+
+Full-suite verification exposed an unrelated existing race in the SR1 late-connect
+cancellation test: its 20ms sleep began before asynchronous invocation setup
+completed. That test now waits for the actual abort event before releasing the
+late connection, preserving its timeout and disposal assertions. Its focused
+file passed **9 passed / 0 failed / 1 live-Postgres skip**. Production runtime
+behavior is unchanged.
+
+The demo remains a local static artifact, not a deployed server. No GitHub access
+or publishing was performed during this verification.
