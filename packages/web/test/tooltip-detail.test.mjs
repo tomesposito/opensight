@@ -145,21 +145,21 @@ test('detailed tooltips render exact rows for index-mapped extra kinds', () => {
 });
 
 test('detailed tooltip rendering gates agree with implemented kinds', () => {
-  for (const kind of ['scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud']) {
+  for (const kind of ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud', 'box', 'histogram']) {
     assert.equal(detailedTooltipKinds(kind), true, kind);
     assert.equal(tooltipDetailKinds(kind), true, kind);
   }
-  for (const kind of ['box', 'histogram']) {
+  for (const kind of ['insight', 'kpi', 'table', 'pivot', 'radar', 'sankey', 'waterfall']) {
+    assert.equal(tooltipDetailKinds(kind), false, kind);
     assert.equal(detailedTooltipKinds(kind), false, kind);
-    assert.equal(tooltipDetailKinds(kind), true, kind);
   }
-  assert.equal(tooltipDetailKinds('radar'), false);
-  assert.equal(tooltipDetailKinds('kpi'), false);
-  const v = { ...selected(add('treemap')), dimension: 'region', rows: ['region'], measures: ['revenue'] };
-  const compiled = compileVisual(input({ ...v, tooltipType: 'detailed' }, [{ region: 'East', revenue: 10 }]));
-  assert.equal(compiled.model.tooltipDetail.type, 'detailed');
-  assert.equal(typeof compiled.option.tooltip.formatter, 'function');
-  assert.ok(!compiled.model.warnings.some(w => w.includes('using basic tooltips')), JSON.stringify(compiled.model.warnings));
+  for (const kind of ['treemap', 'wordCloud', 'box', 'histogram']) {
+    const v = { ...selected(add(kind)), dimension: 'region', rows: ['region'], measures: ['revenue'], tooltipType: 'detailed' };
+    const compiled = compileVisual(input(v, [{ region: 'East', revenue: 10 }]));
+    assert.equal(compiled.model.tooltipDetail.type, 'detailed');
+    assert.equal(typeof compiled.option.tooltip.formatter, 'function');
+    assert.ok(!compiled.model.warnings.some(w => w.includes('using basic tooltips')), JSON.stringify(compiled.model.warnings));
+  }
 });
 
 test('treemap details use hierarchy levels and the hovered node value', () => {
@@ -182,6 +182,27 @@ test('word cloud details display the word and compiled weight after sorting', ()
   const data = compiled.option.series[0].data[0];
   assert.equal(data.sourceRowIndex, 1);
   assert.equal(compiled.option.tooltip.formatter({ name: data.name, value: data.value, data }), 'West\nregion: West\nSum of revenue: 30');
+});
+
+test('box details use compiled group quartiles and omit empty or hidden statistics', () => {
+  const v = { ...selected(add('box')), rows: ['region'], measures: ['revenue'], tooltipType: 'detailed' };
+  const rows = [2, 6, 10, 14, 18].map(revenue => ({ region: 'West', revenue })).concat([{ region: 'Empty', revenue: null }]);
+  const compiled = compileVisual(input(v, rows));
+  assert.equal(compiled.option.tooltip.formatter({ dataIndex: 0, value: [0, 2, 6, 10, 14, 18] }), 'West\nregion: West\nrevenue min: 2\nrevenue Q1: 6\nrevenue median: 10\nrevenue Q3: 14\nrevenue max: 18');
+  // dataIndex 1 is the second compiled group, not the second source row.
+  assert.equal(compiled.option.tooltip.formatter({ dataIndex: 1 }), 'Empty\nregion: Empty');
+  const hidden = compileVisual(input({ ...v, tooltipHiddenFields: ['revenue'], tooltipTitleType: 'fieldId' }, rows));
+  assert.equal(hidden.option.tooltip.formatter({ dataIndex: 0 }), 'region\nregion: West');
+});
+
+test('histogram details use compiled bin ranges and frequencies', () => {
+  const v = { ...selected(add('histogram')), dimension: null, measures: ['revenue'], bins: 2, tooltipType: 'detailed' };
+  const rows = [0, 1, 2, 4].map(revenue => ({ revenue }));
+  const compiled = compileVisual(input(v, rows));
+  assert.deepEqual(compiled.option.xAxis.data, ['0–2', '2–4']);
+  assert.equal(compiled.option.tooltip.formatter([{ dataIndex: 1 }]), '2–4\nrevenue: 2–4\nFrequency: 2');
+  const hidden = compileVisual(input({ ...v, tooltipHiddenFields: ['revenue'], tooltipTitleType: 'fieldId' }, rows));
+  assert.equal(hidden.option.tooltip.formatter({ dataIndex: 0 }), 'revenue\nFrequency: 2');
 });
 
 test('tooltip section renders for supported kinds and hides for others', () => {

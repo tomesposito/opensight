@@ -834,11 +834,16 @@ export function compileVisual(input: Input): CompiledVisual {
   }
   applyDisplayOptions(model, option, theme);
   if (model.tooltip && model.tooltipDetail?.type === 'detailed') {
+    if (['box', 'histogram'].includes(model.kind) && model.tooltipExtraFields?.length) {
+      model.warnings.push(`Extra fields are not shown in ${model.kind} detailed tooltips because each datum aggregates multiple rows.`);
+    }
     if (DETAILED_TOOLTIP_KINDS.includes(model.kind)) {
       option.tooltip = { ...(typeof option.tooltip === 'object' && !Array.isArray(option.tooltip) ? option.tooltip : {}),
         formatter: ['treemap', 'wordCloud'].includes(model.kind)
           ? transformedTooltipFormatter(model, rows, cell, availableExtras)
-          : detailedTooltipFormatter(model, rows, cell, availableExtras, facetSeriesMap) };
+          : ['box', 'histogram'].includes(model.kind)
+            ? distributionTooltipFormatter(model, option)
+            : detailedTooltipFormatter(model, rows, cell, availableExtras, facetSeriesMap) };
     } else {
       model.warnings.push(`detailed tooltips are not rendered for ${model.kind} visuals; using basic tooltips.`);
     }
@@ -972,11 +977,11 @@ export function compileVisual(input: Input): CompiledVisual {
  *  scatter, funnel, heatmap, filledMap and pointMap build their series with rows.map
  *  (index-preserving); gauge renders a single datum from the single aggregate row.
  *  treemap and wordCloud retain leaf/word source indices for extra fields;
- *  box (per-group quartiles) and histogram (bins) still use basic tooltips. */
-const DETAILED_TOOLTIP_KINDS = ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud'];
+ *  box and histogram resolve compiled statistics/bins, without source-row extras. */
+const DETAILED_TOOLTIP_KINDS = ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud', 'box', 'histogram'];
 /** Kinds whose tooltip config accepts the detailed keys (mirrors the chartConfiguration gate). */
 export const tooltipDetailKinds = (kind: VisualKind): boolean => !['insight', 'kpi', 'table', 'pivot', 'radar', 'sankey', 'waterfall'].includes(kind);
-/** Kinds where a detailed tooltip actually renders (others fall back to basic with a warning). */
+/** All config-accepting kinds now render detailed tooltips. */
 export const detailedTooltipKinds = (kind: VisualKind): boolean => DETAILED_TOOLTIP_KINDS.includes(kind);
 
 /** Escape richText markup characters in dynamic tooltip text (display encoding; table data stays exact). */
@@ -1066,6 +1071,48 @@ function transformedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row
       const name = extra.label ?? fieldName(extra.field, model.formatting);
       const label = detail.aggregations ? `${TOOLTIP_AGGREGATION_WORD[extra.aggregation]} of ${name}` : name;
       lines.push(`${richTextEscape(label)}: ${richTextEscape(displayCell(cell(row, extra.field)))}`);
+    }
+    return lines.join('\n');
+  };
+}
+
+/** Distributions describe compiled groups/bins, never any particular input row.
+ * Read the compiled series: ECharts may add a category coordinate to box values. */
+function distributionTooltipFormatter(model: VisualModel, option: EChartsOption): (params: unknown) => string {
+  const detail = model.tooltipDetail!;
+  const measure = model.measures[0]!;
+  const dimension = model.dimensions[0];
+  const titleField = model.kind === 'box' ? dimension ?? measure : measure;
+  const axis = Array.isArray(option.xAxis) ? option.xAxis[0] : option.xAxis;
+  const categories = axis && 'data' in axis ? axis.data : undefined;
+  const series = Array.isArray(option.series) ? option.series[0] : option.series;
+  const data: readonly unknown[] = series && 'data' in series && Array.isArray(series.data) ? series.data : [];
+  const measureName = fieldName(measure, model.formatting);
+  const governed = model.formatting?.metricFormats?.[measure.column];
+  return (params: unknown): string => {
+    const first = (Array.isArray(params) ? params[0] : params) as { dataIndex?: number } | undefined;
+    const index = first?.dataIndex;
+    if (typeof index !== 'number' || !Number.isInteger(index)) return '';
+    const category = categories?.[index];
+    if (typeof category !== 'string') return '';
+    const lines = [richTextEscape(detail.titleType === 'primaryValue' ? category : fieldName(titleField, model.formatting))];
+    const value = data?.[index];
+    if (model.kind === 'box') {
+      if (dimension && !detail.hiddenFields.includes(dimension.id)) {
+        lines.push(`${richTextEscape(fieldName(dimension, model.formatting))}: ${richTextEscape(category)}`);
+      }
+      // Empty groups contain five '-': preserve their identity, omit statistics.
+      if (!detail.hiddenFields.includes(measure.id) && Array.isArray(value)) {
+        ['min', 'Q1', 'median', 'Q3', 'max'].forEach((stat, i) => {
+          const n: unknown = value[i];
+          if (typeof n === 'number' && Number.isFinite(n)) {
+            lines.push(`${richTextEscape(measureName)} ${stat}: ${richTextEscape(formatMetric(n, governed) ?? displayCell(n))}`);
+          }
+        });
+      }
+    } else {
+      if (!detail.hiddenFields.includes(measure.id)) lines.push(`${richTextEscape(measureName)}: ${richTextEscape(category)}`);
+      if (typeof value === 'number' && Number.isFinite(value)) lines.push(`Frequency: ${richTextEscape(displayCell(value))}`);
     }
     return lines.join('\n');
   };

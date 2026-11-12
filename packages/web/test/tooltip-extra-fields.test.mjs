@@ -178,6 +178,25 @@ test('missing extra result column warns loudly and skips the row instead of fail
   assert.ok(text.includes('Sum of revenue: 100'), text);
 });
 
+test('box and histogram warn once for aggregate extras while rendering detailed fields', () => {
+  for (const kind of ['box', 'histogram']) {
+    const v = withExtra({ ...selected(add(kind)), dimension: 'region', rows: ['region'], measures: ['revenue'], bins: 2 });
+    v.tooltipExtraFields.push({ field: 'quantity', aggregation: 'MAX' });
+    const compiled = compileVisual(input(v, [1, 3, 5].map(revenue => ({ region: 'East', revenue, profit: 100, quantity: 99 }))));
+    assert.deepEqual(compiled.model.warnings.filter(w => w.includes('each datum aggregates multiple rows')), [
+      `Extra fields are not shown in ${kind} detailed tooltips because each datum aggregates multiple rows.`,
+    ]);
+    assert.ok(!compiled.model.warnings.some(w => w.includes('using basic tooltips')));
+    const text = compiled.option.tooltip.formatter({ dataIndex: 0 });
+    assert.ok(text.includes('revenue'), text);
+    assert.ok(!text.includes('profit') && !text.includes('quantity'), text);
+    // Existing missing-column diagnostics are retained alongside the aggregate warning.
+    const missing = compileVisual(input(v, [{ region: 'East', revenue: 1 }]));
+    assert.equal(missing.model.warnings.filter(w => w.includes('each datum aggregates multiple rows')).length, 1);
+    assert.equal(missing.model.warnings.filter(w => w.includes('has no data in this result')).length, 2);
+  }
+});
+
 test('author preview computes extras through the query engine instead of pinned oracles', () => {
   const preview = buildAuthorPreview(withExtra(bar()));
   assert.ok(preview.rows && preview.rows.length > 1);
