@@ -19,6 +19,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Statistical forecasts on date-based area charts, including each measure in
+  small-multiples panels: dashed fitted/future segments, prediction intervals,
+  Forecast properties, and editable bundle import/export (parity-forecast-area,
+  extends #235).
+
 - Small multiples panel limits in Multiples Options, with first-N panels and
   optional merged Other totals shared by charts, detailed tooltips and view-data;
   limits and facet fields survive editable bundle import/export (parity-sm-limit,

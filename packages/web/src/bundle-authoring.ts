@@ -217,11 +217,11 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const importedBreakdownLimit = kind === 'waterfall' && Number.isInteger(breakdownItemsLimit) && (breakdownItemsLimit as number) >= 1 && (breakdownItemsLimit as number) <= 100 &&
     (breakdownOtherCategories === undefined || breakdownOtherCategories === 'INCLUDE' || breakdownOtherCategories === 'EXCLUDE')
     ? { count: breakdownItemsLimit as number, includeOther: breakdownOtherCategories !== 'EXCLUDE' } : undefined;
-  // QuickSight ForecastConfigurations[0] imports into the draft (line charts;
+  // QuickSight ForecastConfigurations[0] imports into the draft (line/area charts;
   // issue #235). Fail-closed on shape: a malformed configuration stays out of
   // the draft and the differences check reports it as retained, read-only.
   const forecastObj = obj(list(config.forecastConfigurations)[0]);
-  const importedForecast = kind === 'line' && list(config.forecastConfigurations).length ? ((): ForecastConfig | undefined => {
+  const importedForecast = (kind === 'line' || kind === 'area') && list(config.forecastConfigurations).length ? ((): ForecastConfig | undefined => {
     const intIn = (v: unknown, fallback: number): number | undefined =>
       v === undefined ? fallback : typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 100 ? v : undefined;
     const periodsForward = intIn(forecastObj.periodsForward, 3), periodsBackward = intIn(forecastObj.periodsBackward, 0);

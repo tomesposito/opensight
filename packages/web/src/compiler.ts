@@ -457,8 +457,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const parsedForecast = lineFamily ? parseForecastConfigurations(config[forecastKey], key, `${cpath}.${forecastKey}`) : { extra: 0 } as { forecast?: ForecastConfig; extra: number };
   const forecast = parsedForecast.forecast;
   if (parsedForecast.extra > 0) warnings.push(`${cpath}.${forecastKey}: ${parsedForecast.extra} additional forecast configuration${parsedForecast.extra === 1 ? '' : 's'} ignored; only the first is applied.`);
-  if (forecast && kind !== 'line') warnings.push(`${cpath}.${forecastKey}: forecast configurations are not rendered for area charts; the configuration is retained but ignored.`);
-  else if (forecast && !dimensions[0]?.dateGranularity) warnings.push(`${cpath}.${forecastKey}: forecast ignored — the chart's category field is not a date dimension.`);
+  if (forecast && !dimensions[0]?.dateGranularity) warnings.push(`${cpath}.${forecastKey}: forecast ignored — the chart's category field is not a date dimension.`);
   const sort = object(config[key('sortConfiguration', 'SortConfiguration')] ?? {}, cpath);
   const sortsKey = key('categorySort', 'CategorySort');
   const breakdownLimitKey = key('breakdownItemsLimit', 'BreakdownItemsLimit');
@@ -714,11 +713,11 @@ export function compileVisual(input: Input): CompiledVisual {
   // global series index (#125). Carry an explicit mapping from each series,
   // in option.series order, to its facet rows and its measure index.
   let facetSeriesMap: { rows: Row[]; measureIndex: number }[] | undefined;
-  // Line-chart panels for the forecast post-pass (issue #235): rows per panel,
+  // Line/area panels for the forecast post-pass (issue #235): rows per panel,
   // the option.series indices of its measure series, and its axis index.
   // Forecast extras are appended after every other pass so these indices and
   // facetSeriesMap stay valid for the passes that consume them.
-  let linePanels: { rows: Row[]; measureSeries: number[]; axisIndex: number }[] | undefined;
+  let forecastPanels: { rows: Row[]; measureSeries: number[]; axisIndex: number }[] | undefined;
   if (model.kind === 'insight') {
     try { narrative = insightNarrative(rows.map(row => ({ category: cell(row, model.dimensions[0]!), values: model.measures.map(f => number(row, f)) })), { category: model.dimensions[0], measures: model.measures, computations: model.insightConfiguration, formatting: model.formatting }); }
     catch (error) { if (error instanceof InsightError) fail(input.path, error.message); throw error; }
@@ -731,6 +730,7 @@ export function compileVisual(input: Input): CompiledVisual {
     const extraGroups = compileExtra(model, rows, cell, number, option, message => fail(input.path, message),
       { path: input.path, theme, warn: message => model.warnings.push(message), facetGroups });
     if (extraGroups) facetSeriesMap = extraGroups.flatMap(groupRows => model.measures.map((_, measureIndex) => ({ rows: groupRows, measureIndex })));
+    if (model.kind === 'area') forecastPanels = (extraGroups ?? [rows]).map((panelRows, i) => ({ rows: panelRows, measureSeries: model.measures.map((_, mi) => i * model.measures.length + mi), axisIndex: i }));
   } else if (model.kind === 'pie') {
     const measure = model.measures[0]!;
     option.legend = { show: model.legend, bottom: 4, type: 'scroll' };
@@ -812,7 +812,7 @@ export function compileVisual(input: Input): CompiledVisual {
       option.xAxis = panels.map((panel, i) => ({ ...(model.horizontal ? panel.value : panel.category), gridIndex: i }));
       option.yAxis = panels.map((panel, i) => ({ ...(model.horizontal ? panel.category : panel.value), gridIndex: i }));
       option.series = panels.flatMap((panel, i) => panel.series.map(s => ({ ...s, xAxisIndex: i, yAxisIndex: i })));
-      if (model.kind === 'line') linePanels = shown.map((group, i) => ({ rows: group.rows, measureSeries: model.measures.map((_, mi) => i * model.measures.length + mi), axisIndex: i }));
+      if (model.kind === 'line') forecastPanels = shown.map((group, i) => ({ rows: group.rows, measureSeries: model.measures.map((_, mi) => i * model.measures.length + mi), axisIndex: i }));
       option.title = facetTitles(shown, opts, cols, cellH, topPad, theme, displayCell);
       facetSeriesMap = shown.flatMap(group => model.measures.map((_, measureIndex) => ({ rows: group.rows, measureIndex })));
     } else {
@@ -821,7 +821,7 @@ export function compileVisual(input: Input): CompiledVisual {
       option.xAxis = model.horizontal ? value : category;
       option.yAxis = model.horizontal ? category : value;
       option.series = series;
-      if (model.kind === 'line') linePanels = [{ rows, measureSeries: model.measures.map((_, mi) => mi), axisIndex: 0 }];
+      if (model.kind === 'line') forecastPanels = [{ rows, measureSeries: model.measures.map((_, mi) => mi), axisIndex: 0 }];
     }
     option.legend = { show: model.legend, bottom: 0 };
   } else if (model.kind === 'kpi') {
@@ -878,13 +878,13 @@ export function compileVisual(input: Input): CompiledVisual {
   // Forecast post-pass (issue #235): appended extras keep every earlier index
   // (facet map, conditional formatting, detailed tooltips) valid.
   let forecastNote: string | undefined;
-  if (model.kind === 'line' && model.forecast?.enabled && linePanels && model.dimensions[0]?.dateGranularity && Array.isArray(option.series)) {
+  if (model.forecast?.enabled && forecastPanels && model.dimensions[0]?.dateGranularity && Array.isArray(option.series)) {
     const config = model.forecast;
     const grain = model.dimensions[0].dateGranularity;
     const dimension = model.dimensions[0];
     let anyApplied = false, anyInsufficient = false, anySeasonalSkipped = false, anyInapplicable = false;
     const extras: LineSeriesOption[] = [];
-    for (const panel of linePanels) {
+    for (const panel of forecastPanels) {
       if (!panel.rows.length) continue;
       const dates = panel.rows.map(row => groupedPeriodDate(cell(row, dimension), grain));
       if (dates.some(d => d === null)) { anyInapplicable = true; continue; }

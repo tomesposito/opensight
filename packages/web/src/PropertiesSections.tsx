@@ -447,7 +447,7 @@ export function ReferenceLinesEditor({ visual, dispatch }: SectionProps) {
   </details>;
 }
 
-/** Forecast section (issue #235): line charts with a date dimension only —
+/** Forecast section (issue #235): line/area charts with a date dimension only —
  *  the caller gates visibility, so the section is never presented where a
  *  forecast cannot apply. Copy calls the method what it is: a statistical
  *  forecast (exponential smoothing), never ML/AI. */
