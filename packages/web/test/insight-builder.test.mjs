@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createElement } from 'react';
+import { act, createElement } from 'react';
+import { create } from 'react-test-renderer';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { AuthorCanvas } from '../build/test/Author.js';
 import { activeSheet, authorReducer, emptyDraft, serializeDraft, serializeVisual, validateDraft, capabilityNote, authorVisualProblem } from '../build/test/authoring.js';
@@ -8,6 +9,8 @@ import { importBundle, exportBundle } from '../build/test/bundle-authoring.js';
 import { buildAuthorQuery } from '../build/test/author-query.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { convertDefinition } from '../build/test/definition-converter.js';
+import { normalizeInsight } from '../build/test/insight-configuration.js';
+import { DEFAULT_FORECAST_CONFIG } from '../build/test/forecast.js';
 const add = () => authorReducer(emptyDraft(), { type: 'add', kind: 'insight' });
 const visual = d => activeSheet(d).visuals[0];
 const bundleOf = resource => ({ members: [{ path: 'analysis/authored-analysis.json', resource }] });
@@ -102,4 +105,28 @@ test('builder insight presets persist ranked N and block unsupported definitions
   draft = authorReducer(draft, { type: 'insight', configuration: { computations: [{ forecast: { computationId: 'f' } }] } });
   assert.doesNotThrow(() => serializeVisual(visual(draft)));
   assert.throws(() => compile(draft), /INSIGHT_TIME_REQUIRED/);
+});
+
+test('forecast authoring option dispatches the preset and round-trips through normalization and bundles', async t => {
+  const oldWindow = globalThis.window, oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
+  globalThis.window = { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) };
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let renderer, action;
+  let draft = authorReducer(add(), { type: 'assign', field: 'order_date', well: 'dimension' });
+  t.after(async () => { if (renderer) await act(() => renderer.unmount()); globalThis.window = oldWindow; globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
+  await act(() => { renderer = create(createElement(AuthorCanvas, { draft, dispatch: a => { action = a; } })); });
+  const select = renderer.root.findByProps({ 'aria-label': 'Narrative computation' });
+  assert.equal(select.findAllByType('option').find(n => n.props.value === 'forecast').props.children, 'Forecast (date required)');
+  await act(() => select.props.onChange({ target: { value: 'forecast' } }));
+  const configuration = { computations: [{ forecast: { computationId: 'forecast' } }] };
+  assert.deepEqual(action, { type: 'insight', configuration });
+  draft = authorReducer(draft, action); validateDraft(draft);
+  const model = compile(draft).model;
+  assert.deepEqual(normalizeInsight(model.insightConfiguration, model.dimensions, model.measures), [{ kind: 'forecast', id: 'forecast', measure: 0, forecast: DEFAULT_FORECAST_CONFIG }]);
+  const bundle = bundleOf(serializeDraft(draft)), imported = importBundle(bundle);
+  assert.deepEqual(visual(imported).imported.issues, []);
+  assert.deepEqual(visual(imported).insightConfiguration, configuration);
+  assert.deepEqual(exportBundle(imported), bundle);
+  const html = renderToStaticMarkup(createElement(AuthorCanvas, { draft: imported, dispatch() {} }));
+  assert.match(html, /value="forecast" selected=""/);
 });
