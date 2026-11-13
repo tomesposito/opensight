@@ -146,11 +146,11 @@ test('detailed tooltips render exact rows for index-mapped extra kinds', () => {
 });
 
 test('detailed tooltip rendering gates agree with implemented kinds', () => {
-  for (const kind of ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud', 'box', 'histogram', 'waterfall']) {
+  for (const kind of ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud', 'box', 'histogram', 'waterfall', 'radar', 'sankey']) {
     assert.equal(detailedTooltipKinds(kind), true, kind);
     assert.equal(tooltipDetailKinds(kind), true, kind);
   }
-  for (const kind of ['insight', 'kpi', 'table', 'pivot', 'radar', 'sankey']) {
+  for (const kind of ['insight', 'kpi', 'table', 'pivot']) {
     assert.equal(tooltipDetailKinds(kind), false, kind);
     assert.equal(detailedTooltipKinds(kind), false, kind);
   }
@@ -338,8 +338,11 @@ test('tooltip section renders for supported kinds and hides for others', () => {
   assert.ok(html.includes('Detailed'), html.slice(0, 400));
   const kpi = renderToStaticMarkup(createElement(TooltipSection, { visual: selected(add('kpi')), dispatch() {} }));
   assert.equal(kpi, '');
-  const radar = renderToStaticMarkup(createElement(TooltipSection, { visual: selected(add('radar')), dispatch() {} }));
-  assert.equal(radar, '');
+  for (const kind of ['radar', 'sankey']) {
+    const html = renderToStaticMarkup(createElement(TooltipSection, { visual: selected(add(kind)), dispatch() {} }));
+    assert.ok(html.includes('data-author-control="tooltip-detail"'), kind);
+    assert.ok(html.includes('Detailed'), kind);
+  }
   // Treemap now renders detailed tooltips and no longer needs a fallback hint.
   const treemapDetailed = renderToStaticMarkup(createElement(TooltipSection, { visual: { ...selected(add('treemap')), tooltipType: 'detailed' }, dispatch() {} }));
   assert.ok(!treemapDetailed.includes('other visual types use basic tooltips'), treemapDetailed);

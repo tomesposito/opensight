@@ -65,7 +65,6 @@ test('sankey imported native options and malformed wells are named, blocked and 
     [c => { c.sortConfiguration = { weightSort: [] }; }, /weightSort.*unsupported property/],
     [c => { c.sortConfiguration = { sourceItemsLimit: { itemsLimit: 5 } }; }, /sourceItemsLimit.*unsupported property/],
     [c => { c.sortConfiguration = { categoryItemsLimit: {} }; }, /categoryItemsLimit.*unsupported property/],
-    [c => { c.tooltip = { selectedTooltipType: 'DETAILED' }; }, /selectedTooltipType.*unsupported property/],
     [c => { c.linkStyle = { color: 'SOURCE' }; }, /linkStyle.*unsupported property/],
     [c => { c.fieldWells.sankeyDiagramAggregatedFieldWells.source = []; }, /SANKEY_SOURCE_REQUIRED/],
     [c => { c.fieldWells.sankeyDiagramAggregatedFieldWells.destination = []; }, /SANKEY_DESTINATION_REQUIRED/],

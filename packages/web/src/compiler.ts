@@ -428,7 +428,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   keys(labels, [key('visibility', 'Visibility'), key('overlap', 'Overlap')], cpath);
   enumValue(labels[key('overlap', 'Overlap')], ['DISABLE_OVERLAP'], 'DISABLE_OVERLAP', cpath);
   const tooltip = object(config[key('tooltip', 'Tooltip')] ?? {}, cpath);
-  keys(tooltip, ['radar', 'sankey'].includes(kind) ? [key('tooltipVisibility', 'TooltipVisibility')] : [key('tooltipVisibility', 'TooltipVisibility'), key('selectedTooltipType', 'SelectedTooltipType'), key('fieldBasedTooltip', 'FieldBasedTooltip')], `${cpath}.${key('tooltip', 'Tooltip')}`);
+  keys(tooltip, [key('tooltipVisibility', 'TooltipVisibility'), key('selectedTooltipType', 'SelectedTooltipType'), key('fieldBasedTooltip', 'FieldBasedTooltip')], `${cpath}.${key('tooltip', 'Tooltip')}`);
   const tooltipPath = `${cpath}.${key('tooltip', 'Tooltip')}`;
   const tooltipDetail = parseTooltipDetail(tooltip, key, tooltipPath, [...dimensions, ...(breakdown ? [breakdown] : []), ...(facet ? [facet] : []), ...measures]);
   const legend = object(config[key('legend', 'Legend')] ?? {}, cpath);
@@ -979,12 +979,13 @@ export function compileVisual(input: Input): CompiledVisual {
  *  scatter, funnel, heatmap, filledMap and pointMap build their series with rows.map
  *  (index-preserving); gauge renders a single datum from the single aggregate row.
  *  treemap and wordCloud retain leaf/word source indices for extra fields;
- *  box and histogram resolve compiled statistics/bins, without source-row extras;
+ *  box/histogram resolve compiled statistics/bins, radar resolves polygons and
+ *  sankey resolves links (nodes stay basic), all without source-row extras;
  *  waterfall delta bars retain their source row, while subtotal/Other/Total
  *  bars (compiled aggregates) keep the basic tooltip. */
-const DETAILED_TOOLTIP_KINDS = ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud', 'box', 'histogram', 'waterfall'];
+const DETAILED_TOOLTIP_KINDS = ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud', 'box', 'histogram', 'waterfall', 'radar', 'sankey'];
 /** Kinds whose tooltip config accepts the detailed keys (mirrors the chartConfiguration gate). */
-export const tooltipDetailKinds = (kind: VisualKind): boolean => !['insight', 'kpi', 'table', 'pivot', 'radar', 'sankey'].includes(kind);
+export const tooltipDetailKinds = (kind: VisualKind): boolean => !['insight', 'kpi', 'table', 'pivot'].includes(kind);
 /** All config-accepting kinds now render detailed tooltips. */
 export const detailedTooltipKinds = (kind: VisualKind): boolean => DETAILED_TOOLTIP_KINDS.includes(kind);
 
