@@ -64,7 +64,11 @@ test('native forecast imports, validates, queries, renders and exports unchanged
 });
 
 test('malformed native forecast properties fail closed in validation, imports and both compiler dialects', () => {
-  for (const [patch, code] of [[{ PeriodsForward: -1 }, 'INSIGHT_COMPUTATION_INVALID'], [{ Unknown: true }, 'INSIGHT_CONFIGURATION_UNSUPPORTED']]) {
+  for (const [patch, code] of [
+    [{ PeriodsForward: -1 }, 'INSIGHT_COMPUTATION_INVALID'],
+    ...['auto', 'none'].map(CustomSeasonalityValue => [{ Seasonality: 'CUSTOM', CustomSeasonalityValue }, 'INSIGHT_COMPUTATION_INVALID']),
+    [{ Unknown: true }, 'INSIGHT_CONFIGURATION_UNSUPPORTED'],
+  ]) {
     const { api, resource } = native();
     Object.assign(api.Sheets[0].Visuals[0].InsightVisual.InsightConfiguration.Computations[0].Forecast.ForecastProperties, patch);
     resource.definition = convertDefinition(api);

@@ -33,7 +33,7 @@ test('insight parser reports malformed forecast properties with named errors in 
     ...['periodsForward', 'periodsBackward'].flatMap(key => [-1, 101, 1.5, '3', null, Infinity].map(v => ({ [key]: v }))),
     ...[85, '95', null].map(predictionInterval => ({ predictionInterval })),
     ...['auto', null, 2].map(seasonality => ({ seasonality })),
-    ...[undefined, null, 1, 367, 2.5, '12'].map(customSeasonalityValue => ({ seasonality: 'CUSTOM', customSeasonalityValue })),
+    ...[undefined, null, 1, 367, 2.5, '12', 'auto', 'none'].map(customSeasonalityValue => ({ seasonality: 'CUSTOM', customSeasonalityValue })),
     ...['lowerBoundary', 'upperBoundary'].flatMap(key => [Infinity, -Infinity, NaN, '10', null].map(v => ({ [key]: v }))),
     { lowerBoundary: 2, upperBoundary: 1 },
   ];

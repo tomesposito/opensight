@@ -27,12 +27,14 @@ function forecastProperties(value: unknown): ForecastConfig {
   allowed(raw, ['periodsForward', 'periodsBackward', 'predictionInterval', 'seasonality', 'customSeasonalityValue', 'lowerBoundary', 'upperBoundary']);
   const seasonality = raw.seasonality === undefined ? 'AUTOMATIC' : raw.seasonality;
   if (!['AUTOMATIC', 'NONE', 'CUSTOM'].includes(seasonality as string)) insightFail('INSIGHT_COMPUTATION_INVALID', 'invalid forecast seasonality');
+  const custom = raw.customSeasonalityValue;
+  if (seasonality === 'CUSTOM' && (typeof custom !== 'number' || !Number.isInteger(custom) || custom < 2 || custom > 366)) insightFail('INSIGHT_COMPUTATION_INVALID', 'a custom seasonality period between 2 and 366 is required');
   const candidate = {
     enabled: true,
     periodsForward: raw.periodsForward === undefined ? 3 : raw.periodsForward,
     periodsBackward: raw.periodsBackward === undefined ? 0 : raw.periodsBackward,
     predictionInterval: raw.predictionInterval === undefined ? 95 : raw.predictionInterval,
-    seasonality: seasonality === 'AUTOMATIC' ? 'auto' : seasonality === 'NONE' ? 'none' : raw.customSeasonalityValue,
+    seasonality: seasonality === 'AUTOMATIC' ? 'auto' : seasonality === 'NONE' ? 'none' : custom,
     ...(raw.lowerBoundary !== undefined ? { lowerBoundary: raw.lowerBoundary } : {}),
     ...(raw.upperBoundary !== undefined ? { upperBoundary: raw.upperBoundary } : {}),
   };

@@ -16,7 +16,7 @@ const invalidProperties = [null, [], 3, 'forecast',
   ...['periodsForward', 'periodsBackward'].flatMap(key => [-1, 101, 1.5, '3', null, Infinity].map(v => ({ [key]: v }))),
   ...[0, 85, 100, '95', null].map(predictionInterval => ({ predictionInterval })),
   ...['auto', 'unknown', null, 2].map(seasonality => ({ seasonality })),
-  ...[undefined, null, 1, 367, 2.5, '12'].map(customSeasonalityValue => ({ seasonality: 'CUSTOM', customSeasonalityValue })),
+  ...[undefined, null, 1, 367, 2.5, '12', 'auto', 'none'].map(customSeasonalityValue => ({ seasonality: 'CUSTOM', customSeasonalityValue })),
   ...['lowerBoundary', 'upperBoundary'].flatMap(key => [Infinity, -Infinity, NaN, '10', null].map(v => ({ [key]: v }))),
   { lowerBoundary: 10, upperBoundary: 9 },
 ];
