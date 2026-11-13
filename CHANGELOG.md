@@ -19,6 +19,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Insight forecast computations and a date-required authoring preset, using the
+  shared statistical forecast engine for the final projected value and prediction
+  interval, with validated native import/export and honest unavailable states
+  (parity-insight-forecast, phase-plan fallback; no GitHub issue).
+
 - Detailed tooltips for radar polygons and sankey links, with governed value
   formats and field visibility. Sankey nodes keep basic text; aggregate extra
   fields warn instead of inventing row values (parity-radar-sankey-tooltip,
