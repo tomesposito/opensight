@@ -26,12 +26,46 @@ The native query test aggregates an explicit six-period synthetic history throug
 the shared query planner/evaluator; it does not substitute precomputed narrative
 values. The bundle-parser suite passed **201 passed / 0 failed / 0 skipped**,
 including both native casing dialects and named malformed-forecast diagnostics.
-Logs: `/tmp/insight-forecast-targeted-test.log` and
-`/tmp/insight-forecast-parser-test.log`.
+The resume audit found that the compiler accepted internal `auto` / `none` mode
+names as CUSTOM season lengths. It now requires an integer 2–366 before mapping
+to the engine configuration, matching chart and bundle validation. Regression
+cases cover normalization, wells projection, both native compiler dialects and
+bundle import. The focused suites remain **64 passed / 0 failed / 0 skipped**.
+Logs from the resumed verification are retained under
+`.opensight/insight-forecast/verification/`.
 
 `npm run build:demo --workspace @opensight/web` passed, including strict
-TypeScript and embed builds. Log: `/tmp/insight-forecast-demo-build.log`.
+TypeScript and embed builds. Log:
+`.opensight/insight-forecast/verification/demo-build.log`.
 This is a rebuilt local static demo, not a deployed server.
+
+## Static demo and screenshots
+
+The updated Insight browser tour passed **15 captures, 0 page errors and 0 external
+requests**, including forecast selection, the short-history unavailable sentence
+in light and dark chrome, and the named non-date import error with a blocked
+preview. Every capture passed the 1440-pixel viewport horizontal-overflow check.
+Artifacts and `summary.json` are in `.opensight/insight-forecast/browser/`.
+The refreshed [Insight summary](images/insight.png) and
+[forecast unavailable state](images/insight-forecast.png) are retained as
+shareable feature screenshots.
+
+Visual inspection against the local `qs-author-light-flow.jpg` reference and the
+previous Insight screenshot retains the Data → Visuals/field wells → sheet flow.
+The unavailable sentence wraps within the card, and the preset and date requirement
+remain visible in the properties and field panels. No new layout gap was found.
+There is no matching QuickSight forecast-narrative reference, so this comparison
+does not measure exact wording or pixel fidelity. No network access or GitHub
+issue creation was used for this phase-plan fallback.
+
+The environment's default Chromium could not start without its runtime policy;
+the installed Playwright headless Chromium completed the local tour. HTTP(S)
+requests were blocked throughout. The README's stale statement that Forecast is
+unsupported and the same outdated note in the chart-forecast documentation were
+corrected. The maintained repository adaptation of `readme-gif.mjs` passed with
+**262 frames and zero browser errors or external requests**; the refreshed README
+hero is **960×600 at 10 fps for 26.2 seconds** and includes the new Forecast preset
+and its honest short-history message.
 
 ## Honest divergences
 

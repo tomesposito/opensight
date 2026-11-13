@@ -200,8 +200,10 @@ See [Waterfall semantics and limits](docs/waterfall-chart.md).
 ![Waterfall preview with synthetic positive and negative revenue adjustments](docs/images/waterfall.png)
 
 Insight writes rule-based narratives from your aggregated data: totals, contributor
-shares, ranked categories, date-period changes and optional measure comparisons.
-Forecasts, anomalies and custom narrative templates fail with named errors.
+shares, ranked categories, date-period changes, statistical forecasts and optional
+measure comparisons. Forecasts require a date dimension and report a projected
+value with a prediction interval; short histories show an unavailable message.
+Anomalies and custom narrative templates fail with named errors.
 See [Insight semantics and limits](docs/insight-visual.md).
 
 ![Insight narrative showing revenue totals and category contributors](docs/images/insight.png)

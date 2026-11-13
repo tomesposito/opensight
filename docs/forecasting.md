@@ -48,9 +48,13 @@ time, so a dashboard whose data later shrinks degrades honestly. A stored
 forecast on a chart whose category is not a date dimension is ignored with a
 rendering warning and never breaks saving or viewing.
 
-Out of scope: anomaly detection, the insight visual's `ForecastComputation`
-(it stays `INSIGHT_FORECAST_UNSUPPORTED`; it is the named v2 reuse of
-`forecast.ts`), Ask O forecast phrasing, and forecasts on other chart types.
+The [Insight visual's Forecast computation](insight-visual.md) also uses
+`forecast.ts` to report the final projected value and prediction interval in a
+narrative. It requires a date dimension and shows an unavailable sentence for
+short histories or a zero forward horizon.
+
+Out of scope: anomaly detection, Ask O forecast phrasing, and forecasts on
+other chart types.
 
 The static demo has three date buckets, so enabling a forecast there shows
 the minimum-history note. This capture shows the area chart's Forecast controls:
