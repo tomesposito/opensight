@@ -54,7 +54,7 @@ test('native InsightVisual computations hydrate wells, render equally in both di
 });
 test('unsupported native computations and properties appear in import reports, block queries, and retain originals', () => {
   for (const [change, code] of [
-    [c => { c.Computations = [{ Forecast: { ComputationId: 'forecast' } }]; }, 'INSIGHT_FORECAST_UNSUPPORTED'],
+    [c => { c.Computations = [{ Forecast: { ComputationId: 'forecast', Time: c.Computations[0].TopBottomRanked.Category, Value: c.Computations[0].TopBottomRanked.Value } }]; }, 'INSIGHT_TIME_REQUIRED'],
     [c => { c.CustomNarrative = { Narrative: '${forecast.result}' }; }, 'INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED'],
     [c => { c.Computations = [{ GrowthRate: { ComputationId: 'growth', Time: c.Computations[0].TopBottomRanked.Category, Value: c.Computations[0].TopBottomRanked.Value } }]; }, 'INSIGHT_TIME_REQUIRED'],
     [c => { c.NativeFutureOption = true; }, 'INSIGHT_CONFIGURATION_UNSUPPORTED'],
@@ -101,5 +101,5 @@ test('builder insight presets persist ranked N and block unsupported definitions
   assert.equal(visual(imported).insightConfiguration.computations[0].topBottomRanked.resultSize, 7);
   draft = authorReducer(draft, { type: 'insight', configuration: { computations: [{ forecast: { computationId: 'f' } }] } });
   assert.doesNotThrow(() => serializeVisual(visual(draft)));
-  assert.throws(() => compile(draft), /INSIGHT_FORECAST_UNSUPPORTED/);
+  assert.throws(() => compile(draft), /INSIGHT_TIME_REQUIRED/);
 });

@@ -1,4 +1,5 @@
 import type { Field } from './model.js';
+import { forecastConfigValid, type ForecastConfig } from './forecast.js';
 
 export class InsightError extends Error {
   constructor(readonly code: string, message: string) { super(`${code}: ${message}`); this.name = 'InsightError'; }
@@ -12,9 +13,32 @@ export function insightObject(value: unknown): Obj {
 const allowed = (value: Obj, names: string[]) => {
   for (const name of Object.keys(value)) if (!names.includes(name)) insightFail('INSIGHT_CONFIGURATION_UNSUPPORTED', `unsupported property ${name}`);
 };
-const variants = ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison'] as const;
+const variants = ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison', 'forecast'] as const;
 type Kind = typeof variants[number];
-export interface InsightRequest { kind: Kind; id: string; measure: number; target?: number; type?: string; size?: number }
+export type InsightRequest = { id: string; measure: number } & (
+  { kind: Exclude<Kind, 'forecast'>; target?: number; type?: string; size?: number }
+  | { kind: 'forecast'; forecast: ForecastConfig }
+);
+
+/** Native ForecastProperties follows the chart forecast configuration contract. */
+function forecastProperties(value: unknown): ForecastConfig {
+  if (value !== undefined && (!value || typeof value !== 'object' || Array.isArray(value))) insightFail('INSIGHT_COMPUTATION_INVALID', 'forecastProperties must be an object');
+  const raw = (value ?? {}) as Obj;
+  allowed(raw, ['periodsForward', 'periodsBackward', 'predictionInterval', 'seasonality', 'customSeasonalityValue', 'lowerBoundary', 'upperBoundary']);
+  const seasonality = raw.seasonality === undefined ? 'AUTOMATIC' : raw.seasonality;
+  if (!['AUTOMATIC', 'NONE', 'CUSTOM'].includes(seasonality as string)) insightFail('INSIGHT_COMPUTATION_INVALID', 'invalid forecast seasonality');
+  const candidate = {
+    enabled: true,
+    periodsForward: raw.periodsForward === undefined ? 3 : raw.periodsForward,
+    periodsBackward: raw.periodsBackward === undefined ? 0 : raw.periodsBackward,
+    predictionInterval: raw.predictionInterval === undefined ? 95 : raw.predictionInterval,
+    seasonality: seasonality === 'AUTOMATIC' ? 'auto' : seasonality === 'NONE' ? 'none' : raw.customSeasonalityValue,
+    ...(raw.lowerBoundary !== undefined ? { lowerBoundary: raw.lowerBoundary } : {}),
+    ...(raw.upperBoundary !== undefined ? { upperBoundary: raw.upperBoundary } : {}),
+  };
+  if (!forecastConfigValid(candidate)) return insightFail('INSIGHT_COMPUTATION_INVALID', 'invalid forecast properties');
+  return candidate;
+}
 
 function computations(config: unknown): [Kind, Obj][] | undefined {
   const c = insightObject(config);
@@ -26,16 +50,17 @@ function computations(config: unknown): [Kind, Obj][] | undefined {
     const entries = Object.entries(insightObject(raw));
     if (entries.length !== 1) return insightFail('INSIGHT_COMPUTATION_INVALID', 'expected exactly one computation variant');
     const [kind, value] = entries[0]!;
-    if (/^forecast(?:Computation)?$/i.test(kind)) insightFail('INSIGHT_FORECAST_UNSUPPORTED', 'forecast computations are not supported');
     if (/anomaly/i.test(kind)) insightFail('INSIGHT_ANOMALY_UNSUPPORTED', 'anomaly computations are not supported');
     if (!variants.includes(kind as Kind)) insightFail('INSIGHT_COMPUTATION_UNSUPPORTED', `unsupported computation ${kind}`);
+    if (kind === 'forecast' && (!value || typeof value !== 'object' || Array.isArray(value))) insightFail('INSIGHT_COMPUTATION_INVALID', 'forecast must be an object');
     const body = insightObject(value);
     if (typeof body.computationId !== 'string' || !/^[\w-]{1,512}$/.test(body.computationId)) insightFail('INSIGHT_COMPUTATION_INVALID', 'a computationId is required');
     if (body.name !== undefined && typeof body.name !== 'string') insightFail('INSIGHT_COMPUTATION_INVALID', 'name must be a string');
     const specific = kind === 'totalAggregation' ? ['value'] : kind === 'maximumMinimum' ? ['time', 'value', 'type']
       : kind === 'topBottomRanked' ? ['category', 'value', 'type', 'resultSize'] : kind === 'metricComparison' ? ['time', 'fromValue', 'targetValue']
-      : kind === 'growthRate' ? ['time', 'value', 'periodSize'] : ['time', 'value'];
+      : kind === 'growthRate' ? ['time', 'value', 'periodSize'] : kind === 'forecast' ? ['time', 'value', 'forecastProperties'] : ['time', 'value'];
     allowed(body, ['computationId', 'name', ...specific]);
+    if (kind === 'forecast') forecastProperties(body.forecastProperties);
     return [kind as Kind, body];
   });
 }
@@ -91,6 +116,10 @@ export function normalizeInsight(config: unknown, dimensions: Field[], measures:
     if (ids.has(id)) insightFail('INSIGHT_COMPUTATION_INVALID', 'duplicate computation IDs'); ids.add(id);
     binding(c.category ?? c.time, dimensions, 0);
     const measure = binding(kind === 'metricComparison' ? c.fromValue : c.value, measures, 0);
+    if (kind === 'forecast') {
+      if (!dimensions[0]!.dateGranularity) insightFail('INSIGHT_TIME_REQUIRED', 'forecast computations require a date/time dimension');
+      return { kind, id, measure, forecast: forecastProperties(c.forecastProperties) };
+    }
     if (kind === 'growthRate' || kind === 'periodOverPeriod') {
       if (!dimensions[0]!.dateGranularity) insightFail('INSIGHT_TIME_REQUIRED', 'period computations require a date/time dimension');
       if (c.periodSize !== undefined && c.periodSize !== 2) insightFail('INSIGHT_PERIOD_UNSUPPORTED', 'only the latest period versus previous period is supported (PeriodSize 2)');
