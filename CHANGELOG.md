@@ -19,6 +19,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Detailed tooltips for waterfall visuals: delta bars (plain and breakdown
+  mode) show their source row's category, breakdown, measure and extra
+  fields, while subtotal, Other and Total bars keep the basic tooltip
+  (parity-waterfall-tooltip, phase-plan fallback; no GitHub issue).
+
 - Detailed tooltips for treemaps, word clouds, box plots and histograms, with
   hierarchy/weight values, group statistics and bin frequencies. Leaf/word
   extras follow their source rows; box/histogram extras warn instead of showing

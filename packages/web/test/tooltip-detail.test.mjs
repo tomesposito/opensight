@@ -146,11 +146,11 @@ test('detailed tooltips render exact rows for index-mapped extra kinds', () => {
 });
 
 test('detailed tooltip rendering gates agree with implemented kinds', () => {
-  for (const kind of ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud', 'box', 'histogram']) {
+  for (const kind of ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud', 'box', 'histogram', 'waterfall']) {
     assert.equal(detailedTooltipKinds(kind), true, kind);
     assert.equal(tooltipDetailKinds(kind), true, kind);
   }
-  for (const kind of ['insight', 'kpi', 'table', 'pivot', 'radar', 'sankey', 'waterfall']) {
+  for (const kind of ['insight', 'kpi', 'table', 'pivot', 'radar', 'sankey']) {
     assert.equal(tooltipDetailKinds(kind), false, kind);
     assert.equal(detailedTooltipKinds(kind), false, kind);
   }
@@ -161,6 +161,63 @@ test('detailed tooltip rendering gates agree with implemented kinds', () => {
     assert.equal(typeof compiled.option.tooltip.formatter, 'function');
     assert.ok(!compiled.model.warnings.some(w => w.includes('using basic tooltips')), JSON.stringify(compiled.model.warnings));
   }
+});
+
+test('waterfall detailed tooltips read delta-bar source rows; aggregate bars stay basic', () => {
+  const v = { ...selected(add('waterfall')), dimension: 'region', measures: ['revenue'], tooltipType: 'detailed' };
+  const rows = [{ region: 'East', revenue: 100, profit: 7 }, { region: 'West', revenue: -40, profit: 3 }];
+  const compiled = compileVisual(input(v, rows));
+  assert.equal(compiled.model.tooltipDetail.type, 'detailed');
+  // Authored detailed state now exports for waterfall.
+  assert.equal(serializeVisual(v).waterfallChartVisual.chartConfiguration.tooltip.selectedTooltipType, 'DETAILED');
+  const format = compiled.option.tooltip.formatter;
+  assert.equal(typeof format, 'function');
+  const data = compiled.option.series[1].data;
+  // Delta bars carry their source rows; the appended Total bar does not.
+  assert.equal(data[0].sourceRowIndex, 0);
+  assert.equal(data[1].sourceRowIndex, 1);
+  assert.equal(data[2].sourceRowIndex, undefined);
+  assert.equal(format({ name: 'East', data: data[0] }), 'East\nregion: East\nSum of revenue: 100');
+  assert.equal(format({ name: 'West', data: data[1] }), 'West\nregion: West\nSum of revenue: -40');
+  assert.equal(format({ name: 'Total', data: data[2] }), 'Total: 60');
+  // Aggregations off, hidden fields and fieldId titles follow the shared detailed rules.
+  const noAgg = compileVisual(input({ ...v, tooltipAggregations: false }, rows)).option.tooltip.formatter;
+  assert.equal(noAgg({ name: 'East', data: data[0] }), 'East\nregion: East\nrevenue: 100');
+  const hidden = compileVisual(input({ ...v, tooltipHiddenFields: ['revenue'] }, rows)).option.tooltip.formatter;
+  assert.equal(hidden({ name: 'East', data: data[0] }), 'East\nregion: East');
+  const fieldTitle = compileVisual(input({ ...v, tooltipTitleType: 'fieldId' }, rows)).option.tooltip.formatter;
+  assert.equal(fieldTitle({ name: 'East', data: data[0] }), 'region\nregion: East\nSum of revenue: 100');
+  // Extra fields resolve from the delta bar's source row.
+  const withExtra = compileVisual(input({ ...v, tooltipExtraFields: [{ field: 'profit', aggregation: 'AVG' }] }, rows)).option.tooltip.formatter;
+  assert.equal(withExtra({ name: 'East', data: data[0] }), 'East\nregion: East\nSum of revenue: 100\nAvg of profit: 7');
+  // Basic mode is unchanged: no source indices, and the series keeps its own formatter.
+  const basic = compileVisual(input({ ...selected(add('waterfall')), dimension: 'region', measures: ['revenue'] }, rows));
+  assert.equal(basic.option.series[1].data[0].sourceRowIndex, undefined);
+  assert.equal(typeof basic.option.series[1].tooltip.formatter, 'function');
+  assert.equal(basic.option.series[1].tooltip.formatter({ name: 'East', data: basic.option.series[1].data[0] }), 'East: 100');
+});
+
+test('waterfall breakdown detailed tooltips read the (category, breakdown) row; subtotals stay basic', () => {
+  const v = { ...selected(add('waterfall')), dimension: 'region', measures: ['revenue'], breakdowns: ['category'], tooltipType: 'detailed' };
+  const rows = [
+    { region: 'East', category: 'Hardware', revenue: 100 },
+    { region: 'East', category: 'Software', revenue: 50 },
+    { region: 'West', category: 'Hardware', revenue: 30 },
+    { region: 'West', category: 'Software', revenue: -10 },
+  ];
+  const compiled = compileVisual(input(v, rows));
+  const data = compiled.option.series[1].data;
+  // Bars: East subtotal, West Hardware delta, West Software delta, West subtotal.
+  assert.deepEqual(data.map(d => d.name), ['East', 'Hardware', 'Software', 'West']);
+  assert.equal(data[0].sourceRowIndex, undefined);
+  assert.equal(data[1].sourceRowIndex, 2);
+  assert.equal(data[2].sourceRowIndex, 3);
+  assert.equal(data[3].sourceRowIndex, undefined);
+  const format = compiled.option.tooltip.formatter;
+  assert.equal(format({ name: 'Hardware', data: data[1] }), 'Hardware\nregion: West\ncategory: Hardware\nSum of revenue: 30');
+  assert.equal(format({ name: 'Software', data: data[2] }), 'Software\nregion: West\ncategory: Software\nSum of revenue: -10');
+  assert.equal(format({ name: 'East', data: data[0] }), 'East: 150');
+  assert.equal(format({ name: 'West', data: data[3] }), 'West: 170');
 });
 
 test('treemap details use hierarchy levels and the hovered node value', () => {
