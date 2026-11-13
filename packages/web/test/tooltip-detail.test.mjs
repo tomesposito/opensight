@@ -396,3 +396,66 @@ test('real ECharts sankey links inherit the detailed formatter and nodes stay ba
     assert.equal(format(node), typeof node.value === 'number' && Number.isFinite(node.value) ? `A: ${node.value}` : 'A');
   } finally { chart.dispose(); }
 });
+
+test('radar details follow polygon series and indicator order across groups and measures', () => {
+  const v = { ...selected(add('radar')), rows: ['category'], columns: ['region'], measures: ['revenue', 'profit'], tooltipType: 'detailed' };
+  const rows = [
+    { category: 'Hardware', region: 'East', revenue: 10, profit: 1 },
+    { category: 'Software', region: 'West', revenue: 40, profit: 4 },
+    { category: 'Software', region: 'East', revenue: 20, profit: null },
+    { category: 'Hardware', region: 'West', revenue: 30, profit: 0 },
+  ];
+  const compiled = compileVisual(input(v, rows)), format = compiled.option.tooltip.formatter;
+  assert.equal(compiled.option.tooltip.trigger, 'item');
+  assert.equal(format({ seriesIndex: 0, dataIndex: 999 }), 'East · revenue\nHardware: 10\nSoftware: 20');
+  assert.equal(format({ seriesIndex: 1, dataIndex: 0 }), 'East · profit\nHardware: 1\nSoftware: (null)');
+  assert.equal(format([{ seriesIndex: 2, dataIndex: 0 }]), 'West · revenue\nHardware: 30\nSoftware: 40');
+  assert.equal(format({ seriesIndex: 3, dataIndex: 0 }), 'West · profit\nHardware: 0\nSoftware: 4');
+  const noAgg = compileVisual(input({ ...v, tooltipAggregations: false }, rows));
+  assert.equal(noAgg.option.tooltip.formatter({ seriesIndex: 2 }), format({ seriesIndex: 2 }));
+  const fieldTitle = compileVisual(input({ ...v, tooltipTitleType: 'fieldId' }, rows));
+  assert.equal(fieldTitle.option.tooltip.formatter({ seriesIndex: 2 }), 'category\nHardware: 30\nSoftware: 40');
+  for (const [hidden, expected] of [
+    [['region'], 'revenue\nHardware: 30\nSoftware: 40'],
+    [['category'], 'West · revenue'],
+    [['revenue'], 'West · revenue'],
+    [['category', 'region', 'revenue'], 'revenue'],
+  ]) assert.equal(compileVisual(input({ ...v, tooltipHiddenFields: hidden }, rows)).option.tooltip.formatter({ seriesIndex: 2 }), expected);
+  const hiddenOther = compileVisual(input({ ...v, tooltipHiddenFields: ['profit'] }, rows));
+  assert.equal(hiddenOther.option.tooltip.formatter({ seriesIndex: 2 }), format({ seriesIndex: 2 }));
+  const noColor = compileVisual(input({ ...v, columns: [] }, rows.filter(r => r.region === 'East')));
+  assert.equal(noColor.option.tooltip.formatter({ seriesIndex: 0 }), 'revenue\nHardware: 10\nSoftware: 20');
+  const missingAxis = compileVisual(input(v, rows.slice(0, 3)));
+  assert.equal(missingAxis.option.tooltip.formatter({ seriesIndex: 2 }), 'West · revenue\nHardware: (null)\nSoftware: 40');
+});
+
+test('radar details use each measure format, escaped labels and explicit category sorting', () => {
+  const v = { ...selected(add('radar')), rows: ['category'], columns: ['region'], measures: ['revenue', 'profit'], tooltipType: 'detailed',
+    formatting: { names: { category: '{Category|label}', revenue: '{Revenue|label}', profit: '{Profit|label}' }, metricFormats: {
+      revenue: { style: 'currency', currency: 'USD', decimalPlaces: 2 }, profit: { style: 'percent', decimalPlaces: 1 },
+    } } };
+  const rows = [{ category: '{B|axis}', region: '{East|group}', revenue: 1234.5, profit: 0.125 }, { category: '{A|axis}', region: '{East|group}', revenue: 10, profit: 0 }];
+  const source = input(v, rows);
+  source.definition.radarChartVisual.chartConfiguration.sortConfiguration = { categorySort: [{ fieldSort: { fieldId: 'category', direction: 'ASC' } }] };
+  const compiled = compileVisual(source), format = compiled.option.tooltip.formatter;
+  assert.equal(format({ seriesIndex: 0 }), '｛East|group｝ · ｛Revenue|label｝\n｛A|axis｝: $10.00\n｛B|axis｝: $1,234.50');
+  assert.equal(format({ seriesIndex: 1 }), '｛East|group｝ · ｛Profit|label｝\n｛A|axis｝: 0.0%\n｛B|axis｝: 12.5%');
+  const hiddenColor = compileVisual(input({ ...v, tooltipHiddenFields: ['region'] }, rows));
+  assert.equal(hiddenColor.option.tooltip.formatter({ seriesIndex: 1 }), '｛Profit|label｝\n｛B|axis｝: 12.5%\n｛A|axis｝: 0.0%');
+  const titleOnly = compileVisual(input({ ...v, tooltipTitleType: 'fieldId', tooltipHiddenFields: ['category'] }, rows));
+  assert.equal(titleOnly.option.tooltip.formatter({ seriesIndex: 1 }), '｛Category|label｝');
+});
+
+test('real ECharts radar parameters resolve the hovered polygon measure', () => {
+  const v = { ...selected(add('radar')), rows: ['category'], columns: ['region'], measures: ['revenue', 'profit'], tooltipType: 'detailed' };
+  const rows = [{ category: 'A', region: 'East', revenue: 10, profit: 1 }, { category: 'B', region: 'West', revenue: 20, profit: 2 }, { category: 'C', region: 'West', revenue: 30, profit: 3 }];
+  const compiled = compileVisual(input(v, rows));
+  const chart = init(null, undefined, { renderer: 'svg', ssr: true, width: 600, height: 360 });
+  try {
+    chart.setOption(compiled.option);
+    const series = chart.getModel().getSeriesByIndex(3);
+    const params = series.getDataParams(0);
+    assert.equal(params.seriesIndex, 3);
+    assert.equal(compiled.option.tooltip.formatter(params), 'West · profit\nA: (null)\nB: 2\nC: 3');
+  } finally { chart.dispose(); }
+});

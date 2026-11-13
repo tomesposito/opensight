@@ -834,11 +834,12 @@ export function compileVisual(input: Input): CompiledVisual {
   }
   applyDisplayOptions(model, option, theme);
   if (model.tooltip && model.tooltipDetail?.type === 'detailed') {
-    if (['box', 'histogram', 'sankey'].includes(model.kind) && model.tooltipExtraFields?.length) {
+    if (['box', 'histogram', 'sankey', 'radar'].includes(model.kind) && model.tooltipExtraFields?.length) {
       model.warnings.push(`Extra fields are not shown in ${model.kind} detailed tooltips because each datum aggregates multiple rows.`);
     }
     if (DETAILED_TOOLTIP_KINDS.includes(model.kind)) {
       option.tooltip = { ...(typeof option.tooltip === 'object' && !Array.isArray(option.tooltip) ? option.tooltip : {}),
+        ...(model.kind === 'radar' ? { trigger: 'item' as const } : {}),
         formatter: ['treemap', 'wordCloud'].includes(model.kind)
           ? transformedTooltipFormatter(model, rows, cell, availableExtras)
           : ['box', 'histogram'].includes(model.kind)
@@ -847,7 +848,9 @@ export function compileVisual(input: Input): CompiledVisual {
               ? waterfallTooltipFormatter(model, rows, cell, availableExtras)
               : model.kind === 'sankey'
                 ? sankeyTooltipFormatter(model, option)
-                : detailedTooltipFormatter(model, rows, cell, availableExtras, facetSeriesMap) };
+                : model.kind === 'radar'
+                  ? radarTooltipFormatter(model, option)
+                  : detailedTooltipFormatter(model, rows, cell, availableExtras, facetSeriesMap) };
     } else {
       model.warnings.push(`detailed tooltips are not rendered for ${model.kind} visuals; using basic tooltips.`);
     }
@@ -1123,6 +1126,40 @@ function waterfallTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: 
       const label = detail.aggregations ? `${TOOLTIP_AGGREGATION_WORD[extra.aggregation]} of ${name}` : name;
       lines.push(`${richTextEscape(label)}: ${richTextEscape(displayCell(cell(row, extra.field)))}`);
     }
+    return lines.join('\n');
+  };
+}
+
+/** Each radar series holds one color-group × measure polygon. Its values align
+ * with compiled indicators, not row indices. The title identifies the measure,
+ * so axis lines do not repeat an aggregation/measure label. */
+function radarTooltipFormatter(model: VisualModel, option: EChartsOption): (params: unknown) => string {
+  const detail = model.tooltipDetail!;
+  const category = model.dimensions[0]!, color = model.dimensions[1];
+  const radar = Array.isArray(option.radar) ? option.radar[0] : option.radar;
+  const indicators = radar?.indicator ?? [];
+  const series = Array.isArray(option.series) ? option.series : [option.series];
+  return (params: unknown): string => {
+    const first = (Array.isArray(params) ? params[0] : params) as { seriesIndex?: unknown } | undefined;
+    const index = first?.seriesIndex;
+    if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) return '';
+    const polygonSeries = series[index];
+    const polygon: unknown = polygonSeries && 'data' in polygonSeries && Array.isArray(polygonSeries.data) ? polygonSeries.data[0] : undefined;
+    if (!polygon || typeof polygon !== 'object' || !('value' in polygon) || !Array.isArray(polygon.value) || !('name' in polygon) || typeof polygon.name !== 'string') return '';
+    // compileExtra emits every measure in model order for each color group.
+    const measure = model.measures[index % model.measures.length]!;
+    const title = detail.titleType === 'fieldId' ? fieldName(category, model.formatting)
+      : color && detail.hiddenFields.includes(color.id) ? fieldName(measure, model.formatting) : polygon.name;
+    const lines = [richTextEscape(title)];
+    if (detail.hiddenFields.includes(category.id) || detail.hiddenFields.includes(measure.id)) return lines[0]!;
+    const governed = model.formatting?.metricFormats?.[measure.column];
+    const values: readonly unknown[] = polygon.value;
+    indicators.forEach((indicator, i) => {
+      const value = values[i];
+      if (value === null || typeof value === 'number' && Number.isFinite(value)) {
+        lines.push(`${richTextEscape(indicator.name ?? '')}: ${richTextEscape(formatMetric(value, governed) ?? displayCell(value))}`);
+      }
+    });
     return lines.join('\n');
   };
 }
