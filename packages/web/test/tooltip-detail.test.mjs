@@ -9,6 +9,7 @@ import { importBundle, exportBundle, downloadBundleBytes } from '../build/test/b
 import { parseQsBundle } from '@opensight/bundle-parser';
 import { TooltipSection } from '../build/test/TooltipEditor.js';
 import { init } from '../build/test/echarts.js';
+import { convertDefinition } from '../build/test/definition-converter.js';
 import basicRadarSankey from './fixtures/radar-sankey-basic.json' with { type: 'json' };
 
 const add = kind => authorReducer(emptyDraft(), { type: 'add', kind });
@@ -482,6 +483,44 @@ test('radar and sankey basic/unset output matches the pre-slice options byte for
         const format = basic.option.series[0].tooltip.formatter;
         assert.equal(format({ data: basic.option.series[0].links[0], value: 10 }), 'East → Hardware: 10');
         assert.equal(format({ data: basic.option.series[0].data[0] }), 'East: ');
+      }
+    }
+  }
+});
+
+
+test('radar and sankey detailed authoring exports and native API imports round-trip', async () => {
+  const apiKeys = value => Array.isArray(value) ? value.map(apiKeys) : value && typeof value === 'object'
+    ? Object.fromEntries(Object.entries(value).map(([key, value]) => [key[0].toUpperCase() + key.slice(1), apiKeys(value)])) : value;
+  for (const kind of ['radar', 'sankey']) {
+    const draft = authorReducer(add(kind), { type: 'tooltip', patch: { tooltipType: 'detailed', tooltipTitleType: 'fieldId', tooltipAggregations: false, tooltipHiddenFields: ['revenue'] } });
+    const bundle = await parseQsBundle(await downloadBundleBytes(draft));
+    const restored = importBundle(bundle), v = selected(restored);
+    assert.deepEqual([v.tooltipType, v.tooltipTitleType, v.tooltipAggregations, v.tooltipHiddenFields], ['detailed', 'fieldId', false, ['revenue']]);
+    assert.deepEqual(v.imported.issues, []);
+    assert.deepEqual(exportBundle(restored), bundle);
+    const definition = serializeVisual(v), config = Object.values(definition)[0].chartConfiguration;
+    assert.equal(config.tooltip.selectedTooltipType, 'DETAILED');
+    const source = input(v, []), api = apiKeys(definition);
+    const native = compileVisual({ ...source, source: 'api', definition: api });
+    assert.deepEqual(native.model.tooltipDetail, { type: 'detailed', titleType: 'fieldId', aggregations: false, hiddenFields: ['revenue'] });
+    const converted = convertDefinition({ DataSetIdentifierDeclarations: [], Sheets: [{ SheetId: 'sheet', Visuals: [api] }] });
+    assert.deepEqual(compileVisual({ ...source, definition: converted.sheets[0].visuals[0] }).model.tooltipDetail, native.model.tooltipDetail);
+    config.tooltip.selectedTooltipType = 'INVALID';
+    assert.throws(() => compileVisual({ ...source, definition }), /selectedTooltipType/);
+    config.tooltip.selectedTooltipType = 'DETAILED';
+    config.tooltip.fieldBasedTooltip.tooltipTitleType = 'INVALID';
+    assert.throws(() => compileVisual({ ...source, definition }), /fieldBasedTooltip.*PRIMARY_VALUE, FIELD_ID/);
+  }
+});
+
+test('radar and sankey details tolerate missing hover data and unavailable results', () => {
+  for (const kind of ['radar', 'sankey']) {
+    const v = { ...selected(add(kind)), rows: ['region'], columns: ['category'], measures: ['revenue'], tooltipType: 'detailed' };
+    for (const rows of [[], null]) {
+      const compiled = compileVisual(input(v, rows));
+      for (const params of [undefined, null, [], {}, { seriesIndex: -1 }, { seriesIndex: 999 }, { seriesIndex: 0.5 }, { data: { source: 0, target: 1, value: 1 } }]) {
+        assert.equal(compiled.option.tooltip.formatter(params), '', kind);
       }
     }
   }
