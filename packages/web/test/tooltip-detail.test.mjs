@@ -9,6 +9,8 @@ import { importBundle, exportBundle, downloadBundleBytes } from '../build/test/b
 import { parseQsBundle } from '@opensight/bundle-parser';
 import { TooltipSection } from '../build/test/TooltipEditor.js';
 import { init } from '../build/test/echarts.js';
+import { convertDefinition } from '../build/test/definition-converter.js';
+import basicRadarSankey from './fixtures/radar-sankey-basic.json' with { type: 'json' };
 
 const add = kind => authorReducer(emptyDraft(), { type: 'add', kind });
 const selected = d => activeSheet(d).visuals[0];
@@ -146,11 +148,11 @@ test('detailed tooltips render exact rows for index-mapped extra kinds', () => {
 });
 
 test('detailed tooltip rendering gates agree with implemented kinds', () => {
-  for (const kind of ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud', 'box', 'histogram', 'waterfall']) {
+  for (const kind of ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud', 'box', 'histogram', 'waterfall', 'radar', 'sankey']) {
     assert.equal(detailedTooltipKinds(kind), true, kind);
     assert.equal(tooltipDetailKinds(kind), true, kind);
   }
-  for (const kind of ['insight', 'kpi', 'table', 'pivot', 'radar', 'sankey']) {
+  for (const kind of ['insight', 'kpi', 'table', 'pivot']) {
     assert.equal(tooltipDetailKinds(kind), false, kind);
     assert.equal(detailedTooltipKinds(kind), false, kind);
   }
@@ -338,10 +340,188 @@ test('tooltip section renders for supported kinds and hides for others', () => {
   assert.ok(html.includes('Detailed'), html.slice(0, 400));
   const kpi = renderToStaticMarkup(createElement(TooltipSection, { visual: selected(add('kpi')), dispatch() {} }));
   assert.equal(kpi, '');
-  const radar = renderToStaticMarkup(createElement(TooltipSection, { visual: selected(add('radar')), dispatch() {} }));
-  assert.equal(radar, '');
+  for (const kind of ['radar', 'sankey']) {
+    const html = renderToStaticMarkup(createElement(TooltipSection, { visual: selected(add(kind)), dispatch() {} }));
+    assert.ok(html.includes('data-author-control="tooltip-detail"'), kind);
+    assert.ok(html.includes('Detailed'), kind);
+  }
   // Treemap now renders detailed tooltips and no longer needs a fallback hint.
   const treemapDetailed = renderToStaticMarkup(createElement(TooltipSection, { visual: { ...selected(add('treemap')), tooltipType: 'detailed' }, dispatch() {} }));
   assert.ok(!treemapDetailed.includes('other visual types use basic tooltips'), treemapDetailed);
   assert.ok(treemapDetailed.includes('Primary value as title'), treemapDetailed);
+});
+
+test('sankey details resolve compiled links, sum duplicate pairs and keep nodes basic', () => {
+  const v = { ...selected(add('sankey')), rows: ['region'], columns: ['category'], measures: ['revenue'], tooltipType: 'detailed' };
+  const rows = [{ region: 'A', category: 'B', revenue: 10 }, { region: 'A', category: 'B', revenue: 20 }, { region: 'B', category: 'C', revenue: 5 }];
+  const compiled = compileVisual(input(v, rows)), [link, next] = compiled.option.series[0].links;
+  const params = { dataIndex: 999, data: link, value: link.value };
+  assert.equal(link.value, 30);
+  assert.equal(compiled.option.tooltip.formatter(params), 'A → B\nregion: A\ncategory: B\nSum of revenue: 30');
+  assert.equal(compiled.option.tooltip.formatter({ dataIndex: 0, data: next }), 'B → C\nregion: B\ncategory: C\nSum of revenue: 5');
+  assert.equal(compileVisual(input({ ...v, tooltipTitleType: 'fieldId', tooltipAggregations: false }, rows)).option.tooltip.formatter(params), 'region\nregion: A\ncategory: B\nrevenue: 30');
+  for (const [hidden, expected] of [
+    [['region'], 'A → B\ncategory: B\nSum of revenue: 30'],
+    [['category'], 'A → B\nregion: A\nSum of revenue: 30'],
+    [['revenue'], 'A → B\nregion: A\ncategory: B'],
+    [['region', 'category', 'revenue'], 'A → B'],
+  ]) assert.equal(compileVisual(input({ ...v, tooltipHiddenFields: hidden }, rows)).option.tooltip.formatter(params), expected);
+  const format = compiled.option.tooltip.formatter, node = compiled.option.series[0].data[0];
+  assert.equal(format({ data: node, value: 30 }), 'A: 30');
+  assert.equal(format({ data: node, value: 0 }), 'A: 0');
+  for (const value of [undefined, null, NaN, Infinity, '30']) assert.equal(format({ data: node, value }), 'A');
+});
+
+test('sankey details escape dynamic text and respect governed weight formats', () => {
+  const v = { ...selected(add('sankey')), rows: ['region'], columns: ['category'], measures: ['revenue'], tooltipType: 'detailed', tooltipTitleType: 'fieldId',
+    formatting: { names: { region: '{Source|label}', category: '{Target|label}', revenue: '{Weight|label}' }, metricFormats: { revenue: { style: 'currency', currency: 'USD', decimalPlaces: 2 } } } };
+  const compiled = compileVisual(input(v, [{ region: '{A|source}', category: '{B|target}', revenue: 1234.5 }]));
+  const data = compiled.option.series[0].links[0];
+  assert.equal(compiled.option.tooltip.formatter({ data }), '｛Source|label｝\n｛Source|label｝: ｛A|source｝\n｛Target|label｝: ｛B|target｝\n｛Weight|label｝: $1,234.50');
+  const primary = compileVisual(input({ ...v, tooltipTitleType: 'primaryValue' }, [{ region: '{A|source}', category: '{B|target}', revenue: 1234.5 }]));
+  assert.match(primary.option.tooltip.formatter({ data }), /^｛A\|source｝ → ｛B\|target｝\n/);
+  assert.equal(compiled.option.tooltip.formatter({ data: compiled.option.series[0].data[0], value: 1234.5 }), '｛A|source｝: 1234.5');
+});
+
+test('real ECharts sankey links inherit the detailed formatter and nodes stay basic', () => {
+  const v = { ...selected(add('sankey')), rows: ['region'], columns: ['category'], measures: ['revenue'], tooltipType: 'detailed' };
+  const compiled = compileVisual(input(v, [{ region: 'A', category: 'B', revenue: 10 }, { region: 'A', category: 'B', revenue: 20 }]));
+  const chart = init(null, undefined, { renderer: 'svg', ssr: true, width: 600, height: 360 });
+  try {
+    chart.setOption(compiled.option);
+    const series = chart.getModel().getSeriesByIndex(0);
+    assert.equal(series.option.tooltip?.formatter, undefined, 'no series-level basic formatter overrides details');
+    const format = series.getModel('tooltip', chart.getModel().getComponent('tooltip')).get('formatter');
+    assert.equal(format, compiled.option.tooltip.formatter);
+    assert.equal(format(series.getDataParams(0, 'edge')), 'A → B\nregion: A\ncategory: B\nSum of revenue: 30');
+    const node = series.getDataParams(0, 'node');
+    assert.equal(format(node), typeof node.value === 'number' && Number.isFinite(node.value) ? `A: ${node.value}` : 'A');
+  } finally { chart.dispose(); }
+});
+
+test('radar details follow polygon series and indicator order across groups and measures', () => {
+  const v = { ...selected(add('radar')), rows: ['category'], columns: ['region'], measures: ['revenue', 'profit'], tooltipType: 'detailed' };
+  const rows = [
+    { category: 'Hardware', region: 'East', revenue: 10, profit: 1 },
+    { category: 'Software', region: 'West', revenue: 40, profit: 4 },
+    { category: 'Software', region: 'East', revenue: 20, profit: null },
+    { category: 'Hardware', region: 'West', revenue: 30, profit: 0 },
+  ];
+  const compiled = compileVisual(input(v, rows)), format = compiled.option.tooltip.formatter;
+  assert.equal(compiled.option.tooltip.trigger, 'item');
+  assert.equal(format({ seriesIndex: 0, dataIndex: 999 }), 'East · revenue\nHardware: 10\nSoftware: 20');
+  assert.equal(format({ seriesIndex: 1, dataIndex: 0 }), 'East · profit\nHardware: 1\nSoftware: (null)');
+  assert.equal(format([{ seriesIndex: 2, dataIndex: 0 }]), 'West · revenue\nHardware: 30\nSoftware: 40');
+  assert.equal(format({ seriesIndex: 3, dataIndex: 0 }), 'West · profit\nHardware: 0\nSoftware: 4');
+  const noAgg = compileVisual(input({ ...v, tooltipAggregations: false }, rows));
+  assert.equal(noAgg.option.tooltip.formatter({ seriesIndex: 2 }), format({ seriesIndex: 2 }));
+  const fieldTitle = compileVisual(input({ ...v, tooltipTitleType: 'fieldId' }, rows));
+  assert.equal(fieldTitle.option.tooltip.formatter({ seriesIndex: 2 }), 'category\nHardware: 30\nSoftware: 40');
+  for (const [hidden, expected] of [
+    [['region'], 'revenue\nHardware: 30\nSoftware: 40'],
+    [['category'], 'West · revenue'],
+    [['revenue'], 'West · revenue'],
+    [['category', 'region', 'revenue'], 'revenue'],
+  ]) assert.equal(compileVisual(input({ ...v, tooltipHiddenFields: hidden }, rows)).option.tooltip.formatter({ seriesIndex: 2 }), expected);
+  const hiddenOther = compileVisual(input({ ...v, tooltipHiddenFields: ['profit'] }, rows));
+  assert.equal(hiddenOther.option.tooltip.formatter({ seriesIndex: 2 }), format({ seriesIndex: 2 }));
+  const noColor = compileVisual(input({ ...v, columns: [] }, rows.filter(r => r.region === 'East')));
+  assert.equal(noColor.option.tooltip.formatter({ seriesIndex: 0 }), 'revenue\nHardware: 10\nSoftware: 20');
+  const missingAxis = compileVisual(input(v, rows.slice(0, 3)));
+  assert.equal(missingAxis.option.tooltip.formatter({ seriesIndex: 2 }), 'West · revenue\nHardware: (null)\nSoftware: 40');
+});
+
+test('radar details use each measure format, escaped labels and explicit category sorting', () => {
+  const v = { ...selected(add('radar')), rows: ['category'], columns: ['region'], measures: ['revenue', 'profit'], tooltipType: 'detailed',
+    formatting: { names: { category: '{Category|label}', revenue: '{Revenue|label}', profit: '{Profit|label}' }, metricFormats: {
+      revenue: { style: 'currency', currency: 'USD', decimalPlaces: 2 }, profit: { style: 'percent', decimalPlaces: 1 },
+    } } };
+  const rows = [{ category: '{B|axis}', region: '{East|group}', revenue: 1234.5, profit: 0.125 }, { category: '{A|axis}', region: '{East|group}', revenue: 10, profit: 0 }];
+  const source = input(v, rows);
+  source.definition.radarChartVisual.chartConfiguration.sortConfiguration = { categorySort: [{ fieldSort: { fieldId: 'category', direction: 'ASC' } }] };
+  const compiled = compileVisual(source), format = compiled.option.tooltip.formatter;
+  assert.equal(format({ seriesIndex: 0 }), '｛East|group｝ · ｛Revenue|label｝\n｛A|axis｝: $10.00\n｛B|axis｝: $1,234.50');
+  assert.equal(format({ seriesIndex: 1 }), '｛East|group｝ · ｛Profit|label｝\n｛A|axis｝: 0.0%\n｛B|axis｝: 12.5%');
+  const hiddenColor = compileVisual(input({ ...v, tooltipHiddenFields: ['region'] }, rows));
+  assert.equal(hiddenColor.option.tooltip.formatter({ seriesIndex: 1 }), '｛Profit|label｝\n｛B|axis｝: 12.5%\n｛A|axis｝: 0.0%');
+  const titleOnly = compileVisual(input({ ...v, tooltipTitleType: 'fieldId', tooltipHiddenFields: ['category'] }, rows));
+  assert.equal(titleOnly.option.tooltip.formatter({ seriesIndex: 1 }), '｛Category|label｝');
+});
+
+test('real ECharts radar parameters resolve the hovered polygon measure', () => {
+  const v = { ...selected(add('radar')), rows: ['category'], columns: ['region'], measures: ['revenue', 'profit'], tooltipType: 'detailed' };
+  const rows = [{ category: 'A', region: 'East', revenue: 10, profit: 1 }, { category: 'B', region: 'West', revenue: 20, profit: 2 }, { category: 'C', region: 'West', revenue: 30, profit: 3 }];
+  const compiled = compileVisual(input(v, rows));
+  const chart = init(null, undefined, { renderer: 'svg', ssr: true, width: 600, height: 360 });
+  try {
+    chart.setOption(compiled.option);
+    const series = chart.getModel().getSeriesByIndex(3);
+    const params = series.getDataParams(0);
+    assert.equal(params.seriesIndex, 3);
+    assert.equal(compiled.option.tooltip.formatter(params), 'West · profit\nA: (null)\nB: 2\nC: 3');
+  } finally { chart.dispose(); }
+});
+
+
+test('radar and sankey basic/unset output matches the pre-slice options byte for byte', () => {
+  // Captured at 4c262fc4 before opening the detailed gate. Include functions,
+  // which JSON.stringify would otherwise omit, to protect basic formatters too.
+  const encode = value => JSON.stringify(value, (_, v) => typeof v === 'function' ? v.toString() : v);
+  for (const kind of ['radar', 'sankey']) {
+    const v = { ...selected(add(kind)), rows: ['region'], columns: ['category'], measures: kind === 'radar' ? ['revenue', 'profit'] : ['revenue'] };
+    const rows = [{ region: 'East', category: 'Hardware', revenue: 10, profit: 1 }, { region: 'West', category: 'Hardware', revenue: 20, profit: null }, { region: 'East', category: 'Software', revenue: 30, profit: 0 }];
+    const source = input(v, rows);
+    const config = Object.values(source.definition)[0].chartConfiguration;
+    for (const tooltip of [{ tooltipVisibility: 'VISIBLE' }, { tooltipVisibility: 'VISIBLE', selectedTooltipType: 'BASIC' }]) {
+      config.tooltip = tooltip;
+      const basic = compileVisual(source);
+      assert.equal(encode(basic.option), JSON.stringify(basicRadarSankey[kind]), kind);
+      const detailed = compileVisual(input({ ...v, tooltipType: 'detailed' }, rows));
+      assert.deepEqual(detailed.option.series.map(s => s.data), basic.option.series.map(s => s.data), 'no new datum keys');
+      if (kind === 'sankey') {
+        assert.deepEqual(detailed.option.series[0].links, basic.option.series[0].links);
+        const format = basic.option.series[0].tooltip.formatter;
+        assert.equal(format({ data: basic.option.series[0].links[0], value: 10 }), 'East → Hardware: 10');
+        assert.equal(format({ data: basic.option.series[0].data[0] }), 'East: ');
+      }
+    }
+  }
+});
+
+
+test('radar and sankey detailed authoring exports and native API imports round-trip', async () => {
+  const apiKeys = value => Array.isArray(value) ? value.map(apiKeys) : value && typeof value === 'object'
+    ? Object.fromEntries(Object.entries(value).map(([key, value]) => [key[0].toUpperCase() + key.slice(1), apiKeys(value)])) : value;
+  for (const kind of ['radar', 'sankey']) {
+    const draft = authorReducer(add(kind), { type: 'tooltip', patch: { tooltipType: 'detailed', tooltipTitleType: 'fieldId', tooltipAggregations: false, tooltipHiddenFields: ['revenue'] } });
+    const bundle = await parseQsBundle(await downloadBundleBytes(draft));
+    const restored = importBundle(bundle), v = selected(restored);
+    assert.deepEqual([v.tooltipType, v.tooltipTitleType, v.tooltipAggregations, v.tooltipHiddenFields], ['detailed', 'fieldId', false, ['revenue']]);
+    assert.deepEqual(v.imported.issues, []);
+    assert.deepEqual(exportBundle(restored), bundle);
+    const definition = serializeVisual(v), config = Object.values(definition)[0].chartConfiguration;
+    assert.equal(config.tooltip.selectedTooltipType, 'DETAILED');
+    const source = input(v, []), api = apiKeys(definition);
+    const native = compileVisual({ ...source, source: 'api', definition: api });
+    assert.deepEqual(native.model.tooltipDetail, { type: 'detailed', titleType: 'fieldId', aggregations: false, hiddenFields: ['revenue'] });
+    const converted = convertDefinition({ DataSetIdentifierDeclarations: [], Sheets: [{ SheetId: 'sheet', Visuals: [api] }] });
+    assert.deepEqual(compileVisual({ ...source, definition: converted.sheets[0].visuals[0] }).model.tooltipDetail, native.model.tooltipDetail);
+    config.tooltip.selectedTooltipType = 'INVALID';
+    assert.throws(() => compileVisual({ ...source, definition }), /selectedTooltipType/);
+    config.tooltip.selectedTooltipType = 'DETAILED';
+    config.tooltip.fieldBasedTooltip.tooltipTitleType = 'INVALID';
+    assert.throws(() => compileVisual({ ...source, definition }), /fieldBasedTooltip.*PRIMARY_VALUE, FIELD_ID/);
+  }
+});
+
+test('radar and sankey details tolerate missing hover data and unavailable results', () => {
+  for (const kind of ['radar', 'sankey']) {
+    const v = { ...selected(add(kind)), rows: ['region'], columns: ['category'], measures: ['revenue'], tooltipType: 'detailed' };
+    for (const rows of [[], null]) {
+      const compiled = compileVisual(input(v, rows));
+      for (const params of [undefined, null, [], {}, { seriesIndex: -1 }, { seriesIndex: 999 }, { seriesIndex: 0.5 }, { data: { source: 0, target: 1, value: 1 } }]) {
+        assert.equal(compiled.option.tooltip.formatter(params), '', kind);
+      }
+    }
+  }
 });

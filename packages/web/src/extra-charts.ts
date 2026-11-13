@@ -254,7 +254,7 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
       nodeWidth: 16, nodeGap: 12, draggable: false,
       data: [...nodes].map(([value, index]) => ({ id: `node-${index}`, name: label(value), ...(Array.isArray(option.color) ? { itemStyle: { color: option.color[index % option.color.length] as string } } : {}) })), links,
       label: { show: model.labels, formatter: sankeyName, color: option.textStyle?.color }, labelLayout: { hideOverlap: true },
-      tooltip: { formatter: sankeyTooltip },
+      ...(model.tooltipDetail?.type === 'detailed' ? {} : { tooltip: { formatter: sankeyTooltip } }),
       lineStyle: { color: 'source', opacity: 0.35 }, emphasis: { focus: 'adjacency' },
     }];
   } else if (model.kind === 'radar') {

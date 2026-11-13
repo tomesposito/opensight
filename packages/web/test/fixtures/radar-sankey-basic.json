@@ -1,0 +1,262 @@
+{
+  "radar": {
+    "animation": false,
+    "color": [
+      "#157f88",
+      "#e5a046",
+      "#4f6fc6",
+      "#b76b88",
+      "#8b9465"
+    ],
+    "backgroundColor": "#ffffff",
+    "textStyle": {
+      "fontFamily": "system-ui, sans-serif",
+      "color": "#19384a"
+    },
+    "tooltip": {
+      "show": true,
+      "trigger": "item",
+      "renderMode": "richText",
+      "confine": true
+    },
+    "aria": {
+      "enabled": true
+    },
+    "radar": {
+      "radius": "62%",
+      "center": [
+        "50%",
+        "46%"
+      ],
+      "indicator": [
+        {
+          "name": "East",
+          "min": 0,
+          "max": 30
+        },
+        {
+          "name": "West",
+          "min": 0,
+          "max": 20
+        }
+      ]
+    },
+    "legend": {
+      "show": true,
+      "bottom": 0,
+      "type": "scroll",
+      "orient": "horizontal",
+      "left": "center"
+    },
+    "series": [
+      {
+        "type": "radar",
+        "name": "Hardware · revenue",
+        "data": [
+          {
+            "name": "Hardware · revenue",
+            "value": [
+              10,
+              20
+            ]
+          }
+        ],
+        "symbol": "circle",
+        "symbolSize": 6,
+        "label": {
+          "show": false
+        },
+        "labelLayout": {
+          "hideOverlap": true
+        },
+        "areaStyle": {
+          "opacity": 0.12
+        }
+      },
+      {
+        "type": "radar",
+        "name": "Hardware · profit",
+        "data": [
+          {
+            "name": "Hardware · profit",
+            "value": [
+              1,
+              null
+            ]
+          }
+        ],
+        "symbol": "circle",
+        "symbolSize": 6,
+        "label": {
+          "show": false
+        },
+        "labelLayout": {
+          "hideOverlap": true
+        },
+        "areaStyle": {
+          "opacity": 0.12
+        }
+      },
+      {
+        "type": "radar",
+        "name": "Software · revenue",
+        "data": [
+          {
+            "name": "Software · revenue",
+            "value": [
+              30,
+              null
+            ]
+          }
+        ],
+        "symbol": "circle",
+        "symbolSize": 6,
+        "label": {
+          "show": false
+        },
+        "labelLayout": {
+          "hideOverlap": true
+        },
+        "areaStyle": {
+          "opacity": 0.12
+        }
+      },
+      {
+        "type": "radar",
+        "name": "Software · profit",
+        "data": [
+          {
+            "name": "Software · profit",
+            "value": [
+              0,
+              null
+            ]
+          }
+        ],
+        "symbol": "circle",
+        "symbolSize": 6,
+        "label": {
+          "show": false
+        },
+        "labelLayout": {
+          "hideOverlap": true
+        },
+        "areaStyle": {
+          "opacity": 0.12
+        }
+      }
+    ]
+  },
+  "sankey": {
+    "animation": false,
+    "color": [
+      "#157f88",
+      "#e5a046",
+      "#4f6fc6",
+      "#b76b88",
+      "#8b9465"
+    ],
+    "backgroundColor": "#ffffff",
+    "textStyle": {
+      "fontFamily": "system-ui, sans-serif",
+      "color": "#19384a"
+    },
+    "tooltip": {
+      "show": true,
+      "trigger": "item",
+      "renderMode": "richText",
+      "confine": true
+    },
+    "aria": {
+      "enabled": true
+    },
+    "legend": {
+      "show": true,
+      "bottom": 0,
+      "type": "scroll",
+      "orient": "horizontal",
+      "left": "center"
+    },
+    "series": [
+      {
+        "type": "sankey",
+        "name": "revenue",
+        "left": 24,
+        "right": 100,
+        "top": 24,
+        "bottom": 48,
+        "nodeWidth": 16,
+        "nodeGap": 12,
+        "draggable": false,
+        "data": [
+          {
+            "id": "node-0",
+            "name": "East",
+            "itemStyle": {
+              "color": "#157f88"
+            }
+          },
+          {
+            "id": "node-1",
+            "name": "Hardware",
+            "itemStyle": {
+              "color": "#e5a046"
+            }
+          },
+          {
+            "id": "node-2",
+            "name": "West",
+            "itemStyle": {
+              "color": "#4f6fc6"
+            }
+          },
+          {
+            "id": "node-3",
+            "name": "Software",
+            "itemStyle": {
+              "color": "#b76b88"
+            }
+          }
+        ],
+        "links": [
+          {
+            "source": 0,
+            "target": 1,
+            "value": 10,
+            "name": "East → Hardware"
+          },
+          {
+            "source": 0,
+            "target": 3,
+            "value": 30,
+            "name": "East → Software"
+          },
+          {
+            "source": 2,
+            "target": 1,
+            "value": 20,
+            "name": "West → Hardware"
+          }
+        ],
+        "label": {
+          "show": false,
+          "formatter": "(params) => params.data && typeof params.data === 'object' && 'name' in params.data ? String(params.data.name) : ''",
+          "color": "#19384a"
+        },
+        "labelLayout": {
+          "hideOverlap": true
+        },
+        "tooltip": {
+          "formatter": "(params) => `${sankeyName(params)}: ${String(params.value ?? '')}`"
+        },
+        "lineStyle": {
+          "color": "source",
+          "opacity": 0.35
+        },
+        "emphasis": {
+          "focus": "adjacency"
+        }
+      }
+    ]
+  }
+}

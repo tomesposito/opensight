@@ -428,7 +428,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   keys(labels, [key('visibility', 'Visibility'), key('overlap', 'Overlap')], cpath);
   enumValue(labels[key('overlap', 'Overlap')], ['DISABLE_OVERLAP'], 'DISABLE_OVERLAP', cpath);
   const tooltip = object(config[key('tooltip', 'Tooltip')] ?? {}, cpath);
-  keys(tooltip, ['radar', 'sankey'].includes(kind) ? [key('tooltipVisibility', 'TooltipVisibility')] : [key('tooltipVisibility', 'TooltipVisibility'), key('selectedTooltipType', 'SelectedTooltipType'), key('fieldBasedTooltip', 'FieldBasedTooltip')], `${cpath}.${key('tooltip', 'Tooltip')}`);
+  keys(tooltip, [key('tooltipVisibility', 'TooltipVisibility'), key('selectedTooltipType', 'SelectedTooltipType'), key('fieldBasedTooltip', 'FieldBasedTooltip')], `${cpath}.${key('tooltip', 'Tooltip')}`);
   const tooltipPath = `${cpath}.${key('tooltip', 'Tooltip')}`;
   const tooltipDetail = parseTooltipDetail(tooltip, key, tooltipPath, [...dimensions, ...(breakdown ? [breakdown] : []), ...(facet ? [facet] : []), ...measures]);
   const legend = object(config[key('legend', 'Legend')] ?? {}, cpath);
@@ -834,18 +834,23 @@ export function compileVisual(input: Input): CompiledVisual {
   }
   applyDisplayOptions(model, option, theme);
   if (model.tooltip && model.tooltipDetail?.type === 'detailed') {
-    if (['box', 'histogram'].includes(model.kind) && model.tooltipExtraFields?.length) {
+    if (['box', 'histogram', 'sankey', 'radar'].includes(model.kind) && model.tooltipExtraFields?.length) {
       model.warnings.push(`Extra fields are not shown in ${model.kind} detailed tooltips because each datum aggregates multiple rows.`);
     }
     if (DETAILED_TOOLTIP_KINDS.includes(model.kind)) {
       option.tooltip = { ...(typeof option.tooltip === 'object' && !Array.isArray(option.tooltip) ? option.tooltip : {}),
+        ...(model.kind === 'radar' ? { trigger: 'item' as const } : {}),
         formatter: ['treemap', 'wordCloud'].includes(model.kind)
           ? transformedTooltipFormatter(model, rows, cell, availableExtras)
           : ['box', 'histogram'].includes(model.kind)
             ? distributionTooltipFormatter(model, option)
             : model.kind === 'waterfall'
               ? waterfallTooltipFormatter(model, rows, cell, availableExtras)
-              : detailedTooltipFormatter(model, rows, cell, availableExtras, facetSeriesMap) };
+              : model.kind === 'sankey'
+                ? sankeyTooltipFormatter(model, option)
+                : model.kind === 'radar'
+                  ? radarTooltipFormatter(model, option)
+                  : detailedTooltipFormatter(model, rows, cell, availableExtras, facetSeriesMap) };
     } else {
       model.warnings.push(`detailed tooltips are not rendered for ${model.kind} visuals; using basic tooltips.`);
     }
@@ -979,12 +984,13 @@ export function compileVisual(input: Input): CompiledVisual {
  *  scatter, funnel, heatmap, filledMap and pointMap build their series with rows.map
  *  (index-preserving); gauge renders a single datum from the single aggregate row.
  *  treemap and wordCloud retain leaf/word source indices for extra fields;
- *  box and histogram resolve compiled statistics/bins, without source-row extras;
+ *  box/histogram resolve compiled statistics/bins, radar resolves polygons and
+ *  sankey resolves links (nodes stay basic), all without source-row extras;
  *  waterfall delta bars retain their source row, while subtotal/Other/Total
  *  bars (compiled aggregates) keep the basic tooltip. */
-const DETAILED_TOOLTIP_KINDS = ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud', 'box', 'histogram', 'waterfall'];
+const DETAILED_TOOLTIP_KINDS = ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud', 'box', 'histogram', 'waterfall', 'radar', 'sankey'];
 /** Kinds whose tooltip config accepts the detailed keys (mirrors the chartConfiguration gate). */
-export const tooltipDetailKinds = (kind: VisualKind): boolean => !['insight', 'kpi', 'table', 'pivot', 'radar', 'sankey'].includes(kind);
+export const tooltipDetailKinds = (kind: VisualKind): boolean => !['insight', 'kpi', 'table', 'pivot'].includes(kind);
 /** All config-accepting kinds now render detailed tooltips. */
 export const detailedTooltipKinds = (kind: VisualKind): boolean => DETAILED_TOOLTIP_KINDS.includes(kind);
 
@@ -1119,6 +1125,75 @@ function waterfallTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: 
       const name = extra.label ?? fieldName(extra.field, model.formatting);
       const label = detail.aggregations ? `${TOOLTIP_AGGREGATION_WORD[extra.aggregation]} of ${name}` : name;
       lines.push(`${richTextEscape(label)}: ${richTextEscape(displayCell(cell(row, extra.field)))}`);
+    }
+    return lines.join('\n');
+  };
+}
+
+/** Each radar series holds one color-group × measure polygon. Its values align
+ * with compiled indicators, not row indices. The title identifies the measure,
+ * so axis lines do not repeat an aggregation/measure label. */
+function radarTooltipFormatter(model: VisualModel, option: EChartsOption): (params: unknown) => string {
+  const detail = model.tooltipDetail!;
+  const category = model.dimensions[0]!, color = model.dimensions[1];
+  const radar = Array.isArray(option.radar) ? option.radar[0] : option.radar;
+  const indicators = radar?.indicator ?? [];
+  const series = Array.isArray(option.series) ? option.series : [option.series];
+  return (params: unknown): string => {
+    const first = (Array.isArray(params) ? params[0] : params) as { seriesIndex?: unknown } | undefined;
+    const index = first?.seriesIndex;
+    if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) return '';
+    const polygonSeries = series[index];
+    const polygon: unknown = polygonSeries && 'data' in polygonSeries && Array.isArray(polygonSeries.data) ? polygonSeries.data[0] : undefined;
+    if (!polygon || typeof polygon !== 'object' || !('value' in polygon) || !Array.isArray(polygon.value) || !('name' in polygon) || typeof polygon.name !== 'string') return '';
+    // compileExtra emits every measure in model order for each color group.
+    const measure = model.measures[index % model.measures.length]!;
+    const title = detail.titleType === 'fieldId' ? fieldName(category, model.formatting)
+      : color && detail.hiddenFields.includes(color.id) ? fieldName(measure, model.formatting) : polygon.name;
+    const lines = [richTextEscape(title)];
+    if (detail.hiddenFields.includes(category.id) || detail.hiddenFields.includes(measure.id)) return lines[0]!;
+    const governed = model.formatting?.metricFormats?.[measure.column];
+    const values: readonly unknown[] = polygon.value;
+    indicators.forEach((indicator, i) => {
+      const value = values[i];
+      if (value === null || typeof value === 'number' && Number.isFinite(value)) {
+        lines.push(`${richTextEscape(indicator.name ?? '')}: ${richTextEscape(formatMetric(value, governed) ?? displayCell(value))}`);
+      }
+    });
+    return lines.join('\n');
+  };
+}
+
+/** Sankey links may sum several rows. Resolve their numeric endpoints against
+ * compiled nodes, never against source rows. Node hovers retain basic text. */
+function sankeyTooltipFormatter(model: VisualModel, option: EChartsOption): (params: unknown) => string {
+  const detail = model.tooltipDetail!;
+  const source = model.dimensions[0]!, destination = model.dimensions[1]!, measure = model.measures[0]!;
+  const series = Array.isArray(option.series) ? option.series[0] : option.series;
+  const nodes: readonly unknown[] = series && 'data' in series && Array.isArray(series.data) ? series.data : [];
+  const nodeName = (index: number): string | undefined => {
+    const node = nodes[index];
+    return node && typeof node === 'object' && 'name' in node && typeof node.name === 'string' ? node.name : undefined;
+  };
+  return (params: unknown): string => {
+    const first = (Array.isArray(params) ? params[0] : params) as {
+      name?: unknown; value?: unknown;
+      data?: { name?: unknown; source?: unknown; target?: unknown; value?: unknown };
+    } | undefined;
+    if (!first) return '';
+    const datum = first.data;
+    const name = typeof datum?.name === 'string' ? datum.name : typeof first.name === 'string' ? first.name : '';
+    if (typeof datum?.source !== 'number' || typeof datum.target !== 'number') {
+      return richTextEscape(typeof first.value === 'number' && Number.isFinite(first.value) ? `${name}: ${first.value}` : name);
+    }
+    const from = nodeName(datum.source), to = nodeName(datum.target);
+    if (from === undefined || to === undefined || typeof datum.value !== 'number' || !Number.isFinite(datum.value)) return '';
+    const lines = [richTextEscape(detail.titleType === 'primaryValue' ? name : fieldName(source, model.formatting))];
+    for (const [field, value] of [[source, from], [destination, to], [measure, datum.value]] as const) {
+      if (detail.hiddenFields.includes(field.id)) continue;
+      const governed = model.formatting?.metricFormats?.[field.column];
+      const label = detail.aggregations && field === measure && !governed ? `Sum of ${fieldName(field, model.formatting)}` : fieldName(field, model.formatting);
+      lines.push(`${richTextEscape(label)}: ${richTextEscape(formatMetric(value, governed) ?? displayCell(value))}`);
     }
     return lines.join('\n');
   };

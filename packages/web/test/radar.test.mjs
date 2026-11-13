@@ -57,7 +57,6 @@ test('radar validates required wells, cardinality, unsupported options and dupli
   bad(s => { wells(s).values = []; }, /RADAR_VALUES_REQUIRED/);
   bad(s => { config(s).shape = 'CIRCLE'; }, /shape: unsupported property/);
   bad(s => { config(s).axesRangeScale = 'SHARED'; }, /axesRangeScale: unsupported property/);
-  bad(s => { config(s).tooltip = { selectedTooltipType: 'DETAILED' }; }, /selectedTooltipType: unsupported property/);
   bad(s => { config(s).sortConfiguration = { categoryItemsLimit: {} }; }, /categoryItemsLimit: unsupported property/);
   bad(s => { s.rows = [...rows, rows[0]]; }, /duplicate categories/);
   bad(s => { s.rows = [{ ...rows[0], a: '10' }]; }, /finite number or null/);
