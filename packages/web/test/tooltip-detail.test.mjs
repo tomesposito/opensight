@@ -348,3 +348,51 @@ test('tooltip section renders for supported kinds and hides for others', () => {
   assert.ok(!treemapDetailed.includes('other visual types use basic tooltips'), treemapDetailed);
   assert.ok(treemapDetailed.includes('Primary value as title'), treemapDetailed);
 });
+
+test('sankey details resolve compiled links, sum duplicate pairs and keep nodes basic', () => {
+  const v = { ...selected(add('sankey')), rows: ['region'], columns: ['category'], measures: ['revenue'], tooltipType: 'detailed' };
+  const rows = [{ region: 'A', category: 'B', revenue: 10 }, { region: 'A', category: 'B', revenue: 20 }, { region: 'B', category: 'C', revenue: 5 }];
+  const compiled = compileVisual(input(v, rows)), [link, next] = compiled.option.series[0].links;
+  const params = { dataIndex: 999, data: link, value: link.value };
+  assert.equal(link.value, 30);
+  assert.equal(compiled.option.tooltip.formatter(params), 'A → B\nregion: A\ncategory: B\nSum of revenue: 30');
+  assert.equal(compiled.option.tooltip.formatter({ dataIndex: 0, data: next }), 'B → C\nregion: B\ncategory: C\nSum of revenue: 5');
+  assert.equal(compileVisual(input({ ...v, tooltipTitleType: 'fieldId', tooltipAggregations: false }, rows)).option.tooltip.formatter(params), 'region\nregion: A\ncategory: B\nrevenue: 30');
+  for (const [hidden, expected] of [
+    [['region'], 'A → B\ncategory: B\nSum of revenue: 30'],
+    [['category'], 'A → B\nregion: A\nSum of revenue: 30'],
+    [['revenue'], 'A → B\nregion: A\ncategory: B'],
+    [['region', 'category', 'revenue'], 'A → B'],
+  ]) assert.equal(compileVisual(input({ ...v, tooltipHiddenFields: hidden }, rows)).option.tooltip.formatter(params), expected);
+  const format = compiled.option.tooltip.formatter, node = compiled.option.series[0].data[0];
+  assert.equal(format({ data: node, value: 30 }), 'A: 30');
+  assert.equal(format({ data: node, value: 0 }), 'A: 0');
+  for (const value of [undefined, null, NaN, Infinity, '30']) assert.equal(format({ data: node, value }), 'A');
+});
+
+test('sankey details escape dynamic text and respect governed weight formats', () => {
+  const v = { ...selected(add('sankey')), rows: ['region'], columns: ['category'], measures: ['revenue'], tooltipType: 'detailed', tooltipTitleType: 'fieldId',
+    formatting: { names: { region: '{Source|label}', category: '{Target|label}', revenue: '{Weight|label}' }, metricFormats: { revenue: { style: 'currency', currency: 'USD', decimalPlaces: 2 } } } };
+  const compiled = compileVisual(input(v, [{ region: '{A|source}', category: '{B|target}', revenue: 1234.5 }]));
+  const data = compiled.option.series[0].links[0];
+  assert.equal(compiled.option.tooltip.formatter({ data }), '｛Source|label｝\n｛Source|label｝: ｛A|source｝\n｛Target|label｝: ｛B|target｝\n｛Weight|label｝: $1,234.50');
+  const primary = compileVisual(input({ ...v, tooltipTitleType: 'primaryValue' }, [{ region: '{A|source}', category: '{B|target}', revenue: 1234.5 }]));
+  assert.match(primary.option.tooltip.formatter({ data }), /^｛A\|source｝ → ｛B\|target｝\n/);
+  assert.equal(compiled.option.tooltip.formatter({ data: compiled.option.series[0].data[0], value: 1234.5 }), '｛A|source｝: 1234.5');
+});
+
+test('real ECharts sankey links inherit the detailed formatter and nodes stay basic', () => {
+  const v = { ...selected(add('sankey')), rows: ['region'], columns: ['category'], measures: ['revenue'], tooltipType: 'detailed' };
+  const compiled = compileVisual(input(v, [{ region: 'A', category: 'B', revenue: 10 }, { region: 'A', category: 'B', revenue: 20 }]));
+  const chart = init(null, undefined, { renderer: 'svg', ssr: true, width: 600, height: 360 });
+  try {
+    chart.setOption(compiled.option);
+    const series = chart.getModel().getSeriesByIndex(0);
+    assert.equal(series.option.tooltip?.formatter, undefined, 'no series-level basic formatter overrides details');
+    const format = series.getModel('tooltip', chart.getModel().getComponent('tooltip')).get('formatter');
+    assert.equal(format, compiled.option.tooltip.formatter);
+    assert.equal(format(series.getDataParams(0, 'edge')), 'A → B\nregion: A\ncategory: B\nSum of revenue: 30');
+    const node = series.getDataParams(0, 'node');
+    assert.equal(format(node), typeof node.value === 'number' && Number.isFinite(node.value) ? `A: ${node.value}` : 'A');
+  } finally { chart.dispose(); }
+});

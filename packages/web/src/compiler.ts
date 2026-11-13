@@ -834,7 +834,7 @@ export function compileVisual(input: Input): CompiledVisual {
   }
   applyDisplayOptions(model, option, theme);
   if (model.tooltip && model.tooltipDetail?.type === 'detailed') {
-    if (['box', 'histogram'].includes(model.kind) && model.tooltipExtraFields?.length) {
+    if (['box', 'histogram', 'sankey'].includes(model.kind) && model.tooltipExtraFields?.length) {
       model.warnings.push(`Extra fields are not shown in ${model.kind} detailed tooltips because each datum aggregates multiple rows.`);
     }
     if (DETAILED_TOOLTIP_KINDS.includes(model.kind)) {
@@ -845,7 +845,9 @@ export function compileVisual(input: Input): CompiledVisual {
             ? distributionTooltipFormatter(model, option)
             : model.kind === 'waterfall'
               ? waterfallTooltipFormatter(model, rows, cell, availableExtras)
-              : detailedTooltipFormatter(model, rows, cell, availableExtras, facetSeriesMap) };
+              : model.kind === 'sankey'
+                ? sankeyTooltipFormatter(model, option)
+                : detailedTooltipFormatter(model, rows, cell, availableExtras, facetSeriesMap) };
     } else {
       model.warnings.push(`detailed tooltips are not rendered for ${model.kind} visuals; using basic tooltips.`);
     }
@@ -1120,6 +1122,41 @@ function waterfallTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: 
       const name = extra.label ?? fieldName(extra.field, model.formatting);
       const label = detail.aggregations ? `${TOOLTIP_AGGREGATION_WORD[extra.aggregation]} of ${name}` : name;
       lines.push(`${richTextEscape(label)}: ${richTextEscape(displayCell(cell(row, extra.field)))}`);
+    }
+    return lines.join('\n');
+  };
+}
+
+/** Sankey links may sum several rows. Resolve their numeric endpoints against
+ * compiled nodes, never against source rows. Node hovers retain basic text. */
+function sankeyTooltipFormatter(model: VisualModel, option: EChartsOption): (params: unknown) => string {
+  const detail = model.tooltipDetail!;
+  const source = model.dimensions[0]!, destination = model.dimensions[1]!, measure = model.measures[0]!;
+  const series = Array.isArray(option.series) ? option.series[0] : option.series;
+  const nodes: readonly unknown[] = series && 'data' in series && Array.isArray(series.data) ? series.data : [];
+  const nodeName = (index: number): string | undefined => {
+    const node = nodes[index];
+    return node && typeof node === 'object' && 'name' in node && typeof node.name === 'string' ? node.name : undefined;
+  };
+  return (params: unknown): string => {
+    const first = (Array.isArray(params) ? params[0] : params) as {
+      name?: unknown; value?: unknown;
+      data?: { name?: unknown; source?: unknown; target?: unknown; value?: unknown };
+    } | undefined;
+    if (!first) return '';
+    const datum = first.data;
+    const name = typeof datum?.name === 'string' ? datum.name : typeof first.name === 'string' ? first.name : '';
+    if (typeof datum?.source !== 'number' || typeof datum.target !== 'number') {
+      return richTextEscape(typeof first.value === 'number' && Number.isFinite(first.value) ? `${name}: ${first.value}` : name);
+    }
+    const from = nodeName(datum.source), to = nodeName(datum.target);
+    if (from === undefined || to === undefined || typeof datum.value !== 'number' || !Number.isFinite(datum.value)) return '';
+    const lines = [richTextEscape(detail.titleType === 'primaryValue' ? name : fieldName(source, model.formatting))];
+    for (const [field, value] of [[source, from], [destination, to], [measure, datum.value]] as const) {
+      if (detail.hiddenFields.includes(field.id)) continue;
+      const governed = model.formatting?.metricFormats?.[field.column];
+      const label = detail.aggregations && field === measure && !governed ? `Sum of ${fieldName(field, model.formatting)}` : fieldName(field, model.formatting);
+      lines.push(`${richTextEscape(label)}: ${richTextEscape(formatMetric(value, governed) ?? displayCell(value))}`);
     }
     return lines.join('\n');
   };
