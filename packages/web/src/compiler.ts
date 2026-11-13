@@ -843,7 +843,9 @@ export function compileVisual(input: Input): CompiledVisual {
           ? transformedTooltipFormatter(model, rows, cell, availableExtras)
           : ['box', 'histogram'].includes(model.kind)
             ? distributionTooltipFormatter(model, option)
-            : detailedTooltipFormatter(model, rows, cell, availableExtras, facetSeriesMap) };
+            : model.kind === 'waterfall'
+              ? waterfallTooltipFormatter(model, rows, cell, availableExtras)
+              : detailedTooltipFormatter(model, rows, cell, availableExtras, facetSeriesMap) };
     } else {
       model.warnings.push(`detailed tooltips are not rendered for ${model.kind} visuals; using basic tooltips.`);
     }
@@ -977,7 +979,9 @@ export function compileVisual(input: Input): CompiledVisual {
  *  scatter, funnel, heatmap, filledMap and pointMap build their series with rows.map
  *  (index-preserving); gauge renders a single datum from the single aggregate row.
  *  treemap and wordCloud retain leaf/word source indices for extra fields;
- *  box and histogram resolve compiled statistics/bins, without source-row extras. */
+ *  box and histogram resolve compiled statistics/bins, without source-row extras;
+ *  waterfall delta bars retain their source row, while subtotal/Other/Total
+ *  bars (compiled aggregates) keep the basic tooltip. */
 const DETAILED_TOOLTIP_KINDS = ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud', 'box', 'histogram', 'waterfall'];
 /** Kinds whose tooltip config accepts the detailed keys (mirrors the chartConfiguration gate). */
 export const tooltipDetailKinds = (kind: VisualKind): boolean => !['insight', 'kpi', 'table', 'pivot', 'radar', 'sankey'].includes(kind);
@@ -1068,6 +1072,50 @@ function transformedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row
     const index = first.data?.sourceRowIndex;
     const row = !first.data?.children?.length && typeof index === 'number' && Number.isInteger(index) ? rows[index] : undefined;
     if (row) for (const extra of extras) {
+      const name = extra.label ?? fieldName(extra.field, model.formatting);
+      const label = detail.aggregations ? `${TOOLTIP_AGGREGATION_WORD[extra.aggregation]} of ${name}` : name;
+      lines.push(`${richTextEscape(label)}: ${richTextEscape(displayCell(cell(row, extra.field)))}`);
+    }
+    return lines.join('\n');
+  };
+}
+
+/** Waterfall bars are compiled datums: a delta bar carries the index of the
+ * single result row it decomposes, so its detailed tooltip reads that row
+ * (category, breakdown, measure, extras). Subtotal, Other and Total bars
+ * aggregate several rows (or the running total) — no row is invented for
+ * them; they keep the basic `name: delta` text. */
+function waterfallTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: Row, field: Field) => Cell, extraFields: Field[]): (params: unknown) => string {
+  const detail = model.tooltipDetail!;
+  const measure = model.measures[0]!;
+  const fields = [...model.dimensions, ...(model.breakdown ? [model.breakdown] : []), ...model.measures];
+  const extras = (model.tooltipExtraFields ?? []).flatMap(e => {
+    const field = extraFields.find(f => f.id === e.id);
+    return field ? [{ ...e, field }] : [];
+  });
+  const line = (field: Field, value: Cell): string => {
+    const governed = model.formatting?.metricFormats?.[field.column];
+    const name = fieldName(field, model.formatting);
+    const label = detail.aggregations && model.measures.includes(field) && !governed ? `Sum of ${name}` : name;
+    return `${richTextEscape(label)}: ${richTextEscape(formatMetric(value, governed) ?? displayCell(value))}`;
+  };
+  return (params: unknown): string => {
+    const first = (Array.isArray(params) ? params[0] : params) as {
+      name?: unknown;
+      data?: { delta?: unknown; sourceRowIndex?: number };
+    } | undefined;
+    if (!first) return '';
+    const name = typeof first.name === 'string' ? first.name : '';
+    const index = first.data?.sourceRowIndex;
+    const row = typeof index === 'number' && Number.isInteger(index) ? rows[index] : undefined;
+    if (!row) return `${name}: ${String(first.data?.delta ?? '')}`;
+    const title = detail.titleType === 'primaryValue' ? name : fieldName(model.dimensions[0] ?? measure, model.formatting);
+    const lines = [richTextEscape(title)];
+    for (const field of fields) {
+      if (detail.hiddenFields.includes(field.id)) continue;
+      lines.push(line(field, cell(row, field)));
+    }
+    for (const extra of extras) {
       const name = extra.label ?? fieldName(extra.field, model.formatting);
       const label = detail.aggregations ? `${TOOLTIP_AGGREGATION_WORD[extra.aggregation]} of ${name}` : name;
       lines.push(`${richTextEscape(label)}: ${richTextEscape(displayCell(cell(row, extra.field)))}`);

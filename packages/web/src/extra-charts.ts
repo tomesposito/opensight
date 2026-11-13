@@ -97,12 +97,16 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
     const assist: number[] = [];
     const axisNames: string[] = [];
     let running = 0;
-    const pushBar = (name: string, base: number, height: number, delta: number, color: string) => {
+    // Detailed tooltips resolve a bar back to its result row; only bars that are
+    // exactly one row carry an index (treemap/wordCloud precedent). Subtotal,
+    // Other and Total bars aggregate rows and keep the basic tooltip.
+    const detailed = model.tooltipDetail?.type === 'detailed';
+    const pushBar = (name: string, base: number, height: number, delta: number, color: string, sourceRowIndex?: number) => {
       assist.push(base); axisNames.push(name);
-      return { name, value: height, delta, itemStyle: { color } };
+      return { name, value: height, delta, itemStyle: { color }, ...(detailed && sourceRowIndex !== undefined ? { sourceRowIndex } : {}) };
     };
     const finite = (value: number) => { if (!Number.isFinite(value)) fail('WATERFALL_TOTAL_OVERFLOW: running totals must be finite'); };
-    let data: { name: string; value: number; delta: number; itemStyle: { color: string } }[];
+    let data: { name: string; value: number; delta: number; itemStyle: { color: string }; sourceRowIndex?: number }[];
     if (!model.breakdown) {
       // Deliberate OpenSight semantics: start at zero, retain supplied (or explicit
       // field-sort) order, and append one Total. Native starting values,
@@ -113,7 +117,7 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
         const previous = running;
         running += delta;
         finite(running);
-        const bar = pushBar(names[i]!, Math.min(previous, running), Math.abs(delta), delta, delta < 0 ? '#d64545' : '#2e8b57');
+        const bar = pushBar(names[i]!, Math.min(previous, running), Math.abs(delta), delta, delta < 0 ? '#d64545' : '#2e8b57', i);
         return bar;
       });
       if (rows.length) {
@@ -134,14 +138,17 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
       const breakdownOrder: string[] = [];
       const seenBreakdown = new Set<string>();
       const deltaOf = new Map<string, number>();
-      for (const row of rows) {
+      const rowIndexOf = new Map<string, number>();
+      rows.forEach((row, rowIndex) => {
         const c = label(cell(row, category)), b = label(cell(row, breakdown));
         if (!catIndex.has(c)) { catIndex.set(c, categories.length); categories.push(c); }
         if (!seenBreakdown.has(b)) { seenBreakdown.add(b); breakdownOrder.push(b); }
         const delta = number(row, measure);
         if (delta === null) fail('WATERFALL_VALUE_INVALID: deltas must be finite, non-null numbers');
-        deltaOf.set(JSON.stringify([c, b]), delta);
-      }
+        const key = JSON.stringify([c, b]);
+        deltaOf.set(key, delta);
+        rowIndexOf.set(key, rowIndex);
+      });
       data = [];
       if (categories.length) {
         // BreakdownItemsLimit parity: keep the top-N breakdown values in
@@ -168,12 +175,13 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
         for (let i = 1; i < categories.length; i++) {
           const c = categories[i]!;
           for (const b of keptOrder) {
-            const delta = deltaOf.get(JSON.stringify([c, b]));
+            const key = JSON.stringify([c, b]);
+            const delta = deltaOf.get(key);
             if (delta === undefined) continue;
             const previous = running;
             running += delta;
             finite(running);
-            data.push(pushBar(b, Math.min(previous, running), Math.abs(delta), delta, delta < 0 ? '#d64545' : '#2e8b57'));
+            data.push(pushBar(b, Math.min(previous, running), Math.abs(delta), delta, delta < 0 ? '#d64545' : '#2e8b57', rowIndexOf.get(key)));
           }
           if (limit?.includeOther) {
             const rest = restDeltaFor(c);
@@ -200,7 +208,7 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
       // positive-height delta off its negative base when the total crosses zero.
       { type: 'bar', name: fieldName(measure, model.formatting), stack: 'waterfall', stackStrategy: 'all', data,
         itemStyle: { color: '#2673c9' }, barMaxWidth: 72, label: { show: model.labels, position: 'top', formatter: waterfallLabel },
-        labelLayout: { hideOverlap: true }, tooltip: { formatter: waterfallTooltip } },
+        labelLayout: { hideOverlap: true }, ...(detailed ? {} : { tooltip: { formatter: waterfallTooltip } }) },
     ];
   } else if (model.kind === 'sankey') {
     const source = model.dimensions[0], destination = model.dimensions[1], weight = model.measures[0];
