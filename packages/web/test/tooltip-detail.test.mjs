@@ -9,6 +9,7 @@ import { importBundle, exportBundle, downloadBundleBytes } from '../build/test/b
 import { parseQsBundle } from '@opensight/bundle-parser';
 import { TooltipSection } from '../build/test/TooltipEditor.js';
 import { init } from '../build/test/echarts.js';
+import basicRadarSankey from './fixtures/radar-sankey-basic.json' with { type: 'json' };
 
 const add = kind => authorReducer(emptyDraft(), { type: 'add', kind });
 const selected = d => activeSheet(d).visuals[0];
@@ -458,4 +459,30 @@ test('real ECharts radar parameters resolve the hovered polygon measure', () => 
     assert.equal(params.seriesIndex, 3);
     assert.equal(compiled.option.tooltip.formatter(params), 'West · profit\nA: (null)\nB: 2\nC: 3');
   } finally { chart.dispose(); }
+});
+
+
+test('radar and sankey basic/unset output matches the pre-slice options byte for byte', () => {
+  // Captured at 4c262fc4 before opening the detailed gate. Include functions,
+  // which JSON.stringify would otherwise omit, to protect basic formatters too.
+  const encode = value => JSON.stringify(value, (_, v) => typeof v === 'function' ? v.toString() : v);
+  for (const kind of ['radar', 'sankey']) {
+    const v = { ...selected(add(kind)), rows: ['region'], columns: ['category'], measures: kind === 'radar' ? ['revenue', 'profit'] : ['revenue'] };
+    const rows = [{ region: 'East', category: 'Hardware', revenue: 10, profit: 1 }, { region: 'West', category: 'Hardware', revenue: 20, profit: null }, { region: 'East', category: 'Software', revenue: 30, profit: 0 }];
+    const source = input(v, rows);
+    const config = Object.values(source.definition)[0].chartConfiguration;
+    for (const tooltip of [{ tooltipVisibility: 'VISIBLE' }, { tooltipVisibility: 'VISIBLE', selectedTooltipType: 'BASIC' }]) {
+      config.tooltip = tooltip;
+      const basic = compileVisual(source);
+      assert.equal(encode(basic.option), JSON.stringify(basicRadarSankey[kind]), kind);
+      const detailed = compileVisual(input({ ...v, tooltipType: 'detailed' }, rows));
+      assert.deepEqual(detailed.option.series.map(s => s.data), basic.option.series.map(s => s.data), 'no new datum keys');
+      if (kind === 'sankey') {
+        assert.deepEqual(detailed.option.series[0].links, basic.option.series[0].links);
+        const format = basic.option.series[0].tooltip.formatter;
+        assert.equal(format({ data: basic.option.series[0].links[0], value: 10 }), 'East → Hardware: 10');
+        assert.equal(format({ data: basic.option.series[0].data[0] }), 'East: ');
+      }
+    }
+  }
 });
