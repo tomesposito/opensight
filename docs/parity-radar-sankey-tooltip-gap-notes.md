@@ -46,5 +46,5 @@ tooltip layout gap was found. This is a content/visibility comparison, not a
 measurement of pixel fidelity or chart geometry parity.
 
 The README GIF is not regenerated under the run brief's explicit ruling:
-the tour never opens these tooltips. No GitHub issue or network request was
-made; the slice has no associated issue number.
+the tour never opens these tooltips. No GitHub issue was filed and no external network access was
+used; the slice has no associated issue number.
