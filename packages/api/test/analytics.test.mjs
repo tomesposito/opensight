@@ -214,8 +214,52 @@ test('Issue #223: Postgres eligible selection binds the integer fallback and lim
   assert.equal(selections.length, 2);
   assert.equal(selections[0].sql, selections[1].sql);
   assert.match(selections[0].sql, /COALESCE\(s.enabled, \$1\) = 1/);
-  assert.match(selections[0].sql, /LIMIT \$2/);
-  assert.deepEqual(selections.map(({ values }) => values), [[0, 3], [1, 7]]);
+  assert.match(selections[0].sql, /LIMIT \$2 OFFSET \$3/);
+  assert.deepEqual(selections.map(({ values }) => values), [[0, 3, 0], [1, 7, 0]]);
+});
+test('Issue #247: malformed oldest rows are quarantined with named reasons and never starve or reach the vendor', async () => {
+  const f = await fixture(), delivered = [];
+  const analytics = new Analytics(f.store, { enabled: true, vendorKey: 'test-only', deliveryMode: 'deferred', transport: async (_url, init) => {
+    delivered.push(JSON.parse(init.body).uuid); return { ok: true };
+  } });
+  try {
+    await f.db.transaction(async c => {
+      await c.query('INSERT INTO analytics_events (event_id, tenant_id, namespace_id, event_name, props, created_at) VALUES (?,?,?,?,?,?)',
+        ['malformed-json', f.a.tenantId, f.a.namespaceId, 'dashboard_viewed', '{not json', '2026-09-01']);
+      await c.query('INSERT INTO analytics_events (event_id, tenant_id, namespace_id, event_name, props, created_at) VALUES (?,?,?,?,?,?)',
+        ['invalid-event', f.a.tenantId, f.a.namespaceId, 'unknown_event', '{"secret":"content"}', '2026-09-02']);
+    });
+    for (const id of ['valid-a', 'valid-b']) await f.store.append({ ...f.b, id, createdAt: '2026-10-02', name: 'dashboard_viewed', props: {} }, true);
+    // Selection fills the limit with valid rows past the quarantined ones.
+    assert.deepEqual((await f.store.undeliveredEligible(1, true)).map(row => row.id), ['valid-a']);
+    assert.deepEqual((await f.store.undelivered(1)).map(row => row.id), ['valid-a']);
+    const quarantined = await f.db.transaction(c => c.query('SELECT event_id, quarantine_reason, delivered_at FROM analytics_events WHERE quarantine_reason IS NOT NULL ORDER BY event_id'));
+    assert.deepEqual(quarantined.map(r => [r.event_id, r.quarantine_reason, r.delivered_at]), [
+      ['invalid-event', 'ANALYTICS_EVENT_INVALID', null],
+      ['malformed-json', 'ANALYTICS_EVENT_PROPS_MALFORMED', null],
+    ]);
+    // Repeated drains deliver the valid rows, never transmit the malformed
+    // events, and make no further progress once only quarantined rows remain.
+    assert.equal(await analytics.drainDeferred(), 2);
+    assert.deepEqual(delivered, ['valid-a', 'valid-b']);
+    assert.equal(await analytics.drainDeferred(), 0);
+    assert.equal(delivered.length, 2); assert.equal(analytics.stats.failed, 0);
+    assert.deepEqual(await f.store.undelivered(100), []);
+    assert.deepEqual(await f.store.undeliveredEligible(100, true), []);
+    // Quarantined rows are excluded from the tenant's own log read as well.
+    assert.deepEqual(await f.store.read(f.metadata, f.a), []);
+  } finally { await analytics.close(); await f.db.close(); }
+});
+test('Issue #247: quarantine migration is idempotent and preserves pre-existing rows', async () => {
+  const f = await fixture();
+  try {
+    await f.store.append({ ...f.a, id: 'legacy', name: 'dashboard_viewed', props: {}, createdAt: '2026-10-01T00:00:00.000Z' }, true);
+    await f.db.transaction(c => c.query('ALTER TABLE analytics_events DROP COLUMN quarantine_reason'));
+    await initializeAnalytics(f.db); await initializeAnalytics(f.db);
+    assert.equal((await f.db.transaction(c => c.query('SELECT quarantine_reason FROM analytics_events')))[0].quarantine_reason, null);
+    assert.deepEqual((await f.store.undelivered()).map(row => row.id), ['legacy']);
+    assert.deepEqual((await f.store.read(f.metadata, f.a)).map(row => row.id), ['legacy']);
+  } finally { await f.db.close(); }
 });
 test('Issue #223: a full disabled backlog cannot starve enabled tenants and is delivered after re-enabling', async () => {
   const f = await fixture(), delivered = [];
