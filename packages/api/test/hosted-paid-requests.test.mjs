@@ -211,7 +211,8 @@ test('241 schema migrates old trial/Stripe sources, is idempotent, and enforces 
     await c.query("INSERT INTO h9_billing (tenant_id, tier, updated_at) VALUES ('tenant-two', 'regular', ?)", [new Date(f.clock()).toISOString()]);
   });
   // Run the PostgreSQL introspection branch against the local database too.
-  const db = { dialect: 'postgres', transaction: work => f.db.transaction(c => work({ query: (sql, args) => c.query(sql.startsWith('SELECT column_name AS name') ? 'PRAGMA table_info(h9_billing)' : sql, args) })) };
+  const db = { dialect: 'postgres', transaction: work => f.db.transaction(c => work({ query: (sql, args) => c.query(sql.startsWith('SELECT column_name AS name')
+    ? `PRAGMA table_info(${sql.includes("'h9_billing_operations'") ? 'h9_billing_operations' : 'h9_billing'})` : sql, args) })) };
   await initializeBilling(db); await initializeBilling(f.db);
   assert.equal((await f.billing.state('tenant-one')).entitlementSource, 'trial'); assert.equal((await f.billing.state('tenant-two')).entitlementSource, 'stripe');
   await f.ask();
