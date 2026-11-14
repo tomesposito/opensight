@@ -39,6 +39,44 @@ TypeScript and embed builds. Log:
 `.opensight/insight-forecast/verification/demo-build.log`.
 This is a rebuilt local static demo, not a deployed server.
 
+## Full-suite acceptance
+
+The final repository-root `npm test` exited **0** on 2026-11-14:
+**5,135 passed / 0 failed / 36 skipped / 0 cancelled** (5,171 tests,
+including the Python SDK). All skips require live PostgreSQL: 35 require
+`DATABASE_URL`, and one requires the live TLS PostgreSQL configuration.
+No other tests were skipped, and no assertions or timing limits were weakened.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 1,294 | 0 | 34 |
+| Bundle parser | 201 | 0 | 0 |
+| CLI | 73 | 0 | 0 |
+| Embedding SDK | 10 | 0 | 0 |
+| Headless SDK | 28 | 0 | 0 |
+| Python SDK | 32 | 0 | 0 |
+| MCP server | 74 | 0 | 0 |
+| O interpreter | 42 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 619 | 0 | 2 |
+| Web | 2,641 | 0 | 0 |
+| Root conformance and site checks | 110 | 0 | 0 |
+| **Total** | **5,135** | **0** | **36** |
+
+The run set `OPENSIGHT_CHROMIUM` to the installed Playwright headless Chromium,
+as supported by the existing browser-test helper. Two earlier attempts stopped:
+the first hit an existing H4 load-test failure while other build/test jobs were
+competing for CPU; the second reached web tests but omitted the browser override,
+so the environment's default Chromium could not start. The final run used the
+verified browser after the competing jobs finished. Both failures were resolved
+without changing those tests.
+
+Evidence is retained in `.opensight/insight-forecast/verification/`:
+`root-npm-test.log`, `root-npm-test.exit`, `test-summary.json`, and the prior
+attempt logs. The final demo checksum matches the captured artifact. All work
+remains on `work/parity-insight-forecast`; master is still `5c32e94b`. There was
+no merge or push, no new dependency, and no change to `SOLUTION_DESIGN.md`.
+
 ## Static demo and screenshots
 
 The updated Insight browser tour passed **15 captures, 0 page errors and 0 external
