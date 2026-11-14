@@ -27,11 +27,34 @@ JSON remains available for unchanged export, including blocked features.
 | TopBottomRanked | TOP or BOTTOM categories with values. ResultSize defaults to 3 and accepts 1–20. |
 | GrowthRate / PeriodOverPeriod | Latest date period versus the preceding calendar period at the bound DAY, MONTH, QUARTER or YEAR grain. Growth PeriodSize is limited to 2. |
 | MetricComparison | Aggregate FromValue minus aggregate TargetValue, plus percent difference. Requires two distinct bound measures. |
+| Forecast | Statistical forecast of the bound measure, using the shared chart exponential-smoothing engine. Requires a date dimension; reports the forward horizon at its grain, final projected period/value and prediction-interval range. |
 
 With no explicit computations, the summary includes total, highest and lowest
 contributors, plus a period comparison for date fields and a metric comparison
 when two measures are bound. The Properties panel can select a total, ranked
-list, growth, period or metric comparison and configure rank count and decimals.
+list, growth, period, forecast or metric comparison and configure rank count and decimals.
+
+Forecast computations accept `computationId`, optional `name`, `time`, `value`
+and `forecastProperties` in the internal camelCase form. Native API imports use
+`Forecast` / `ForecastProperties` with PascalCase keys. Properties follow the
+chart rules: `periodsForward` and `periodsBackward` are integers 0–100 (defaults
+3 and 0); `predictionInterval` is 80, 90 or 95 (default 95); `seasonality` is
+AUTOMATIC, NONE or CUSTOM (default AUTOMATIC). CUSTOM requires an integer
+`customSeasonalityValue` from 2–366; as on charts, it is unused for other modes.
+Optional finite `lowerBoundary` and `upperBoundary` are passed to the engine,
+with lower no greater than upper. Unknown properties and malformed shapes fail
+closed. Backward periods are validated and retained but do not change the sentence.
+
+Forecast histories use the same date decoder as period comparisons and are
+ordered chronologically. Null measure values are skipped by the shared engine;
+missing calendar periods are not filled. The projected horizon starts after the
+latest supplied period, including a trailing null group, as on charts. Duplicate
+decoded periods fail with `INSIGHT_VALUE_INVALID`. Fewer than four usable points,
+a zero forward horizon, or an unavailable engine result produces an honest
+unavailable line with no invented computed values. Empty results retain the
+common empty state. Boundaries and seasonal-history fallback follow the shared
+[forecast engine](forecasting.md). Sentence composition is OpenSight's;
+QuickSight's exact narrative wording and proprietary forecasting are not replicated.
 
 Period comparisons use UTC calendar arithmetic shared with query expressions.
 The shared decoder accepts query labels (`YYYY`, `YYYY-Qn`, `YYYY-MM`,
@@ -57,14 +80,13 @@ ECharts rich-text templates.
 
 ## Unsupported features and errors
 
-Forecast and anomaly computations are unsupported. All native custom-narrative
+Anomaly computations are unsupported. All native custom-narrative
 templates are currently unsupported, including placeholders referencing forecasts
 or other unsupported computations. No template HTML is evaluated. PeriodToDate,
 TopBottomMovers, UniqueValues and future computation variants cannot execute.
 Native interactions and additional options also fail closed.
 
-Named diagnostics include `INSIGHT_FORECAST_UNSUPPORTED`,
-`INSIGHT_ANOMALY_UNSUPPORTED`, `INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED`,
+Named diagnostics include `INSIGHT_ANOMALY_UNSUPPORTED`, `INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED`,
 `INSIGHT_TIME_REQUIRED`, `INSIGHT_CATEGORY_REQUIRED`, `INSIGHT_VALUES_REQUIRED`,
 `INSIGHT_FIELD_UNBOUND`, `INSIGHT_PERIOD_UNSUPPORTED`, `INSIGHT_VALUE_INVALID`,
 `INSIGHT_COMPUTATION_INVALID` and `INSIGHT_CONFIGURATION_UNSUPPORTED`.

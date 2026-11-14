@@ -9,16 +9,18 @@ import { activeSheet, authorReducer, emptyDraft, serializeDraft } from '../build
 const { chromium } = createRequire(resolve(process.env.OPENSIGHT_SCREENSHOT_TOOLS ?? '/home/hatch/workspace/tools/screenshots', 'package.json'))('playwright-core');
 const output = resolve(process.env.OPENSIGHT_SCREENSHOT_OUTPUT ?? '.opensight/insight/browser');
 await mkdir(output, { recursive: true });
-const browser = await chromium.launch({ executablePath: '/opt/meta-chromium/chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await chromium.launch({ executablePath: process.env.OPENSIGHT_CHROMIUM ?? '/opt/meta-chromium/chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const errors = [], external = [], captures = [];
 async function open(url) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, reducedMotion: 'reduce' });
   const page = await context.newPage();
+  page.setDefaultTimeout(10000);
   page.on('pageerror', e => errors.push(e.message));
   await page.route(/^https?:/, route => { external.push(route.request().url()); return route.abort(); });
   await page.goto(url, { waitUntil: 'networkidle' }); await page.locator('.chart svg').first().waitFor(); return page;
 }
 async function capture(page, name) {
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: resolve(output, `${name}.png`), fullPage: true }); captures.push(name);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${name}: overflow`);
@@ -26,6 +28,8 @@ async function capture(page, name) {
 async function baseline(page, prefix) {
   await capture(page, `${prefix}-home`); await navigate(page, 'author'); await capture(page, `${prefix}-author-empty`);
   await page.locator('.build-panel').getByRole('button', { name: 'Add visual', exact: true }).click();
+  await page.getByRole('button', { name: 'Assign region', exact: true }).click();
+  await page.getByRole('button', { name: 'Assign revenue', exact: true }).click();
   await page.locator('.author-card .chart svg').waitFor(); await capture(page, `${prefix}-author`);
 }
 try {
@@ -38,6 +42,8 @@ try {
   await page.getByRole('button', { name: 'Remove Visual 1', exact: true }).click();
   await page.getByRole('button', { name: 'Insight', exact: true }).click();
   await page.locator('.build-panel').getByRole('button', { name: 'Add visual', exact: true }).click();
+  await page.getByLabel('Assign Category', { exact: true }).selectOption('region');
+  await page.getByLabel('Assign Values', { exact: true }).selectOption('revenue');
   await page.getByLabel('Analysis title', { exact: true }).fill('Insight analysis');
   assert.match(await page.locator('.fixture-notice').innerText(), /insight narratives recompute pinned synthetic sales/);
   const closed = page.locator('.properties-panel:not([open]) > summary'); if (await closed.count()) await closed.click();
@@ -62,6 +68,12 @@ try {
   await capture(page, 'insight-period');
   await page.getByLabel('NEW LOOK', { exact: true }).selectOption('dark'); await capture(page, 'insight-dark');
   await page.getByLabel('NEW LOOK', { exact: true }).selectOption('light');
+  await page.getByLabel('Narrative computation', { exact: true }).selectOption('forecast');
+  await page.getByLabel('Title', { exact: true }).fill('Statistical revenue forecast');
+  assert.match(await chart.getAttribute('aria-label'), /Statistical forecast for revenue: unavailable \(at least 4 usable data points required\)/);
+  await capture(page, 'insight-forecast');
+  await page.getByLabel('NEW LOOK', { exact: true }).selectOption('dark'); await capture(page, 'insight-forecast-dark');
+  await page.getByLabel('NEW LOOK', { exact: true }).selectOption('light');
   await page.getByLabel('Narrative computation', { exact: true }).selectOption('summary');
   await page.getByRole('button', { name: 'Remove order_date from Category', exact: true }).click();
   await page.getByText(/INSIGHT_CATEGORY_REQUIRED/).first().waitFor(); await capture(page, 'insight-category-required');
@@ -72,15 +84,15 @@ try {
   await chart.locator('svg').waitFor();
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   const draft = authorReducer(emptyDraft(), { type: 'add', kind: 'insight' });
-  activeSheet(draft).visuals[0].title = 'Unsupported forecast computation';
+  activeSheet(draft).visuals[0].title = 'Forecast requires a date dimension';
   const resource = serializeDraft(draft);
   resource.definition.sheets[0].visuals[0].insightVisual.insightConfiguration = { computations: [{ forecast: { computationId: 'forecast' } }] };
   await page.getByText('Import bundle', { exact: true }).click();
   await page.getByLabel('Import .qs or bundle JSON', { exact: true }).setInputFiles({ name: 'insight-unsupported.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(resource)) });
   const report = page.getByRole('dialog', { name: 'Bundle import report', exact: true }); await report.waitFor();
-  assert.match(await report.innerText(), /CompileError.*INSIGHT_FORECAST_UNSUPPORTED/); await capture(page, 'insight-import-report');
+  assert.match(await report.innerText(), /CompileError.*INSIGHT_TIME_REQUIRED/); await capture(page, 'insight-import-report');
   await page.getByRole('button', { name: 'Close import report', exact: true }).click();
-  assert.match(await page.locator('.bundle-placeholder').innerText(), /INSIGHT_FORECAST_UNSUPPORTED/);
+  assert.match(await page.locator('.bundle-placeholder').innerText(), /INSIGHT_TIME_REQUIRED/);
   assert.equal(await page.locator('.author-card .chart svg').count(), 0); await capture(page, 'insight-import-blocked');
   assert.deepEqual(errors, []); assert.deepEqual(external, []);
   const summary = { captures, pageErrors: errors.length, externalRequests: external.length };

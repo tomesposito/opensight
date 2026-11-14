@@ -3,6 +3,7 @@ import type { Cell, Field } from './model.js';
 import type { VisualFormatting } from './formatting.js';
 import { fieldName } from './formatting.js';
 import { insightFail, normalizeInsight } from './insight-configuration.js';
+import { computeForecast, MIN_FORECAST_POINTS } from './forecast.js';
 export { InsightError } from './insight-configuration.js';
 
 export interface NarrativePart { text: string; value?: number }
@@ -23,13 +24,23 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
   };
   const label = (c: Cell) => c === null ? '(null)' : String(c);
   for (const r of rows) if (r.values.length !== input.measures.length || r.values.some(n => n !== null && (typeof n !== 'number' || !Number.isFinite(n)))) insightFail('INSIGHT_VALUE_INVALID', 'each measure must be a finite number or null');
-  if (new Set(rows.map(r => JSON.stringify(r.category))).size !== rows.length) insightFail('INSIGHT_CATEGORY_INVALID', 'expected unique aggregated categories');
+  const duplicateCode = requests.some(r => r.kind === 'forecast') ? 'INSIGHT_VALUE_INVALID' : 'INSIGHT_CATEGORY_INVALID';
+  if (new Set(rows.map(r => JSON.stringify(r.category))).size !== rows.length) insightFail(duplicateCode, 'expected unique aggregated categories');
+  const datedRows = () => {
+    const dated = rows.map(row => {
+      const date = groupedPeriodDate(row.category, input.category!.dateGranularity!);
+      if (!date) return insightFail('INSIGHT_TIME_REQUIRED', 'invalid date/time category for the bound grain');
+      return { row, date };
+    }).sort((a, b) => a.date.getTime() - b.date.getTime());
+    if (new Set(dated.map(r => r.date.getTime())).size !== dated.length) insightFail(duplicateCode, 'duplicate date/time periods');
+    return dated;
+  };
   const sum = (index: number): number | null => {
     try { return aggregateValue('sum', rows.map(r => r.values[index]!)) as number | null; }
     catch { return insightFail('INSIGHT_VALUE_INVALID', 'nonfinite total'); }
   };
   const paragraphs = rows.length ? requests.map(request => {
-    const name = fieldName(input.measures[request.measure]!, input.formatting), total = sum(request.measure);
+    const name = fieldName(input.measures[request.measure]!, input.formatting), total = request.kind === 'forecast' ? null : sum(request.measure);
     const numeric = rows.filter(r => r.values[request.measure] !== null);
     let parts: NarrativePart[];
     if (request.kind === 'totalAggregation') {
@@ -56,13 +67,26 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
     } else if (request.kind === 'metricComparison') {
       const target = sum(request.target!), targetName = fieldName(input.measures[request.target!]!, input.formatting);
       parts = [text(`${name} vs ${targetName}: `), value(total), text(' vs '), value(target), text('; difference '), value(total === null || target === null ? null : total - target), text(' ('), value(relativeDifference(total, target, true), true), text(').')];
+    } else if (request.kind === 'forecast') {
+      const dated = datedRows(), grain = input.category!.dateGranularity!, config = request.forecast;
+      const result = numeric.length >= MIN_FORECAST_POINTS && config.periodsForward > 0
+        ? computeForecast(dated.map(r => r.row.values[request.measure]!), grain, config) : null;
+      const final = result?.future.at(-1);
+      if (!final) {
+        const reason = config.periodsForward === 0 ? 'no future periods requested'
+          : numeric.length < MIN_FORECAST_POINTS ? `at least ${MIN_FORECAST_POINTS} usable data points required` : 'forecast could not be computed';
+        parts = [text(`Statistical forecast for ${name}: unavailable (${reason}).`)];
+      }
+      else {
+        const date = resultDate(shiftDate(dated.at(-1)!.date.toISOString(), config.periodsForward, { DAY: 'DD', MONTH: 'MM', QUARTER: 'Q', YEAR: 'YYYY' }[grain]));
+        const iso = date.toISOString();
+        const period = grain === 'YEAR' ? iso.slice(0, 4) : grain === 'MONTH' ? iso.slice(0, 7)
+          : grain === 'QUARTER' ? `${iso.slice(0, 4)}-Q${Math.floor(date.getUTCMonth() / 3) + 1}` : iso.slice(0, 10);
+        parts = [text(`Statistical forecast for ${name} in ${config.periodsForward} ${grain.toLowerCase()}${config.periodsForward === 1 ? '' : 's'} (${period}): `),
+          value(final.value), text(`; ${config.predictionInterval}% prediction interval `), value(final.lower), text('–'), value(final.upper), text('.')];
+      }
     } else {
-      const dated = rows.map(row => {
-        const date = groupedPeriodDate(row.category, input.category!.dateGranularity!);
-        if (!date) return insightFail('INSIGHT_TIME_REQUIRED', 'invalid date/time category for the bound grain');
-        return { row, date };
-      }).sort((a, b) => a.date.getTime() - b.date.getTime());
-      if (new Set(dated.map(r => r.date.getTime())).size !== dated.length) insightFail('INSIGHT_CATEGORY_INVALID', 'duplicate date/time periods');
+      const dated = datedRows();
       const latest = dated.at(-1)!;
       const grain = input.category!.dateGranularity!;
       const previousDate = resultDate(shiftDate(latest.date.toISOString(), -1, { DAY: 'DD', MONTH: 'MM', QUARTER: 'Q', YEAR: 'YYYY' }[grain]));
