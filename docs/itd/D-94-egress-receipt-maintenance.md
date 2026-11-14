@@ -95,3 +95,18 @@ backup/version/digest and migration plan unchanged. Require the same quiescent
 phase, unchanged old runtime/configuration, zero admission and exact held-table
 fingerprints. This is a recorded verifier correction; it does not waive or skip
 preservation, widen runtime privileges, modify billing, or restore data.
+
+
+#### Activation evidence
+
+The registered transition activated the attested
+[`84feca11` release](https://github.com/tomesposito/opensight/releases/tag/build-84feca111d3550a2f59161fb3ce32dae56b2688c).
+The full repository test rerun passed 5,195 Node checks with no failures and one
+TLS PostgreSQL integration skip; the Python SDK passed 32 checks separately.
+All 10 corrected maintenance/registry tests and 160 live edge-engine probes passed.
+Hosted acceptance verified authentication, uploads, queries, authoring, publication,
+retry behavior, tenant isolation and public pages. The final independent audit
+confirmed ready runtimes, enabled queue mappings, preserved recovery history and
+removal of the operation lock, watchdog and temporary maintenance authority.
+Runtime configuration and Stripe mode were unchanged. Private plans, snapshots,
+credentials, resource identifiers and runner evidence remain outside the repository.
