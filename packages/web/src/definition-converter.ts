@@ -128,6 +128,7 @@ const visualBody: Schema = {
     Computations: ['computations', Object.fromEntries(['TotalAggregation', 'MaximumMinimum', 'TopBottomRanked', 'GrowthRate', 'PeriodOverPeriod', 'MetricComparison', 'Forecast', 'PeriodToDate', 'TopBottomMovers', 'UniqueValues'].map(name => [name, [name[0]!.toLowerCase() + name.slice(1), {
       ...members('ComputationId Name Type ResultSize PeriodSize PeriodsForward PeriodsBackward PredictionInterval Seasonality CustomSeasonalityValue LowerBoundary UpperBoundary'),
       ...(name === 'Forecast' ? { ForecastProperties: ['forecastProperties', members('PeriodsForward PeriodsBackward PredictionInterval Seasonality CustomSeasonalityValue LowerBoundary UpperBoundary')] as Rule } : {}),
+      ...(name === 'PeriodToDate' ? members('PeriodTimeGranularity') : {}),
       Time: ['time', dimension], Category: ['category', dimension], Value: ['value', measure], FromValue: ['fromValue', measure], TargetValue: ['targetValue', measure],
     }] as Rule]))],
   }],

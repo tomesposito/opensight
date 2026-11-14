@@ -24,7 +24,7 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
   };
   const label = (c: Cell) => c === null ? '(null)' : String(c);
   for (const r of rows) if (r.values.length !== input.measures.length || r.values.some(n => n !== null && (typeof n !== 'number' || !Number.isFinite(n)))) insightFail('INSIGHT_VALUE_INVALID', 'each measure must be a finite number or null');
-  const duplicateCode = requests.some(r => r.kind === 'forecast') ? 'INSIGHT_VALUE_INVALID' : 'INSIGHT_CATEGORY_INVALID';
+  const duplicateCode = requests.some(r => r.kind === 'forecast' || r.kind === 'periodToDate') ? 'INSIGHT_VALUE_INVALID' : 'INSIGHT_CATEGORY_INVALID';
   if (new Set(rows.map(r => JSON.stringify(r.category))).size !== rows.length) insightFail(duplicateCode, 'expected unique aggregated categories');
   const datedRows = () => {
     const dated = rows.map(row => {
@@ -35,12 +35,12 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
     if (new Set(dated.map(r => r.date.getTime())).size !== dated.length) insightFail(duplicateCode, 'duplicate date/time periods');
     return dated;
   };
-  const sum = (index: number): number | null => {
-    try { return aggregateValue('sum', rows.map(r => r.values[index]!)) as number | null; }
+  const sum = (index: number, groups = rows): number | null => {
+    try { return aggregateValue('sum', groups.map(r => r.values[index]!)) as number | null; }
     catch { return insightFail('INSIGHT_VALUE_INVALID', 'nonfinite total'); }
   };
-  const paragraphs = rows.length ? requests.map(request => {
-    const name = fieldName(input.measures[request.measure]!, input.formatting), total = request.kind === 'forecast' ? null : sum(request.measure);
+  const paragraphs = requests.filter(request => rows.length || request.kind === 'periodToDate').map(request => {
+    const name = fieldName(input.measures[request.measure]!, input.formatting), total = request.kind === 'forecast' || request.kind === 'periodToDate' ? null : sum(request.measure);
     const numeric = rows.filter(r => r.values[request.measure] !== null);
     let parts: NarrativePart[];
     if (request.kind === 'totalAggregation') {
@@ -67,6 +67,24 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
     } else if (request.kind === 'metricComparison') {
       const target = sum(request.target!), targetName = fieldName(input.measures[request.target!]!, input.formatting);
       parts = [text(`${name} vs ${targetName}: `), value(total), text(' vs '), value(target), text('; difference '), value(total === null || target === null ? null : total - target), text(' ('), value(relativeDifference(total, target, true), true), text(').')];
+    } else if (request.kind === 'periodToDate') {
+      const dated = datedRows(), latest = dated.at(-1), grain = request.periodTimeGranularity;
+      const grains = ['DAY', 'MONTH', 'QUARTER', 'YEAR'];
+      if (!latest) parts = [text(`Period-to-date ${name}: unavailable (no dated rows).`)];
+      else if (grains.indexOf(grain) < grains.indexOf(input.category!.dateGranularity!)) {
+        parts = [text(`Period-to-date ${name}: unavailable (${grain} is finer than the bound ${input.category!.dateGranularity!} grain).`)];
+      } else {
+        const start = groupedPeriodDate(latest.date.toISOString(), grain)!;
+        const next = resultDate(shiftDate(start.toISOString(), 1, { DAY: 'DD', MONTH: 'MM', QUARTER: 'Q', YEAR: 'YYYY' }[grain]));
+        const groups = dated.filter(r => r.date >= start && r.date < next).map(r => r.row);
+        const periodTotal = sum(request.measure, groups), iso = start.toISOString();
+        const period = grain === 'YEAR' ? iso.slice(0, 4) : grain === 'MONTH' ? iso.slice(0, 7)
+          : grain === 'QUARTER' ? `${iso.slice(0, 4)}-Q${Math.floor(start.getUTCMonth() / 3) + 1}` : iso.slice(0, 10);
+        parts = [text(`Period-to-date ${name} for ${period} (${grain}): `),
+          ...(periodTotal === null ? [text('unavailable (no non-null values in the period)')] : [value(periodTotal)]), text('.')];
+        const nulls = groups.filter(r => r.values[request.measure] === null).length;
+        if (nulls) parts.push(text(` ${nulls} null group${nulls === 1 ? '' : 's'} excluded.`));
+      }
     } else if (request.kind === 'forecast') {
       const dated = datedRows(), grain = input.category!.dateGranularity!, config = request.forecast;
       const result = numeric.length >= MIN_FORECAST_POINTS && config.periodsForward > 0
@@ -100,6 +118,6 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
     const nulls = rows.length - numeric.length;
     if (nulls && ['totalAggregation', 'maximumMinimum', 'topBottomRanked'].includes(request.kind)) parts.push(text(` ${nulls} null group${nulls === 1 ? '' : 's'} excluded.`));
     return { id: request.id, parts };
-  }) : [];
+  });
   return { paragraphs, text: paragraphs.map(p => p.parts.map(part => part.text).join('')).join('\n\n') };
 }

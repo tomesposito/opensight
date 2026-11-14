@@ -13,12 +13,19 @@ export function insightObject(value: unknown): Obj {
 const allowed = (value: Obj, names: string[]) => {
   for (const name of Object.keys(value)) if (!names.includes(name)) insightFail('INSIGHT_CONFIGURATION_UNSUPPORTED', `unsupported property ${name}`);
 };
-const variants = ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison', 'forecast'] as const;
+const variants = ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison', 'forecast', 'periodToDate'] as const;
 type Kind = typeof variants[number];
 export type InsightRequest = { id: string; measure: number } & (
-  { kind: Exclude<Kind, 'forecast'>; target?: number; type?: string; size?: number }
+  { kind: Exclude<Kind, 'forecast' | 'periodToDate'>; target?: number; type?: string; size?: number }
   | { kind: 'forecast'; forecast: ForecastConfig }
+  | { kind: 'periodToDate'; periodTimeGranularity: NonNullable<Field['dateGranularity']> }
 );
+
+function periodTimeGranularity(value: unknown): NonNullable<Field['dateGranularity']> | undefined {
+  if (value === undefined) return;
+  if (value === 'DAY' || value === 'MONTH' || value === 'QUARTER' || value === 'YEAR') return value;
+  return insightFail('INSIGHT_COMPUTATION_INVALID', 'periodTimeGranularity must be DAY, MONTH, QUARTER or YEAR');
+}
 
 /** Native ForecastProperties follows the chart forecast configuration contract. */
 function forecastProperties(value: unknown): ForecastConfig {
@@ -55,14 +62,17 @@ function computations(config: unknown): [Kind, Obj][] | undefined {
     if (/anomaly/i.test(kind)) insightFail('INSIGHT_ANOMALY_UNSUPPORTED', 'anomaly computations are not supported');
     if (!variants.includes(kind as Kind)) insightFail('INSIGHT_COMPUTATION_UNSUPPORTED', `unsupported computation ${kind}`);
     if (kind === 'forecast' && (!value || typeof value !== 'object' || Array.isArray(value))) insightFail('INSIGHT_COMPUTATION_INVALID', 'forecast must be an object');
+    if (kind === 'periodToDate' && (!value || typeof value !== 'object' || Array.isArray(value))) insightFail('INSIGHT_COMPUTATION_INVALID', 'periodToDate must be an object');
     const body = insightObject(value);
     if (typeof body.computationId !== 'string' || !/^[\w-]{1,512}$/.test(body.computationId)) insightFail('INSIGHT_COMPUTATION_INVALID', 'a computationId is required');
     if (body.name !== undefined && typeof body.name !== 'string') insightFail('INSIGHT_COMPUTATION_INVALID', 'name must be a string');
     const specific = kind === 'totalAggregation' ? ['value'] : kind === 'maximumMinimum' ? ['time', 'value', 'type']
       : kind === 'topBottomRanked' ? ['category', 'value', 'type', 'resultSize'] : kind === 'metricComparison' ? ['time', 'fromValue', 'targetValue']
-      : kind === 'growthRate' ? ['time', 'value', 'periodSize'] : kind === 'forecast' ? ['time', 'value', 'forecastProperties'] : ['time', 'value'];
+      : kind === 'growthRate' ? ['time', 'value', 'periodSize'] : kind === 'forecast' ? ['time', 'value', 'forecastProperties']
+      : kind === 'periodToDate' ? ['time', 'value', 'periodTimeGranularity'] : ['time', 'value'];
     allowed(body, ['computationId', 'name', ...specific]);
     if (kind === 'forecast') forecastProperties(body.forecastProperties);
+    if (kind === 'periodToDate') periodTimeGranularity(body.periodTimeGranularity);
     return [kind as Kind, body];
   });
 }
@@ -121,6 +131,11 @@ export function normalizeInsight(config: unknown, dimensions: Field[], measures:
     if (kind === 'forecast') {
       if (!dimensions[0]!.dateGranularity) insightFail('INSIGHT_TIME_REQUIRED', 'forecast computations require a date/time dimension');
       return { kind, id, measure, forecast: forecastProperties(c.forecastProperties) };
+    }
+    if (kind === 'periodToDate') {
+      const grain = dimensions[0]!.dateGranularity;
+      if (!grain) return insightFail('INSIGHT_TIME_REQUIRED', 'period computations require a date/time dimension');
+      return { kind, id, measure, periodTimeGranularity: periodTimeGranularity(c.periodTimeGranularity) ?? grain };
     }
     if (kind === 'growthRate' || kind === 'periodOverPeriod') {
       if (!dimensions[0]!.dateGranularity) insightFail('INSIGHT_TIME_REQUIRED', 'period computations require a date/time dimension');

@@ -130,3 +130,35 @@ test('forecast authoring option dispatches the preset and round-trips through no
   const html = renderToStaticMarkup(createElement(AuthorCanvas, { draft: imported, dispatch() {} }));
   assert.match(html, /value="forecast" selected=""/);
 });
+
+test('period-to-date authoring preset dispatches, serializes and round-trips with the bound-grain default', async t => {
+  const oldWindow = globalThis.window, oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
+  globalThis.window = { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) };
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let renderer, action;
+  let draft = authorReducer(add(), { type: 'assign', field: 'order_date', well: 'dimension' });
+  t.after(async () => { if (renderer) await act(() => renderer.unmount()); globalThis.window = oldWindow; globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
+  await act(() => { renderer = create(createElement(AuthorCanvas, { draft, dispatch: a => { action = a; } })); });
+  const select = renderer.root.findByProps({ 'aria-label': 'Narrative computation' });
+  assert.equal(select.findAllByType('option').find(n => n.props.value === 'periodToDate').props.children, 'Period to date (date required)');
+  await act(() => select.props.onChange({ target: { value: 'periodToDate' } }));
+  const configuration = { computations: [{ periodToDate: { computationId: 'periodToDate' } }] };
+  assert.deepEqual(action, { type: 'insight', configuration });
+  draft = authorReducer(draft, action); validateDraft(draft);
+  assert.deepEqual(serializeVisual(visual(draft)).insightVisual.insightConfiguration, configuration);
+  const model = compile(draft).model;
+  assert.deepEqual(normalizeInsight(model.insightConfiguration, model.dimensions, model.measures), [{ kind: 'periodToDate', id: 'periodToDate', measure: 0, periodTimeGranularity: 'MONTH' }]);
+  const bundle = bundleOf(serializeDraft(draft)), imported = importBundle(bundle);
+  assert.deepEqual(visual(imported).imported.issues, []);
+  assert.deepEqual(visual(imported).insightConfiguration, configuration);
+  assert.deepEqual(exportBundle(imported), bundle);
+  const html = renderToStaticMarkup(createElement(AuthorCanvas, { draft: imported, dispatch() {} }));
+  assert.match(html, /value="periodToDate" selected=""/);
+
+  // Selecting the same preset on a categorical insight keeps the existing honest error state.
+  const categorical = authorReducer(add(), action); validateDraft(categorical);
+  assert.doesNotThrow(() => serializeVisual(visual(categorical)));
+  assert.throws(() => compile(categorical), /INSIGHT_TIME_REQUIRED/);
+  await act(() => renderer.update(createElement(AuthorCanvas, { draft: categorical, dispatch() {} })));
+  assert.match(JSON.stringify(renderer.toJSON()), /INSIGHT_TIME_REQUIRED/);
+});
