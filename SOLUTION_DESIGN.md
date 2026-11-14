@@ -1292,6 +1292,22 @@ configuration is included. After reopening, any failure requires forward
 reconciliation so captured ideas, access requests and analytics are retained.
 See [D-92](docs/itd/D-92-ideas-analytics-maintenance.md).
 
+**Egress and AI receipt maintenance (D-94, frozen 2026-11-14):** Extend the
+fenced D-92 procedure only from the ideas inventory to that inventory plus
+`-egress-reservations-v1-ai-receipts-v1`. Add the three empty private tables
+`h8_egress_reservations`, `ai_answer_receipts`, and
+`ai_answer_receipt_reservations`, and extend the delivery-state constraint with
+`dead`. Preserve old rows, metadata, objects and cleanup schedules exactly.
+Verify private runtime grants, tenant denial, constraint validity and no runtime
+DDL. Bind exact releases, inventories, configuration and independent epoch;
+allow only the inventoried future unclaimed cleanup work. Preserve both epochs
+and registry history under complete drain, pinned registered backup, transactional
+migration, exact receipt replay and watchdog. Rehearse the deployed PostgreSQL
+shape and denial/rollback cases before promotion. Keep billing/signup configuration
+unchanged and Stripe in sandbox. After reopening, fail closed for forward
+reconciliation rather than restoring over new writes. See
+[D-94](docs/itd/D-94-egress-receipt-maintenance.md).
+
 **Access-request release packaging (frozen 2026-11-01, #176):** Include the
 marketing page's existing Apple touch icon in the bounded, attested frontend
 inventory. Verify that each local icon referenced by the marketing HTML is
