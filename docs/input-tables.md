@@ -74,9 +74,12 @@ allows roughly 26 such updates, while 64 MiB bounds the combined history;
 ordinary small entries still reach the existing count caps. Multibyte text
 and JSON escapes consume their actual serialized bytes.
 
-Single-table and audit reads clone only the requested table or its audit
-entries. List and prep paths still read the whole store, and mutations still
-clone and atomically rewrite it.
+Single-table reads clone only the requested table. Audit reads project only
+authorization metadata and namespace-visible entries: paginated reads count
+the visible entries and select the requested page before cloning, without
+cloning table rows, columns or off-page audit payloads (#245). Unpaginated
+reads still return all visible entries. List and prep paths still read the
+whole store, and mutations still clone and atomically rewrite it.
 
 ## API
 

@@ -72,6 +72,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Input-table audit history now has per-table and store-wide serialized-byte
+  budgets alongside entry-count limits, bounding retained large-text changes.
+  Paginated audit reads clone only authorization metadata and the requested
+  visible page, avoiding allocations for table rows and off-page history (#245).
+
 - Input-table row edits now require the table version the editor loaded, so
   missing or stale versions cannot silently overwrite another editor's changes.
   Rejected saves leave data, version and audit unchanged; reload and reconcile
