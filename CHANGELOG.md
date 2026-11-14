@@ -72,7 +72,7 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
-- Stripe events created in the same second now converge on the same hosted tier, subscription status and access state regardless of delivery order. Invoice, subscription and checkout ordering are separate, while older events, duplicate replays and foreign subscriptions remain fenced (#242).
+- Stripe events for the same bound subscription created in the same second now converge on the same hosted tier, subscription status and access state regardless of delivery order. Invoice, subscription and checkout ordering are separate, while older events within each domain, duplicate replays and foreign subscriptions remain fenced (#242).
 
 - Hosted migrations against Postgres no longer fail with `relation "sqlite_master" does not exist`: the runtime and serverless migration paths now pass their dialect explicitly into the auth/job schema initializers instead of reading it off a transaction connection that does not carry one, so the #233 delivery dead-letter upgrade inspects `pg_constraint` on Postgres (#240).
 
