@@ -40,10 +40,14 @@ test('compiler checks insight wells and computation errors before unavailable ro
     const source = input(null); wells(source)[slot] = values;
     assert.throws(() => compileVisual(source), e => e instanceof CompileError && e.message.includes(`INSIGHT_${code}_REQUIRED`));
   }
-  for (const [kind, code] of [['forecast', 'TIME_REQUIRED'], ['periodToDate', 'TIME_REQUIRED'], ['anomaly', 'ANOMALY_UNSUPPORTED'], ['topBottomMovers', 'COMPUTATION_UNSUPPORTED'], ['growthRate', 'TIME_REQUIRED'], ['periodOverPeriod', 'TIME_REQUIRED'], ['metricComparison', 'VALUES_REQUIRED']]) {
+  for (const [kind, code] of [['forecast', 'TIME_REQUIRED'], ['periodToDate', 'TIME_REQUIRED'], ['anomaly', 'ANOMALY_UNSUPPORTED'], ['growthRate', 'TIME_REQUIRED'], ['periodOverPeriod', 'TIME_REQUIRED'], ['metricComparison', 'VALUES_REQUIRED']]) {
     const source = input(null); body(source).insightConfiguration = { computations: [{ [kind]: { computationId: 'c' } }] };
     assert.throws(() => compileVisual(source), new RegExp(`INSIGHT_${code}`));
   }
+  // Movers are supported now, but on a single non-date dimension they fail
+  // closed with CATEGORY_REQUIRED (a Category and a Time dimension are needed).
+  const movers = input(null); body(movers).insightConfiguration = { computations: [{ topBottomMovers: { computationId: 'c', type: 'TOP' } }] };
+  assert.throws(() => compileVisual(movers), /INSIGHT_CATEGORY_REQUIRED/);
   const source = input(null); body(source).insightConfiguration = { customNarrative: { narrative: '${forecast.result}' } };
   assert.throws(() => compileVisual(source), /INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED/);
 });
