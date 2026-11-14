@@ -118,7 +118,7 @@ missing checkout origin/client support `BILLING_CHECKOUT_UNAVAILABLE` (503),
 and a bound subscription other than `canceled` or `incomplete_expired` remains
 `BILLING_SUBSCRIPTION_EXISTS` (409), including when a reusable session exists.
 
-## Event reconciliation (#211)
+## Event reconciliation (#211, #242)
 
 The verified event must include a nonnegative integer `created` timestamp
 in Unix seconds; missing or invalid timestamps return `STRIPE_EVENT_INVALID`
@@ -136,15 +136,46 @@ completion with tenant metadata (or the existing stored operator payment
 link), and `customer.subscription.created` for the already-bound customer.
 Checkout resolved only through customer lookup cannot replace a binding.
 
-The billing row stores the last applied Stripe creation time in
-`last_stripe_event_created` (`lastStripeEventCreated` in the billing response).
-Older events are recorded as `stale`. Equal timestamps use **first applied
-wins**: Stripe creation times have one-second precision and event IDs do not
-establish chronology, so another event from the same second is also `stale`.
-This deliberately retains the first committed state until a strictly newer
-eligible event arrives. Rejected or ignored events never advance this value.
+The billing row keeps independent subscription, invoice and checkout creation
+times in `stripe_ordering` (internal JSON). An event strictly older than its
+domain's watermark is `stale`; equal-second events are reconciled. The public
+`lastStripeEventCreated` remains the maximum creation time of any applied
+event, for diagnostics only. Invoice bookkeeping cannot suppress subscription
+updates, or vice versa. Rejected or ignored events advance neither value.
 The subscription check precedes ordering, so an event for a foreign
 subscription is classified as `foreign_subscription` even if it is older.
+
+Stripe timestamps have one-second precision and event IDs do not establish
+chronology. Reconciliation uses these explicit tie rules, without a Stripe
+lookup or treating delivery order as chronology:
+
+- Subscription status precedence, strongest first: `canceled`,
+  `incomplete_expired`, `unpaid`, `past_due`, `incomplete`, `trialing`, `active`.
+  Other statuses rank below these, with lexical ordering to resolve ties.
+  Access-changing subscription evidence follows the same precedence; a pause
+  wins over activation at the same second. Equal cancellation snapshots use
+  the earlier pause deadline. Incomplete and past-due events do not themselves
+  grant or revoke access.
+- Successful transitions supply tier evidence independently of status. A paid
+  checkout or an active/trialing subscription with a recognized price can
+  convert a trial (#212); invoices and incomplete/unpaid transitions cannot.
+  This evidence is retained even when a restrictive subscription status wins
+  the same-second tie: a paid tier may coexist with paused access. Newer tier
+  evidence wins; at the same second subscription evidence outranks checkout,
+  then the lower paid tier wins if successful prices conflict.
+- Invoice success wins over failure at the same second. A failed invoice
+  temporarily reports `past_due` only over an `active` subscription snapshot
+  that is strictly older. An equal/newer subscription snapshot takes priority.
+  Invoice success removes that invoice-only indication; invoices never grant
+  a tier, clear a trial deadline or restore paused access.
+- Checkout is a binding/conversion domain, not a subscription status snapshot.
+  Verified payment may grant a tier and restore access, subject to newer
+  subscription access evidence (and subscription precedence at equal seconds).
+  Replacing a different bound subscription still requires a strictly newer
+  checkout/subscription binding event than the existing binding, subscription
+  and checkout watermarks. Replacement resets the old subscription's ordering;
+  events older than the new binding remain stale. Same-binding checkout does
+  not prevent equal-second subscription or invoice reconciliation.
 
 Resolution, checks, event recording, billing writes and audit entries share
 one database transaction. PostgreSQL locks the tenant row before reading the
@@ -153,11 +184,16 @@ writes with `BEGIN IMMEDIATE`. Replayed IDs remain durable no-ops, including
 IDs previously recorded as stale, foreign or ignored. Stale and foreign events
 do not send pause notifications or entitlement-change audits.
 
-Initialization adds a nullable timestamp column to existing installations and
-is safe to repeat. Legacy rows have no ordering baseline until their first
-eligible event is applied; historical Stripe creation times were not stored
-and cannot be reconstructed from receipt times. This change preserves the
-retry-window, cancellation and shared paused-state behavior below.
+Initialization adds the nullable ordering column using the existing guarded
+column migration and is safe to repeat. Legacy rows seed each domain from the
+old global watermark and their committed billing state, conservatively
+preserving the older-event fence; the old event log lacks Stripe creation
+times and cannot recover domain history from receipt times. Equal-second
+events can still reconcile. Rows without a historical watermark preserve their
+stored billing state without rejecting any valid creation time (including zero).
+Only compact billing evidence is stored, not raw Stripe
+payloads. Reconciliation evidence survives reload and shares the billing row's
+backup and erasure lifecycle.
 
 ## Past-due behaviour (amended by #197)
 

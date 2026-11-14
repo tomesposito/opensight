@@ -130,9 +130,10 @@ test('211 ordering: older active events cannot undo cancellation, including afte
   assert.doesNotThrow(() => reloaded.assertAccess('tenant-one'));
 });
 
-test('211 ordering: an old price or invoice cannot undo an upgrade or move its watermark', async t => {
+test('211/242 ordering: older prices and invoices lose within their own domains', async t => {
   const f = await billingFixture(t); await bindActive(f);
   await f.billing.handleEvent(subscriptionEvent('evt_upgrade', { ...activeSub, items: { data: [{ price: { id: 'price_regular' } }] } }, 40));
+  await f.billing.handleEvent({ id: 'evt_latest_invoice', created: 40, type: 'invoice.paid', object: { subscription: 'sub_1' } });
   const before = await f.billing.state('tenant-one'); assert.equal(before.tier, 'regular');
   const entitlement = f.billing.tierEntitlement('tenant-one');
   for (const event of [subscriptionEvent('evt_old_tier', activeSub, 30),
@@ -144,17 +145,149 @@ test('211 ordering: an old price or invoice cannot undo an upgrade or move its w
   }
 });
 
-test('211 ordering: equal-created events keep the first applied state in either delivery order', async t => {
-  for (const firstStatus of ['active', 'unpaid']) await t.test(firstStatus, async t => {
-    const f = await billingFixture(t); await bindActive(f);
-    await f.billing.handleEvent(subscriptionEvent('evt_first', { ...activeSub, status: firstStatus }, 30));
-    const before = await f.billing.state('tenant-one');
-    const second = subscriptionEvent('evt_second', { ...activeSub, status: firstStatus === 'active' ? 'unpaid' : 'active' }, 30);
-    assert.equal((await f.billing.handleEvent(second)).action, 'stale');
-    assert.deepEqual(await f.billing.state('tenant-one'), before);
-    assert.equal(f.billing.accessPaused('tenant-one'), firstStatus === 'unpaid');
-    assert.equal((await eventOutcome(f, second.id)).outcome, 'stale');
+const entitlementState = state => ({ tier: state.tier, subscriptionStatus: state.subscriptionStatus, accessState: state.accessState });
+const pricedSub = (status, tier = 'light') => ({ ...activeSub, status, current_period_end: 1, items: { data: [{ price: { id: `price_${tier}` } }] } });
+const invoiceEvent = (type, created = 30) => ({ id: `evt_${type.replaceAll('.', '_')}`, type, created, object: { subscription: 'sub_1', customer: 'cus_1' } });
+const checkoutEvent = (tier, payment_status = 'paid', created = 30) => ({ id: `evt_checkout_${tier}_${payment_status}`, created, type: 'checkout.session.completed', object: {
+  subscription: 'sub_1', customer: 'cus_1', metadata: { tenant_id: 'tenant-one', tier }, payment_status,
+} });
+async function assertPermutations(t, events, expected, setup = bindActive) {
+  const finals = [];
+  for (const order of [events, [...events].reverse()]) {
+    const f = await billingFixture(t); await setup(f);
+    for (const event of order) {
+      // Recreate the handler between deliveries: tie evidence must be durable.
+      f.billing = new HostedBilling(f.db, billingConfig(env()), { clock: f.now, mail: f.mail, notifyTo: 'operator@example.test' });
+      await f.billing.load();
+      assert.equal((await f.billing.handleEvent(event)).handled, true, event.id);
+      assert.equal((await eventOutcome(f, event.id)).outcome, 'applied');
+    }
+    const state = await f.billing.state('tenant-one');
+    finals.push(entitlementState(state));
+    assert.deepEqual(entitlementState(state), expected);
+    assert.equal(f.billing.accessPaused('tenant-one'), expected.accessState === 'paused');
+    assert.deepEqual(f.billing.tierEntitlement('tenant-one'), billingConfig(env()).tierEntitlements[expected.tier]);
+    const audits = await readOperatorAudit(f.db, { limit: 100 });
+    const notices = f.mail.messages.length;
+    for (const event of order) assert.equal((await f.billing.handleEvent(event)).duplicate, true);
+    assert.deepEqual(await f.billing.state('tenant-one'), state);
+    assert.deepEqual(await readOperatorAudit(f.db, { limit: 100 }), audits);
+    assert.equal(f.mail.messages.length, notices);
+    assert.equal(audits.filter(e => e.action === 'billing.access.paused').length, notices);
+  }
+  assert.deepEqual(finals[0], finals[1]);
+}
+
+test('242 ordering: equal-second invoice and subscription permutations converge', async t => {
+  for (const invoice of ['invoice.paid', 'invoice.payment_succeeded', 'invoice.payment_failed']) {
+    for (const status of ['active', 'trialing', 'past_due', 'unpaid', 'canceled']) await t.test(`${invoice} + ${status}`, async t => {
+      const successful = ['active', 'trialing'].includes(status);
+      const event = subscriptionEvent('evt_subscription', pricedSub(status, 'regular'), 30);
+      if (status === 'canceled') event.type = 'customer.subscription.deleted';
+      if (status === 'trialing') event.type = 'customer.subscription.created';
+      await assertPermutations(t, [invoiceEvent(invoice), event], {
+        tier: successful ? 'regular' : 'light', subscriptionStatus: status,
+        accessState: ['unpaid', 'canceled'].includes(status) ? 'paused' : 'active',
+      });
+    });
+    await t.test(`${invoice} + reactivation`, async t => {
+      await assertPermutations(t, [invoiceEvent(invoice), subscriptionEvent('evt_reactivate', pricedSub('active', 'heavy'), 30)],
+        { tier: 'heavy', subscriptionStatus: 'active', accessState: 'active' }, async f => {
+          await bindActive(f); await f.billing.handleEvent(subscriptionEvent('evt_pause', pricedSub('unpaid'), 25));
+        });
+    });
+  }
+});
+
+test('242 ordering: equal-second subscription conflicts converge on restrictive status and verified tier evidence', async t => {
+  for (const [first, second, status, tier, accessState] of [
+    [pricedSub('active'), pricedSub('unpaid'), 'unpaid', 'light', 'paused'],
+    [pricedSub('active', 'heavy'), pricedSub('canceled'), 'canceled', 'heavy', 'paused'],
+    [pricedSub('active', 'regular'), pricedSub('incomplete'), 'incomplete', 'regular', 'active'],
+    [pricedSub('trialing', 'heavy'), pricedSub('past_due'), 'past_due', 'heavy', 'active'],
+    [pricedSub('unpaid'), pricedSub('incomplete_expired'), 'incomplete_expired', 'light', 'paused'],
+    [pricedSub('active', 'heavy'), pricedSub('active', 'regular'), 'active', 'regular', 'active'],
+    [pricedSub('trialing', 'heavy'), pricedSub('active', 'regular'), 'trialing', 'regular', 'active'],
+  ]) await t.test(`${first.status}/${second.status}/${tier}`, async t => {
+    await assertPermutations(t, [subscriptionEvent('evt_z_first', first, 30), subscriptionEvent('evt_a_second', second, 30)],
+      { tier, subscriptionStatus: status, accessState });
   });
+});
+
+test('242 ordering: equal-second checkout, subscription and invoice domains converge', async t => {
+  for (const status of ['active', 'incomplete', 'unpaid', 'canceled']) await t.test(`checkout + ${status}`, async t => {
+    await assertPermutations(t, [checkoutEvent('regular'), subscriptionEvent('evt_subscription', pricedSub(status, 'heavy'), 30)],
+      { tier: status === 'active' ? 'heavy' : 'regular', subscriptionStatus: status, accessState: ['unpaid', 'canceled'].includes(status) ? 'paused' : 'active' });
+  });
+  for (const type of ['invoice.paid', 'invoice.payment_succeeded', 'invoice.payment_failed']) await t.test(`checkout + ${type}`, async t => {
+    await assertPermutations(t, [checkoutEvent('regular'), invoiceEvent(type)],
+      { tier: 'regular', subscriptionStatus: type === 'invoice.payment_failed' ? 'past_due' : 'active', accessState: 'active' });
+  });
+  await t.test('conflicting paid checkout tiers', async t => {
+    await assertPermutations(t, [checkoutEvent('heavy'), checkoutEvent('regular')], { tier: 'regular', subscriptionStatus: 'active', accessState: 'active' });
+  });
+});
+
+test('242 ordering: invoice success wins same-second failure without granting access', async t => {
+  for (const type of ['invoice.paid', 'invoice.payment_succeeded']) {
+    await assertPermutations(t, [invoiceEvent(type), invoiceEvent('invoice.payment_failed')],
+      { tier: 'light', subscriptionStatus: 'active', accessState: 'active' });
+    await assertPermutations(t, [invoiceEvent(type), invoiceEvent('invoice.payment_failed')],
+      { tier: 'light', subscriptionStatus: 'unpaid', accessState: 'paused' }, async f => {
+        await bindActive(f); await f.billing.handleEvent(subscriptionEvent('evt_pause', pricedSub('unpaid'), 25));
+      });
+  }
+});
+
+test('242 ordering: newer evidence in one domain does not suppress delayed evidence in another', async t => {
+  for (const type of ['invoice.paid', 'invoice.payment_failed']) {
+    await assertPermutations(t, [invoiceEvent(type, 100), subscriptionEvent('evt_delayed_upgrade', pricedSub('active', 'regular'), 30)],
+      { tier: 'regular', subscriptionStatus: type === 'invoice.payment_failed' ? 'past_due' : 'active', accessState: 'active' });
+  }
+  const f = await billingFixture(t); await bindActive(f);
+  await f.billing.handleEvent(invoiceEvent('invoice.paid', 100));
+  await f.billing.handleEvent(subscriptionEvent('evt_delayed_subscription', pricedSub('active', 'regular'), 30));
+  await f.billing.handleEvent(checkoutEvent('heavy', 'paid', 25));
+  const before = await f.billing.state('tenant-one');
+  assert.equal(before.lastStripeEventCreated, 100);
+  assert.equal(before.tier, 'regular');
+  const audits = await readOperatorAudit(f.db, { limit: 100 });
+  for (const event of [invoiceEvent('invoice.payment_failed', 99), subscriptionEvent('evt_old_subscription', pricedSub('unpaid'), 29), checkoutEvent('light', 'paid', 24)]) {
+    assert.equal((await f.billing.handleEvent(event)).action, 'stale');
+    assert.deepEqual(await f.billing.state('tenant-one'), before);
+    assert.equal((await f.billing.handleEvent(event)).duplicate, true);
+  }
+  assert.deepEqual(await readOperatorAudit(f.db, { limit: 100 }), audits);
+  assert.equal(f.mail.messages.length, 0);
+});
+
+test('242 ordering: concurrent equal-second deliveries serialize and converge across instances', async t => {
+  const events = [invoiceEvent('invoice.payment_failed'), subscriptionEvent('evt_concurrent_active', pricedSub('active', 'regular'), 30)];
+  for (const order of [events, [...events].reverse()]) {
+    const f = await billingFixture(t); await bindActive(f);
+    const other = new HostedBilling(f.db, billingConfig(env()), { clock: f.now }); await other.load();
+    const results = await Promise.all([f.billing.handleEvent(order[0]), other.handleEvent(order[1])]);
+    assert.ok(results.every(result => result.handled));
+    await f.billing.load();
+    assert.deepEqual(entitlementState(await f.billing.state('tenant-one')), { tier: 'regular', subscriptionStatus: 'active', accessState: 'active' });
+  }
+});
+
+test('242 ordering: a same-second deleted snapshot and cancellation deadlines converge', async t => {
+  const future = Math.floor(Date.UTC(2026, 10, 5) / 1000);
+  const events = [subscriptionEvent('evt_cancel_later', { ...pricedSub('canceled'), current_period_end: future + 86400 }, 30),
+    { id: 'evt_deleted_earlier', created: 30, type: 'customer.subscription.deleted', object: { ...activeSub, current_period_end: future } }];
+  for (const order of [events, [...events].reverse()]) {
+    const f = await billingFixture(t); await bindActive(f);
+    for (const event of order) assert.equal((await f.billing.handleEvent(event)).handled, true);
+    const state = await f.billing.state('tenant-one');
+    assert.deepEqual(entitlementState(state), { tier: 'light', subscriptionStatus: 'canceled', accessState: 'paused' });
+    assert.equal(state.pauseEffectiveAt, new Date(future * 1000).toISOString());
+    assert.equal(f.mail.messages.length, 1);
+    assert.doesNotThrow(() => f.billing.assertAccess('tenant-one'));
+    f.setClock(future * 1000);
+    assert.throws(() => f.billing.assertAccess('tenant-one'), { code: 'BILLING_ACCESS_PAUSED' });
+  }
 });
 
 test('211 ordering: concurrent events read the last committed state before applying', async t => {
@@ -199,6 +332,61 @@ test('211 migration: existing billing rows get a nullable event watermark, initi
   assert.deepEqual(await f.billing.state('tenant-one'), { ...before, lastStripeEventCreated: null });
   await f.billing.handleEvent(subscriptionEvent('evt_after_migration', activeSub, 30));
   assert.equal((await f.billing.state('tenant-one')).lastStripeEventCreated, 30);
+});
+
+test('242 migration: guarded SQLite/Postgres upgrade preserves legacy fences and permits equal-second evidence', async t => {
+  for (const dialect of ['sqlite', 'postgres']) await t.test(dialect, async t => {
+    const f = await billingFixture(t); await bindActive(f);
+    await f.billing.handleEvent(subscriptionEvent('evt_legacy_cancel', pricedSub('canceled'), 40));
+    const before = await f.billing.state('tenant-one');
+    await f.db.transaction(c => c.query('ALTER TABLE h9_billing DROP COLUMN stripe_ordering'));
+    let additions = 0;
+    // Both column-discovery paths run over the fixture; live PostgreSQL is
+    // separately optional in the root suite.
+    const db = { dialect, close: async () => {}, transaction: work => f.db.transaction(c => work({ query: async (sql, values) => {
+      if (sql.includes('information_schema.columns')) return c.query('PRAGMA table_info(h9_billing)');
+      if (sql === 'ALTER TABLE h9_billing ADD COLUMN stripe_ordering TEXT') additions++;
+      return c.query(sql, values);
+    } })) };
+    await initializeBilling(db); await initializeBilling(db);
+    assert.equal(additions, 1);
+    assert.deepEqual(await f.billing.state('tenant-one'), before);
+    for (const event of [subscriptionEvent('evt_legacy_older', pricedSub('active', 'heavy'), 39), invoiceEvent('invoice.payment_failed', 39), checkoutEvent('heavy', 'paid', 39)]) {
+      assert.equal((await f.billing.handleEvent(event)).action, 'stale');
+      assert.deepEqual(await f.billing.state('tenant-one'), before);
+    }
+    assert.equal((await f.billing.handleEvent(invoiceEvent('invoice.paid', 40))).handled, true);
+    assert.equal((await f.billing.handleEvent(subscriptionEvent('evt_legacy_tie', activeSub, 40))).handled, true);
+    assert.deepEqual(entitlementState(await f.billing.state('tenant-one')), entitlementState(before));
+    const saved = await f.db.transaction(c => c.query('SELECT stripe_ordering FROM h9_billing WHERE tenant_id = ?', ['tenant-one']));
+    await initializeBilling(db);
+    assert.deepEqual(await f.db.transaction(c => c.query('SELECT stripe_ordering FROM h9_billing WHERE tenant_id = ?', ['tenant-one'])), saved);
+    const reloaded = new HostedBilling(f.db, billingConfig(env()), { clock: f.now }); await reloaded.load();
+    assert.equal((await reloaded.handleEvent(subscriptionEvent('evt_legacy_recover', activeSub, 41))).action, 'access_restored');
+    assert.equal((await reloaded.handleEvent(subscriptionEvent('evt_legacy_cancel', pricedSub('canceled'), 40))).duplicate, true);
+    assert.doesNotThrow(() => reloaded.assertAccess('tenant-one'));
+  });
+});
+
+test('242 migration: pre-watermark invoice bookkeeping preserves existing subscription and access state', async t => {
+  for (const status of ['active', 'unpaid']) {
+    const f = await billingFixture(t); await bindActive(f);
+    if (status === 'unpaid') await f.billing.handleEvent(subscriptionEvent('evt_legacy_unpaid', pricedSub(status), 30));
+    const before = entitlementState(await f.billing.state('tenant-one'));
+    await f.db.transaction(async c => {
+      await c.query('ALTER TABLE h9_billing DROP COLUMN last_stripe_event_created');
+      await c.query('ALTER TABLE h9_billing DROP COLUMN stripe_ordering');
+    });
+    await initializeBilling(f.db); await initializeBilling(f.db);
+    const reloaded = new HostedBilling(f.db, billingConfig(env()), { clock: f.now }); await reloaded.load();
+    assert.equal((await reloaded.handleEvent(invoiceEvent('invoice.paid', 0))).handled, true);
+    const state = await reloaded.state('tenant-one');
+    assert.deepEqual(entitlementState(state), before);
+    assert.equal(state.lastStripeEventCreated, 0);
+    assert.equal(reloaded.accessPaused('tenant-one'), status === 'unpaid');
+    assert.equal((await reloaded.handleEvent(subscriptionEvent('evt_first_snapshot', pricedSub('active', 'regular'), 0))).handled, true);
+    assert.deepEqual(entitlementState(await reloaded.state('tenant-one')), { tier: 'regular', subscriptionStatus: 'active', accessState: 'active' });
+  }
 });
 
 test('211 fencing: previous-subscription updates and invoices cannot change a replacement binding', async t => {
@@ -524,8 +712,48 @@ async function trialBilling212(t) {
   const stripe = { createPaymentLink: async ({ tier }) => ({ id: `plink_${tier}`, url: `https://buy.stripe.com/plink_${tier}` }) };
   const billing = new HostedBilling(f.db, billingConfig(env({ OPENSIGHT_TRIAL_ENTITLEMENT: JSON.stringify(TRIAL212) })), { clock: () => now, mail, notifyTo: 'operator@example.test', stripe });
   await billing.startTrial('tenant-one');
-  return { f, billing, trialEnds: new Date(start + 14 * 86400000).toISOString() };
+  return { f, billing, mail, setClock: value => { now = value; }, trialEnds: new Date(start + 14 * 86400000).toISOString() };
 }
+
+test('242/212: equal-second trial permutations convert only with successful evidence in that event', async t => {
+  const scenarios = [
+    { events: [invoiceEvent('invoice.paid'), subscriptionEvent('evt_incomplete', pricedSub('incomplete', 'heavy'), 30)], tier: null, status: 'incomplete', converted: false },
+    { events: [checkoutEvent('heavy', 'unpaid'), subscriptionEvent('evt_incomplete', pricedSub('incomplete', 'heavy'), 30)], tier: null, status: 'incomplete', converted: false },
+    { events: [invoiceEvent('invoice.payment_succeeded'), subscriptionEvent('evt_active', pricedSub('active', 'regular'), 30)], tier: 'regular', status: 'active', converted: true },
+    { events: [checkoutEvent('regular'), subscriptionEvent('evt_incomplete', pricedSub('incomplete', 'heavy'), 30)], tier: 'regular', status: 'incomplete', converted: true },
+    { events: [checkoutEvent('regular'), subscriptionEvent('evt_canceled', pricedSub('canceled', 'heavy'), 30)], tier: 'regular', status: 'canceled', converted: true },
+    { events: [subscriptionEvent('evt_active', pricedSub('active', 'heavy'), 30), subscriptionEvent('evt_unpaid', pricedSub('unpaid'), 30)], tier: 'heavy', status: 'unpaid', converted: true },
+  ];
+  for (const expired of [false, true]) for (const scenario of scenarios) await t.test(`${expired ? 'expired' : 'live'}: ${scenario.events.map(e => e.id).join(' + ')}`, async t => {
+    const finals = [];
+    for (const order of [scenario.events, [...scenario.events].reverse()]) {
+      const { f, billing, mail, trialEnds, setClock } = await trialBilling212(t);
+      await billing.handleEvent({ ...checkoutEvent('light', 'unpaid', 10), id: 'evt_initial_unpaid' });
+      if (expired) { setClock(Date.parse(trialEnds)); await billing.expireTrials(); }
+      for (const event of order) {
+        await billing.load();
+        assert.equal((await billing.handleEvent(event)).handled, true);
+      }
+      const state = await billing.state('tenant-one'); finals.push(entitlementState(state));
+      const paused = ['unpaid', 'canceled'].includes(scenario.status) || expired && !scenario.converted;
+      assert.deepEqual(entitlementState(state), { tier: scenario.tier, subscriptionStatus: scenario.status, accessState: paused ? 'paused' : 'active' });
+      assert.equal(state.trialEndsAt, scenario.converted ? null : trialEnds);
+      assert.equal(billing.accessPaused('tenant-one'), paused);
+      assert.deepEqual(billing.tierEntitlement('tenant-one'), scenario.converted ? billingConfig(env()).tierEntitlements[scenario.tier] : expired ? null : TRIAL212);
+      const audits = await readOperatorAudit(f.db, { limit: 100 });
+      const conversions = audits.filter(e => e.action === 'billing.trial.converted');
+      assert.equal(conversions.length, Number(scenario.converted));
+      if (scenario.converted) assert.equal(conversions[0].detail.stripeEventId, order.find(e => e.type === 'checkout.session.completed' && e.object.payment_status === 'paid'
+        || e.type === 'customer.subscription.updated' && e.object.status === 'active').id);
+      const notices = mail.messages.length;
+      for (const event of order) assert.equal((await billing.handleEvent(event)).duplicate, true);
+      assert.deepEqual(await billing.state('tenant-one'), state);
+      assert.deepEqual(await readOperatorAudit(f.db, { limit: 100 }), audits);
+      assert.equal(mail.messages.length, notices);
+    }
+    assert.deepEqual(finals[0], finals[1]);
+  });
+});
 
 test('212: unpaid checkout and incomplete subscription keep a live trial; the active transition converts', async t => {
   const { f, billing, trialEnds } = await trialBilling212(t);
