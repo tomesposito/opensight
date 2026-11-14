@@ -107,7 +107,7 @@ test('cache isolates rows, records stats, and drops entries at the TTL boundary'
   assert.equal(cache.get('one'), undefined);
   now = 1000;
   assert.equal(cache.get('one'), undefined, 'expired entry was dropped');
-  assert.deepEqual(cache.stats(), { hits: 2, misses: 3, stores: 1, entries: 0, retainedBytes: 0 });
+  assert.deepEqual(cache.stats(), { hits: 2, misses: 3, stores: 1, entries: 0, retainedBytes: 0, activeFills: 0, trackedFillKeys: 0 });
 });
 
 test('cache invalidation is prefix-specific or full and keeps cumulative counters', () => {
@@ -125,11 +125,31 @@ test('cache invalidation is prefix-specific or full and keeps cumulative counter
   assert.ok(cache.get('other:a'));
   cache.invalidate();
   assert.equal(cache.get('other:a'), undefined);
-  assert.deepEqual(cache.stats(), { hits: 1, misses: 3, stores: 3, entries: 0, retainedBytes: 0 });
+  assert.deepEqual(cache.stats(), { hits: 1, misses: 3, stores: 3, entries: 0, retainedBytes: 0, activeFills: 0, trackedFillKeys: 0 });
   cache.set('after-clear', [], 1000);
   assert.equal(cache.stats().retainedBytes, rowBytes([]));
   assert.ok(JSON.stringify(['arn:a', 'visual']).startsWith(liveDatasetCachePrefix('arn:a')));
   assert.ok(!JSON.stringify(['arn:ab', 'visual']).startsWith(liveDatasetCachePrefix('arn:a')));
+});
+
+test('cache statistics count active fills and distinct tracked keys until set or release', () => {
+  const cache = new LiveResultCache({ now: () => 1000 }), rows = [{ total: 1 }];
+  const fill = cache.beginFill('stored');
+  assert.deepEqual(cache.stats(), { hits: 0, misses: 0, stores: 0, entries: 0, retainedBytes: 0, activeFills: 1, trackedFillKeys: 1 });
+  cache.set('stored', rows, 1000, fill);
+  const stored = { hits: 0, misses: 0, stores: 1, entries: 1, retainedBytes: rowBytes(rows), activeFills: 0, trackedFillKeys: 0 };
+  assert.deepEqual(cache.stats(), stored);
+
+  const older = cache.beginFill('shared');
+  const newer = cache.beginFill('shared');
+  const other = cache.beginFill('other');
+  assert.deepEqual(cache.stats(), { ...stored, activeFills: 3, trackedFillKeys: 2 });
+  cache.releaseFill(older);
+  assert.deepEqual(cache.stats(), { ...stored, activeFills: 2, trackedFillKeys: 2 });
+  cache.releaseFill(newer);
+  assert.deepEqual(cache.stats(), { ...stored, activeFills: 1, trackedFillKeys: 1 });
+  cache.releaseFill(other);
+  assert.deepEqual(cache.stats(), stored);
 });
 
 test('a fill captured before a matching invalidation cannot store, but unrelated invalidation does not block it', () => {
@@ -201,7 +221,7 @@ test('a released fill cannot store, and releasing an older fill never disturbs a
 test('many distinct failed fills retain no markers, keys, or generation state', () => {
   const cache = new LiveResultCache();
   for (let i = 0; i < 1000; i++) cache.releaseFill(cache.beginFill(`failed:${i}`));
-  assert.deepEqual(cache.stats(), { hits: 0, misses: 0, stores: 0, entries: 0, retainedBytes: 0 });
+  assert.deepEqual(cache.stats(), { hits: 0, misses: 0, stores: 0, entries: 0, retainedBytes: 0, activeFills: 0, trackedFillKeys: 0 });
   const probe = cache.beginFill('probe');
   assert.equal(probe.prefixGenerations.size, 0, 'failed fills leave no prefix generations to copy into new tokens');
   cache.set('probe', [{ total: 1 }], 1000, probe);
@@ -243,16 +263,23 @@ test('invalidations are retained only while a matching fill is active, then prun
   cache.releaseFill(probe3);
 });
 
-test('a failed local execution releases its fill so the next execution stores and serves from cache', async t => {
-  const r = request(), options = { ...temporaryCsv(t, 'bad,header\n'), liveCache: { cache: new LiveResultCache(), ttlMs: 1000 } };
-  const cache = options.liveCache.cache;
-  await assert.rejects(executeLocal(r, options), { code: 'LOCAL_DATA_ERROR' });
-  assert.deepEqual(cache.stats(), { hits: 0, misses: 1, stores: 0, entries: 0, retainedBytes: 0 });
+test('distinct failed local executions release all fills before a repaired key stores and serves from cache', async t => {
+  const requests = ['total-revenue', 'revenue-by-region', 'share-by-category', 'revenue-trend'].map(id => request(id));
+  const cache = new LiveResultCache({ now: () => 1000 });
+  const options = { ...temporaryCsv(t, 'bad,header\n'), liveCache: { cache, ttlMs: 1000 } };
+  for (const r of requests) await assert.rejects(executeLocal(r, options), { code: 'LOCAL_DATA_ERROR' });
+  // Inspect before any successful retry can supersede a leaked latest-fill marker.
+  assert.deepEqual(cache.stats(), { hits: 0, misses: requests.length, stores: 0, entries: 0, retainedBytes: 0, activeFills: 0, trackedFillKeys: 0 });
   writeFileSync(join(options.dataRoot, 'sales.csv'), read('sales.csv'));
-  const first = await executeLocal(r, options);
+  const first = await executeLocal(requests[0], options);
   assert.deepEqual(first.provenance, { source: 'live' });
+  assert.deepEqual(first.rows, [{ revenue: 500 }]);
   assert.equal(cache.stats().stores, 1);
-  assert.equal((await executeLocal(r, options)).provenance.source, 'cache');
+  const second = await executeLocal(requests[0], options);
+  assert.equal(second.provenance.source, 'cache');
+  assert.deepEqual(second.rows, first.rows);
+  assert.deepEqual(cache.stats(), { hits: 1, misses: requests.length + 1, stores: 1, entries: 1,
+    retainedBytes: rowBytes(first.rows), activeFills: 0, trackedFillKeys: 0 });
 });
 
 test('local execution in flight during dataset invalidation returns live rows but does not repopulate the cache', async t => {
@@ -322,7 +349,7 @@ test('cache accounts UTF-8 serialized bytes and accepts exact entry and total li
   const cache = new LiveResultCache({ maxBytes: bytes * 2, maxEntryBytes: bytes });
   cache.set('one', rows, 1000);
   cache.set('two', rows, 1000);
-  assert.deepEqual(cache.stats(), { hits: 0, misses: 0, stores: 2, entries: 2, retainedBytes: bytes * 2 });
+  assert.deepEqual(cache.stats(), { hits: 0, misses: 0, stores: 2, entries: 2, retainedBytes: bytes * 2, activeFills: 0, trackedFillKeys: 0 });
   assert.deepEqual(cache.get('one').rows, rows);
   assert.deepEqual(cache.get('two').rows, rows);
 });
@@ -336,7 +363,7 @@ for (const maxBytes of [64, 128]) test(`oversized rows bypass without cloning wi
   rows[0].label = 'changed';
   assert.equal(cache.get('oversized'), undefined);
   assert.equal(clone.mock.callCount(), 0);
-  assert.deepEqual(cache.stats(), { hits: 0, misses: 1, stores: 0, entries: 0, retainedBytes: 0 });
+  assert.deepEqual(cache.stats(), { hits: 0, misses: 1, stores: 0, entries: 0, retainedBytes: 0, activeFills: 0, trackedFillKeys: 0 });
 });
 
 test('cache replacements release old bytes before eviction and use the latest size', () => {
@@ -370,7 +397,7 @@ test('insertion purges every expired entry before eviction without reading its k
   now = 1010;
   cache.set('new', rows, 100);
   now = 1000; // Ensure stats/get cannot hide a missing insertion purge by expiring entries themselves.
-  assert.deepEqual(cache.stats(), { hits: 0, misses: 0, stores: 4, entries: 2, retainedBytes: rowBytes(rows) * 2 });
+  assert.deepEqual(cache.stats(), { hits: 0, misses: 0, stores: 4, entries: 2, retainedBytes: rowBytes(rows) * 2, activeFills: 0, trackedFillKeys: 0 });
   assert.deepEqual(cache.get('live-oldest').rows, rows);
   assert.deepEqual(cache.get('new').rows, rows);
   assert.equal(cache.get('expired-a'), undefined);
@@ -388,7 +415,7 @@ test('oversized insertion still purges expired entries and invalid TTL leaves th
   now = 1010;
   cache.set('oversized', [{ label: 'x'.repeat(32) }], 100);
   now = 1000;
-  assert.deepEqual(cache.stats(), { hits: 1, misses: 0, stores: 1, entries: 0, retainedBytes: 0 });
+  assert.deepEqual(cache.stats(), { hits: 1, misses: 0, stores: 1, entries: 0, retainedBytes: 0, activeFills: 0, trackedFillKeys: 0 });
   assert.equal(cache.get('expired'), undefined);
 });
 
@@ -398,7 +425,7 @@ test('stats reports only live entries without changing cumulative counters', () 
   cache.set('short', [], 10);
   cache.set('long', [{ total: 2 }], 100);
   now = 1010;
-  assert.deepEqual(cache.stats(), { hits: 0, misses: 0, stores: 2, entries: 1, retainedBytes: rowBytes([{ total: 2 }]) });
+  assert.deepEqual(cache.stats(), { hits: 0, misses: 0, stores: 2, entries: 1, retainedBytes: rowBytes([{ total: 2 }]), activeFills: 0, trackedFillKeys: 0 });
 });
 
 test('serialization failures bypass caching without cloning or keeping stale replacements', t => {
@@ -411,7 +438,7 @@ test('serialization failures bypass caching without cloning or keeping stale rep
     assert.doesNotThrow(() => cache.set('key', rows, 1000));
     assert.equal(clone.mock.callCount(), 0);
     assert.equal(cache.get('key'), undefined);
-    assert.deepEqual(cache.stats(), { hits: 0, misses: 1, stores: 1, entries: 0, retainedBytes: 0 });
+    assert.deepEqual(cache.stats(), { hits: 0, misses: 1, stores: 1, entries: 0, retainedBytes: 0, activeFills: 0, trackedFillKeys: 0 });
   }
 });
 
@@ -421,7 +448,7 @@ test('nonfinite or unsafe byte estimates bypass caching', t => {
     const cache = new LiveResultCache();
     assert.doesNotThrow(() => cache.set('key', [], 1000));
     assert.equal(cache.get('key'), undefined);
-    assert.deepEqual(cache.stats(), { hits: 0, misses: 1, stores: 0, entries: 0, retainedBytes: 0 });
+    assert.deepEqual(cache.stats(), { hits: 0, misses: 1, stores: 0, entries: 0, retainedBytes: 0, activeFills: 0, trackedFillKeys: 0 });
     encode.mock.restore();
   }
 });
@@ -523,7 +550,7 @@ test('oversized SQL rows bypass caching while their small post-processed result 
     const sqlRows = store.mock.calls[i].arguments[1];
     assert.equal(sqlRows.length, 8 + i);
     assert.ok(rowBytes(sqlRows) > maxEntryBytes, 'the budget applies to SQL rows before post-processing');
-    assert.deepEqual(cache.stats(), { hits: 0, misses: i + 1, stores: 0, entries: 0, retainedBytes: 0 });
+    assert.deepEqual(cache.stats(), { hits: 0, misses: i + 1, stores: 0, entries: 0, retainedBytes: 0, activeFills: 0, trackedFillKeys: 0 });
     if (i === 0) writeFileSync(join(options.dataRoot, 'sales.csv'), file + '9,2025-04-01,East,Hardware,10,2\n');
   }
 });
