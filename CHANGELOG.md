@@ -72,6 +72,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Input-table row edits now require the table version the editor loaded, so
+  missing or stale versions cannot silently overwrite another editor's changes.
+  Rejected saves leave data, version and audit unchanged; reload and reconcile
+  before retrying (#244).
+
 - A Stripe subscription still in its trialing state no longer converts a hosted trial: the paid tier is recorded as evidence, but the trial deadline and trial entitlement stay in force — and expiry still pauses access — until an active subscription or a paid checkout verifies payment (#243).
 
 - Stripe events for the same bound subscription created in the same second now converge on the same hosted tier, subscription status and access state regardless of delivery order. Invoice, subscription and checkout ordering are separate, while older events within each domain, duplicate replays and foreign subscriptions remain fenced (#242).

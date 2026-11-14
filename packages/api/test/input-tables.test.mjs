@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { request as httpRequest } from 'node:http';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -296,7 +296,7 @@ test('input tables: row CRUD enforces typed validation on add and merged patch',
     const rejected = await call(rows, 'POST', { values });
     assert.equal(rejected.status, 400, JSON.stringify(rejected.body)); assert.equal(rejected.body.errorCode, code);
   }
-  const patched = await call(`${rows}/${rowId}`, 'PATCH', { values: { forecast: 12 } });
+  const patched = await call(`${rows}/${rowId}`, 'PATCH', { values: { forecast: 12 }, expectedVersion: added.body.version });
   assert.equal(patched.status, 200, JSON.stringify(patched.body)); assert.equal(patched.body.row.values.forecast, 12);
   // Merged-row validation retains precise named errors inside the mutation.
   for (const [values, code] of [
@@ -306,13 +306,15 @@ test('input tables: row CRUD enforces typed validation on add and merged patch',
     [{ active: 'yes' }, 'INPUT_TABLE_INVALID_VALUE_TYPE'],
     [{ bogus: 1 }, 'INPUT_TABLE_UNKNOWN_COLUMN'],
   ]) {
-    const rejected = await call(`${rows}/${rowId}`, 'PATCH', { values });
+    const rejected = await call(`${rows}/${rowId}`, 'PATCH', { values, expectedVersion: patched.body.version });
     assert.equal(rejected.status, 400); assert.equal(rejected.body.errorCode, code);
   }
   assert.equal((await call(`/api/input-tables/${table.id}`)).body.version, patched.body.version);
   assert.equal((await call(`/api/input-tables/${table.id}/audit`)).body.entries.filter(e => e.action === 'row_updated').length, 1);
-  // Last write wins: a second patch overwrites the first.
-  await call(`${rows}/${rowId}`, 'PATCH', { values: { forecast: 15 } });
+  // A second patch against the current version can update the same cell.
+  const second = await call(`${rows}/${rowId}`, 'PATCH', { values: { forecast: 15 }, expectedVersion: patched.body.version });
+  assert.equal(second.status, 200, JSON.stringify(second.body));
+  assert.equal(second.body.version, patched.body.version + 1);
   const after = await call(`/api/input-tables/${table.id}`);
   assert.equal(after.body.rows[0].values.forecast, 15);
   const deleted = await call(`${rows}/${rowId}`, 'DELETE');
@@ -320,19 +322,29 @@ test('input tables: row CRUD enforces typed validation on add and merged patch',
   assert.equal((await call(`/api/input-tables/${table.id}`)).body.rows.length, 0);
 });
 
-test('input tables (#219): concurrent patches to different cells preserve both writes and their audit changes', async t => {
+test('input tables (#219, #244): concurrent different-cell patches conflict, then preserve both writes after reload and retry', async t => {
   const call = await api(t);
   const table = await createTable(call, { editors: ['other-author'] });
   const path = `/api/input-tables/${table.id}`;
   const added = await call(`${path}/rows`, 'POST', { values: { region: 'East', forecast: 10 } });
   assert.equal(added.status, 201);
   const rowPath = `${path}/rows/${added.body.row.id}`;
-  const delayed = startDelayedBody(call.port, rowPath, 'PATCH', 'author', { values: { forecast: 99 } });
+  const expectedVersion = added.body.version;
+  const delayed = startDelayedBody(call.port, rowPath, 'PATCH', 'author', { values: { forecast: 99 }, expectedVersion });
   await settle();
-  const other = await call(rowPath, 'PATCH', { values: { region: 'West' } }, 'other-author');
+  const other = await call(rowPath, 'PATCH', { values: { region: 'West' }, expectedVersion }, 'other-author');
   assert.equal(other.status, 200, JSON.stringify(other.body));
-  const patched = await delayed.finish();
-  assert.equal(patched.status, 200, JSON.stringify(patched.body));
+  assert.equal(other.body.version, expectedVersion + 1);
+  const before = await call(path);
+  const auditBefore = await call(`${path}/audit`);
+  const conflict = await delayed.finish();
+  assert.equal(conflict.status, 412, JSON.stringify(conflict.body));
+  assert.equal(conflict.body.errorCode, 'INPUT_TABLE_VERSION_CONFLICT');
+  const reloaded = await call(path);
+  assert.deepEqual(reloaded, before);
+  assert.deepEqual(await call(`${path}/audit`), auditBefore);
+  const retried = await call(rowPath, 'PATCH', { values: { forecast: 99 }, expectedVersion: reloaded.body.version });
+  assert.equal(retried.status, 200, JSON.stringify(retried.body));
   const after = await call(path);
   assert.deepEqual(after.body.rows[0].values, { region: 'West', forecast: 99, starts_on: null, active: null });
   assert.equal(after.body.version, added.body.version + 2);
@@ -344,26 +356,63 @@ test('input tables (#219): concurrent patches to different cells preserve both w
   ]);
 });
 
-test('input tables (#219): concurrent same-cell patches without a version audit the latest value and remain last-write-wins', async t => {
+test('input tables (#244): a delayed unversioned same-cell patch cannot overwrite a lawful intervening write', async t => {
   const call = await api(t);
   const table = await createTable(call, { editors: ['other-author'] });
   const path = `/api/input-tables/${table.id}`;
   const added = await call(`${path}/rows`, 'POST', { values: { region: 'East', forecast: 10 } });
+  assert.equal(added.status, 201);
   const rowPath = `${path}/rows/${added.body.row.id}`;
   const delayed = startDelayedBody(call.port, rowPath, 'PATCH', 'author', { values: { forecast: 99 } });
   await settle();
-  assert.equal((await call(rowPath, 'PATCH', { values: { forecast: 20 } }, 'other-author')).status, 200);
-  const patched = await delayed.finish();
-  assert.equal(patched.status, 200, JSON.stringify(patched.body));
-  assert.equal((await call(path)).body.rows[0].values.forecast, 99);
+  const lawful = await call(rowPath, 'PATCH', { values: { forecast: 20 }, expectedVersion: added.body.version }, 'other-author');
+  assert.equal(lawful.status, 200, JSON.stringify(lawful.body));
+  assert.equal(lawful.body.version, added.body.version + 1);
+  const before = await call(path);
+  const auditBefore = await call(`${path}/audit`);
+  const rejected = await delayed.finish();
+  assert.equal(rejected.status, 400, JSON.stringify(rejected.body));
+  assert.equal(rejected.body.errorCode, 'INPUT_TABLE_VERSION_REQUIRED');
+  const after = await call(path);
+  assert.deepEqual(after, before);
+  assert.deepEqual(after.body.rows[0].values, { region: 'East', forecast: 20, starts_on: null, active: null });
   const audit = await call(`${path}/audit`);
-  assert.deepEqual(audit.body.entries.filter(e => e.action === 'row_updated').map(e => e.detail.changes), [
-    [{ column: 'forecast', oldValue: 10, newValue: 20 }],
-    [{ column: 'forecast', oldValue: 20, newValue: 99 }],
+  assert.deepEqual(audit, auditBefore);
+  assert.deepEqual(audit.body.entries.filter(e => e.action === 'row_updated').map(e => ({ actorId: e.actorId, ...e.detail })), [
+    { actorId: 'other-author', rowId: added.body.row.id, changes: [{ column: 'forecast', oldValue: 10, newValue: 20 }] },
   ]);
 });
 
-test('input tables (#219): expectedVersion rejects a stale same-cell patch without changing the table or audit', async t => {
+test('input tables (#244): missing expectedVersion rejects stale full-row values and partial patches without changing data, version or audit', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'opensight-input-version-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const storePath = join(dir, 'input-tables.json');
+  const call = await api(t, { inputTableStorePath: storePath });
+  const table = await createTable(call, { editors: ['other-author'] });
+  const path = `/api/input-tables/${table.id}`;
+  const added = await call(`${path}/rows`, 'POST', { values: { region: 'East', forecast: 10, starts_on: '2026-11-01', active: true } });
+  assert.equal(added.status, 201);
+  const loaded = await call(path);
+  const rowPath = `${path}/rows/${added.body.row.id}`;
+  const staleValues = { ...loaded.body.rows[0].values, forecast: 99 };
+  const intervening = await call(rowPath, 'PATCH', { values: { region: 'West' }, expectedVersion: loaded.body.version }, 'other-author');
+  assert.equal(intervening.status, 200, JSON.stringify(intervening.body));
+  assert.equal(intervening.body.version, loaded.body.version + 1);
+  const before = JSON.stringify(await call(path));
+  const auditBefore = JSON.stringify(await call(`${path}/audit`));
+  const persistedBefore = await readFile(storePath);
+  for (const values of [staleValues, { forecast: 99 }]) {
+    const rejected = await call(rowPath, 'PATCH', { values });
+    assert.equal(rejected.status, 400, JSON.stringify(rejected.body));
+    assert.equal(rejected.body.errorCode, 'INPUT_TABLE_VERSION_REQUIRED');
+    assert.match(rejected.body.Message, /expectedVersion is required.*Reload/);
+    assert.equal(JSON.stringify(await call(path)), before);
+    assert.equal(JSON.stringify(await call(`${path}/audit`)), auditBefore);
+    assert.deepEqual(await readFile(storePath), persistedBefore);
+  }
+});
+
+test('input tables (#219): expectedVersion rejects a stale full-row patch without changing the table or audit', async t => {
   const call = await api(t);
   const table = await createTable(call, { editors: ['other-author'] });
   const path = `/api/input-tables/${table.id}`;
@@ -371,7 +420,7 @@ test('input tables (#219): expectedVersion rejects a stale same-cell patch witho
   const expectedVersion = added.body.version;
   const rowPath = `${path}/rows/${added.body.row.id}`;
   // Both editors load the same version; the delayed editor must check it again at commit.
-  const delayed = startDelayedBody(call.port, rowPath, 'PATCH', 'other-author', { values: { forecast: 99 }, expectedVersion });
+  const delayed = startDelayedBody(call.port, rowPath, 'PATCH', 'other-author', { values: { ...added.body.row.values, forecast: 99 }, expectedVersion });
   await settle();
   const first = await call(rowPath, 'PATCH', { values: { forecast: 20 }, expectedVersion });
   const before = await call(path);
@@ -440,7 +489,7 @@ test('input tables: append-only audit records old -> new and survives table dele
   const rows = `/api/input-tables/${table.id}/rows`;
   const added = await call(rows, 'POST', { values: { region: 'East', forecast: 10 } });
   const rowId = added.body.row.id;
-  await call(`${rows}/${rowId}`, 'PATCH', { values: { forecast: 12 } });
+  assert.equal((await call(`${rows}/${rowId}`, 'PATCH', { values: { forecast: 12 }, expectedVersion: added.body.version })).status, 200);
   await call(`/api/input-tables/${table.id}/editors`, 'PUT', { editors: ['other-author'] });
   await call(`${rows}/${rowId}`, 'DELETE');
   const audit = await call(`/api/input-tables/${table.id}/audit`);
@@ -528,7 +577,8 @@ test('input tables (#218): an editor revoked while a patch or rename body is in 
   const added = await call(rows, 'POST', { values: { region: 'East', forecast: 10 } });
   const rowId = added.body.row.id;
   assert.equal((await call(`/api/input-tables/${table.id}/editors`, 'PUT', { editors: ['other-author'] })).status, 200);
-  const patch = startDelayedBody(call.port, `${rows}/${rowId}`, 'PATCH', 'other-author', { values: { forecast: 999 } });
+  const current = await call(`/api/input-tables/${table.id}`);
+  const patch = startDelayedBody(call.port, `${rows}/${rowId}`, 'PATCH', 'other-author', { values: { forecast: 999 }, expectedVersion: current.body.version });
   await settle();
   assert.equal((await call(`/api/input-tables/${table.id}/editors`, 'PUT', { editors: [] })).status, 200);
   const deniedPatch = await patch.finish();

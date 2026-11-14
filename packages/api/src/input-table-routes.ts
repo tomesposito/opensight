@@ -231,8 +231,9 @@ export class InputTableRoutes {
         }
         const raw = body(await readBody(request), ['values', 'expectedVersion']);
         if (!isObject(raw.values) || !Object.keys(raw.values).length) throw new InputTableError('INPUT_TABLE_INVALID_BODY', 400, 'values must be a non-empty object keyed by column name.');
+        if (!Object.hasOwn(raw, 'expectedVersion')) throw new InputTableError('INPUT_TABLE_VERSION_REQUIRED', 400, 'expectedVersion is required. Reload the table and save against its current version.');
         const expectedVersion = raw.expectedVersion;
-        if (Object.hasOwn(raw, 'expectedVersion') && (typeof expectedVersion !== 'number' || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1)) {
+        if (typeof expectedVersion !== 'number' || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) {
           throw new InputTableError('INPUT_TABLE_INVALID_VERSION', 400, 'expectedVersion must be a positive safe integer.');
         }
         const patch = raw.values as Record<string, unknown>;
@@ -242,7 +243,7 @@ export class InputTableRoutes {
           this.requireEdit(this.principal(identity), table);
           const row = table.rows.find(r => r.id === rowId);
           if (!row) throw new InputTableError('INPUT_TABLE_ROW_NOT_FOUND', 404, 'Row not found');
-          if (expectedVersion !== undefined && expectedVersion !== table.version) {
+          if (expectedVersion !== table.version) {
             throw new InputTableError('INPUT_TABLE_VERSION_CONFLICT', 412, 'Input table has changed. Reload the table before saving.');
           }
           // Merge and audit against the latest committed row, after any queued writes (#219).
