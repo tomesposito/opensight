@@ -8,7 +8,8 @@ configured local/API datasets use the same compiler and narrative engine.
 ## Fields and computations
 
 The gallery's **Insight** type uses one **Category** dimension and one **Values**
-measure. A second Values measure enables comparison; the default summary compares
+measure. TopBottomMovers computations are the one exception: they bind a second,
+time dimension alongside the category (see their section below). A second Values measure enables comparison; the default summary compares
 first minus second. All measures require explicit SUM bindings. The internal
 projection is `insightVisual.chartConfiguration.fieldWells.insightAggregatedFieldWells`
 with `category` and `values` arrays. These wells are an OpenSight extension.
@@ -30,6 +31,7 @@ JSON remains available for unchanged export, including blocked features.
 | Forecast | Statistical forecast of the bound measure, using the shared chart exponential-smoothing engine. Requires a date dimension; reports the forward horizon at its grain, final projected period/value and prediction-interval range. |
 | PeriodToDate | SUM of the bound measure's groups in the UTC calendar period containing the latest dated row. PeriodTimeGranularity accepts DAY, MONTH, QUARTER or YEAR and defaults to the bound date grain. A finer period than the bound grain is unavailable. |
 | UniqueValues | The distinct values of the bound category, listed in deterministic typed order. Binds no measure: a visual whose computations are all UniqueValues executes with no Values measure. |
+| TopBottomMovers | TOP or BOTTOM categories by change in the bound measure between the latest dated period and the preceding calendar period. Binds two dimensions (category and time); a visual whose computations include any TopBottomMovers must contain only TopBottomMovers computations. MoverSize defaults to 3 and accepts 1–20; SortOrder is PERCENT_DIFFERENCE (default) or ABSOLUTE_DIFFERENCE. |
 
 With no explicit computations, the summary includes total, highest and lowest
 contributors, plus a period comparison for date fields and a metric comparison
@@ -73,6 +75,36 @@ the panel's existing empty/unavailable state, with the no-dated-rows reason in t
 PeriodToDate narrative. The period is anchored to the latest supplied row, not
 the wall clock. Sentence composition is OpenSight's; QuickSight's exact wording
 is not replicated, and no ML or visual-fidelity parity is claimed.
+
+TopBottomMovers computations accept `computationId`, optional string `name`,
+`time`, `category`, `value`, required `type` (TOP or BOTTOM), optional
+`moverSize` (integer 1–20, default 3) and optional `sortOrder`
+(`PERCENT_DIFFERENCE` default, or `ABSOLUTE_DIFFERENCE`). Native PascalCase
+imports use `TopBottomMovers` / `MoverSize` / `SortOrder`; both dialects retain
+the computation unchanged on export. Unknown properties, a missing or invalid
+type, and out-of-range sizes fail closed before querying. Mixing movers with
+any other computation kind is rejected with `INSIGHT_COMPUTATION_INVALID`.
+
+Rows are grouped by (category, period). For each category the bound measure in
+the latest dated period is compared with the preceding calendar period at the
+bound grain, using the same convention as GrowthRate/PeriodOverPeriod: a
+missing preceding calendar period is never substituted with an older period.
+Difference is `current − previous`; percent is `(current − previous) / previous`
+via the shared relative difference, so a zero previous value makes the percent
+unavailable. TOP ranks the largest differences first, BOTTOM the smallest,
+ordered by the SortOrder metric; percent-ranked categories with an unavailable
+percent are excluded. Ties use the deterministic typed-category order.
+Categories without a non-null value in both periods are excluded and their
+count is disclosed. The sentence is `Top movers <measure> (<latest period> vs
+<preceding period>): <category> (<previous> → <current>; <difference>,
+<percent>); … .` (Bottom likewise). When no category is eligible the sentence
+reports `unavailable (no category has a value in both periods)` with no
+invented numbers; empty results keep the existing empty state. Author drafts
+keep the single-dimension model: movers configurations appear as imported
+computations in the Properties panel, the author query groups by (category,
+time) from the configuration's bound fields, and no author preset is added.
+Sentence composition is OpenSight's; QuickSight's exact wording is not
+replicated.
 
 Forecast computations accept `computationId`, optional `name`, `time`, `value`
 and `forecastProperties` in the internal camelCase form. Native API imports use
@@ -122,8 +154,8 @@ ECharts rich-text templates.
 
 Anomaly computations are unsupported. All native custom-narrative
 templates are currently unsupported, including placeholders referencing forecasts
-or other computations. No template HTML is evaluated. TopBottomMovers
-and future computation variants cannot execute.
+or other computations. No template HTML is evaluated. Future
+computation variants cannot execute.
 Native interactions and additional options also fail closed.
 
 Named diagnostics include `INSIGHT_ANOMALY_UNSUPPORTED`, `INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED`,
