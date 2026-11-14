@@ -19,6 +19,12 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Insight top/bottom movers computations, ranking categories by percent or
+  absolute change in the bound measure between the latest dated period and the
+  preceding calendar period, with validated native import/export, disclosed
+  exclusions and honest unavailable sentences (parity-insight-top-bottom-movers,
+  phase-plan fallback; no GitHub issue).
+
 - Insight unique-values computations and an authoring preset, listing the
   distinct bound-category values in deterministic typed order, with validated
   native import/export and category-only execution for visuals whose

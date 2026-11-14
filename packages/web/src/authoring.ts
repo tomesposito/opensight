@@ -2,7 +2,7 @@ import { validOProvenance, oTitle, type OProvenance } from './o-provenance.js';
 import { metricColumn, type PublishedMetric } from '@opensight/query-engine/browser';
 import { metricFormatting, validMetricFormat } from './governed-metrics.js';
 import { defaultTextStyle, sheetObjectValid, serializeObjects, objectElementType, type SheetObject, type TextObject, type TextStyle } from './sheet-objects.js';
-import { rebindInsight } from './insight-configuration.js';
+import { rebindInsight, topBottomMoversTimeColumn } from './insight-configuration.js';
 import { paletteValid, themeValid, type AnalysisTheme } from './themes.js';
 import { formattingValid, gaugeValid, binsValid, legendPositionValid, legendTitleValid, groupTitleValid, altTextValid, cleanAltText, legendTextStyleValid, dataLabelsValid, cardStyleValid, cardLayoutValid, rowGroupPathValid, type LegendPosition, type LegendTitle, type GroupTitle, type LegendTextStyle, type DataLabels, type CardStyle, type CardLayout, type VisualFormatting } from './formatting.js';
 import type { Cell, MultiplesOptions } from './model.js';
@@ -985,6 +985,15 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   const multiples = visual.smallMultiples?.length ? { smallMultiples: visual.smallMultiples.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)) } : {};
   const breakdownWells = visual.kind === 'waterfall' && visual.breakdowns?.length ? { breakdowns: visual.breakdowns.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)) } : {};
   const category = visualDimensions(visual).map(name => dimensionField(name, visual.dateGrain, calculations, dataset));
+  // Movers insights bind a second (time) dimension inside their configuration;
+  // the author model keeps one dimension, so the time field joins the wells
+  // from the configuration itself (rebindInsight keeps it matched by column).
+  if (visual.kind === 'insight' && visual.insightConfiguration) {
+    try {
+      const timeName = topBottomMoversTimeColumn(visual.insightConfiguration);
+      if (timeName && !visualDimensions(visual).includes(timeName)) category.push(dimensionField(timeName, visual.dateGrain, calculations, dataset));
+    } catch { /* invalid configurations fail closed in the compiler */ }
+  }
   const values: BundleMeasureField[] = visual.measures.map(name => ({ numericalMeasureField: { ...columnField(name), aggregationFunction: { simpleNumericalAggregation: dataset?.metrics?.find(m => metricColumn(m.id) === name)?.defaultAggregation ?? 'SUM' } } }));
   const visibility = (show: boolean) => ({ visibility: show ? 'VISIBLE' : 'HIDDEN' });
   visual = { ...visual, formatting: metricFormatting(visual.formatting, dataset?.metrics?.filter(m => visual.measures.includes(metricColumn(m.id)))) };

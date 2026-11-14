@@ -3,6 +3,7 @@ import type { AuthorVisual, AuthorDataset, CalculatedField } from './authoring.j
 import { buildAuthorQuery } from './author-query.js';
 import { executeFixtureQuery } from './fixture-query.js';
 import { normalizeVisual } from './compiler.js';
+import { topBottomMoversTimeColumn } from './insight-configuration.js';
 import { FACETED_KINDS } from './facet-layout.js';
 import type { Fixture, FixtureVisual } from './model.js';
 import generated from './fixtures.generated.json' with { type: 'json' };
@@ -43,7 +44,7 @@ export function buildAuthorVisual(visual: AuthorVisual, calculations: readonly C
     ...(visual.filterActions?.length ? { filterActions: [...visual.filterActions] } : {}),
     ...(visual.urlActions?.length ? { urlActions: [...visual.urlActions] } : {}),
     ...(visual.navigationActions?.length ? { navigationActions: [...visual.navigationActions] } : {}),
-    bindings: Object.fromEntries([...visualDimensions(visual), ...(FACETED_KINDS.includes(visual.kind) ? visual.smallMultiples ?? [] : []), ...(visual.kind === 'waterfall' ? visual.breakdowns ?? [] : [])].filter(name => dataFields(calculations, dataset).some(f => f.name === name && f.type === 'DATETIME')).map(name => [name, (visual.dateGrain ?? 'MONTH').toLowerCase()])),
+    bindings: Object.fromEntries([...visualDimensions(visual), ...((() => { try { const t = visual.kind === 'insight' && visual.insightConfiguration ? topBottomMoversTimeColumn(visual.insightConfiguration) : undefined; return t && !visualDimensions(visual).includes(t) ? [t] : []; } catch { return []; } })()), ...(FACETED_KINDS.includes(visual.kind) ? visual.smallMultiples ?? [] : []), ...(visual.kind === 'waterfall' ? visual.breakdowns ?? [] : [])].filter(name => dataFields(calculations, dataset).some(f => f.name === name && f.type === 'DATETIME')).map(name => [name, (visual.dateGrain ?? 'MONTH').toLowerCase()])),
     placement: { column: 0, columns: 36, row: 0, rows: 6 },
     path: `author.${visual.id}`,
   };

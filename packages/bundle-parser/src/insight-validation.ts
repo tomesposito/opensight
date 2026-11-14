@@ -50,6 +50,23 @@ function validatePeriodToDate(value: unknown, path: string, key: (name: string) 
   if (grain !== undefined && !['DAY', 'MONTH', 'QUARTER', 'YEAR'].includes(grain as string)) invalid(`${path}.${key('periodTimeGranularity')}`, 'periodTimeGranularity must be DAY, MONTH, QUARTER or YEAR');
 }
 
+function validateTopBottomMovers(value: unknown, path: string, key: (name: string) => string): void {
+  const invalid = (p: string, message: string): never => fail(p, `INSIGHT_COMPUTATION_INVALID: ${message}`);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return invalid(path, 'expected an object');
+  const body = value as Record<string, unknown>;
+  const allowed = ['computationId', 'name', 'time', 'category', 'value', 'moverSize', 'sortOrder', 'type'].map(key);
+  for (const name of Object.keys(body)) if (!allowed.includes(name)) fail(`${path}.${name}`, 'INSIGHT_CONFIGURATION_UNSUPPORTED: unsupported topBottomMovers property');
+  const id = body[key('computationId')];
+  if (typeof id !== 'string' || !/^[\w-]{1,512}$/.test(id)) invalid(`${path}.${key('computationId')}`, 'a computationId is required');
+  if (body[key('name')] !== undefined && typeof body[key('name')] !== 'string') invalid(`${path}.${key('name')}`, 'name must be a string');
+  const type = body[key('type')];
+  if (type !== 'TOP' && type !== 'BOTTOM') invalid(`${path}.${key('type')}`, 'type must be TOP or BOTTOM');
+  const size = body[key('moverSize')];
+  if (size !== undefined && (typeof size !== 'number' || !Number.isInteger(size) || size < 1 || size > 20)) invalid(`${path}.${key('moverSize')}`, 'moverSize must be an integer between 1 and 20');
+  const sortOrder = body[key('sortOrder')];
+  if (sortOrder !== undefined && sortOrder !== 'PERCENT_DIFFERENCE' && sortOrder !== 'ABSOLUTE_DIFFERENCE') invalid(`${path}.${key('sortOrder')}`, 'sortOrder must be PERCENT_DIFFERENCE or ABSOLUTE_DIFFERENCE');
+}
+
 function validateUniqueValues(value: unknown, path: string, key: (name: string) => string): void {
   const invalid = (p: string, message: string): never => fail(p, `INSIGHT_COMPUTATION_INVALID: ${message}`);
   if (!value || typeof value !== 'object' || Array.isArray(value)) return invalid(path, 'expected an object');
@@ -76,6 +93,7 @@ export function validateInsightConfiguration(value: unknown, path: string, api =
     if (kind === key('forecast')) { validateForecast(raw, `${p}.${kind}`, key); return; }
     if (kind === key('periodToDate')) { validatePeriodToDate(raw, `${p}.${kind}`, key); return; }
     if (kind === key('uniqueValues')) { validateUniqueValues(raw, `${p}.${kind}`, key); return; }
+    if (kind === key('topBottomMovers')) { validateTopBottomMovers(raw, `${p}.${kind}`, key); return; }
     const body = object(raw, `${p}.${kind}`);
     required(body, key('computationId'), p, nonempty);
     optional(body, key('name'), p, string);

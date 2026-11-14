@@ -1,5 +1,5 @@
 import { metricColumn } from '@opensight/query-engine/browser';
-import { uniqueValuesOnly } from './insight-configuration.js';
+import { uniqueValuesOnly, topBottomMoversTimeColumn } from './insight-configuration.js';
 import { unresolvedVisualFieldDiagnostics } from './unresolved-fields.js';
 import { declaration, type AuthorParameter } from './parameters.js';
 import type { AuthorControl } from './controls.js';
@@ -14,7 +14,11 @@ export interface AuthorRows { metrics?: QueryResponse['metrics']; rows: Row[] | 
 
 export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly CalculatedField[] = [], parameters: readonly AuthorParameter[] = [], dataset?: AuthorDataset): QueryRequest | null {
   if (authorVisualProblem(visual) || unresolvedVisualFieldDiagnostics(visual, calculations, dataset, parameters).length) return null;
-  const dimensions = visualDimensions(visual);
+  // A movers insight groups by (category, time): the time field lives in the
+  // insight configuration, not the author's single dimension well.
+  const moversTime = visual.kind === 'insight' && visual.insightConfiguration
+    ? (() => { try { return topBottomMoversTimeColumn(visual.insightConfiguration); } catch { return undefined; } })() : undefined;
+  const dimensions = [...visualDimensions(visual), ...(moversTime && !visualDimensions(visual).includes(moversTime) ? [moversTime] : [])];
   // A uniqueValues-only insight binds no measure; its grouped query is category-only.
   const uvOnly = visual.kind === 'insight' && !!visual.insightConfiguration && (() => { try { return uniqueValuesOnly(visual.insightConfiguration); } catch { return false; } })();
   if ((!visual.measures.length && !uvOnly) || (!noDimensions(visual.kind) && !dimensions.length)) return null;

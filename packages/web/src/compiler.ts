@@ -3,7 +3,7 @@ import { formatMetric } from './governed-metrics.js';
 import { formatNumber, groupedPeriodDate, shiftDate, resultDate } from '@opensight/query-engine/browser';
 import { computeForecast, forecastConfigValid, MIN_FORECAST_POINTS, type ForecastConfig } from './forecast.js';
 import { convertDefinition } from './definition-converter.js';
-import { InsightError, projectInsightBody, normalizeInsight, uniqueValuesOnly } from './insight-configuration.js';
+import { InsightError, projectInsightBody, normalizeInsight, uniqueValuesOnly, topBottomMoversOnly } from './insight-configuration.js';
 import { insightNarrative, type InsightNarrative } from './insight-narrative.js';
 import { insightGraphic } from './insight-graphic.js';
 import { LIGHT_THEME, themeValid, paletteValid } from './themes.js';
@@ -351,9 +351,10 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   }
   if (extra) {
     const d = dimensions.length, m = measures.length;
-    let uvOnly = false;
+    let uvOnly = false, mvOnly = false;
     if (kind === 'insight') {
-      if (d !== 1) fail(wpath, 'INSIGHT_CATEGORY_REQUIRED: expected exactly one Category dimension');
+      try { mvOnly = topBottomMoversOnly(body.insightConfiguration ?? {}); } catch { mvOnly = false; }
+      if (mvOnly ? d !== 2 : d !== 1) fail(wpath, mvOnly ? 'INSIGHT_CATEGORY_REQUIRED: movers require a Category dimension and a Time dimension' : 'INSIGHT_CATEGORY_REQUIRED: expected exactly one Category dimension');
       try { uvOnly = uniqueValuesOnly(body.insightConfiguration ?? {}); } catch { uvOnly = false; }
       if (m > 2 || (m < 1 && !uvOnly)) fail(wpath, 'INSIGHT_VALUES_REQUIRED: expected one Values measure, or two for comparison');
       try { normalizeInsight(body.insightConfiguration ?? {}, dimensions, measures); }
@@ -374,7 +375,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
       if (list(wells[wellKey('color')], wpath).length > 1) fail(wpath, 'RADAR_COLOR_LIMIT: expected at most one Color dimension');
       if (!m) fail(wpath, 'RADAR_VALUES_REQUIRED: expected one or more Values measures');
     }
-    const validDimensions = kind === 'radar' ? d >= 1 && d <= 2 : kind === 'gauge' ? d === 0 : kind === 'scatter' || kind === 'histogram' ? d <= 1 : kind === 'heatmap' || kind === 'pointMap' || kind === 'sankey' ? d === 2 && dimensionNames.every(n => list(wells[n], wpath).length === 1) : kind === 'treemap' || kind === 'box' ? d >= 1 : d === 1;
+    const validDimensions = kind === 'insight' ? d === 1 || (mvOnly && d === 2) : kind === 'radar' ? d >= 1 && d <= 2 : kind === 'gauge' ? d === 0 : kind === 'scatter' || kind === 'histogram' ? d <= 1 : kind === 'heatmap' || kind === 'pointMap' || kind === 'sankey' ? d === 2 && dimensionNames.every(n => list(wells[n], wpath).length === 1) : kind === 'treemap' || kind === 'box' ? d >= 1 : d === 1;
     const validMeasures = kind === 'insight' ? m <= 2 && (m >= 1 || uvOnly) : kind === 'scatter' ? m >= 2 && m <= 3 && measureNames.slice(0, 2).every(n => list(wells[n], wpath).length === 1) && list(wells[measureNames[2]!], wpath).length <= 1 : kind === 'combo' ? m >= 2 && list(wells[measureNames[0]!], wpath).length === 1 && measureNames.every(n => list(wells[n], wpath).length >= 1) : kind === 'radar' || kind === 'bar100' || kind === 'area' ? m >= 1 : m === 1;
     if (!validDimensions || !validMeasures) fail(wpath, extra.note);
   } else {
@@ -721,7 +722,9 @@ export function compileVisual(input: Input): CompiledVisual {
   // facetSeriesMap stay valid for the passes that consume them.
   let forecastPanels: { rows: Row[]; measureSeries: number[]; axisIndex: number }[] | undefined;
   if (model.kind === 'insight') {
-    try { narrative = insightNarrative(rows.map(row => ({ category: cell(row, model.dimensions[0]!), values: model.measures.map(f => number(row, f)) })), { category: model.dimensions[0], measures: model.measures, computations: model.insightConfiguration, formatting: model.formatting }); }
+    let mvOnly = false;
+    try { mvOnly = topBottomMoversOnly(model.insightConfiguration ?? {}); } catch { mvOnly = false; }
+    try { narrative = insightNarrative(rows.map(row => ({ category: cell(row, model.dimensions[0]!), ...(mvOnly ? { time: cell(row, model.dimensions[1]!) } : {}), values: model.measures.map(f => number(row, f)) })), { category: model.dimensions[0], ...(mvOnly ? { time: model.dimensions[1] } : {}), measures: model.measures, computations: model.insightConfiguration, formatting: model.formatting }); }
     catch (error) { if (error instanceof InsightError) fail(input.path, error.message); throw error; }
     option.tooltip = { show: false };
     option.graphic = insightGraphic(narrative, theme, model.formatting?.fontSize).graphic;

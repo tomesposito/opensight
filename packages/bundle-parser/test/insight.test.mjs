@@ -6,7 +6,7 @@ const bundle = computations => ({ resourceType: 'analysis', analysisId: 'insight
 } });
 const api = value => Array.isArray(value) ? value.map(api) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k[0].toUpperCase() + k.slice(1), api(v)])) : value;
 test('insight parser retains other known computations and their unsupported properties', () => {
-  for (const kind of ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison', 'topBottomMovers']) {
+  for (const kind of ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison']) {
     const raw = bundle([{ [kind]: { computationId: 'c', futureOption: 'preserved' } }]);
     assert.deepEqual(parseBundleResource(raw), raw);
   }
@@ -87,6 +87,41 @@ test('insight parser rejects malformed unique-values bodies with named errors in
   }
   // Only the active dialect's property names are allowed.
   assert.throws(() => parseBundleResource(bundle([{ uniqueValues: { computationId: 'u', Category: {} } }])), /INSIGHT_CONFIGURATION_UNSUPPORTED/);
+});
+
+test('insight parser retains valid top/bottom movers computations unchanged in both dialects', () => {
+  for (const extra of [{}, { moverSize: 1 }, { moverSize: 20, sortOrder: 'ABSOLUTE_DIFFERENCE' }, { sortOrder: 'PERCENT_DIFFERENCE' }]) {
+    const raw = bundle([{ topBottomMovers: { computationId: 'movers_1', name: 'Movers', type: 'TOP',
+      time: { dateDimensionField: { fieldId: 'date', column: { columnName: 'date', dataSetIdentifier: 'sales' }, dateGranularity: 'MONTH' } },
+      category: { categoricalDimensionField: { fieldId: 'region', column: { columnName: 'region', dataSetIdentifier: 'sales' } } },
+      value: { numericalMeasureField: { fieldId: 'revenue', column: { columnName: 'revenue', dataSetIdentifier: 'sales' }, aggregationFunction: { simpleNumericalAggregation: 'SUM' } } },
+      ...extra,
+    } }]);
+    assert.deepEqual(parseBundleResource(raw), raw);
+    const native = api(raw); native.ResourceType = 'Analysis';
+    assert.deepEqual(parseSyntheticAnalysis(native), native);
+  }
+  const bare = bundle([{ topBottomMovers: { computationId: 'm', type: 'BOTTOM' } }]);
+  assert.deepEqual(parseBundleResource(bare), bare);
+});
+
+test('insight parser rejects malformed top/bottom movers bodies with named errors in both dialects', () => {
+  const bodies = [
+    ...[null, [], 3, 'invalid', {}, { computationId: '' }, { computationId: 'bad id' }, { computationId: 'x'.repeat(513) }, { computationId: 'm', name: 1 },
+      { computationId: 'm' }, { computationId: 'm', type: 'MIDDLE' }, { computationId: 'm', type: 'top' }, { computationId: 'm', type: 1 },
+      ...[0, 21, 1.5, '3', null].map(moverSize => ({ computationId: 'm', type: 'TOP', moverSize })),
+      ...['PERCENT', 'percent_difference', 1, null].map(sortOrder => ({ computationId: 'm', type: 'TOP', sortOrder })),
+    ].map(body => [body, /INSIGHT_COMPUTATION_INVALID/]),
+    ...[{ future: true }, { resultSize: 3 }, { periodSize: 2 }].map(extra => [{ computationId: 'm', type: 'TOP', ...extra }, /INSIGHT_CONFIGURATION_UNSUPPORTED/]),
+  ];
+  for (const [body, error] of bodies) {
+    const raw = bundle([{ topBottomMovers: body }]);
+    assert.throws(() => parseBundleResource(raw), error);
+    const native = api(raw); native.ResourceType = 'Analysis';
+    assert.throws(() => parseSyntheticAnalysis(native), error);
+  }
+  // Only the active dialect's property names are allowed.
+  assert.throws(() => parseBundleResource(bundle([{ topBottomMovers: { computationId: 'm', type: 'TOP', MoverSize: 3 } }])), /INSIGHT_CONFIGURATION_UNSUPPORTED/);
 });
 
 test('insight parser rejects malformed period-to-date bodies with named errors in both dialects', () => {
