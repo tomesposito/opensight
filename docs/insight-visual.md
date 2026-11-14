@@ -28,11 +28,37 @@ JSON remains available for unchanged export, including blocked features.
 | GrowthRate / PeriodOverPeriod | Latest date period versus the preceding calendar period at the bound DAY, MONTH, QUARTER or YEAR grain. Growth PeriodSize is limited to 2. |
 | MetricComparison | Aggregate FromValue minus aggregate TargetValue, plus percent difference. Requires two distinct bound measures. |
 | Forecast | Statistical forecast of the bound measure, using the shared chart exponential-smoothing engine. Requires a date dimension; reports the forward horizon at its grain, final projected period/value and prediction-interval range. |
+| PeriodToDate | SUM of the bound measure's groups in the UTC calendar period containing the latest dated row. PeriodTimeGranularity accepts DAY, MONTH, QUARTER or YEAR and defaults to the bound date grain. A finer period than the bound grain is unavailable. |
 
 With no explicit computations, the summary includes total, highest and lowest
 contributors, plus a period comparison for date fields and a metric comparison
 when two measures are bound. The Properties panel can select a total, ranked
-list, growth, period, forecast or metric comparison and configure rank count and decimals.
+list, growth, period, forecast, period to date or metric comparison and configure rank count and decimals.
+
+PeriodToDate computations accept `computationId`, optional string `name`, `time`,
+`value` and optional `periodTimeGranularity`. Native PascalCase imports use
+`PeriodToDate` / `PeriodTimeGranularity`; both dialects retain the computation
+unchanged on export. The **Period to date (date required)** preset leaves the
+period granularity absent, so it follows the bound date grain. Unknown properties,
+malformed IDs and invalid granularities fail closed before querying.
+
+Rows are first aggregated at the bound date grain, decoded with the shared date
+decoder and ordered chronologically. PeriodToDate selects the calendar period
+containing the latest dated row, including a trailing null group, using UTC
+boundaries `[period start, next period start)`. It sums only the supplied groups
+inside that period; it never substitutes an all-time total. Null groups inside
+the period are skipped and their count disclosed. Missing dates are not filled.
+The sentence is `Period-to-date <measure> for <period label> (<grain>): <value>.`
+Labels use `YYYY-MM-DD`, `YYYY-MM`, `YYYY-Qn` or `YYYY`.
+
+A period finer than the bound grain, no non-null values in the latest period,
+or no dated rows produces an unavailable sentence with the reason and no invented
+number. Duplicate decoded periods raise `INSIGHT_VALUE_INVALID`; invalid date
+categories raise `INSIGHT_TIME_REQUIRED`. Empty or missing query results retain
+the panel's existing empty/unavailable state, with the no-dated-rows reason in the
+PeriodToDate narrative. The period is anchored to the latest supplied row, not
+the wall clock. Sentence composition is OpenSight's; QuickSight's exact wording
+is not replicated, and no ML or visual-fidelity parity is claimed.
 
 Forecast computations accept `computationId`, optional `name`, `time`, `value`
 and `forecastProperties` in the internal camelCase form. Native API imports use
@@ -82,14 +108,14 @@ ECharts rich-text templates.
 
 Anomaly computations are unsupported. All native custom-narrative
 templates are currently unsupported, including placeholders referencing forecasts
-or other unsupported computations. No template HTML is evaluated. PeriodToDate,
-TopBottomMovers, UniqueValues and future computation variants cannot execute.
+or other computations. No template HTML is evaluated. TopBottomMovers,
+UniqueValues and future computation variants cannot execute.
 Native interactions and additional options also fail closed.
 
 Named diagnostics include `INSIGHT_ANOMALY_UNSUPPORTED`, `INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED`,
-`INSIGHT_TIME_REQUIRED`, `INSIGHT_CATEGORY_REQUIRED`, `INSIGHT_VALUES_REQUIRED`,
+`INSIGHT_TIME_REQUIRED`, `INSIGHT_CATEGORY_REQUIRED`, `INSIGHT_CATEGORY_INVALID`, `INSIGHT_VALUES_REQUIRED`,
 `INSIGHT_FIELD_UNBOUND`, `INSIGHT_PERIOD_UNSUPPORTED`, `INSIGHT_VALUE_INVALID`,
-`INSIGHT_COMPUTATION_INVALID` and `INSIGHT_CONFIGURATION_UNSUPPORTED`.
+`INSIGHT_COMPUTATION_INVALID`, `INSIGHT_CONFIGURATION_INVALID` and `INSIGHT_CONFIGURATION_UNSUPPORTED`.
 Unknown parser variants raise `INSIGHT_COMPUTATION_UNKNOWN`; known but
 unimplemented compiler variants raise `INSIGHT_COMPUTATION_UNSUPPORTED`.
 

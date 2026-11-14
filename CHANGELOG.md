@@ -19,6 +19,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Insight period-to-date computations and a date-required authoring preset, with
+  UTC calendar-period totals, validated native import/export, null disclosure and
+  honest unavailable reasons (parity-insight-period-to-date, phase-plan fallback;
+  no GitHub issue).
+
 - Insight forecast computations and a date-required authoring preset, using the
   shared statistical forecast engine for the final projected value and prediction
   interval, with validated native import/export and honest unavailable states
