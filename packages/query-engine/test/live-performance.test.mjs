@@ -132,6 +132,26 @@ test('cache invalidation is prefix-specific or full and keeps cumulative counter
   assert.ok(!JSON.stringify(['arn:ab', 'visual']).startsWith(liveDatasetCachePrefix('arn:a')));
 });
 
+test('cache statistics count active fills and distinct tracked keys until set or release', () => {
+  const cache = new LiveResultCache({ now: () => 1000 }), rows = [{ total: 1 }];
+  const fill = cache.beginFill('stored');
+  assert.deepEqual(cache.stats(), { hits: 0, misses: 0, stores: 0, entries: 0, retainedBytes: 0, activeFills: 1, trackedFillKeys: 1 });
+  cache.set('stored', rows, 1000, fill);
+  const stored = { hits: 0, misses: 0, stores: 1, entries: 1, retainedBytes: rowBytes(rows), activeFills: 0, trackedFillKeys: 0 };
+  assert.deepEqual(cache.stats(), stored);
+
+  const older = cache.beginFill('shared');
+  const newer = cache.beginFill('shared');
+  const other = cache.beginFill('other');
+  assert.deepEqual(cache.stats(), { ...stored, activeFills: 3, trackedFillKeys: 2 });
+  cache.releaseFill(older);
+  assert.deepEqual(cache.stats(), { ...stored, activeFills: 2, trackedFillKeys: 2 });
+  cache.releaseFill(newer);
+  assert.deepEqual(cache.stats(), { ...stored, activeFills: 1, trackedFillKeys: 1 });
+  cache.releaseFill(other);
+  assert.deepEqual(cache.stats(), stored);
+});
+
 test('a fill captured before a matching invalidation cannot store, but unrelated invalidation does not block it', () => {
   const cache = new LiveResultCache();
   const prefixFill = cache.beginFill('dataset:a');
@@ -243,16 +263,23 @@ test('invalidations are retained only while a matching fill is active, then prun
   cache.releaseFill(probe3);
 });
 
-test('a failed local execution releases its fill so the next execution stores and serves from cache', async t => {
-  const r = request(), options = { ...temporaryCsv(t, 'bad,header\n'), liveCache: { cache: new LiveResultCache(), ttlMs: 1000 } };
-  const cache = options.liveCache.cache;
-  await assert.rejects(executeLocal(r, options), { code: 'LOCAL_DATA_ERROR' });
-  assert.deepEqual(cache.stats(), { hits: 0, misses: 1, stores: 0, entries: 0, retainedBytes: 0, activeFills: 0, trackedFillKeys: 0 });
+test('distinct failed local executions release all fills before a repaired key stores and serves from cache', async t => {
+  const requests = ['total-revenue', 'revenue-by-region', 'share-by-category', 'revenue-trend'].map(id => request(id));
+  const cache = new LiveResultCache({ now: () => 1000 });
+  const options = { ...temporaryCsv(t, 'bad,header\n'), liveCache: { cache, ttlMs: 1000 } };
+  for (const r of requests) await assert.rejects(executeLocal(r, options), { code: 'LOCAL_DATA_ERROR' });
+  // Inspect before any successful retry can supersede a leaked latest-fill marker.
+  assert.deepEqual(cache.stats(), { hits: 0, misses: requests.length, stores: 0, entries: 0, retainedBytes: 0, activeFills: 0, trackedFillKeys: 0 });
   writeFileSync(join(options.dataRoot, 'sales.csv'), read('sales.csv'));
-  const first = await executeLocal(r, options);
+  const first = await executeLocal(requests[0], options);
   assert.deepEqual(first.provenance, { source: 'live' });
+  assert.deepEqual(first.rows, [{ revenue: 500 }]);
   assert.equal(cache.stats().stores, 1);
-  assert.equal((await executeLocal(r, options)).provenance.source, 'cache');
+  const second = await executeLocal(requests[0], options);
+  assert.equal(second.provenance.source, 'cache');
+  assert.deepEqual(second.rows, first.rows);
+  assert.deepEqual(cache.stats(), { hits: 1, misses: requests.length + 1, stores: 1, entries: 1,
+    retainedBytes: rowBytes(first.rows), activeFills: 0, trackedFillKeys: 0 });
 });
 
 test('local execution in flight during dataset invalidation returns live rows but does not repopulate the cache', async t => {
