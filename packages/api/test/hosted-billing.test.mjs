@@ -368,6 +368,27 @@ test('242 migration: guarded SQLite/Postgres upgrade preserves legacy fences and
   });
 });
 
+test('242 migration: pre-watermark invoice bookkeeping preserves existing subscription and access state', async t => {
+  for (const status of ['active', 'unpaid']) {
+    const f = await billingFixture(t); await bindActive(f);
+    if (status === 'unpaid') await f.billing.handleEvent(subscriptionEvent('evt_legacy_unpaid', pricedSub(status), 30));
+    const before = entitlementState(await f.billing.state('tenant-one'));
+    await f.db.transaction(async c => {
+      await c.query('ALTER TABLE h9_billing DROP COLUMN last_stripe_event_created');
+      await c.query('ALTER TABLE h9_billing DROP COLUMN stripe_ordering');
+    });
+    await initializeBilling(f.db); await initializeBilling(f.db);
+    const reloaded = new HostedBilling(f.db, billingConfig(env()), { clock: f.now }); await reloaded.load();
+    assert.equal((await reloaded.handleEvent(invoiceEvent('invoice.paid', 0))).handled, true);
+    const state = await reloaded.state('tenant-one');
+    assert.deepEqual(entitlementState(state), before);
+    assert.equal(state.lastStripeEventCreated, 0);
+    assert.equal(reloaded.accessPaused('tenant-one'), status === 'unpaid');
+    assert.equal((await reloaded.handleEvent(subscriptionEvent('evt_first_snapshot', pricedSub('active', 'regular'), 0))).handled, true);
+    assert.deepEqual(entitlementState(await reloaded.state('tenant-one')), { tier: 'regular', subscriptionStatus: 'active', accessState: 'active' });
+  }
+});
+
 test('211 fencing: previous-subscription updates and invoices cannot change a replacement binding', async t => {
   const f = await billingFixture(t); await bindActive(f);
   await f.billing.handleEvent({ id: 'evt_replace', created: 30, type: 'checkout.session.completed', object: {

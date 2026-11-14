@@ -224,8 +224,9 @@ function compareEvidence(a: StripeEvidence, b: StripeEvidence): number {
 }
 function stripeOrdering(raw: unknown, existing: BillingRecord | undefined): StripeOrdering {
   if (typeof raw === 'string') return JSON.parse(raw) as StripeOrdering;
-  const created = existing?.lastStripeEventCreated;
-  if (created == null || !existing) return {};
+  if (!existing) return {};
+  // -1 preserves pre-watermark state without rejecting any valid creation time.
+  const created = existing.lastStripeEventCreated ?? -1;
   // Legacy logs stored receipt time, not event.created. Preserve their fence
   // conservatively in every domain; equal-second evidence may still reconcile.
   return {

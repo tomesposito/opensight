@@ -189,8 +189,9 @@ column migration and is safe to repeat. Legacy rows seed each domain from the
 old global watermark and their committed billing state, conservatively
 preserving the older-event fence; the old event log lacks Stripe creation
 times and cannot recover domain history from receipt times. Equal-second
-events can still reconcile. Rows without a historical watermark start without
-an ordering baseline. Only compact billing evidence is stored, not raw Stripe
+events can still reconcile. Rows without a historical watermark preserve their
+stored billing state without rejecting any valid creation time (including zero).
+Only compact billing evidence is stored, not raw Stripe
 payloads. Reconciliation evidence survives reload and shares the billing row's
 backup and erasure lifecycle.
 
