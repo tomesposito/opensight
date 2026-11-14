@@ -263,18 +263,16 @@ export class InputTableRoutes {
         method(request, response, ['GET']);
         const pagination = auditPagination(query);
         const id = routeId(auditMatch[1]!);
-        const table = this.store.tableById(id);
-        const entries = this.store.auditFor(id);
+        const { table, firstEntryNamespaceId, entries, total } = this.store.auditPageFor(id, principal.namespaceId, pagination);
         if (table) {
           if (!canViewInputTable(principal, table)) throw new InputTableError('INPUT_TABLE_NOT_FOUND', 404, 'Input table not found');
         } else {
           // Deleted tables keep their audit trail (D-84): still namespace-scoped, never leaked.
-          if (!entries.length || entries[0]!.namespaceId !== principal.namespaceId) throw new InputTableError('INPUT_TABLE_NOT_FOUND', 404, 'Input table not found');
+          if (firstEntryNamespaceId !== principal.namespaceId) throw new InputTableError('INPUT_TABLE_NOT_FOUND', 404, 'Input table not found');
         }
-        const visible = entries.filter(a => a.namespaceId === principal.namespaceId);
         send(response, 200, pagination
-          ? { entries: visible.slice(pagination.offset, pagination.offset + pagination.limit), total: visible.length, ...pagination }
-          : { entries: visible });
+          ? { entries, total, ...pagination }
+          : { entries });
         return true;
       }
 

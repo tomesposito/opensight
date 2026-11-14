@@ -215,6 +215,24 @@ export class InputTableStore {
   read(): InputTablesState { return this.store.read(); }
   tableById(id: string): InputTable | undefined { return this.store.project(state => state.tables.find(table => table.id === id)); }
   auditFor(tableId: string): InputAuditEntry[] { return this.store.project(state => state.audit.filter(entry => entry.tableId === tableId)); }
+  /** Project authorization metadata and namespace-visible pagination before cloning. */
+  auditPageFor(tableId: string, namespaceId: string, pagination?: { limit: number; offset: number }) {
+    return this.store.project(state => {
+      const table = state.tables.find(table => table.id === tableId);
+      let firstEntryNamespaceId: string | undefined;
+      const entries: InputAuditEntry[] = [];
+      let total = 0;
+      for (const entry of state.audit) {
+        if (entry.tableId !== tableId) continue;
+        // Deleted-table authorization uses the first entry, regardless of the page.
+        firstEntryNamespaceId ??= entry.namespaceId;
+        if (entry.namespaceId !== namespaceId) continue;
+        if (!pagination || (total >= pagination.offset && entries.length < pagination.limit)) entries.push(entry);
+        total++;
+      }
+      return { table: table ? { namespaceId: table.namespaceId } : undefined, firstEntryNamespaceId, entries, total };
+    });
+  }
   /** Single serialized mutation; audit entries are appended atomically with the data change. */
   change<R>(update: (draft: InputTablesState) => R): Promise<R> { return this.store.change(update); }
 }
