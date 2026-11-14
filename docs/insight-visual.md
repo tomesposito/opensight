@@ -29,11 +29,25 @@ JSON remains available for unchanged export, including blocked features.
 | MetricComparison | Aggregate FromValue minus aggregate TargetValue, plus percent difference. Requires two distinct bound measures. |
 | Forecast | Statistical forecast of the bound measure, using the shared chart exponential-smoothing engine. Requires a date dimension; reports the forward horizon at its grain, final projected period/value and prediction-interval range. |
 | PeriodToDate | SUM of the bound measure's groups in the UTC calendar period containing the latest dated row. PeriodTimeGranularity accepts DAY, MONTH, QUARTER or YEAR and defaults to the bound date grain. A finer period than the bound grain is unavailable. |
+| UniqueValues | The distinct values of the bound category, listed in deterministic typed order. Binds no measure: a visual whose computations are all UniqueValues executes with no Values measure. |
 
 With no explicit computations, the summary includes total, highest and lowest
 contributors, plus a period comparison for date fields and a metric comparison
 when two measures are bound. The Properties panel can select a total, ranked
-list, growth, period, forecast, period to date or metric comparison and configure rank count and decimals.
+list, growth, period, forecast, period to date, unique values or metric comparison and configure rank count and decimals.
+
+UniqueValues computations accept `computationId`, optional string `name` and
+`category` only; any other property (including `value` or `time`) fails closed.
+The narrative lists each distinct category once, ordered by the same
+JSON-typed sort used for ranked ties (quoted strings precede null), with a null
+category shown as `(null)`: `Unique <category>: <v1>; <v2>; … .` Measure values
+never affect the list and no null-group disclosure is added. Authored visuals
+keep their Values well, which the computation ignores; a native visual whose
+computations are all UniqueValues needs no Values well at all — its author
+query groups by category alone and carries a discarded COUNT measure only
+because the query planner requires one explicit measure. Empty results retain
+the panel's existing empty state. Sentence composition is OpenSight's;
+QuickSight's exact wording is not replicated.
 
 PeriodToDate computations accept `computationId`, optional string `name`, `time`,
 `value` and optional `periodTimeGranularity`. Native PascalCase imports use
@@ -108,8 +122,8 @@ ECharts rich-text templates.
 
 Anomaly computations are unsupported. All native custom-narrative
 templates are currently unsupported, including placeholders referencing forecasts
-or other computations. No template HTML is evaluated. TopBottomMovers,
-UniqueValues and future computation variants cannot execute.
+or other computations. No template HTML is evaluated. TopBottomMovers
+and future computation variants cannot execute.
 Native interactions and additional options also fail closed.
 
 Named diagnostics include `INSIGHT_ANOMALY_UNSUPPORTED`, `INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED`,

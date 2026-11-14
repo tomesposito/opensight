@@ -40,10 +40,15 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
     catch { return insightFail('INSIGHT_VALUE_INVALID', 'nonfinite total'); }
   };
   const paragraphs = requests.filter(request => rows.length || request.kind === 'periodToDate').map(request => {
-    const name = fieldName(input.measures[request.measure]!, input.formatting), total = request.kind === 'forecast' || request.kind === 'periodToDate' ? null : sum(request.measure);
+    const name = request.kind === 'uniqueValues' ? '' : fieldName(input.measures[request.measure]!, input.formatting), total = request.kind === 'forecast' || request.kind === 'periodToDate' || request.kind === 'uniqueValues' ? null : sum(request.measure);
     const numeric = rows.filter(r => r.values[request.measure] !== null);
     let parts: NarrativePart[];
-    if (request.kind === 'totalAggregation') {
+    if (request.kind === 'uniqueValues') {
+      // Distinct categories in deterministic typed order, independent of incoming row order.
+      const sorted = [...rows].sort((a, b) => { const ak = JSON.stringify(a.category), bk = JSON.stringify(b.category); return ak < bk ? -1 : ak > bk ? 1 : 0; });
+      parts = [text(`Unique ${fieldName(input.category!, input.formatting)}: `),
+        ...sorted.flatMap((row, index) => [...(index ? [text('; ')] : []), text(label(row.category))]), text('.')];
+    } else if (request.kind === 'totalAggregation') {
       parts = [text(`Total ${name}: `), value(total), text('.')];
     } else if (request.kind === 'maximumMinimum' || request.kind === 'topBottomRanked') {
       // Stable ties use typed category ordering, independent of incoming row order.

@@ -19,6 +19,12 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Insight unique-values computations and an authoring preset, listing the
+  distinct bound-category values in deterministic typed order, with validated
+  native import/export and category-only execution for visuals whose
+  computations are all UniqueValues (parity-insight-unique-values, phase-plan
+  fallback; no GitHub issue).
+
 - Insight period-to-date computations and a date-required authoring preset, with
   UTC calendar-period totals, validated native import/export, null disclosure and
   honest unavailable reasons (parity-insight-period-to-date, phase-plan fallback;

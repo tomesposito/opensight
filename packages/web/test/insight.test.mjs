@@ -40,7 +40,7 @@ test('compiler checks insight wells and computation errors before unavailable ro
     const source = input(null); wells(source)[slot] = values;
     assert.throws(() => compileVisual(source), e => e instanceof CompileError && e.message.includes(`INSIGHT_${code}_REQUIRED`));
   }
-  for (const [kind, code] of [['forecast', 'TIME_REQUIRED'], ['periodToDate', 'TIME_REQUIRED'], ['anomaly', 'ANOMALY_UNSUPPORTED'], ['topBottomMovers', 'COMPUTATION_UNSUPPORTED'], ['uniqueValues', 'COMPUTATION_UNSUPPORTED'], ['growthRate', 'TIME_REQUIRED'], ['periodOverPeriod', 'TIME_REQUIRED'], ['metricComparison', 'VALUES_REQUIRED']]) {
+  for (const [kind, code] of [['forecast', 'TIME_REQUIRED'], ['periodToDate', 'TIME_REQUIRED'], ['anomaly', 'ANOMALY_UNSUPPORTED'], ['topBottomMovers', 'COMPUTATION_UNSUPPORTED'], ['growthRate', 'TIME_REQUIRED'], ['periodOverPeriod', 'TIME_REQUIRED'], ['metricComparison', 'VALUES_REQUIRED']]) {
     const source = input(null); body(source).insightConfiguration = { computations: [{ [kind]: { computationId: 'c' } }] };
     assert.throws(() => compileVisual(source), new RegExp(`INSIGHT_${code}`));
   }

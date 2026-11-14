@@ -162,3 +162,28 @@ test('period-to-date authoring preset dispatches, serializes and round-trips wit
   await act(() => renderer.update(createElement(AuthorCanvas, { draft: categorical, dispatch() {} })));
   assert.match(JSON.stringify(renderer.toJSON()), /INSIGHT_TIME_REQUIRED/);
 });
+
+test('unique-values authoring preset dispatches, serializes and round-trips', async t => {
+  const oldWindow = globalThis.window, oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
+  globalThis.window = { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) };
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let renderer, action;
+  let draft = add();
+  t.after(async () => { if (renderer) await act(() => renderer.unmount()); globalThis.window = oldWindow; globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
+  await act(() => { renderer = create(createElement(AuthorCanvas, { draft, dispatch: a => { action = a; } })); });
+  const select = renderer.root.findByProps({ 'aria-label': 'Narrative computation' });
+  assert.equal(select.findAllByType('option').find(n => n.props.value === 'uniqueValues').props.children, 'Unique values');
+  await act(() => select.props.onChange({ target: { value: 'uniqueValues' } }));
+  const configuration = { computations: [{ uniqueValues: { computationId: 'uniqueValues' } }] };
+  assert.deepEqual(action, { type: 'insight', configuration });
+  draft = authorReducer(draft, action); validateDraft(draft);
+  assert.deepEqual(serializeVisual(visual(draft)).insightVisual.insightConfiguration, configuration);
+  const model = compile(draft).model;
+  assert.deepEqual(normalizeInsight(model.insightConfiguration, model.dimensions, model.measures), [{ kind: 'uniqueValues', id: 'uniqueValues', measure: 0 }]);
+  const bundle = bundleOf(serializeDraft(draft)), imported = importBundle(bundle);
+  assert.deepEqual(visual(imported).imported.issues, []);
+  assert.deepEqual(visual(imported).insightConfiguration, configuration);
+  assert.deepEqual(exportBundle(imported), bundle);
+  const html = renderToStaticMarkup(createElement(AuthorCanvas, { draft: imported, dispatch() {} }));
+  assert.match(html, /value="uniqueValues" selected=""/);
+});

@@ -3,7 +3,7 @@ import { formatMetric } from './governed-metrics.js';
 import { formatNumber, groupedPeriodDate, shiftDate, resultDate } from '@opensight/query-engine/browser';
 import { computeForecast, forecastConfigValid, MIN_FORECAST_POINTS, type ForecastConfig } from './forecast.js';
 import { convertDefinition } from './definition-converter.js';
-import { InsightError, projectInsightBody, normalizeInsight } from './insight-configuration.js';
+import { InsightError, projectInsightBody, normalizeInsight, uniqueValuesOnly } from './insight-configuration.js';
 import { insightNarrative, type InsightNarrative } from './insight-narrative.js';
 import { insightGraphic } from './insight-graphic.js';
 import { LIGHT_THEME, themeValid, paletteValid } from './themes.js';
@@ -351,9 +351,11 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   }
   if (extra) {
     const d = dimensions.length, m = measures.length;
+    let uvOnly = false;
     if (kind === 'insight') {
       if (d !== 1) fail(wpath, 'INSIGHT_CATEGORY_REQUIRED: expected exactly one Category dimension');
-      if (m < 1 || m > 2) fail(wpath, 'INSIGHT_VALUES_REQUIRED: expected one Values measure, or two for comparison');
+      try { uvOnly = uniqueValuesOnly(body.insightConfiguration ?? {}); } catch { uvOnly = false; }
+      if (m > 2 || (m < 1 && !uvOnly)) fail(wpath, 'INSIGHT_VALUES_REQUIRED: expected one Values measure, or two for comparison');
       try { normalizeInsight(body.insightConfiguration ?? {}, dimensions, measures); }
       catch (error) { if (error instanceof InsightError) fail(cpath, error.message); throw error; }
       if (body.dataSetIdentifier !== undefined && measures.some(f => f.dataSet !== body.dataSetIdentifier)) fail(p, 'INSIGHT_FIELD_UNBOUND: dataset does not match computation fields');
@@ -373,7 +375,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
       if (!m) fail(wpath, 'RADAR_VALUES_REQUIRED: expected one or more Values measures');
     }
     const validDimensions = kind === 'radar' ? d >= 1 && d <= 2 : kind === 'gauge' ? d === 0 : kind === 'scatter' || kind === 'histogram' ? d <= 1 : kind === 'heatmap' || kind === 'pointMap' || kind === 'sankey' ? d === 2 && dimensionNames.every(n => list(wells[n], wpath).length === 1) : kind === 'treemap' || kind === 'box' ? d >= 1 : d === 1;
-    const validMeasures = kind === 'insight' ? m >= 1 && m <= 2 : kind === 'scatter' ? m >= 2 && m <= 3 && measureNames.slice(0, 2).every(n => list(wells[n], wpath).length === 1) && list(wells[measureNames[2]!], wpath).length <= 1 : kind === 'combo' ? m >= 2 && list(wells[measureNames[0]!], wpath).length === 1 && measureNames.every(n => list(wells[n], wpath).length >= 1) : kind === 'radar' || kind === 'bar100' || kind === 'area' ? m >= 1 : m === 1;
+    const validMeasures = kind === 'insight' ? m <= 2 && (m >= 1 || uvOnly) : kind === 'scatter' ? m >= 2 && m <= 3 && measureNames.slice(0, 2).every(n => list(wells[n], wpath).length === 1) && list(wells[measureNames[2]!], wpath).length <= 1 : kind === 'combo' ? m >= 2 && list(wells[measureNames[0]!], wpath).length === 1 && measureNames.every(n => list(wells[n], wpath).length >= 1) : kind === 'radar' || kind === 'bar100' || kind === 'area' ? m >= 1 : m === 1;
     if (!validDimensions || !validMeasures) fail(wpath, extra.note);
   } else {
     if (kind === 'kpi' ? dimensions.length !== 0 : kind === 'pivot' || kind === 'table' ? dimensions.length < 1 : dimensions.length !== 1) fail(wpath, kind === 'kpi' ? 'KPI must have no category' : 'exactly one category/group field is supported');
