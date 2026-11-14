@@ -9,29 +9,44 @@ export async function initializeAnalytics(db: Database): Promise<void> {
     await c.query(`CREATE TABLE IF NOT EXISTS analytics_events (
       event_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL,
       event_name TEXT NOT NULL, props TEXT NOT NULL, created_at TEXT NOT NULL, delivered_at TEXT,
+      quarantine_reason TEXT,
       FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id))`);
     // Owner migration only. Transaction-scoped wrappers may omit dialect, so
     // use the access-request savepoint probe outside known SQLite adapters.
-    let hasDeliveredAt: boolean;
-    if (db.dialect === 'sqlite') {
-      hasDeliveredAt = (await c.query('PRAGMA table_info(analytics_events)')).some(row => row.name === 'delivered_at');
-    } else {
-      await c.query('SAVEPOINT opensight_delivered_at_check');
-      hasDeliveredAt = true;
-      try { await c.query('SELECT delivered_at FROM analytics_events LIMIT 0'); }
-      catch { hasDeliveredAt = false; await c.query('ROLLBACK TO SAVEPOINT opensight_delivered_at_check'); }
-      await c.query('RELEASE SAVEPOINT opensight_delivered_at_check');
-    }
-    if (!hasDeliveredAt) await c.query('ALTER TABLE analytics_events ADD COLUMN delivered_at TEXT');
+    const hasColumn = async (column: string): Promise<boolean> => {
+      if (db.dialect === 'sqlite') {
+        return (await c.query('PRAGMA table_info(analytics_events)')).some(row => row.name === column);
+      }
+      await c.query(`SAVEPOINT opensight_${column}_check`);
+      let present = true;
+      try { await c.query(`SELECT ${column} FROM analytics_events LIMIT 0`); }
+      catch { present = false; await c.query(`ROLLBACK TO SAVEPOINT opensight_${column}_check`); }
+      await c.query(`RELEASE SAVEPOINT opensight_${column}_check`);
+      return present;
+    };
+    if (!await hasColumn('delivered_at')) await c.query('ALTER TABLE analytics_events ADD COLUMN delivered_at TEXT');
+    if (!await hasColumn('quarantine_reason')) await c.query('ALTER TABLE analytics_events ADD COLUMN quarantine_reason TEXT');
     await c.query('CREATE INDEX IF NOT EXISTS analytics_event_scope ON analytics_events(tenant_id, namespace_id, created_at)');
     await c.query(`CREATE TABLE IF NOT EXISTS analytics_settings (
       tenant_id TEXT PRIMARY KEY, namespace_id TEXT NOT NULL, enabled INTEGER NOT NULL CHECK (enabled IN (0,1)),
       FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id))`);
   });
 }
-function analyticsRow(r: SqlRow): AnalyticsRow {
-  return { id: String(r.event_id), tenantId: String(r.tenant_id), namespaceId: String(r.namespace_id), name: String(r.event_name) as AnalyticsRow['name'],
-    props: JSON.parse(String(r.props)) as AnalyticsRow['props'], createdAt: String(r.created_at) };
+/** Named quarantine reasons for persisted rows that can never be delivered (#247). */
+export const analyticsQuarantineReasons = { propsMalformed: 'ANALYTICS_EVENT_PROPS_MALFORMED', eventInvalid: 'ANALYTICS_EVENT_INVALID' } as const;
+/** Deserialize and validate one persisted row independently. A malformed row
+ * (restored, legacy or corrupted) yields its named quarantine reason instead of
+ * throwing, so one bad row can never abort or starve the rest of the batch. */
+function parseAnalyticsRow(r: SqlRow): { row: AnalyticsRow } | { reason: string } {
+  let props: unknown;
+  try { props = JSON.parse(String(r.props)); } catch { return { reason: analyticsQuarantineReasons.propsMalformed }; }
+  const event = validateAnalyticsEvent({ name: String(r.event_name), props });
+  if (!event) return { reason: analyticsQuarantineReasons.eventInvalid };
+  return { row: { id: String(r.event_id), tenantId: String(r.tenant_id), namespaceId: String(r.namespace_id), name: event.name,
+    props: event.props, createdAt: String(r.created_at) } };
+}
+async function quarantineRow(c: SqlConnection, id: string, reason: string): Promise<void> {
+  await c.query('UPDATE analytics_events SET quarantine_reason = ? WHERE event_id = ? AND quarantine_reason IS NULL', [reason, id]);
 }
 /** Private operator connection, like HostedUsage. No tenant-role SQL grants or tenant-facing unscoped reads. */
 export class AnalyticsStore {
@@ -71,21 +86,44 @@ export class AnalyticsStore {
       return true;
     }, row);
   }
+  /** Scan ordered pages until `limit` valid rows are collected or rows run out.
+   * Malformed rows are quarantined with their named reason as they are met, so
+   * they drop out of later pages; the offset advances only past valid rows
+   * examined, which stay pending until the caller marks them delivered. */
+  private async selectValid(c: SqlConnection, limit: number,
+    page: (limit: number, offset: number) => Promise<SqlRow[]>): Promise<AnalyticsRow[]> {
+    const valid: AnalyticsRow[] = [];
+    let offset = 0;
+    while (valid.length < limit) {
+      const rows = await page(limit, offset);
+      if (!rows.length) break;
+      let examinedValid = 0;
+      for (const r of rows) {
+        const parsed = parseAnalyticsRow(r);
+        if ('reason' in parsed) { await quarantineRow(c, String(r.event_id), parsed.reason); continue; }
+        examinedValid++;
+        if (valid.length < limit) valid.push(parsed.row);
+      }
+      offset += examinedValid;
+      if (rows.length < limit) break;
+    }
+    return valid;
+  }
   /** Deployment-wide vendor outbox; only the private operator connection can read it. */
   async undelivered(limit = 32): Promise<AnalyticsRow[]> {
     if (!Number.isSafeInteger(limit) || limit < 1) throw new MetadataError('ANALYTICS_DRAIN_LIMIT_INVALID', 400);
-    return this.db.transaction(async c => (await c.query(
-      'SELECT * FROM analytics_events WHERE delivered_at IS NULL ORDER BY created_at, event_id LIMIT ?', [limit])).map(analyticsRow));
+    return this.db.transaction(async c => this.selectValid(c, limit, (pageLimit, offset) => c.query(
+      'SELECT * FROM analytics_events WHERE delivered_at IS NULL AND quarantine_reason IS NULL ORDER BY created_at, event_id LIMIT ? OFFSET ?', [pageLimit, offset])));
   }
   /** Filter before limiting so blocked tenants retain their rows without starving eligible tenants. */
   async undeliveredEligible(limit: number, fallbackEnabled: boolean): Promise<AnalyticsRow[]> {
     if (!Number.isSafeInteger(limit) || limit < 1) throw new MetadataError('ANALYTICS_DRAIN_LIMIT_INVALID', 400);
-    return this.db.transaction(async c => (await c.query(`SELECT e.* FROM analytics_events e
+    return this.db.transaction(async c => this.selectValid(c, limit, (pageLimit, offset) => c.query(`SELECT e.* FROM analytics_events e
       JOIN h1_tenants t ON t.tenant_id = e.tenant_id AND t.state = 'active'
       JOIN h1_namespaces n ON n.tenant_id = e.tenant_id AND n.namespace_id = e.namespace_id
       LEFT JOIN analytics_settings s ON s.tenant_id = e.tenant_id AND s.namespace_id = e.namespace_id
-      WHERE e.delivered_at IS NULL AND COALESCE(s.enabled, ?) = 1
-      ORDER BY e.created_at, e.event_id LIMIT ?`, [fallbackEnabled ? 1 : 0, limit])).map(analyticsRow));
+      WHERE e.delivered_at IS NULL AND e.quarantine_reason IS NULL AND COALESCE(s.enabled, ?) = 1
+      ORDER BY e.created_at, e.event_id LIMIT ? OFFSET ?`, [fallbackEnabled ? 1 : 0, pageLimit, offset])));
   }
   async markDelivered(id: string): Promise<void> {
     await this.db.transaction(c => c.query('UPDATE analytics_events SET delivered_at = ? WHERE event_id = ? AND delivered_at IS NULL', [new Date().toISOString(), id]));
@@ -94,7 +132,13 @@ export class AnalyticsStore {
     metadata.assertContext(context); await metadata.revisions(context);
     return this.db.transaction(async c => {
       await this.scope(c, context);
-      return (await c.query('SELECT * FROM analytics_events WHERE tenant_id = ? AND namespace_id = ? ORDER BY created_at, event_id', [context.tenantId, context.namespaceId])).map(analyticsRow);
+      const rows: AnalyticsRow[] = [];
+      for (const r of await c.query('SELECT * FROM analytics_events WHERE tenant_id = ? AND namespace_id = ? AND quarantine_reason IS NULL ORDER BY created_at, event_id', [context.tenantId, context.namespaceId])) {
+        const parsed = parseAnalyticsRow(r);
+        if ('reason' in parsed) { await quarantineRow(c, String(r.event_id), parsed.reason); continue; }
+        rows.push(parsed.row);
+      }
+      return rows;
     }, context);
   }
 }
