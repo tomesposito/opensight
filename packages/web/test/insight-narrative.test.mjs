@@ -43,7 +43,10 @@ test('null, zero and empty inputs never invent values or percentages', () => {
 test('every unsupported computation and missing binding fails closed even on empty rows', () => {
   const cases = [
     [withComputation('forecast'), 'INSIGHT_TIME_REQUIRED'],
+    [withComputation('periodToDate'), 'INSIGHT_TIME_REQUIRED'],
     [withComputation('anomaly'), 'INSIGHT_ANOMALY_UNSUPPORTED'],
+    [withComputation('topBottomMovers'), 'INSIGHT_COMPUTATION_UNSUPPORTED'],
+    [withComputation('uniqueValues'), 'INSIGHT_COMPUTATION_UNSUPPORTED'],
     [{ ...base, computations: { customNarrative: { narrative: '${forecast.result}' } } }, 'INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED'],
     [withComputation('periodOverPeriod'), 'INSIGHT_TIME_REQUIRED'], [withComputation('growthRate'), 'INSIGHT_TIME_REQUIRED'],
     [{ ...base, category: undefined }, 'INSIGHT_CATEGORY_REQUIRED'], [{ ...base, measures: [] }, 'INSIGHT_VALUES_REQUIRED'],

@@ -6,7 +6,7 @@ const bundle = computations => ({ resourceType: 'analysis', analysisId: 'insight
 } });
 const api = value => Array.isArray(value) ? value.map(api) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k[0].toUpperCase() + k.slice(1), api(v)])) : value;
 test('insight parser retains other known computations and their unsupported properties', () => {
-  for (const kind of ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison']) {
+  for (const kind of ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison', 'topBottomMovers', 'uniqueValues']) {
     const raw = bundle([{ [kind]: { computationId: 'c', futureOption: 'preserved' } }]);
     assert.deepEqual(parseBundleResource(raw), raw);
   }
