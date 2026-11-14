@@ -42,6 +42,7 @@ export interface BillingRecord {
   accessState: BillingAccessState; pauseEffectiveAt: string | null;
   trialEndsAt: string | null; retentionDueAt: string | null;
   stripeCustomerId: string | null; stripeSubscriptionId: string | null; updatedAt: string;
+  /** Maximum applied creation time across domains; diagnostic, not an ordering fence. */
   lastStripeEventCreated: number | null;
 }
 export interface BillingConfig extends BillingEntitlements {
@@ -197,6 +198,54 @@ const BILLING_EVENT_TYPES: ReadonlySet<string> = new Set([
   'checkout.session.completed', ...SUBSCRIPTION_EVENT_TYPES,
   'invoice.payment_failed', 'invoice.paid', 'invoice.payment_succeeded',
 ]);
+type StripeDomain = 'subscription' | 'invoice' | 'checkout';
+interface StripeEvidence { created: number; source: 'subscription' | 'checkout' }
+interface StripeAccessEvidence extends StripeEvidence {
+  status: string; state: BillingAccessState; effectiveAt: string | null;
+}
+/** Compact, server-produced evidence, stored atomically with the billing row.
+ * Keep successful tier evidence separately: a same-second cancellation can
+ * win status/access without making trial conversion depend on delivery order. */
+interface StripeOrdering {
+  bindingCreated?: number;
+  subscription?: { created: number; status: string | null };
+  invoice?: { created: number; failed: boolean };
+  checkout?: { created: number };
+  tier?: StripeEvidence & { tier: BillingTier };
+  access?: StripeAccessEvidence;
+}
+const STATUS_PRECEDENCE = ['active', 'trialing', 'incomplete', 'past_due', 'unpaid', 'incomplete_expired', 'canceled'];
+function compareStatus(a: string | null, b: string | null): number {
+  return STATUS_PRECEDENCE.indexOf(a ?? '') - STATUS_PRECEDENCE.indexOf(b ?? '')
+    || ((a ?? '') > (b ?? '') ? 1 : (a ?? '') < (b ?? '') ? -1 : 0);
+}
+function compareEvidence(a: StripeEvidence, b: StripeEvidence): number {
+  return a.created - b.created || Number(a.source === 'subscription') - Number(b.source === 'subscription');
+}
+function stripeOrdering(raw: unknown, existing: BillingRecord | undefined): StripeOrdering {
+  if (typeof raw === 'string') return JSON.parse(raw) as StripeOrdering;
+  const created = existing?.lastStripeEventCreated;
+  if (created == null || !existing) return {};
+  // Legacy logs stored receipt time, not event.created. Preserve their fence
+  // conservatively in every domain; equal-second evidence may still reconcile.
+  return {
+    bindingCreated: created, subscription: { created, status: existing.subscriptionStatus },
+    invoice: { created, failed: false }, checkout: { created },
+    ...(existing.tier ? { tier: { created, source: 'subscription', tier: existing.tier } as const } : {}),
+    access: { created, source: 'subscription', status: existing.subscriptionStatus ?? '', state: existing.accessState, effectiveAt: existing.pauseEffectiveAt },
+  };
+}
+function reconcileTier(ordering: StripeOrdering, candidate: NonNullable<StripeOrdering['tier']>): void {
+  const previous = ordering.tier;
+  if (!previous || compareEvidence(candidate, previous) > 0
+    || compareEvidence(candidate, previous) === 0 && BILLING_TIERS.indexOf(candidate.tier) < BILLING_TIERS.indexOf(previous.tier)) ordering.tier = candidate;
+}
+function reconcileAccess(ordering: StripeOrdering, candidate: StripeAccessEvidence): void {
+  const previous = ordering.access;
+  if (!previous || compareEvidence(candidate, previous) > 0
+    || compareEvidence(candidate, previous) === 0 && (compareStatus(candidate.status, previous.status) > 0
+      || compareStatus(candidate.status, previous.status) === 0 && (candidate.effectiveAt ?? '') < (previous.effectiveAt ?? ''))) ordering.access = candidate;
+}
 export function parseStripeEvent(rawBody: Buffer): StripeEvent {
   let parsed: unknown;
   try { parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(rawBody)); } catch { throw new MetadataError('STRIPE_EVENT_INVALID', 400); }
@@ -224,6 +273,8 @@ export async function initializeBilling(db: Database): Promise<void> {
     }
     if (!columns.some(row => row.name === 'last_stripe_event_created'))
       await c.query('ALTER TABLE h9_billing ADD COLUMN last_stripe_event_created BIGINT');
+    if (!columns.some(row => row.name === 'stripe_ordering'))
+      await c.query('ALTER TABLE h9_billing ADD COLUMN stripe_ordering TEXT');
     if (!columns.some(row => row.name === 'entitlement_source')) {
       await c.query("ALTER TABLE h9_billing ADD COLUMN entitlement_source TEXT NOT NULL DEFAULT 'stripe' CHECK (entitlement_source IN ('stripe', 'manual', 'trial'))");
       await c.query("UPDATE h9_billing SET entitlement_source = 'trial' WHERE trial_ends_at IS NOT NULL AND (tier IS NULL OR tier = 'free')");
@@ -604,7 +655,8 @@ export class HostedBilling {
         // Lock the parent even before the first billing row exists. PostgreSQL
         // transactions otherwise race at READ COMMITTED; SQLite uses BEGIN IMMEDIATE.
         if (this.db.dialect === 'postgres') await c.query('SELECT tenant_id FROM h1_tenants WHERE tenant_id = ? FOR UPDATE', [tenantId]);
-        const existing = asRecord((await c.query('SELECT * FROM h9_billing WHERE tenant_id = ?', [tenantId]))[0]);
+        const row = (await c.query('SELECT * FROM h9_billing WHERE tenant_id = ?', [tenantId]))[0];
+        const existing = asRecord(row);
         const object = event.object;
         const subscriptionId = SUBSCRIPTION_EVENT_TYPES.has(event.type) ? stringOrNull(object.id) : stringOrNull(object.subscription);
         // Only tenant-bound checkout (metadata or a stored operator payment
@@ -617,13 +669,25 @@ export class HostedBilling {
           await c.query('UPDATE h9_billing_events SET tenant_id = ?, outcome = ? WHERE event_id = ?', [tenantId, 'foreign_subscription', event.id]);
           return { duplicate: false, handled: false, tenantId, action: 'foreign_subscription' } satisfies BillingEventResult;
         }
-        // Stripe timestamps have one-second precision, and event IDs do not
-        // establish chronology. Equal-created events are first-applied-wins:
-        // keep the committed state and record subsequent ties as stale.
-        if (existing?.lastStripeEventCreated != null && event.created <= existing.lastStripeEventCreated) {
+        let ordering = stripeOrdering(row?.stripe_ordering, existing);
+        const domain: StripeDomain = SUBSCRIPTION_EVENT_TYPES.has(event.type) ? 'subscription'
+          : event.type === 'checkout.session.completed' ? 'checkout' : 'invoice';
+        const replacing = subscriptionId !== existing?.stripeSubscriptionId;
+        // #242: each domain rejects only strictly older events. Ties merge
+        // status/access by restrictive precedence and successful tier evidence
+        // independently; subscription evidence outranks checkout. Invoice
+        // success wins invoice ties and only a strictly newer failure overlays
+        // an active subscription. IDs never break ties (see docs/billing.md).
+        // A different binding still must be strictly newer than binding/state
+        // evidence; invoice receipt cannot authorize or suppress replacement.
+        const bindingWatermark = Math.max(ordering.bindingCreated ?? -1, ordering.subscription?.created ?? -1, ordering.checkout?.created ?? -1);
+        if (event.created < Math.max(ordering[domain]?.created ?? -1, ordering.bindingCreated ?? -1)
+          || replacing && existing?.stripeSubscriptionId && event.created <= bindingWatermark) {
           await c.query('UPDATE h9_billing_events SET tenant_id = ?, outcome = ? WHERE event_id = ?', [tenantId, 'stale', event.id]);
           return { duplicate: false, handled: false, tenantId, action: 'stale' } satisfies BillingEventResult;
         }
+        if (replacing) ordering = { bindingCreated: event.created };
+        const previousAccess = ordering.access;
         await c.query('UPDATE h9_billing_events SET tenant_id = ?, outcome = ? WHERE event_id = ?', [tenantId, 'applied', event.id]);
         const next: BillingRecord = existing ? { ...existing } : { entitlementSource: 'stripe', tenantId, trialEndsAt: null, retentionDueAt: null, tier: null, subscriptionStatus: null, accessState: 'active', pauseEffectiveAt: null, stripeCustomerId: null, stripeSubscriptionId: null, lastStripeEventCreated: null, updatedAt: this.nowIso() };
         let action = 'recorded';
@@ -633,17 +697,20 @@ export class HostedBilling {
         // the paid tier or clear the trial expiry.
         let conversionAuthorized = false;
         if (event.type === 'checkout.session.completed') {
+          ordering.checkout = { created: event.created };
           next.stripeCustomerId = stringOrNull(object.customer) ?? next.stripeCustomerId;
           next.stripeSubscriptionId = stringOrNull(object.subscription) ?? next.stripeSubscriptionId;
           const paymentVerified = ['paid', 'no_payment_required'].includes(String(object.payment_status));
           if (resolved.linkTier && paymentVerified) {
-            next.tier = resolved.linkTier;
+            reconcileTier(ordering, { created: event.created, source: 'checkout', tier: resolved.linkTier });
             conversionAuthorized = true;
-            if (stringOrNull(nested(object.metadata).tier)) { next.accessState = 'active'; next.pauseEffectiveAt = null; }
+            reconcileAccess(ordering, { created: event.created, source: 'checkout', status: 'active', state: 'active', effectiveAt: null });
           }
           action = 'checkout_completed';
         } else if (SUBSCRIPTION_EVENT_TYPES.has(event.type)) {
-          const status = event.type === 'customer.subscription.deleted' ? 'canceled' : stringOrNull(object.status) ?? next.subscriptionStatus;
+          const status = event.type === 'customer.subscription.deleted' ? 'canceled' : stringOrNull(object.status);
+          if (!ordering.subscription || event.created > ordering.subscription.created
+            || compareStatus(status, ordering.subscription.status) > 0) ordering.subscription = { created: event.created, status };
           next.stripeCustomerId = stringOrNull(object.customer) ?? next.stripeCustomerId;
           next.stripeSubscriptionId = stringOrNull(object.id) ?? next.stripeSubscriptionId;
           const items = nested(object.items), first = Array.isArray(items.data) ? nested(items.data[0]) : {};
@@ -652,45 +719,53 @@ export class HostedBilling {
           // itself authorizes it; other statuses (incomplete, past_due, ...)
           // are recorded in subscriptionStatus without touching the tier, so
           // an incomplete payment stays represented separately (#212).
-          if (priceTier && (status === 'active' || status === 'trialing')) { next.tier = priceTier; conversionAuthorized = true; }
-          next.subscriptionStatus = status;
+          if (priceTier && (status === 'active' || status === 'trialing')) {
+            reconcileTier(ordering, { created: event.created, source: 'subscription', tier: priceTier });
+            conversionAuthorized = true;
+          }
           if (status === 'active' || status === 'trialing') {
-            if (next.accessState === 'paused') action = 'access_restored';
-            next.accessState = 'active'; next.pauseEffectiveAt = null;
+            reconcileAccess(ordering, { created: event.created, source: 'subscription', status, state: 'active', effectiveAt: null });
           } else if (status === 'unpaid' || status === 'incomplete_expired') {
-            if (next.accessState !== 'paused') { action = 'access_paused'; pauseNotice = { tenantId, effectiveAt: this.nowIso(), reason: `subscription_${status}` }; }
-            next.accessState = 'paused'; next.pauseEffectiveAt = next.pauseEffectiveAt && Date.parse(next.pauseEffectiveAt) <= this.clock() ? next.pauseEffectiveAt : this.nowIso();
+            const effectiveAt = next.pauseEffectiveAt && Date.parse(next.pauseEffectiveAt) <= this.clock() ? next.pauseEffectiveAt : this.nowIso();
+            reconcileAccess(ordering, { created: event.created, source: 'subscription', status, state: 'paused', effectiveAt });
           } else if (status === 'canceled') {
             const periodEnd = typeof object.current_period_end === 'number' && Number.isFinite(object.current_period_end) ? object.current_period_end * 1000 : null;
             const effective = periodEnd !== null && periodEnd > this.clock() ? new Date(periodEnd).toISOString() : this.nowIso();
-            if (next.accessState !== 'paused') { action = 'access_paused'; pauseNotice = { tenantId, effectiveAt: effective, reason: 'subscription_canceled' }; }
-            next.accessState = 'paused'; next.pauseEffectiveAt = effective;
+            reconcileAccess(ordering, { created: event.created, source: 'subscription', status, state: 'paused', effectiveAt: effective });
           } else if (status === 'past_due') {
             action = 'past_due';
           }
-        } else if (event.type === 'invoice.payment_failed') {
-          next.stripeSubscriptionId = stringOrNull(object.subscription) ?? next.stripeSubscriptionId;
-          next.stripeCustomerId = stringOrNull(object.customer) ?? next.stripeCustomerId;
-          if (next.subscriptionStatus === 'active') next.subscriptionStatus = 'past_due';
-          action = 'payment_failed';
-        } else if (event.type === 'invoice.paid' || event.type === 'invoice.payment_succeeded') {
-          next.stripeSubscriptionId = stringOrNull(object.subscription) ?? next.stripeSubscriptionId;
-          action = 'invoice_paid';
         } else {
-          await c.query('UPDATE h9_billing_events SET outcome = ? WHERE event_id = ?', ['ignored', event.id]);
-          return { duplicate: false, handled: false, tenantId, action: 'ignored' } satisfies BillingEventResult;
+          const failed = event.type === 'invoice.payment_failed';
+          if (!ordering.invoice || event.created > ordering.invoice.created || !failed)
+            ordering.invoice = { created: event.created, failed };
+          action = failed ? 'payment_failed' : 'invoice_paid';
+        }
+        next.subscriptionStatus = ordering.subscription?.status ?? null;
+        if (next.subscriptionStatus === 'active' && ordering.invoice?.failed
+          && ordering.invoice.created > ordering.subscription!.created) next.subscriptionStatus = 'past_due';
+        if (ordering.tier) next.tier = ordering.tier.tier;
+        if (ordering.access && ordering.access !== previousAccess) {
+          next.accessState = ordering.access.state;
+          next.pauseEffectiveAt = ordering.access.effectiveAt;
+        }
+        if (next.accessState === 'paused' && existing?.accessState !== 'paused') {
+          action = 'access_paused';
+          pauseNotice = { tenantId, effectiveAt: next.pauseEffectiveAt!, reason: `subscription_${ordering.access!.status}` };
+        } else if (next.accessState === 'active' && existing?.accessState === 'paused') {
+          action = 'access_restored';
         }
         if (conversionAuthorized && next.tier && PAID_TIERS.includes(next.tier)) next.trialEndsAt = null;
         const pendingRequest = next.pauseEffectiveAt && (await c.query("SELECT id FROM h11_paid_requests WHERE tenant_id = ? AND state = 'pending'", [tenantId])).length > 0;
         next.retentionDueAt = next.pauseEffectiveAt && !pendingRequest ? new Date(Date.parse(next.pauseEffectiveAt) + 30 * DAY_MS).toISOString() : null;
         next.updatedAt = this.nowIso();
-        next.lastStripeEventCreated = event.created;
-        await c.query(`INSERT INTO h9_billing (tenant_id, tier, subscription_status, access_state, pause_effective_at, stripe_customer_id, stripe_subscription_id, updated_at, trial_ends_at, retention_due_at, last_stripe_event_created)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (tenant_id) DO UPDATE SET tier = excluded.tier, subscription_status = excluded.subscription_status,
+        next.lastStripeEventCreated = Math.max(existing?.lastStripeEventCreated ?? 0, event.created);
+        await c.query(`INSERT INTO h9_billing (tenant_id, tier, subscription_status, access_state, pause_effective_at, stripe_customer_id, stripe_subscription_id, updated_at, trial_ends_at, retention_due_at, last_stripe_event_created, stripe_ordering)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (tenant_id) DO UPDATE SET tier = excluded.tier, subscription_status = excluded.subscription_status,
           access_state = excluded.access_state, pause_effective_at = excluded.pause_effective_at, stripe_customer_id = excluded.stripe_customer_id,
           stripe_subscription_id = excluded.stripe_subscription_id, updated_at = excluded.updated_at, trial_ends_at = excluded.trial_ends_at, retention_due_at = excluded.retention_due_at,
-          last_stripe_event_created = excluded.last_stripe_event_created`,
-        [next.tenantId, next.tier, next.subscriptionStatus, next.accessState, next.pauseEffectiveAt, next.stripeCustomerId, next.stripeSubscriptionId, next.updatedAt, next.trialEndsAt, next.retentionDueAt, next.lastStripeEventCreated]);
+          last_stripe_event_created = excluded.last_stripe_event_created, stripe_ordering = excluded.stripe_ordering`,
+        [next.tenantId, next.tier, next.subscriptionStatus, next.accessState, next.pauseEffectiveAt, next.stripeCustomerId, next.stripeSubscriptionId, next.updatedAt, next.trialEndsAt, next.retentionDueAt, next.lastStripeEventCreated, JSON.stringify(ordering)]);
         if (conversionAuthorized) {
           next.entitlementSource = 'stripe';
           await c.query("UPDATE h9_billing SET entitlement_source = 'stripe' WHERE tenant_id = ?", [tenantId]);
@@ -702,7 +777,7 @@ export class HostedBilling {
         if (action === 'access_paused') await appendOperatorAudit(c, { action: 'billing.access.paused', tenantId,
           detail: { stripeEventId: event.id, reason: pauseNotice!.reason, pauseEffectiveAt: next.pauseEffectiveAt } }, this.clock());
         if (action === 'access_restored') await appendOperatorAudit(c, { action: 'billing.access.restored', tenantId,
-          detail: { stripeEventId: event.id, via: 'subscription_active', tier: next.tier } }, this.clock());
+          detail: { stripeEventId: event.id, via: domain === 'checkout' ? 'checkout_paid' : 'subscription_active', tier: next.tier } }, this.clock());
         this.records.set(tenantId, next);
         return { duplicate: false, handled: true, tenantId, action } satisfies BillingEventResult;
       });
