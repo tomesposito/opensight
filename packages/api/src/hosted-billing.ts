@@ -371,14 +371,18 @@ export class HostedBilling {
   tierEntitlement(tenantId: string): Entitlement | null | undefined {
     const record = this.records.get(tenantId);
     if (!record) return undefined;
-    if (record.tier && PAID_TIERS.includes(record.tier)) return this.config.tierEntitlements[record.tier] ?? null;
+    // A present trialEndsAt means the trial has not converted (#243): a
+    // trialing Stripe subscription may record its paid tier as evidence,
+    // but the trial entitlement and deadline govern until a verified paid
+    // transition (paid checkout or active subscription) clears the deadline.
     if (record.trialEndsAt) return Date.parse(record.trialEndsAt) > this.clock() ? this.config.trialEntitlement ?? null : null;
+    if (record.tier && PAID_TIERS.includes(record.tier)) return this.config.tierEntitlements[record.tier] ?? null;
     if (record.tier === 'free') return this.config.tierEntitlements.free;
     return null;
   }
   trial(tenantId: string): { endsAt: string; daysRemaining: number } | null {
     const record = this.records.get(tenantId);
-    if (!record?.trialEndsAt || record.tier && PAID_TIERS.includes(record.tier)) return null;
+    if (!record?.trialEndsAt) return null;
     return { endsAt: record.trialEndsAt, daysRemaining: Math.max(0, Math.ceil((Date.parse(record.trialEndsAt) - this.clock()) / DAY_MS)) };
   }
   /** Also usable inside provisioning's transaction so tenant and trial commit together. */
@@ -396,8 +400,11 @@ export class HostedBilling {
   /** Lazy durable expiry uses the actual deadline, never the polling time. */
   async expireTrials(): Promise<void> {
     const expired = await this.db.transaction(async c => {
+      // Any row still carrying a trial deadline is unconverted (conversion
+      // and manual grants clear it), so an expired deadline pauses access
+      // even when a trialing subscription recorded a paid tier (#243).
       const rows = await c.query(`UPDATE h9_billing SET access_state = 'paused', pause_effective_at = trial_ends_at,
-        updated_at = ? WHERE trial_ends_at <= ? AND (tier IS NULL OR tier = 'free') AND access_state <> 'paused' RETURNING *`, [this.nowIso(), this.nowIso()]);
+        updated_at = ? WHERE trial_ends_at <= ? AND access_state <> 'paused' RETURNING *`, [this.nowIso(), this.nowIso()]);
       for (const row of rows) {
         const pending = (await c.query("SELECT id FROM h11_paid_requests WHERE tenant_id = ? AND state = 'pending'", [row.tenant_id!])).length > 0;
         const retentionDueAt = pending ? null : new Date(Date.parse(String(row.trial_ends_at)) + 30 * DAY_MS).toISOString();
@@ -428,7 +435,7 @@ export class HostedBilling {
    * hosted access. Data is retained; only an admin resolution reopens it. */
   assertAccess(tenantId: string): void {
     const record = this.records.get(tenantId);
-    if (record?.trialEndsAt && (!record.tier || !PAID_TIERS.includes(record.tier)) && Date.parse(record.trialEndsAt) <= this.clock())
+    if (record?.trialEndsAt && Date.parse(record.trialEndsAt) <= this.clock())
       throw new MetadataError('TRIAL_EXPIRED', 403);
     if (record?.accessState === 'paused' && record.pauseEffectiveAt && Date.parse(record.pauseEffectiveAt) <= this.clock())
       throw new MetadataError('BILLING_ACCESS_PAUSED', 403);
@@ -695,7 +702,9 @@ export class HostedBilling {
         // A trial converts to paid entitlements only on a verified successful
         // billing transition in THIS event (#212): an unpaid checkout or an
         // incomplete subscription binds and is recorded, but must not assign
-        // the paid tier or clear the trial expiry.
+        // the paid tier or clear the trial expiry. A trialing subscription
+        // is the same (#243): it records tier evidence, but conversion waits
+        // for an active subscription or a paid checkout.
         let conversionAuthorized = false;
         if (event.type === 'checkout.session.completed') {
           ordering.checkout = { created: event.created };
@@ -720,9 +729,15 @@ export class HostedBilling {
           // itself authorizes it; other statuses (incomplete, past_due, ...)
           // are recorded in subscriptionStatus without touching the tier, so
           // an incomplete payment stays represented separately (#212).
+          // A trialing subscription still supplies tier evidence for the
+          // #242 ordering reconciliation, but it does NOT authorize trial
+          // conversion (#243): no payment has been verified, so the trial
+          // deadline and trial entitlement stay in force (tierEntitlement,
+          // assertAccess and expireTrials all key off the surviving
+          // trialEndsAt) until an active transition or a paid checkout.
           if (priceTier && (status === 'active' || status === 'trialing')) {
             reconcileTier(ordering, { created: event.created, source: 'subscription', tier: priceTier });
-            conversionAuthorized = true;
+            if (status === 'active') conversionAuthorized = true;
           }
           if (status === 'active' || status === 'trialing') {
             reconcileAccess(ordering, { created: event.created, source: 'subscription', status, state: 'active', effectiveAt: null });
