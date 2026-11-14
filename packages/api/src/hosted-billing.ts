@@ -52,8 +52,14 @@ export interface BillingConfig extends BillingEntitlements {
   tierEntitlements: Readonly<Partial<Record<BillingTier, Entitlement>>>;
 }
 export interface StripeClient {
-  createCheckoutSession?(input: { priceId: string; tenantId: string; tier: BillingTier; origin: string; idempotencyKey: string }): Promise<{ id: string; url: string }>;
+  createCheckoutSession?(input: { priceId: string; tenantId: string; tier: BillingTier; origin: string; idempotencyKey: string }): Promise<StripeCheckoutSession>;
   createPaymentLink(input: { priceId: string; tenantId: string; tier: BillingTier; idempotencyKey: string }): Promise<{ id: string; url: string }>;
+}
+export interface StripeCheckoutSession {
+  id: string; url: string;
+  status: 'open' | 'complete' | 'expired' | null;
+  /** Stripe's expires_at, in Unix seconds. Unknown evidence is never reusable. */
+  expiresAt: number | null;
 }
 export type StripeFetcher = (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
@@ -125,7 +131,7 @@ export function httpStripeClient(apiKey: string, fetcher: StripeFetcher = fetch 
           headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/x-www-form-urlencoded', 'Idempotency-Key': idempotencyKey }, body: form.toString() });
         const result = nested(await response.json());
         if (!response.ok || typeof result.id !== 'string' || typeof result.url !== 'string' || !result.url.startsWith('https://checkout.stripe.com/')) throw new Error();
-        return { id: result.id, url: result.url };
+        return { id: result.id, url: result.url, status: checkoutStatus(result.status), expiresAt: checkoutExpiry(result.expires_at) };
       } catch { throw new MetadataError('STRIPE_REQUEST_FAILED', 502); }
     },
     async createPaymentLink({ priceId, tenantId, tier, idempotencyKey }) {
@@ -305,6 +311,13 @@ export async function initializeBilling(db: Database): Promise<void> {
       price_id TEXT NOT NULL, checkout_origin TEXT,
       stripe_object_id TEXT, stripe_url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
     await c.query('CREATE INDEX IF NOT EXISTS h9_billing_operations_tenant ON h9_billing_operations (tenant_id, kind, tier)');
+    const operationColumns = await c.query(db.dialect === 'postgres'
+      ? "SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'h9_billing_operations'"
+      : 'PRAGMA table_info(h9_billing_operations)');
+    if (!operationColumns.some(row => row.name === 'checkout_status'))
+      await c.query("ALTER TABLE h9_billing_operations ADD COLUMN checkout_status TEXT CHECK (checkout_status IN ('open', 'complete', 'expired', 'consumed'))");
+    if (!operationColumns.some(row => row.name === 'checkout_expires_at'))
+      await c.query('ALTER TABLE h9_billing_operations ADD COLUMN checkout_expires_at BIGINT');
     await c.query(`CREATE TABLE IF NOT EXISTS h9_billing_events (
       event_id TEXT PRIMARY KEY, tenant_id TEXT, type TEXT NOT NULL, outcome TEXT NOT NULL, created_at TEXT NOT NULL)`);
   });
@@ -329,6 +342,12 @@ function nested(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 function stringOrNull(value: unknown): string | null { return typeof value === 'string' && value ? value : null; }
+function checkoutStatus(value: unknown): StripeCheckoutSession['status'] {
+  return value === 'open' || value === 'complete' || value === 'expired' ? value : null;
+}
+function checkoutExpiry(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && Number.isSafeInteger(value * 1000) ? value : null;
+}
 function uniqueViolation(error: unknown): boolean {
   const code = error !== null && typeof error === 'object' && 'code' in error ? String(error.code) : '';
   if (['23505', 'SQLITE_CONSTRAINT', 'SQLITE_CONSTRAINT_PRIMARYKEY'].includes(code)) return true;
@@ -576,7 +595,7 @@ export class HostedBilling {
       if (operation.status === 'completed') return { result: { id: String(operation.stripe_object_id), url: String(operation.stripe_url), tier: reservedTier } };
       await c.query("UPDATE h9_billing_operations SET status = 'pending', updated_at = ? WHERE operation_id = ?", [this.nowIso(), operationId]);
       const input = { tenantId, tier: reservedTier, priceId: String(operation.price_id), idempotencyKey: String(operation.idempotency_key) };
-      let result: { id: string; url: string };
+      let result: { id: string; url: string; status?: StripeCheckoutSession['status']; expiresAt?: number | null };
       try {
         result = kind === 'payment_link' ? await stripe.createPaymentLink(input)
           : await stripe.createCheckoutSession!({ ...input, origin: String(operation.checkout_origin) });
@@ -585,8 +604,9 @@ export class HostedBilling {
         // Throw after commit: a failed attempt retains its original request/key.
         return { error: new MetadataError('STRIPE_REQUEST_FAILED', 502) };
       }
-      await c.query("UPDATE h9_billing_operations SET status = 'completed', stripe_object_id = ?, stripe_url = ?, updated_at = ? WHERE operation_id = ?",
-        [result.id, result.url, this.nowIso(), operationId]);
+      await c.query(`UPDATE h9_billing_operations SET status = 'completed', stripe_object_id = ?, stripe_url = ?, updated_at = ?,
+        checkout_status = ?, checkout_expires_at = ? WHERE operation_id = ?`,
+      [result.id, result.url, this.nowIso(), checkoutStatus(result.status), checkoutExpiry(result.expiresAt), operationId]);
       if (kind === 'payment_link') await c.query('INSERT INTO h9_billing_links (link_id, tenant_id, tier, created_at) VALUES (?,?,?,?)', [result.id, tenantId, reservedTier, this.nowIso()]);
       await appendOperatorAudit(c, { action: kind === 'payment_link' ? 'billing.payment_link.created' : 'billing.checkout.created', tenantId, subject: result.id,
         detail: { tier: reservedTier, ...(kind === 'payment_link' ? { priceCents: TIER_PRICE_CENTS[reservedTier] } : {}) } }, this.clock());

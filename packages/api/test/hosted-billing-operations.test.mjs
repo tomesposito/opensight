@@ -35,7 +35,8 @@ async function fixture(t) {
     } finally { reader.close(); }
     if (!objects.has(input.idempotencyKey)) {
       const id = `${prefix}_${objects.size + 1}`;
-      objects.set(input.idempotencyKey, { id, url: `https://${prefix === 'cs' ? 'checkout' : 'buy'}.stripe.com/${id}` });
+      objects.set(input.idempotencyKey, { id, url: `https://${prefix === 'cs' ? 'checkout' : 'buy'}.stripe.com/${id}`,
+        ...(prefix === 'cs' ? { status: 'open', expiresAt: Math.floor(now / 1000) + 86400 } : {}) });
     }
     return objects.get(input.idempotencyKey);
   }
@@ -59,9 +60,34 @@ test('227 operations: additive initialization preserves records and enforces uni
   await initializeBilling(f.db);
   assert.deepEqual(await operations(f.db), before);
   await assert.rejects(f.db.transaction(c => c.query(`INSERT INTO h9_billing_operations
+    (operation_id, idempotency_key, tenant_id, kind, tier, status, price_id, checkout_origin, stripe_object_id, stripe_url, created_at, updated_at)
     SELECT 'op_duplicate', idempotency_key, tenant_id, kind, tier, status, price_id, checkout_origin,
       stripe_object_id, stripe_url, created_at, updated_at FROM h9_billing_operations`)), { code: 'METADATA_CONFLICT' });
   await assert.rejects(seedOperation(f.db, 'op_missing', 'tenant-missing'), { code: 'METADATA_REFERENCE_INVALID' });
+});
+
+test('248 operations: persist Stripe lifecycle/expiry and migrate legacy rows without inventing evidence', async t => {
+  for (const dialect of ['sqlite', 'postgres']) await t.test(dialect, async t => {
+    const f = await fixture(t);
+    const session = await f.billing.createCheckoutSession('tenant-one', 'light');
+    const before = (await operations(f.db))[0];
+    assert.equal(before.stripe_object_id, session.id);
+    assert.equal(before.checkout_status, 'open');
+    assert.equal(Number(before.checkout_expires_at), f.now() / 1000 + 86400);
+    await f.db.transaction(async c => {
+      await c.query('ALTER TABLE h9_billing_operations DROP COLUMN checkout_status');
+      await c.query('ALTER TABLE h9_billing_operations DROP COLUMN checkout_expires_at');
+    });
+    let additions = 0;
+    const db = { dialect, close: async () => {}, transaction: work => f.db.transaction(c => work({ query: async (sql, values) => {
+      if (sql.includes('information_schema.columns')) return c.query(`PRAGMA table_info(${sql.includes("'h9_billing_operations'") ? 'h9_billing_operations' : 'h9_billing'})`);
+      if (sql.startsWith('ALTER TABLE h9_billing_operations ADD COLUMN')) additions++;
+      return c.query(sql, values);
+    } })) };
+    await initializeBilling(db); await initializeBilling(db);
+    assert.equal(additions, 2);
+    assert.deepEqual({ ...(await operations(f.db))[0] }, { ...before, checkout_status: null, checkout_expires_at: null });
+  });
 });
 
 test('227 operations: encrypted backup restores retry keys and erasure removes only the selected tenant', async t => {
@@ -250,7 +276,8 @@ test('227 checkout: timeout reconciliation freezes key, price, origin and tier, 
   const retry = f.makeBilling({ origin: 'https://changed.example' }, { ...config, priceIds: { ...config.priceIds, light: 'price_changed' } });
   const reconciled = await retry.createCheckoutSession('tenant-one', 'heavy');
   assert.deepEqual(f.calls[0], f.calls[1]); assert.equal(f.objects.size, 1);
-  assert.deepEqual(reconciled, f.objects.get(reserved.idempotency_key));
+  const { id, url } = f.objects.get(reserved.idempotency_key);
+  assert.deepEqual(reconciled, { id, url });
   f.advance(CHECKOUT_REUSE_MS - 1);
   assert.deepEqual(await retry.createCheckoutSession('tenant-one', 'regular'), reconciled);
   assert.equal(f.calls.length, 2);
