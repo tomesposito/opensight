@@ -1,4 +1,5 @@
 import { metricColumn } from '@opensight/query-engine/browser';
+import { uniqueValuesOnly } from './insight-configuration.js';
 import { unresolvedVisualFieldDiagnostics } from './unresolved-fields.js';
 import { declaration, type AuthorParameter } from './parameters.js';
 import type { AuthorControl } from './controls.js';
@@ -14,7 +15,9 @@ export interface AuthorRows { metrics?: QueryResponse['metrics']; rows: Row[] | 
 export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly CalculatedField[] = [], parameters: readonly AuthorParameter[] = [], dataset?: AuthorDataset): QueryRequest | null {
   if (authorVisualProblem(visual) || unresolvedVisualFieldDiagnostics(visual, calculations, dataset, parameters).length) return null;
   const dimensions = visualDimensions(visual);
-  if (!visual.measures.length || (!noDimensions(visual.kind) && !dimensions.length)) return null;
+  // A uniqueValues-only insight binds no measure; its grouped query is category-only.
+  const uvOnly = visual.kind === 'insight' && !!visual.insightConfiguration && (() => { try { return uniqueValuesOnly(visual.insightConfiguration); } catch { return false; } })();
+  if ((!visual.measures.length && !uvOnly) || (!noDimensions(visual.kind) && !dimensions.length)) return null;
   // Faceted small multiples group by (dimension, facet): the query groups at
   // that grain so the renderer can draw one panel per facet value.
   const facetNames = FACETED_KINDS.includes(visual.kind) ? visual.smallMultiples ?? [] : [];
@@ -35,6 +38,10 @@ export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly Ca
   return {
     dimensions: [...dimensions.map(dimensionDescriptor), ...facetNames.map(dimensionDescriptor), ...breakdownNames.map(dimensionDescriptor)],
     measures: [...visual.measures.map(name => ({ fieldId: name, columnName: name, aggregation: dataset?.metrics?.find(m => metricColumn(m.id) === name)?.defaultAggregation ?? 'SUM' })),
+      // A uniqueValues-only insight groups by category alone; the planner still
+      // requires one explicit measure, so carry a COUNT like buildDistinctQuery
+      // does — it is discarded by the compiler, never shown as narrative data.
+      ...(uvOnly && !visual.measures.length ? [{ fieldId: '__unique_count', columnName: dataset?.columns.find(c => c.type === 'INTEGER' || c.type === 'DECIMAL')?.name ?? (dataset ? dimensions[0]! : 'revenue'), aggregation: 'COUNT' as const }] : []),
       // Extra tooltip measures aggregate at the visual's existing grain; they never change grouping.
       ...visual.tooltipExtraFields.map(e => ({ fieldId: e.field, columnName: e.field, aggregation: e.aggregation }))],
     filters: [...visual.filters.map(f => f.parameterName ? { columnName: f.columnName, parameterName: f.parameterName, ...(f.operator ? { operator: f.operator } : {}) } : { columnName: f.columnName, values: f.values }), ...dynamic.map(({ filter, parameter }) => ({ columnName: filter.columnName, parameterName: parameter.name, ...(filter.operator ? { operator: filter.operator } : {}) }))],

@@ -13,12 +13,13 @@ export function insightObject(value: unknown): Obj {
 const allowed = (value: Obj, names: string[]) => {
   for (const name of Object.keys(value)) if (!names.includes(name)) insightFail('INSIGHT_CONFIGURATION_UNSUPPORTED', `unsupported property ${name}`);
 };
-const variants = ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison', 'forecast', 'periodToDate'] as const;
+const variants = ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison', 'forecast', 'periodToDate', 'uniqueValues'] as const;
 type Kind = typeof variants[number];
 export type InsightRequest = { id: string; measure: number } & (
-  { kind: Exclude<Kind, 'forecast' | 'periodToDate'>; target?: number; type?: string; size?: number }
+  { kind: Exclude<Kind, 'forecast' | 'periodToDate' | 'uniqueValues'>; target?: number; type?: string; size?: number }
   | { kind: 'forecast'; forecast: ForecastConfig }
   | { kind: 'periodToDate'; periodTimeGranularity: NonNullable<Field['dateGranularity']> }
+  | { kind: 'uniqueValues' }
 );
 
 function periodTimeGranularity(value: unknown): NonNullable<Field['dateGranularity']> | undefined {
@@ -63,13 +64,14 @@ function computations(config: unknown): [Kind, Obj][] | undefined {
     if (!variants.includes(kind as Kind)) insightFail('INSIGHT_COMPUTATION_UNSUPPORTED', `unsupported computation ${kind}`);
     if (kind === 'forecast' && (!value || typeof value !== 'object' || Array.isArray(value))) insightFail('INSIGHT_COMPUTATION_INVALID', 'forecast must be an object');
     if (kind === 'periodToDate' && (!value || typeof value !== 'object' || Array.isArray(value))) insightFail('INSIGHT_COMPUTATION_INVALID', 'periodToDate must be an object');
+    if (kind === 'uniqueValues' && (!value || typeof value !== 'object' || Array.isArray(value))) insightFail('INSIGHT_COMPUTATION_INVALID', 'uniqueValues must be an object');
     const body = insightObject(value);
     if (typeof body.computationId !== 'string' || !/^[\w-]{1,512}$/.test(body.computationId)) insightFail('INSIGHT_COMPUTATION_INVALID', 'a computationId is required');
     if (body.name !== undefined && typeof body.name !== 'string') insightFail('INSIGHT_COMPUTATION_INVALID', 'name must be a string');
     const specific = kind === 'totalAggregation' ? ['value'] : kind === 'maximumMinimum' ? ['time', 'value', 'type']
       : kind === 'topBottomRanked' ? ['category', 'value', 'type', 'resultSize'] : kind === 'metricComparison' ? ['time', 'fromValue', 'targetValue']
       : kind === 'growthRate' ? ['time', 'value', 'periodSize'] : kind === 'forecast' ? ['time', 'value', 'forecastProperties']
-      : kind === 'periodToDate' ? ['time', 'value', 'periodTimeGranularity'] : ['time', 'value'];
+      : kind === 'periodToDate' ? ['time', 'value', 'periodTimeGranularity'] : kind === 'uniqueValues' ? ['category'] : ['time', 'value'];
     allowed(body, ['computationId', 'name', ...specific]);
     if (kind === 'forecast') forecastProperties(body.forecastProperties);
     if (kind === 'periodToDate') periodTimeGranularity(body.periodTimeGranularity);
@@ -92,10 +94,16 @@ export function projectInsightBody(body: Obj): Obj {
   return { ...body, chartConfiguration: { fieldWells: { insightAggregatedFieldWells: insightWells(body.insightConfiguration ?? {}) } } };
 }
 
+/** True when every configured computation is uniqueValues — the only variant that binds no measure. */
+export function uniqueValuesOnly(config: unknown): boolean {
+  const entries = computations(config);
+  return !!entries?.length && entries.every(([kind]) => kind === 'uniqueValues');
+}
+
 export function normalizeInsight(config: unknown, dimensions: Field[], measures: Field[]): InsightRequest[] {
   const entries = computations(config);
   if (dimensions.length !== 1) insightFail('INSIGHT_CATEGORY_REQUIRED', 'expected exactly one Category dimension');
-  if (measures.length < 1 || measures.length > 2) insightFail('INSIGHT_VALUES_REQUIRED', 'expected one Values measure, or two for comparison');
+  if (measures.length > 2 || (measures.length < 1 && !(entries?.length && entries.every(([kind]) => kind === 'uniqueValues')))) insightFail('INSIGHT_VALUES_REQUIRED', 'expected one Values measure, or two for comparison');
   if (!entries) return [
     { kind: 'totalAggregation', id: 'total', measure: 0 },
     { kind: 'maximumMinimum', id: 'maximum', type: 'MAXIMUM', measure: 0 },
@@ -127,6 +135,7 @@ export function normalizeInsight(config: unknown, dimensions: Field[], measures:
     const id = c.computationId as string;
     if (ids.has(id)) insightFail('INSIGHT_COMPUTATION_INVALID', 'duplicate computation IDs'); ids.add(id);
     binding(c.category ?? c.time, dimensions, 0);
+    if (kind === 'uniqueValues') return { kind, id, measure: 0 };
     const measure = binding(kind === 'metricComparison' ? c.fromValue : c.value, measures, 0);
     if (kind === 'forecast') {
       if (!dimensions[0]!.dateGranularity) insightFail('INSIGHT_TIME_REQUIRED', 'forecast computations require a date/time dimension');

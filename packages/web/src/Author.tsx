@@ -799,6 +799,7 @@ function InsightOptions({ visual, dispatch }: { visual: AuthorVisual; dispatch: 
       <option value="growthRate">Growth rate (date required)</option><option value="periodOverPeriod">Period over period (date required)</option>
       <option value="forecast">Forecast (date required)</option>
       <option value="periodToDate">Period to date (date required)</option>
+      <option value="uniqueValues">Unique values</option>
       <option value="metricComparison">Metric comparison (two measures)</option>
       {selected === 'imported' && <option value="imported" disabled>Imported computations (choose to replace)</option>}
     </select></label>
