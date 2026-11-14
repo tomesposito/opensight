@@ -62,14 +62,19 @@ test('Stripe client posts a form-encoded payment link request and validates the 
 
 test('227 Stripe client forwards the checkout idempotency key and preserves named failures', async () => {
   const input = { priceId: 'price_light', tenantId: 'tenant-one', tier: 'light', origin: 'https://opensight.example', idempotencyKey: 'operation_checkout' };
-  const session = { id: 'cs_key', url: 'https://checkout.stripe.com/c/pay/key' };
+  const session = { id: 'cs_key', url: 'https://checkout.stripe.com/c/pay/key', status: 'open', expires_at: 1794268800 };
   const client = httpStripeClient('sk_test_placeholder', async (url, init) => {
     assert.equal(url, 'https://api.stripe.com/v1/checkout/sessions');
     assert.equal(init.method, 'POST');
     assert.equal(init.headers['Idempotency-Key'], input.idempotencyKey);
     return { ok: true, status: 200, json: async () => session };
   });
-  assert.deepEqual(await client.createCheckoutSession(input), session);
+  const { expires_at, ...result } = session;
+  assert.deepEqual(await client.createCheckoutSession(input), { ...result, expiresAt: expires_at });
+  for (const invalid of [{}, { status: 'unknown', expires_at: '1794268800' }, { status: null, expires_at: -1 }, { expires_at: 1.5 }, { expires_at: Number.MAX_SAFE_INTEGER }]) {
+    const unknown = httpStripeClient('sk_test_placeholder', async () => ({ ok: true, status: 200, json: async () => ({ id: session.id, url: session.url, ...invalid }) }));
+    assert.deepEqual(await unknown.createCheckoutSession(input), { id: session.id, url: session.url, status: null, expiresAt: null });
+  }
   for (const fetcher of [async () => { throw new Error('timeout'); }, async () => ({ ok: false, status: 500, json: async () => ({}) })]) {
     const failing = httpStripeClient('sk_test_placeholder', fetcher);
     await assert.rejects(failing.createCheckoutSession(input), { code: 'STRIPE_REQUEST_FAILED', status: 502 });
@@ -344,7 +349,7 @@ test('242 migration: guarded SQLite/Postgres upgrade preserves legacy fences and
     // Both column-discovery paths run over the fixture; live PostgreSQL is
     // separately optional in the root suite.
     const db = { dialect, close: async () => {}, transaction: work => f.db.transaction(c => work({ query: async (sql, values) => {
-      if (sql.includes('information_schema.columns')) return c.query('PRAGMA table_info(h9_billing)');
+      if (sql.includes('information_schema.columns')) return c.query(`PRAGMA table_info(${sql.includes("'h9_billing_operations'") ? 'h9_billing_operations' : 'h9_billing'})`);
       if (sql === 'ALTER TABLE h9_billing ADD COLUMN stripe_ordering TEXT') additions++;
       return c.query(sql, values);
     } })) };
@@ -690,7 +695,7 @@ test('197: paid beats trial beats none; exact expiry, retained deadline, one aud
 test('197 checkout: session/subscription metadata, no payment-link row, paid conversion restores expired trial', async t => {
   const f = await h8Fixture(t); await initializeBilling(f.db);
   let now = Date.UTC(2026, 10, 6), seen;
-  const stripe = httpStripeClient('sk_test', async (url, init) => { seen = { url, form: new URLSearchParams(init.body) }; return { ok: true, status: 200, json: async () => ({ id: 'cs_new', url: 'https://checkout.stripe.com/c/pay/test' }) }; });
+  const stripe = httpStripeClient('sk_test', async (url, init) => { seen = { url, form: new URLSearchParams(init.body) }; return { ok: true, status: 200, json: async () => ({ id: 'cs_new', url: 'https://checkout.stripe.com/c/pay/test', status: 'open', expires_at: Math.floor(now / 1000) + 86400 }) }; });
   const billing = new HostedBilling(f.db, billingConfig(env({ OPENSIGHT_TRIAL_ENTITLEMENT: JSON.stringify(LIGHT) })), { clock: () => now, origin: 'https://opensight.example', stripe });
   await billing.startTrial('tenant-one'); now += 14 * 86400000; await billing.expireTrials();
   await billing.createCheckoutSession('tenant-one', 'regular');

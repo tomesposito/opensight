@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { h8Fixture, referenceEnv } from './h8-helpers.mjs';
 import { database } from './hosted-helpers.mjs';
-import { CHECKOUT_REUSE_MS, HostedBilling, initializeBilling } from '../dist/hosted-billing.js';
+import { DAY_MS, HostedBilling, initializeBilling } from '../dist/hosted-billing.js';
 import { MetadataError } from '../dist/metadata-db.js';
 import { readOperatorAudit } from '../dist/operator-audit.js';
 import { migrateReference } from '../dist/single-node.js';
@@ -15,7 +15,7 @@ import { assertReferenceErasureStores, purgeTenantRows, tenantDeletionInventory 
 const operations = db => db.transaction(c => c.query('SELECT * FROM h9_billing_operations ORDER BY created_at, operation_id'));
 const config = { apiKey: 'sk_test_placeholder', webhookSecret: 'whsec_test_placeholder', priceIds: { light: 'price_light', regular: 'price_regular', heavy: 'price_heavy' }, tierEntitlements: {} };
 const origin = 'https://opensight.example';
-async function fixture(t) {
+async function fixture(t, lifetime = DAY_MS) {
   const f = await h8Fixture(t); await initializeBilling(f.db);
   let now = Date.UTC(2026, 10, 9);
   const calls = [], objects = new Map();
@@ -35,12 +35,21 @@ async function fixture(t) {
     } finally { reader.close(); }
     if (!objects.has(input.idempotencyKey)) {
       const id = `${prefix}_${objects.size + 1}`;
-      objects.set(input.idempotencyKey, { id, url: `https://${prefix === 'cs' ? 'checkout' : 'buy'}.stripe.com/${id}` });
+      objects.set(input.idempotencyKey, { id, url: `https://${prefix === 'cs' ? 'checkout' : 'buy'}.stripe.com/${id}`,
+        ...(prefix === 'cs' ? { status: 'open', expiresAt: Math.floor((now + lifetime) / 1000) } : {}) });
     }
     return objects.get(input.idempotencyKey);
   }
   const makeBilling = (extra = {}, settings = config) => new HostedBilling(f.db, settings, { stripe, origin, clock: () => now, ...extra });
-  return { ...f, stripe, calls, objects, makeBilling, billing: makeBilling(), advance: ms => { now += ms; }, now: () => now };
+  const checkoutEvent = (id, status) => {
+    const [key, session] = [...objects].find(([, object]) => object.id === id);
+    session.status = status;
+    const input = calls.find(call => call.idempotencyKey === key);
+    return { id: `evt_${id}_${status}`, created: Math.floor(now / 1000), type: `checkout.session.${status === 'complete' ? 'completed' : 'expired'}`,
+      object: { id, status, expires_at: session.expiresAt, metadata: { tenant_id: input.tenantId, tier: input.tier },
+        ...(status === 'complete' ? { subscription: `sub_${id}`, customer: `cus_${id}`, payment_status: 'paid' } : {}) } };
+  };
+  return { ...f, stripe, calls, objects, checkoutEvent, makeBilling, billing: makeBilling(), advance: ms => { now += ms; }, now: () => now };
 }
 async function creationAudits(db, action = 'billing.payment_link.created') {
   return (await readOperatorAudit(db, { limit: 100 })).filter(row => row.action === action);
@@ -59,14 +68,91 @@ test('227 operations: additive initialization preserves records and enforces uni
   await initializeBilling(f.db);
   assert.deepEqual(await operations(f.db), before);
   await assert.rejects(f.db.transaction(c => c.query(`INSERT INTO h9_billing_operations
+    (operation_id, idempotency_key, tenant_id, kind, tier, status, price_id, checkout_origin, stripe_object_id, stripe_url, created_at, updated_at)
     SELECT 'op_duplicate', idempotency_key, tenant_id, kind, tier, status, price_id, checkout_origin,
       stripe_object_id, stripe_url, created_at, updated_at FROM h9_billing_operations`)), { code: 'METADATA_CONFLICT' });
   await assert.rejects(seedOperation(f.db, 'op_missing', 'tenant-missing'), { code: 'METADATA_REFERENCE_INVALID' });
 });
 
+test('248 webhooks: unpaid completion and expiration durably retire sessions without inventing paid access', async t => {
+  for (const status of ['complete', 'expired']) await t.test(status, async t => {
+    const f = await fixture(t), first = await f.billing.createCheckoutSession('tenant-one', 'light');
+    const event = f.checkoutEvent(first.id, status);
+    event.object.payment_status = 'unpaid';
+    // Resolve expiration using the stored session even with no metadata or subscription.
+    if (status === 'expired') delete event.object.metadata;
+    assert.equal((await f.billing.handleEvent(event)).handled, true);
+    assert.equal((await operations(f.db))[0].checkout_status, status);
+    const state = await f.billing.state('tenant-one');
+    if (status === 'expired') assert.deepEqual(state, { tenantId: 'tenant-one', status: 'none' });
+    else assert.equal(state.tier, null);
+    assert.equal((await f.makeBilling().handleEvent(event)).duplicate, true);
+    assert.equal((await operations(f.db))[0].checkout_status, status);
+  });
+});
+
+test('248 webhooks: accepted subscription lifecycle events consume earlier sessions, foreign events do not', async t => {
+  for (const type of ['created', 'updated', 'deleted']) await t.test(type, async t => {
+    const f = await fixture(t); await f.billing.createCheckoutSession('tenant-one', 'light');
+    await f.db.transaction(c => c.query(`INSERT INTO h9_billing (tenant_id, stripe_customer_id, stripe_subscription_id, updated_at)
+      VALUES ('tenant-one', 'cus_bound', 'sub_bound', ?)`, [new Date(f.now()).toISOString()]));
+    const event = { id: `evt_sub_${type}`, type: `customer.subscription.${type}`, created: Math.floor(f.now() / 1000),
+      object: { id: 'sub_bound', customer: 'cus_bound', status: 'active', metadata: { tenant_id: 'tenant-one' } } };
+    const foreign = { ...event, id: 'evt_foreign', object: { ...event.object, id: 'sub_foreign', customer: 'cus_foreign' } };
+    assert.equal((await f.billing.handleEvent(foreign)).action, 'foreign_subscription');
+    assert.equal((await operations(f.db))[0].checkout_status, 'open');
+    assert.equal((await f.billing.handleEvent(event)).handled, true);
+    assert.equal((await operations(f.db))[0].checkout_status, 'consumed');
+  });
+});
+
+test('248 webhooks: terminal evidence survives timeout reconciliation of the original response', async t => {
+  const f = await fixture(t), create = f.stripe.createCheckoutSession;
+  let fail = true;
+  f.stripe.createCheckoutSession = async input => {
+    const session = { ...await create(input) };
+    if (fail) { fail = false; throw new Error('timeout after Stripe creation'); }
+    // Stripe may replay the original open POST response for the same key.
+    return { ...session, status: 'open' };
+  };
+  await assert.rejects(f.billing.createCheckoutSession('tenant-one', 'light'), { code: 'STRIPE_REQUEST_FAILED' });
+  const session = f.objects.values().next().value;
+  await f.billing.handleEvent(f.checkoutEvent(session.id, 'expired'));
+  assert.equal((await operations(f.db))[0].checkout_status, 'expired');
+  await f.billing.createCheckoutSession('tenant-one', 'light');
+  assert.equal((await operations(f.db)).find(row => row.stripe_object_id === session.id).checkout_status, 'expired');
+  assert.deepEqual(f.calls[0], f.calls[1]);
+});
+
+test('248 operations: persist Stripe lifecycle/expiry and migrate legacy rows without inventing evidence', async t => {
+  for (const dialect of ['sqlite', 'postgres']) await t.test(dialect, async t => {
+    const f = await fixture(t);
+    const session = await f.billing.createCheckoutSession('tenant-one', 'light');
+    const before = (await operations(f.db))[0];
+    assert.equal(before.stripe_object_id, session.id);
+    assert.equal(before.checkout_status, 'open');
+    assert.equal(Number(before.checkout_expires_at), f.now() / 1000 + 86400);
+    await f.db.transaction(async c => {
+      await c.query('ALTER TABLE h9_billing_operations DROP COLUMN checkout_status');
+      await c.query('ALTER TABLE h9_billing_operations DROP COLUMN checkout_expires_at');
+    });
+    let additions = 0;
+    const db = { dialect, close: async () => {}, transaction: work => f.db.transaction(c => work({ query: async (sql, values) => {
+      if (sql.includes('information_schema.columns')) return c.query(`PRAGMA table_info(${sql.includes("'h9_billing_operations'") ? 'h9_billing_operations' : 'h9_billing'})`);
+      if (sql.startsWith('ALTER TABLE h9_billing_operations ADD COLUMN')) additions++;
+      return c.query(sql, values);
+    } })) };
+    await initializeBilling(db); await initializeBilling(db);
+    assert.equal(additions, 2);
+    assert.deepEqual({ ...(await operations(f.db))[0] }, { ...before, checkout_status: null, checkout_expires_at: null });
+  });
+});
+
 test('227 operations: encrypted backup restores retry keys and erasure removes only the selected tenant', async t => {
-  const f = await h8Fixture(t); await migrateReference(f.db, referenceEnv, 'sqlite'); await initializeBilling(f.db);
+  const f = await fixture(t); await migrateReference(f.db, referenceEnv, 'sqlite'); await initializeBilling(f.db);
   await seedOperation(f.db, 'op_one'); await seedOperation(f.db, 'op_two', 'tenant-two');
+  const session = await f.billing.createCheckoutSession('tenant-one', 'light');
+  await f.billing.handleEvent(f.checkoutEvent(session.id, 'expired'));
   await assertReferenceErasureStores(f.db);
   const directory = join(dirname(f.path), 'billing-backups'), key = randomBytes(32);
   const source = await ReferenceMaintenance.open(f.db, directory, key, 'frozen');
@@ -75,7 +161,7 @@ test('227 operations: encrypted backup restores retry keys and erasure removes o
   const restore = await ReferenceMaintenance.open(target.db, directory, key, 'frozen'); await restore.restore(backup.id);
   assert.deepEqual(await operations(target.db), await operations(f.db));
   const inventory = await f.db.transaction(c => tenantDeletionInventory(c, 'tenant-one'));
-  assert.equal(inventory.find(row => row.store === 'h9_billing_operations').count, 1);
+  assert.equal(inventory.find(row => row.store === 'h9_billing_operations').count, 2);
   await f.db.transaction(c => purgeTenantRows(c, 'tenant-one'));
   assert.deepEqual((await operations(f.db)).map(row => row.operation_id), ['op_two']);
 });
@@ -189,11 +275,11 @@ test('227 checkout: concurrent instances return one reserved session even when a
   assert.equal((await f.db.transaction(c => c.query('SELECT * FROM h9_billing_links'))).length, 0);
 });
 
-test('227 checkout: reuse ends exactly 24 hours after completion, then a fresh key/session is reserved', async t => {
+test('248 checkout: an open session is reused until its exact Stripe expiry, then gets a fresh key/session', async t => {
   const f = await fixture(t);
-  assert.equal(CHECKOUT_REUSE_MS, 24 * 60 * 60 * 1000);
+  assert.equal(DAY_MS, 24 * 60 * 60 * 1000);
   const first = await f.billing.createCheckoutSession('tenant-one', 'light');
-  f.advance(CHECKOUT_REUSE_MS - 1);
+  f.advance(DAY_MS - 1);
   assert.deepEqual(await f.makeBilling().createCheckoutSession('tenant-one', 'heavy'), first);
   assert.equal(f.calls.length, 1);
   f.advance(1);
@@ -201,6 +287,60 @@ test('227 checkout: reuse ends exactly 24 hours after completion, then a fresh k
   assert.notEqual(next.id, first.id); assert.notEqual(f.calls[0].idempotencyKey, f.calls[1].idempotencyKey);
   assert.equal(f.calls[1].tier, 'heavy'); assert.equal(f.calls.length, 2);
   assert.equal((await operations(f.db)).length, 2);
+  assert.equal((await creationAudits(f.db, 'billing.checkout.created')).length, 2);
+});
+
+test('248 checkout: cancellation and re-checkout within 24 hours returns a new URL', async t => {
+  const f = await fixture(t), first = await f.billing.createCheckoutSession('tenant-one', 'light');
+  f.advance(1000);
+  const complete = f.checkoutEvent(first.id, 'complete');
+  await f.billing.handleEvent(complete);
+  f.advance(1000);
+  await f.billing.handleEvent({ id: 'evt_cancel_for_recheckout', created: Math.floor(f.now() / 1000), type: 'customer.subscription.deleted',
+    object: { id: complete.object.subscription, customer: complete.object.customer, status: 'canceled', current_period_end: 1 } });
+  const next = await f.makeBilling().createCheckoutSession('tenant-one', 'heavy');
+  assert.notEqual(next.id, first.id); assert.notEqual(next.url, first.url);
+  assert.notEqual(f.calls[0].idempotencyKey, f.calls[1].idempotencyKey);
+  assert.equal(f.calls.length, 2); assert.equal(f.objects.size, 2);
+  assert.deepEqual(await f.billing.createCheckoutSession('tenant-one', 'regular'), next);
+  assert.equal(f.calls.length, 2);
+});
+
+test('248 checkout: early Stripe expiry ends reuse before 24 hours', async t => {
+  const lifetime = 2 * 60 * 60 * 1000, f = await fixture(t, lifetime);
+  const first = await f.billing.createCheckoutSession('tenant-one', 'light');
+  f.advance(lifetime - 1);
+  assert.deepEqual(await f.makeBilling().createCheckoutSession('tenant-one', 'heavy'), first);
+  assert.equal(f.objects.size, 1); assert.equal(f.calls.length, 1);
+  f.advance(1);
+  const next = await f.billing.createCheckoutSession('tenant-one', 'heavy');
+  assert.notEqual(next.url, first.url); assert.equal(f.calls.length, 2);
+  assert.notEqual(f.calls[0].idempotencyKey, f.calls[1].idempotencyKey);
+});
+
+test('248 checkout: delayed timeout reconciliation after expiry resolves the old key before creating a usable session', async t => {
+  const f = await fixture(t, 3600000), create = f.stripe.createCheckoutSession;
+  let fail = true;
+  f.stripe.createCheckoutSession = async input => {
+    const session = await create(input);
+    if (fail) { fail = false; throw new Error('timeout after Stripe creation'); }
+    return session;
+  };
+  await assert.rejects(f.billing.createCheckoutSession('tenant-one', 'light'), { code: 'STRIPE_REQUEST_FAILED' });
+  const reserved = (await operations(f.db))[0], expired = { ...f.objects.get(reserved.idempotency_key) };
+  f.advance(2 * DAY_MS);
+  const retry = f.makeBilling({ origin: 'https://changed.example' }, { ...config, priceIds: { ...config.priceIds, light: 'price_changed' } });
+  const next = await retry.createCheckoutSession('tenant-one', 'heavy');
+  assert.deepEqual(f.calls[0], f.calls[1]);
+  assert.notEqual(f.calls[2].idempotencyKey, reserved.idempotency_key);
+  assert.equal(f.calls[2].tier, 'heavy'); assert.equal(f.calls[2].origin, 'https://changed.example');
+  assert.notEqual(next.url, expired.url);
+  assert.equal(f.calls.length, 3); assert.equal(f.objects.size, 2);
+  const old = (await operations(f.db)).find(row => row.operation_id === reserved.operation_id);
+  assert.equal(old.status, 'completed'); assert.equal(Number(old.checkout_expires_at), expired.expiresAt);
+  assert.equal(old.updated_at, new Date(f.now()).toISOString());
+  assert.deepEqual(await f.makeBilling().createCheckoutSession('tenant-one', 'regular'), next);
+  assert.equal(f.calls.length, 3);
   assert.equal((await creationAudits(f.db, 'billing.checkout.created')).length, 2);
 });
 
@@ -221,12 +361,12 @@ test('227 checkout: tenant isolation and existing validation/subscription errors
     await f.db.transaction(c => c.query('UPDATE h9_billing SET subscription_status = ? WHERE tenant_id = ?', [status, 'tenant-one']));
     await assert.rejects(f.billing.createCheckoutSession('tenant-one', 'regular'), { code: 'BILLING_SUBSCRIPTION_EXISTS', status: 409 });
   }
-  f.advance(CHECKOUT_REUSE_MS);
+  f.advance(DAY_MS);
   await assert.rejects(f.billing.createCheckoutSession('tenant-one', 'regular'), { code: 'BILLING_SUBSCRIPTION_EXISTS', status: 409 });
   for (const status of ['canceled', 'incomplete_expired']) {
     await f.db.transaction(c => c.query('UPDATE h9_billing SET subscription_status = ? WHERE tenant_id = ?', [status, 'tenant-one']));
     await f.billing.createCheckoutSession('tenant-one', 'regular');
-    f.advance(CHECKOUT_REUSE_MS);
+    f.advance(DAY_MS);
   }
   for (const state of ['suspended', 'provisioning', 'deleting', 'deleted']) {
     await f.db.transaction(c => c.query('UPDATE h1_tenants SET state = ?, tombstone = ? WHERE tenant_id = ?', [state, state === 'deleted' ? 'erased' : null, 'tenant-one']));
@@ -235,7 +375,7 @@ test('227 checkout: tenant isolation and existing validation/subscription errors
   await assert.rejects(f.billing.createPaymentLink('tenant-one', 'light'), { code: 'TENANT_UNAVAILABLE', status: 403 });
 });
 
-test('227 checkout: timeout reconciliation freezes key, price, origin and tier, then starts the reuse window', async t => {
+test('248 checkout: timeout reconciliation freezes key, price, origin and tier without extending Stripe expiry', async t => {
   const f = await fixture(t), create = f.stripe.createCheckoutSession;
   let fail = true;
   f.stripe.createCheckoutSession = async input => {
@@ -246,12 +386,12 @@ test('227 checkout: timeout reconciliation freezes key, price, origin and tier, 
   await assert.rejects(f.billing.createCheckoutSession('tenant-one', 'light'), { code: 'STRIPE_REQUEST_FAILED', status: 502 });
   const reserved = (await operations(f.db))[0]; assert.equal(reserved.status, 'failed');
   assert.equal((await creationAudits(f.db, 'billing.checkout.created')).length, 0);
-  f.advance(CHECKOUT_REUSE_MS - 1);
+  f.advance(DAY_MS - 1);
   const retry = f.makeBilling({ origin: 'https://changed.example' }, { ...config, priceIds: { ...config.priceIds, light: 'price_changed' } });
   const reconciled = await retry.createCheckoutSession('tenant-one', 'heavy');
   assert.deepEqual(f.calls[0], f.calls[1]); assert.equal(f.objects.size, 1);
-  assert.deepEqual(reconciled, f.objects.get(reserved.idempotency_key));
-  f.advance(CHECKOUT_REUSE_MS - 1);
+  const { id, url } = f.objects.get(reserved.idempotency_key);
+  assert.deepEqual(reconciled, { id, url });
   assert.deepEqual(await retry.createCheckoutSession('tenant-one', 'regular'), reconciled);
   assert.equal(f.calls.length, 2);
   assert.equal((await creationAudits(f.db, 'billing.checkout.created')).length, 1);
@@ -269,7 +409,7 @@ test('227 checkout: stale pending reservation survives process loss before POST 
   const billing = new HostedBilling(db, config, { stripe: f.stripe, clock: f.now, origin });
   await assert.rejects(billing.createCheckoutSession('tenant-one', 'light'), /simulated process loss/);
   const reserved = (await operations(f.db))[0]; assert.equal(reserved.status, 'pending'); assert.equal(f.calls.length, 0);
-  f.advance(3 * CHECKOUT_REUSE_MS);
+  f.advance(3 * DAY_MS);
   const result = await f.makeBilling().createCheckoutSession('tenant-one', 'light');
   assert.equal(f.calls[0].idempotencyKey, reserved.idempotency_key); assert.equal(f.calls.length, 1);
   assert.equal((await operations(f.db)).length, 1);
@@ -292,4 +432,105 @@ test('227 checkout: webhook binding between reservation and execution prevents t
   const billing = new HostedBilling(db, config, { stripe: f.stripe, clock: f.now, origin });
   await assert.rejects(billing.createCheckoutSession('tenant-one', 'light'), { code: 'BILLING_SUBSCRIPTION_EXISTS', status: 409 });
   assert.equal(f.calls.length, 0); assert.equal((await operations(f.db))[0].status, 'pending');
+});
+
+test('248 checkout: unknown or terminal cached evidence fails closed to a fresh session', async t => {
+  for (const [status, expiry] of [[null, null], ['open', null], [null, 'future'], ['complete', 'future'], ['expired', 'future'], ['consumed', 'future'], ['open', Number.MAX_SAFE_INTEGER]]) {
+    await t.test(`${status}/${expiry}`, async t => {
+      const f = await fixture(t), first = await f.billing.createCheckoutSession('tenant-one', 'light');
+      await f.db.transaction(c => c.query('UPDATE h9_billing_operations SET checkout_status = ?, checkout_expires_at = ?',
+        [status, expiry === 'future' ? f.now() / 1000 + 86400 : expiry]));
+      const next = await f.makeBilling().createCheckoutSession('tenant-one', 'regular');
+      assert.notEqual(next.url, first.url); assert.equal(f.objects.size, 2); assert.equal(f.calls.length, 2);
+      assert.notEqual(f.calls[0].idempotencyKey, f.calls[1].idempotencyKey);
+    });
+  }
+});
+
+test('248 checkout: unusable fresh responses never return URLs or create an unbounded chain', async t => {
+  for (const status of [null, 'complete', 'expired']) await t.test(String(status), async t => {
+    const f = await fixture(t), create = f.stripe.createCheckoutSession;
+    f.stripe.createCheckoutSession = async input => ({ ...await create(input), status });
+    await assert.rejects(f.billing.createCheckoutSession('tenant-one', 'light'), { code: 'STRIPE_REQUEST_FAILED' });
+    assert.equal(f.calls.length, 1); assert.equal((await operations(f.db))[0].status, 'completed');
+    // A successful, known creation with unusable state is resolved, so a later
+    // request creates a fresh operation instead of retrying its old key.
+    f.stripe.createCheckoutSession = create;
+    const next = await f.makeBilling().createCheckoutSession('tenant-one', 'regular');
+    assert.notEqual(next.id, f.objects.get(f.calls[0].idempotencyKey).id);
+    assert.equal(f.calls.length, 2);
+  });
+});
+
+test('248 checkout: expiry and expiration webhooks between selection and return are rechecked under the lock', async t => {
+  for (const expireViaWebhook of [false, true]) await t.test(expireViaWebhook ? 'webhook' : 'clock', async t => {
+    const f = await fixture(t), first = await f.billing.createCheckoutSession('tenant-one', 'light');
+    let selected = false;
+    const db = { dialect: 'sqlite', close: async () => {}, transaction: async work => {
+      const result = await f.db.transaction(work);
+      if (!selected) {
+        selected = true;
+        if (expireViaWebhook) await f.billing.handleEvent(f.checkoutEvent(first.id, 'expired'));
+        else f.advance(DAY_MS);
+      }
+      return result;
+    } };
+    const caller = new HostedBilling(db, config, { stripe: f.stripe, clock: f.now, origin });
+    const next = await caller.createCheckoutSession('tenant-one', 'heavy');
+    assert.notEqual(next.url, first.url); assert.equal(f.calls.length, 2);
+    assert.deepEqual(await f.makeBilling().createCheckoutSession('tenant-one', 'light'), next);
+    assert.equal(f.calls.length, 2);
+  });
+});
+
+test('248 checkout: concurrent callers reconcile an expired timeout and share one replacement operation', async t => {
+  const f = await fixture(t), create = f.stripe.createCheckoutSession;
+  let fail = true;
+  f.stripe.createCheckoutSession = async input => {
+    const session = await create(input);
+    if (fail) { fail = false; throw new Error('ambiguous timeout'); }
+    return session;
+  };
+  await assert.rejects(f.billing.createCheckoutSession('tenant-one', 'light'), { code: 'STRIPE_REQUEST_FAILED' });
+  f.advance(DAY_MS);
+  const results = await Promise.all([f.makeBilling().createCheckoutSession('tenant-one', 'regular'), f.makeBilling().createCheckoutSession('tenant-one', 'heavy')]);
+  assert.deepEqual(results[0], results[1]);
+  assert.deepEqual(f.calls[0], f.calls[1]); assert.equal(f.calls.length, 3); assert.equal(f.objects.size, 2);
+  assert.notEqual(results[0].url, f.objects.get(f.calls[0].idempotencyKey).url);
+  assert.equal((await operations(f.db)).length, 2);
+  assert.equal((await creationAudits(f.db, 'billing.checkout.created')).length, 2);
+});
+
+test('248 checkout: a failed replacement retains its own committed key across retries', async t => {
+  const f = await fixture(t), first = await f.billing.createCheckoutSession('tenant-one', 'light');
+  f.advance(DAY_MS);
+  const create = f.stripe.createCheckoutSession;
+  let fail = true;
+  f.stripe.createCheckoutSession = async input => {
+    const session = await create(input);
+    if (fail) { fail = false; throw new Error('replacement timeout'); }
+    return session;
+  };
+  await assert.rejects(f.billing.createCheckoutSession('tenant-one', 'regular'), { code: 'STRIPE_REQUEST_FAILED' });
+  const next = await f.makeBilling().createCheckoutSession('tenant-one', 'heavy');
+  assert.notEqual(next.url, first.url);
+  assert.notEqual(f.calls[0].idempotencyKey, f.calls[1].idempotencyKey);
+  assert.deepEqual(f.calls[1], f.calls[2]); assert.equal(f.objects.size, 2);
+  assert.equal((await creationAudits(f.db, 'billing.checkout.created')).length, 2);
+});
+
+test('248 webhooks: delayed old-session and subscription events cannot consume a later re-checkout', async t => {
+  const f = await fixture(t), first = await f.billing.createCheckoutSession('tenant-one', 'light');
+  const completion = f.checkoutEvent(first.id, 'complete');
+  await f.billing.handleEvent(completion);
+  f.advance(1000);
+  const cancellation = { id: 'evt_cancel_old', type: 'customer.subscription.deleted', created: Math.floor(f.now() / 1000),
+    object: { id: completion.object.subscription, customer: completion.object.customer, current_period_end: 1 } };
+  await f.billing.handleEvent(cancellation);
+  f.advance(1000);
+  const next = await f.makeBilling().createCheckoutSession('tenant-one', 'heavy');
+  assert.equal((await f.billing.handleEvent({ ...completion, id: 'evt_delayed_complete' })).handled, true);
+  assert.equal((await f.billing.handleEvent({ ...cancellation, id: 'evt_delayed_cancel' })).handled, true);
+  assert.deepEqual(await f.billing.createCheckoutSession('tenant-one', 'light'), next);
+  assert.equal(f.calls.length, 2);
 });

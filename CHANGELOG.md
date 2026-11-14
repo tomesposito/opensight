@@ -76,6 +76,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Checkout reuses a URL only while its Stripe session is open and unexpired;
+  cancellation, consumption and early expiry now allow a fresh checkout, and
+  delayed timeout reconciliation no longer extends the old session's lifetime
+  (#248).
+
 - Analytics outbox selection now deserializes and validates each persisted row
   independently: a malformed restored, legacy or corrupted row is quarantined
   with a named reason and skipped, so valid rows from other tenants keep

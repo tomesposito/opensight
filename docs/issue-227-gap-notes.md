@@ -5,8 +5,11 @@ tenant locks serialize creation and result persistence. Retries retain the
 original idempotency key, price and checkout origin. Payment links reuse the
 completed result indefinitely. A second checkout request waits for an active
 creation and returns the reserved `{id, url}`, even for a different requested
-tier. Completed checkout reuse lasts 24 hours from result persistence; at the
-boundary a new operation gets a fresh key. Unresolved pending/failed operations
+tier. Issue #248 supersedes the original 24-hour reuse window: checkout reuse
+requires recorded `open` session status and a future Stripe `expires_at`.
+Consumed, expired or unknown sessions get a fresh operation/key after any
+outstanding retry is reconciled. Delayed reconciliation does not extend expiry.
+Unresolved pending/failed operations
 retain their key. See [billing semantics and limitations](billing.md#retry-safe-creation-227).
 
 ## Verification

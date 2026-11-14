@@ -52,7 +52,7 @@ price IDs in the deploy environment.
    payment link bound to that tenant. Send the link to the customer; they
    pay on Stripe's pages.
 3. Stripe calls `POST /api/host/billing/webhook`. Configure the Stripe
-   webhook endpoint for `checkout.session.completed`,
+   webhook endpoint for `checkout.session.completed`, `checkout.session.expired`,
    `customer.subscription.created/updated/deleted`,
    `invoice.payment_failed`, `invoice.paid`, and `invoice.payment_succeeded` events. The endpoint
    verifies the Stripe signature against the raw body before trusting
@@ -67,7 +67,10 @@ price IDs in the deploy environment.
 Both payment-link and checkout creation first commit a pending row in
 `h9_billing_operations`: operation ID, unique idempotency key, tenant, kind,
 tier, original price ID, checkout origin when applicable, status and timestamps.
-Stripe object ID and URL are recorded on completion. Every Stripe POST sends
+Stripe object ID and URL are recorded on completion. Checkout operations also
+retain Stripe's session status and actual `expires_at` in Unix seconds (#248),
+separately from the operation's pending/completed/failed retry status.
+Every Stripe POST sends
 the stored key as `Idempotency-Key`; retries use the stored request, including
 after a configuration change or process restart.
 
@@ -90,14 +93,14 @@ in-memory reservation or lease timeout to recover after a process crash.
 - **Checkout:** the second request returns the reserved session's `{id, url}`.
   While the first POST is running, it waits for the database lock. Reservation
   is per tenant across all tiers: requesting another tier still returns the
-  original session and its original tier. The completed session is reused for
-  **24 hours from successful result persistence** (`updated_at`), strictly
-  younger than 24 hours. Reuse does not extend that timestamp. Counting from
-  persistence prevents delayed reconciliation from shortening the window for
-  a session Stripe may only just have created. At exactly 24 hours, a fresh
-  operation and fresh key may be created. This is a bounded reservation, not
-  a live check of the Stripe session's expiry or completion; subscription
-  webhooks remain authoritative. `billing.checkout.created` fires once per
+  original session and its original tier, while it remains usable. A cached
+  URL is reusable only with recorded **`open` status and a future Stripe
+  `expires_at`**. There is no local 24-hour reuse window. At the exact expiry,
+  after consumption, or when lifecycle/expiry evidence is unknown (including
+  legacy rows), a fresh operation gets a fresh key. The execution transaction
+  rechecks eligibility because expiry or a webhook can intervene after selection.
+  Session state comes from Stripe's creation response and verified webhooks;
+  reuse does not perform a live Stripe lookup. `billing.checkout.created` fires once per
   recorded creation, and checkout does not insert a payment-link binding.
 - **Failure and recovery:** Stripe failures return `STRIPE_REQUEST_FAILED`
   (502) and commit `failed` with the original key and request. A retry resumes
@@ -105,8 +108,14 @@ in-memory reservation or lease timeout to recover after a process crash.
   dies before result commit, the committed reservation survives as pending
   (or retains its earlier failed state) and the database releases its lock.
   A subsequent caller can immediately resume it using the same key, including
-  a stale pending operation. Unresolved operations are never discarded by the
-  completed-checkout reuse window. Stripe's retention of its idempotency result
+  a stale pending operation. Unresolved operations are never discarded because
+  of session expiry or a webhook. Reconciliation first resolves the original
+  key, then reserves a replacement if the returned session is unusable. It
+  never extends Stripe's expiry or overwrites terminal webhook evidence with
+  an old `open` POST response. A fresh response with unusable or unknown state
+  returns `STRIPE_REQUEST_FAILED` rather than returning its URL or creating
+  sessions indefinitely; its completed operation is not reusable.
+  Stripe's retention of its idempotency result
   bounds recovery of an ambiguous external creation; this table does not
   provide a separate Stripe-object lookup after that result is forgotten.
 
@@ -117,6 +126,17 @@ No new error code is introduced: invalid paid tiers remain
 missing checkout origin/client support `BILLING_CHECKOUT_UNAVAILABLE` (503),
 and a bound subscription other than `canceled` or `incomplete_expired` remains
 `BILLING_SUBSCRIPTION_EXISTS` (409), including when a reusable session exists.
+
+Checkout completion consumes the matching session even when unpaid or stale
+for entitlement reconciliation. Expiration retires the session without changing
+entitlements, access or subscription bindings. A stored session ID can resolve
+its tenant when a checkout webhook has no metadata. Accepted subscription
+lifecycle events conservatively consume earlier checkout reservations for that
+tenant, so cancellation followed by re-checkout cannot return the previous URL.
+Pending/failed reservations also retain terminal evidence for later timeout
+reconciliation. Stripe event creation time fences this invalidation: later
+reservations are unaffected (reservations in the same second are conservatively
+included). Terminal state never returns to `open`; replayed events remain no-ops.
 
 ## Event reconciliation (#211, #242)
 
