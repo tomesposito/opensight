@@ -37,6 +37,19 @@ function validateForecast(value: unknown, path: string, key: (name: string) => s
   if (typeof lower === 'number' && typeof upper === 'number' && lower > upper) invalid(p, 'lower boundary must not exceed upper boundary');
 }
 
+function validatePeriodToDate(value: unknown, path: string, key: (name: string) => string): void {
+  const invalid = (p: string, message: string): never => fail(p, `INSIGHT_COMPUTATION_INVALID: ${message}`);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return invalid(path, 'expected an object');
+  const body = value as Record<string, unknown>;
+  const allowed = ['computationId', 'name', 'time', 'value', 'periodTimeGranularity'].map(key);
+  for (const name of Object.keys(body)) if (!allowed.includes(name)) fail(`${path}.${name}`, 'INSIGHT_CONFIGURATION_UNSUPPORTED: unsupported periodToDate property');
+  const id = body[key('computationId')];
+  if (typeof id !== 'string' || !/^[\w-]{1,512}$/.test(id)) invalid(`${path}.${key('computationId')}`, 'a computationId is required');
+  if (body[key('name')] !== undefined && typeof body[key('name')] !== 'string') invalid(`${path}.${key('name')}`, 'name must be a string');
+  const grain = body[key('periodTimeGranularity')];
+  if (grain !== undefined && !['DAY', 'MONTH', 'QUARTER', 'YEAR'].includes(grain as string)) invalid(`${path}.${key('periodTimeGranularity')}`, 'periodTimeGranularity must be DAY, MONTH, QUARTER or YEAR');
+}
+
 /** Inventory validation retains known unsupported variants for the import report. */
 export function validateInsightConfiguration(value: unknown, path: string, api = false): void {
   const key = (name: string) => api ? name[0]!.toUpperCase() + name.slice(1) : name;
@@ -50,6 +63,7 @@ export function validateInsightConfiguration(value: unknown, path: string, api =
     const known = ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison', 'forecast', 'periodToDate', 'topBottomMovers', 'uniqueValues'].map(key);
     if (!known.includes(kind)) fail(`${p}.${kind}`, 'INSIGHT_COMPUTATION_UNKNOWN: unknown computation type');
     if (kind === key('forecast')) { validateForecast(raw, `${p}.${kind}`, key); return; }
+    if (kind === key('periodToDate')) { validatePeriodToDate(raw, `${p}.${kind}`, key); return; }
     const body = object(raw, `${p}.${kind}`);
     required(body, key('computationId'), p, nonempty);
     optional(body, key('name'), p, string);
