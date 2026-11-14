@@ -76,6 +76,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Analytics outbox selection now deserializes and validates each persisted row
+  independently: a malformed restored, legacy or corrupted row is quarantined
+  with a named reason and skipped, so valid rows from other tenants keep
+  draining and the malformed event is never transmitted (#247).
+
 - Input-table audit history now has per-table and store-wide serialized-byte
   budgets alongside entry-count limits, bounding retained large-text changes.
   Paginated audit reads clone only authorization metadata and the requested
