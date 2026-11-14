@@ -149,8 +149,10 @@ test('248 operations: persist Stripe lifecycle/expiry and migrate legacy rows wi
 });
 
 test('227 operations: encrypted backup restores retry keys and erasure removes only the selected tenant', async t => {
-  const f = await h8Fixture(t); await migrateReference(f.db, referenceEnv, 'sqlite'); await initializeBilling(f.db);
+  const f = await fixture(t); await migrateReference(f.db, referenceEnv, 'sqlite'); await initializeBilling(f.db);
   await seedOperation(f.db, 'op_one'); await seedOperation(f.db, 'op_two', 'tenant-two');
+  const session = await f.billing.createCheckoutSession('tenant-one', 'light');
+  await f.billing.handleEvent(f.checkoutEvent(session.id, 'expired'));
   await assertReferenceErasureStores(f.db);
   const directory = join(dirname(f.path), 'billing-backups'), key = randomBytes(32);
   const source = await ReferenceMaintenance.open(f.db, directory, key, 'frozen');
@@ -159,7 +161,7 @@ test('227 operations: encrypted backup restores retry keys and erasure removes o
   const restore = await ReferenceMaintenance.open(target.db, directory, key, 'frozen'); await restore.restore(backup.id);
   assert.deepEqual(await operations(target.db), await operations(f.db));
   const inventory = await f.db.transaction(c => tenantDeletionInventory(c, 'tenant-one'));
-  assert.equal(inventory.find(row => row.store === 'h9_billing_operations').count, 1);
+  assert.equal(inventory.find(row => row.store === 'h9_billing_operations').count, 2);
   await f.db.transaction(c => purgeTenantRows(c, 'tenant-one'));
   assert.deepEqual((await operations(f.db)).map(row => row.operation_id), ['op_two']);
 });
@@ -430,4 +432,105 @@ test('227 checkout: webhook binding between reservation and execution prevents t
   const billing = new HostedBilling(db, config, { stripe: f.stripe, clock: f.now, origin });
   await assert.rejects(billing.createCheckoutSession('tenant-one', 'light'), { code: 'BILLING_SUBSCRIPTION_EXISTS', status: 409 });
   assert.equal(f.calls.length, 0); assert.equal((await operations(f.db))[0].status, 'pending');
+});
+
+test('248 checkout: unknown or terminal cached evidence fails closed to a fresh session', async t => {
+  for (const [status, expiry] of [[null, null], ['open', null], [null, 'future'], ['complete', 'future'], ['expired', 'future'], ['consumed', 'future'], ['open', Number.MAX_SAFE_INTEGER]]) {
+    await t.test(`${status}/${expiry}`, async t => {
+      const f = await fixture(t), first = await f.billing.createCheckoutSession('tenant-one', 'light');
+      await f.db.transaction(c => c.query('UPDATE h9_billing_operations SET checkout_status = ?, checkout_expires_at = ?',
+        [status, expiry === 'future' ? f.now() / 1000 + 86400 : expiry]));
+      const next = await f.makeBilling().createCheckoutSession('tenant-one', 'regular');
+      assert.notEqual(next.url, first.url); assert.equal(f.objects.size, 2); assert.equal(f.calls.length, 2);
+      assert.notEqual(f.calls[0].idempotencyKey, f.calls[1].idempotencyKey);
+    });
+  }
+});
+
+test('248 checkout: unusable fresh responses never return URLs or create an unbounded chain', async t => {
+  for (const status of [null, 'complete', 'expired']) await t.test(String(status), async t => {
+    const f = await fixture(t), create = f.stripe.createCheckoutSession;
+    f.stripe.createCheckoutSession = async input => ({ ...await create(input), status });
+    await assert.rejects(f.billing.createCheckoutSession('tenant-one', 'light'), { code: 'STRIPE_REQUEST_FAILED' });
+    assert.equal(f.calls.length, 1); assert.equal((await operations(f.db))[0].status, 'completed');
+    // A successful, known creation with unusable state is resolved, so a later
+    // request creates a fresh operation instead of retrying its old key.
+    f.stripe.createCheckoutSession = create;
+    const next = await f.makeBilling().createCheckoutSession('tenant-one', 'regular');
+    assert.notEqual(next.id, f.objects.get(f.calls[0].idempotencyKey).id);
+    assert.equal(f.calls.length, 2);
+  });
+});
+
+test('248 checkout: expiry and expiration webhooks between selection and return are rechecked under the lock', async t => {
+  for (const expireViaWebhook of [false, true]) await t.test(expireViaWebhook ? 'webhook' : 'clock', async t => {
+    const f = await fixture(t), first = await f.billing.createCheckoutSession('tenant-one', 'light');
+    let selected = false;
+    const db = { dialect: 'sqlite', close: async () => {}, transaction: async work => {
+      const result = await f.db.transaction(work);
+      if (!selected) {
+        selected = true;
+        if (expireViaWebhook) await f.billing.handleEvent(f.checkoutEvent(first.id, 'expired'));
+        else f.advance(DAY_MS);
+      }
+      return result;
+    } };
+    const caller = new HostedBilling(db, config, { stripe: f.stripe, clock: f.now, origin });
+    const next = await caller.createCheckoutSession('tenant-one', 'heavy');
+    assert.notEqual(next.url, first.url); assert.equal(f.calls.length, 2);
+    assert.deepEqual(await f.makeBilling().createCheckoutSession('tenant-one', 'light'), next);
+    assert.equal(f.calls.length, 2);
+  });
+});
+
+test('248 checkout: concurrent callers reconcile an expired timeout and share one replacement operation', async t => {
+  const f = await fixture(t), create = f.stripe.createCheckoutSession;
+  let fail = true;
+  f.stripe.createCheckoutSession = async input => {
+    const session = await create(input);
+    if (fail) { fail = false; throw new Error('ambiguous timeout'); }
+    return session;
+  };
+  await assert.rejects(f.billing.createCheckoutSession('tenant-one', 'light'), { code: 'STRIPE_REQUEST_FAILED' });
+  f.advance(DAY_MS);
+  const results = await Promise.all([f.makeBilling().createCheckoutSession('tenant-one', 'regular'), f.makeBilling().createCheckoutSession('tenant-one', 'heavy')]);
+  assert.deepEqual(results[0], results[1]);
+  assert.deepEqual(f.calls[0], f.calls[1]); assert.equal(f.calls.length, 3); assert.equal(f.objects.size, 2);
+  assert.notEqual(results[0].url, f.objects.get(f.calls[0].idempotencyKey).url);
+  assert.equal((await operations(f.db)).length, 2);
+  assert.equal((await creationAudits(f.db, 'billing.checkout.created')).length, 2);
+});
+
+test('248 checkout: a failed replacement retains its own committed key across retries', async t => {
+  const f = await fixture(t), first = await f.billing.createCheckoutSession('tenant-one', 'light');
+  f.advance(DAY_MS);
+  const create = f.stripe.createCheckoutSession;
+  let fail = true;
+  f.stripe.createCheckoutSession = async input => {
+    const session = await create(input);
+    if (fail) { fail = false; throw new Error('replacement timeout'); }
+    return session;
+  };
+  await assert.rejects(f.billing.createCheckoutSession('tenant-one', 'regular'), { code: 'STRIPE_REQUEST_FAILED' });
+  const next = await f.makeBilling().createCheckoutSession('tenant-one', 'heavy');
+  assert.notEqual(next.url, first.url);
+  assert.notEqual(f.calls[0].idempotencyKey, f.calls[1].idempotencyKey);
+  assert.deepEqual(f.calls[1], f.calls[2]); assert.equal(f.objects.size, 2);
+  assert.equal((await creationAudits(f.db, 'billing.checkout.created')).length, 2);
+});
+
+test('248 webhooks: delayed old-session and subscription events cannot consume a later re-checkout', async t => {
+  const f = await fixture(t), first = await f.billing.createCheckoutSession('tenant-one', 'light');
+  const completion = f.checkoutEvent(first.id, 'complete');
+  await f.billing.handleEvent(completion);
+  f.advance(1000);
+  const cancellation = { id: 'evt_cancel_old', type: 'customer.subscription.deleted', created: Math.floor(f.now() / 1000),
+    object: { id: completion.object.subscription, customer: completion.object.customer, current_period_end: 1 } };
+  await f.billing.handleEvent(cancellation);
+  f.advance(1000);
+  const next = await f.makeBilling().createCheckoutSession('tenant-one', 'heavy');
+  assert.equal((await f.billing.handleEvent({ ...completion, id: 'evt_delayed_complete' })).handled, true);
+  assert.equal((await f.billing.handleEvent({ ...cancellation, id: 'evt_delayed_cancel' })).handled, true);
+  assert.deepEqual(await f.billing.createCheckoutSession('tenant-one', 'light'), next);
+  assert.equal(f.calls.length, 2);
 });
