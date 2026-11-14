@@ -19,9 +19,6 @@ export const TIER_PRICE_CENTS: Readonly<Record<BillingTier, number>> = Object.fr
 export const PAID_TIERS: readonly BillingTier[] = ['light', 'regular', 'heavy'];
 
 export const DAY_MS = 86_400_000;
-// Count from successful result persistence, so a delayed reconciliation never
-// shortens the lifetime of a session Stripe may only just have created.
-export const CHECKOUT_REUSE_MS = DAY_MS;
 export const PAUSED_RESOLUTIONS = ['pay', 'export', 'close'] as const;
 type BillingOperationKind = 'payment_link' | 'checkout_session';
 
@@ -348,6 +345,11 @@ function checkoutStatus(value: unknown): StripeCheckoutSession['status'] {
 function checkoutExpiry(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && Number.isSafeInteger(value * 1000) ? value : null;
 }
+function reusableCheckout(operation: Record<string, unknown>, now: number): boolean {
+  // PostgreSQL returns BIGINT as a string; missing/invalid evidence fails closed.
+  const expiry = checkoutExpiry(Number(operation.checkout_expires_at));
+  return operation.checkout_status === 'open' && expiry !== null && expiry * 1000 > now;
+}
 function uniqueViolation(error: unknown): boolean {
   const code = error !== null && typeof error === 'object' && 'code' in error ? String(error.code) : '';
   if (['23505', 'SQLITE_CONSTRAINT', 'SQLITE_CONSTRAINT_PRIMARYKEY'].includes(code)) return true;
@@ -569,52 +571,67 @@ export class HostedBilling {
   private async createBillingObject(tenantId: string, tier: 'light' | 'regular' | 'heavy', kind: BillingOperationKind): Promise<{ id: string; url: string; tier: BillingTier }> {
     if (!('apiKey' in this.config) || !this.stripe) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
     const config = this.config, stripe = this.stripe;
-    // Commit the reservation BEFORE Stripe: a rollback/process crash during the
-    // second transaction must leave the original key and request available.
-    const operationId = await this.db.transaction(async c => {
-      await this.lockBillingTenant(c, tenantId, kind);
-      const existing = (await c.query(`SELECT operation_id FROM h9_billing_operations WHERE tenant_id = ? AND kind = ?
-        AND ${kind === 'payment_link' ? 'tier = ?' : "(status <> 'completed' OR updated_at > ?)"}
-        ORDER BY created_at DESC, operation_id DESC LIMIT 1`,
-      [tenantId, kind, kind === 'payment_link' ? tier : new Date(this.clock() - CHECKOUT_REUSE_MS).toISOString()]))[0];
-      if (existing) return String(existing.operation_id);
-      const id = randomUUID(), now = this.nowIso();
-      await c.query(`INSERT INTO h9_billing_operations
-        (operation_id, idempotency_key, tenant_id, kind, tier, status, price_id, checkout_origin, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
-      [id, id, tenantId, kind, tier, config.priceIds[tier], kind === 'checkout_session' ? this.options.origin! : null, now, now]);
-      return id;
-    });
-    const outcome = await this.db.transaction(async c => {
-      // Keep the tenant lock through the POST and result commit. Other instances
-      // wait, then see the committed result. No in-memory mutex or stale lease
-      // can strand a reservation: process death releases the database lock.
-      await this.lockBillingTenant(c, tenantId, kind);
-      const operation = (await c.query('SELECT * FROM h9_billing_operations WHERE operation_id = ?', [operationId]))[0]!;
-      const reservedTier = String(operation.tier) as BillingTier;
-      if (operation.status === 'completed') return { result: { id: String(operation.stripe_object_id), url: String(operation.stripe_url), tier: reservedTier } };
-      await c.query("UPDATE h9_billing_operations SET status = 'pending', updated_at = ? WHERE operation_id = ?", [this.nowIso(), operationId]);
-      const input = { tenantId, tier: reservedTier, priceId: String(operation.price_id), idempotencyKey: String(operation.idempotency_key) };
-      let result: { id: string; url: string; status?: StripeCheckoutSession['status']; expiresAt?: number | null };
-      try {
-        result = kind === 'payment_link' ? await stripe.createPaymentLink(input)
-          : await stripe.createCheckoutSession!({ ...input, origin: String(operation.checkout_origin) });
-      } catch {
-        await c.query("UPDATE h9_billing_operations SET status = 'failed', updated_at = ? WHERE operation_id = ?", [this.nowIso(), operationId]);
-        // Throw after commit: a failed attempt retains its original request/key.
-        return { error: new MetadataError('STRIPE_REQUEST_FAILED', 502) };
-      }
-      await c.query(`UPDATE h9_billing_operations SET status = 'completed', stripe_object_id = ?, stripe_url = ?, updated_at = ?,
-        checkout_status = CASE WHEN checkout_status IN ('complete', 'expired', 'consumed') THEN checkout_status ELSE ? END,
-        checkout_expires_at = ? WHERE operation_id = ?`,
-      [result.id, result.url, this.nowIso(), checkoutStatus(result.status), checkoutExpiry(result.expiresAt), operationId]);
-      if (kind === 'payment_link') await c.query('INSERT INTO h9_billing_links (link_id, tenant_id, tier, created_at) VALUES (?,?,?,?)', [result.id, tenantId, reservedTier, this.nowIso()]);
-      await appendOperatorAudit(c, { action: kind === 'payment_link' ? 'billing.payment_link.created' : 'billing.checkout.created', tenantId, subject: result.id,
-        detail: { tier: reservedTier, ...(kind === 'payment_link' ? { priceCents: TIER_PRICE_CENTS[reservedTier] } : {}) } }, this.clock());
-      return { result: { ...result, tier: reservedTier } };
-    });
-    if (outcome.error) throw outcome.error;
-    return outcome.result;
+    for (;;) {
+      // Commit the reservation BEFORE Stripe: a rollback/process crash during
+      // execution must leave the original key and request available.
+      const reservation = await this.db.transaction(async c => {
+        await this.lockBillingTenant(c, tenantId, kind);
+        const existing = (await c.query(`SELECT operation_id FROM h9_billing_operations WHERE tenant_id = ? AND kind = ?
+          AND ${kind === 'payment_link' ? 'tier = ?' : "(status <> 'completed' OR (checkout_status = 'open' AND checkout_expires_at > ?))"}
+          ORDER BY created_at DESC, operation_id DESC LIMIT 1`,
+        [tenantId, kind, kind === 'payment_link' ? tier : Math.floor(this.clock() / 1000)]))[0];
+        if (existing) return { id: String(existing.operation_id), fresh: false };
+        const id = randomUUID(), now = this.nowIso();
+        await c.query(`INSERT INTO h9_billing_operations
+          (operation_id, idempotency_key, tenant_id, kind, tier, status, price_id, checkout_origin, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
+        [id, id, tenantId, kind, tier, config.priceIds[tier], kind === 'checkout_session' ? this.options.origin! : null, now, now]);
+        return { id, fresh: true };
+      });
+      const outcome = await this.db.transaction(async c => {
+        // Keep the tenant lock through the POST and result commit. Other
+        // instances wait, then see the result; process death releases the lock.
+        await this.lockBillingTenant(c, tenantId, kind);
+        const operationId = reservation.id;
+        const operation = (await c.query('SELECT * FROM h9_billing_operations WHERE operation_id = ?', [operationId]))[0]!;
+        const reservedTier = String(operation.tier) as BillingTier;
+        if (operation.status === 'completed') {
+          if (kind === 'checkout_session' && !reusableCheckout(operation, this.clock())) {
+            // Expiry or a webhook can intervene between reservation and return.
+            // Retire invalid evidence too, so it cannot be selected repeatedly.
+            await c.query("UPDATE h9_billing_operations SET checkout_status = 'consumed' WHERE operation_id = ? AND checkout_status = 'open'", [operationId]);
+            return { retry: true };
+          }
+          return { result: { id: String(operation.stripe_object_id), url: String(operation.stripe_url), tier: reservedTier } };
+        }
+        await c.query("UPDATE h9_billing_operations SET status = 'pending', updated_at = ? WHERE operation_id = ?", [this.nowIso(), operationId]);
+        const input = { tenantId, tier: reservedTier, priceId: String(operation.price_id), idempotencyKey: String(operation.idempotency_key) };
+        let result: { id: string; url: string; status?: StripeCheckoutSession['status']; expiresAt?: number | null };
+        try {
+          result = kind === 'payment_link' ? await stripe.createPaymentLink(input)
+            : await stripe.createCheckoutSession!({ ...input, origin: String(operation.checkout_origin) });
+        } catch {
+          await c.query("UPDATE h9_billing_operations SET status = 'failed', updated_at = ? WHERE operation_id = ?", [this.nowIso(), operationId]);
+          // Throw after commit: a failed attempt retains its original request/key.
+          return { error: new MetadataError('STRIPE_REQUEST_FAILED', 502) };
+        }
+        const completed = (await c.query(`UPDATE h9_billing_operations SET status = 'completed', stripe_object_id = ?, stripe_url = ?, updated_at = ?,
+          checkout_status = CASE WHEN checkout_status IN ('complete', 'expired', 'consumed') THEN checkout_status ELSE ? END,
+          checkout_expires_at = ? WHERE operation_id = ? RETURNING *`,
+        [result.id, result.url, this.nowIso(), checkoutStatus(result.status), checkoutExpiry(result.expiresAt), operationId]))[0]!;
+        if (kind === 'payment_link') await c.query('INSERT INTO h9_billing_links (link_id, tenant_id, tier, created_at) VALUES (?,?,?,?)', [result.id, tenantId, reservedTier, this.nowIso()]);
+        await appendOperatorAudit(c, { action: kind === 'payment_link' ? 'billing.payment_link.created' : 'billing.checkout.created', tenantId, subject: result.id,
+          detail: { tier: reservedTier, ...(kind === 'payment_link' ? { priceCents: TIER_PRICE_CENTS[reservedTier] } : {}) } }, this.clock());
+        if (kind === 'checkout_session' && !reusableCheckout(completed, this.clock())) {
+          // Finish reconciliation of the old key before reserving a replacement.
+          // A fresh unusable response fails rather than creating sessions forever.
+          return reservation.fresh ? { error: new MetadataError('STRIPE_REQUEST_FAILED', 502) } : { retry: true };
+        }
+        return { result: { id: result.id, url: result.url, tier: reservedTier } };
+      });
+      if (outcome.error) throw outcome.error;
+      if (outcome.result) return outcome.result;
+    }
   }
   async createCheckoutSession(tenantId: string, tier: unknown): Promise<{ id: string; url: string }> {
     identifier(tenantId);

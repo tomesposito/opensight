@@ -695,7 +695,7 @@ test('197: paid beats trial beats none; exact expiry, retained deadline, one aud
 test('197 checkout: session/subscription metadata, no payment-link row, paid conversion restores expired trial', async t => {
   const f = await h8Fixture(t); await initializeBilling(f.db);
   let now = Date.UTC(2026, 10, 6), seen;
-  const stripe = httpStripeClient('sk_test', async (url, init) => { seen = { url, form: new URLSearchParams(init.body) }; return { ok: true, status: 200, json: async () => ({ id: 'cs_new', url: 'https://checkout.stripe.com/c/pay/test' }) }; });
+  const stripe = httpStripeClient('sk_test', async (url, init) => { seen = { url, form: new URLSearchParams(init.body) }; return { ok: true, status: 200, json: async () => ({ id: 'cs_new', url: 'https://checkout.stripe.com/c/pay/test', status: 'open', expires_at: Math.floor(now / 1000) + 86400 }) }; });
   const billing = new HostedBilling(f.db, billingConfig(env({ OPENSIGHT_TRIAL_ENTITLEMENT: JSON.stringify(LIGHT) })), { clock: () => now, origin: 'https://opensight.example', stripe });
   await billing.startTrial('tenant-one'); now += 14 * 86400000; await billing.expireTrials();
   await billing.createCheckoutSession('tenant-one', 'regular');
