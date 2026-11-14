@@ -2160,3 +2160,12 @@ branching changes user-visible UI. Update `docs/data-prep.md` (branching
 semantics, output selector, the 5-consumer limit row). No new dependency, AWS
 call, merge, publish or issue closure is part of this build; the sweep owner
 handles those.
+
+
+### D-94 held-maintenance correction (2026-11-14)
+
+The egress/AI-receipt transition also adds nullable text access-request columns
+`notify_claim_token` and `notify_claim_expires_at`. Follow the narrowly scoped
+registered-backup normalization and immutable runner reconciliation specified in
+[D-94](docs/itd/D-94-egress-receipt-maintenance.md). Every original row value remains
+exact and newly added values must be null; all other preservation gates remain.

@@ -49,7 +49,7 @@ It accepts a bounded maintenance outage and requires fresh evidence before freez
 #### IMPLICATIONS
 
 The source inventory ends in `-ideas-v1`; the target adds
-`-egress-reservations-v1-ai-receipts-v1`. Add only `h8_egress_reservations`,
+`-egress-reservations-v1-ai-receipts-v1`. Add `h8_egress_reservations`,
 `ai_answer_receipts`, and `ai_answer_receipt_reservations`, initially empty.
 Extend `h7_deliveries.state` to admit `dead` while preserving every existing row
 and rejecting unknown states. Verify exact old/new constraint values and operator
@@ -71,3 +71,27 @@ acceptance and record the actual compatibility with the completed migration.
 After reopening, failures close admission for forward reconciliation; do not
 restore over new receipt, egress, job or customer writes. Billing and signup
 configuration remain unchanged and Stripe remains in sandbox.
+
+
+#### Verified correction during the held transition
+
+The deployed access-request table also lacks `notify_claim_token` and
+`notify_claim_expires_at`. Both are nullable text columns introduced by the
+candidate initializer. The candidate preservation verifier does not normalize
+these additions and correctly rolls back the migration. Before retrying, confirm
+all held tables still exactly match the version-pinned registered backup.
+
+The private registered-maintenance helper may normalize only these two absent
+backup columns to null when comparing the upgraded access-request rows. Existing
+columns and values remain exact; non-null additions, changed values, extra rows,
+missing rows and all other drift must still fail. The unchanged attested runtime
+is the deployment target. Rehearse the actual old column shape on PostgreSQL,
+including successful migration/replay and rollback of both DDL and rows.
+
+Bind the correction spec commit, tested helper hashes, old/new immutable runner
+versions and test evidence into the active operation by compare-and-swap before
+retrying. Keep the original operation ID, owner plan, external epoch, registered
+backup/version/digest and migration plan unchanged. Require the same quiescent
+phase, unchanged old runtime/configuration, zero admission and exact held-table
+fingerprints. This is a recorded verifier correction; it does not waive or skip
+preservation, widen runtime privileges, modify billing, or restore data.
