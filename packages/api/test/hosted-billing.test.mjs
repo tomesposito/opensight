@@ -789,3 +789,41 @@ test('212: unpaid payment-link checkout binds but does not convert a live trial'
   assert.equal(state.stripeSubscriptionId, 'sub_1'); assert.equal(state.tier, null); assert.equal(state.trialEndsAt, trialEnds);
   assert.deepEqual(billing.tierEntitlement('tenant-one'), TRIAL212);
 });
+
+test('243: unpaid checkout plus a trialing subscription keeps trial limits and expiry; the active transition converts', async t => {
+  const { f, billing, trialEnds, setClock } = await trialBilling212(t);
+  const unpaid = await billing.handleEvent({ id: 'evt_243_unpaid', created: 1, type: 'checkout.session.completed', object: {
+    subscription: 'sub_1', customer: 'cus_1', metadata: { tenant_id: 'tenant-one', tier: 'light' }, payment_status: 'unpaid',
+  } });
+  assert.equal(unpaid.handled, true);
+  const trialing = await billing.handleEvent({ id: 'evt_243_trialing', created: 2, type: 'customer.subscription.created', object: pricedSub('trialing', 'heavy') });
+  assert.equal(trialing.handled, true);
+  let state = await billing.state('tenant-one');
+  // The subscription is bound and its price tier is recorded as evidence,
+  // but no payment was verified: the trial deadline and entitlement govern.
+  assert.equal(state.stripeSubscriptionId, 'sub_1'); assert.equal(state.subscriptionStatus, 'trialing');
+  assert.equal(state.tier, 'heavy'); assert.equal(state.trialEndsAt, trialEnds);
+  assert.deepEqual(billing.tierEntitlement('tenant-one'), TRIAL212);
+  assert.equal(billing.trial('tenant-one').endsAt, trialEnds);
+  assert.doesNotThrow(() => billing.assertAccess('tenant-one'));
+  let audits = await readOperatorAudit(f.db, { limit: 100 });
+  assert.equal(audits.filter(e => e.action === 'billing.trial.converted').length, 0);
+  // Expiry is still enforced against the recorded paid tier.
+  setClock(Date.parse(trialEnds));
+  assert.throws(() => billing.assertAccess('tenant-one'), { code: 'TRIAL_EXPIRED' });
+  await billing.expireTrials();
+  state = await billing.state('tenant-one');
+  assert.equal(state.accessState, 'paused'); assert.equal(state.pauseEffectiveAt, trialEnds);
+  assert.equal(billing.tierEntitlement('tenant-one'), null); assert.equal(billing.accessPaused('tenant-one'), true);
+  // The authorized paid transition is the active subscription event.
+  await billing.handleEvent(subscriptionEvent('evt_243_active', activeSub, 3));
+  state = await billing.state('tenant-one');
+  assert.equal(state.tier, 'light'); assert.equal(state.subscriptionStatus, 'active'); assert.equal(state.trialEndsAt, null);
+  assert.equal(state.accessState, 'active'); assert.equal(state.retentionDueAt, null);
+  assert.equal(billing.trial('tenant-one'), null); assert.deepEqual(billing.tierEntitlement('tenant-one'), LIGHT);
+  assert.doesNotThrow(() => billing.assertAccess('tenant-one'));
+  audits = await readOperatorAudit(f.db, { limit: 100 });
+  const conversions = audits.filter(e => e.action === 'billing.trial.converted');
+  assert.equal(conversions.length, 1); assert.equal(conversions[0].detail.stripeEventId, 'evt_243_active');
+});
+

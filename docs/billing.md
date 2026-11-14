@@ -157,8 +157,12 @@ lookup or treating delivery order as chronology:
   the earlier pause deadline. Incomplete and past-due events do not themselves
   grant or revoke access.
 - Successful transitions supply tier evidence independently of status. A paid
-  checkout or an active/trialing subscription with a recognized price can
-  convert a trial (#212); invoices and incomplete/unpaid transitions cannot.
+  checkout or an active subscription with a recognized price can convert a
+  trial (#212); invoices and incomplete/unpaid transitions cannot. A
+  trialing subscription also supplies tier evidence, but it does not convert
+  a trial (#243): while the trial deadline survives, the trial entitlement
+  and expiry govern, whatever paid tier is recorded, until an active
+  subscription or a paid checkout clears the deadline.
   This evidence is retained even when a restrictive subscription status wins
   the same-second tie: a paid tier may coexist with paused access. Newer tier
   evidence wins; at the same second subscription evidence outranks checkout,

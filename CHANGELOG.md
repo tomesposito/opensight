@@ -72,6 +72,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- A Stripe subscription still in its trialing state no longer converts a hosted trial: the paid tier is recorded as evidence, but the trial deadline and trial entitlement stay in force — and expiry still pauses access — until an active subscription or a paid checkout verifies payment (#243).
+
 - Stripe events for the same bound subscription created in the same second now converge on the same hosted tier, subscription status and access state regardless of delivery order. Invoice, subscription and checkout ordering are separate, while older events within each domain, duplicate replays and foreign subscriptions remain fenced (#242).
 
 - Hosted migrations against Postgres no longer fail with `relation "sqlite_master" does not exist`: the runtime and serverless migration paths now pass their dialect explicitly into the auth/job schema initializers instead of reading it off a transaction connection that does not carry one, so the #233 delivery dead-letter upgrade inspects `pg_constraint` on Postgres (#240).
