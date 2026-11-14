@@ -19,6 +19,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Live-result cache statistics now report active fills and tracked fill keys,
+  with executor regressions that detect retained fill state after distinct local
+  and PostgreSQL failures (#246).
+
 - Insight top/bottom movers computations, ranking categories by percent or
   absolute change in the bound measure between the latest dated period and the
   preceding calendar period, with validated native import/export, disclosed
