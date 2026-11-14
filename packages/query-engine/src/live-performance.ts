@@ -262,9 +262,11 @@ export class LiveResultCache {
     }
   }
 
-  stats(): { hits: number; misses: number; stores: number; entries: number; retainedBytes: number } {
+  /** Fill counts include all active tokens and keys that still have a latest-fill marker. */
+  stats(): { hits: number; misses: number; stores: number; entries: number; retainedBytes: number; activeFills: number; trackedFillKeys: number } {
     this.purgeExpired(this.now());
-    return { hits: this.hits, misses: this.misses, stores: this.stores, entries: this.entries.size, retainedBytes: this.retainedBytes };
+    return { hits: this.hits, misses: this.misses, stores: this.stores, entries: this.entries.size, retainedBytes: this.retainedBytes,
+      activeFills: this.activeFills.size, trackedFillKeys: this.latestFillByKey.size };
   }
 }
 
