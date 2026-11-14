@@ -41,7 +41,15 @@ async function fixture(t) {
     return objects.get(input.idempotencyKey);
   }
   const makeBilling = (extra = {}, settings = config) => new HostedBilling(f.db, settings, { stripe, origin, clock: () => now, ...extra });
-  return { ...f, stripe, calls, objects, makeBilling, billing: makeBilling(), advance: ms => { now += ms; }, now: () => now };
+  const checkoutEvent = (id, status) => {
+    const [key, session] = [...objects].find(([, object]) => object.id === id);
+    session.status = status;
+    const input = calls.find(call => call.idempotencyKey === key);
+    return { id: `evt_${id}_${status}`, created: Math.floor(now / 1000), type: `checkout.session.${status === 'complete' ? 'completed' : 'expired'}`,
+      object: { id, status, expires_at: session.expiresAt, metadata: { tenant_id: input.tenantId, tier: input.tier },
+        ...(status === 'complete' ? { subscription: `sub_${id}`, customer: `cus_${id}`, payment_status: 'paid' } : {}) } };
+  };
+  return { ...f, stripe, calls, objects, checkoutEvent, makeBilling, billing: makeBilling(), advance: ms => { now += ms; }, now: () => now };
 }
 async function creationAudits(db, action = 'billing.payment_link.created') {
   return (await readOperatorAudit(db, { limit: 100 })).filter(row => row.action === action);
@@ -64,6 +72,56 @@ test('227 operations: additive initialization preserves records and enforces uni
     SELECT 'op_duplicate', idempotency_key, tenant_id, kind, tier, status, price_id, checkout_origin,
       stripe_object_id, stripe_url, created_at, updated_at FROM h9_billing_operations`)), { code: 'METADATA_CONFLICT' });
   await assert.rejects(seedOperation(f.db, 'op_missing', 'tenant-missing'), { code: 'METADATA_REFERENCE_INVALID' });
+});
+
+test('248 webhooks: unpaid completion and expiration durably retire sessions without inventing paid access', async t => {
+  for (const status of ['complete', 'expired']) await t.test(status, async t => {
+    const f = await fixture(t), first = await f.billing.createCheckoutSession('tenant-one', 'light');
+    const event = f.checkoutEvent(first.id, status);
+    event.object.payment_status = 'unpaid';
+    // Resolve expiration using the stored session even with no metadata or subscription.
+    if (status === 'expired') delete event.object.metadata;
+    assert.equal((await f.billing.handleEvent(event)).handled, true);
+    assert.equal((await operations(f.db))[0].checkout_status, status);
+    const state = await f.billing.state('tenant-one');
+    if (status === 'expired') assert.deepEqual(state, { tenantId: 'tenant-one', status: 'none' });
+    else assert.equal(state.tier, null);
+    assert.equal((await f.makeBilling().handleEvent(event)).duplicate, true);
+    assert.equal((await operations(f.db))[0].checkout_status, status);
+  });
+});
+
+test('248 webhooks: accepted subscription lifecycle events consume earlier sessions, foreign events do not', async t => {
+  for (const type of ['created', 'updated', 'deleted']) await t.test(type, async t => {
+    const f = await fixture(t); await f.billing.createCheckoutSession('tenant-one', 'light');
+    await f.db.transaction(c => c.query(`INSERT INTO h9_billing (tenant_id, stripe_customer_id, stripe_subscription_id, updated_at)
+      VALUES ('tenant-one', 'cus_bound', 'sub_bound', ?)`, [new Date(f.now()).toISOString()]));
+    const event = { id: `evt_sub_${type}`, type: `customer.subscription.${type}`, created: Math.floor(f.now() / 1000),
+      object: { id: 'sub_bound', customer: 'cus_bound', status: 'active', metadata: { tenant_id: 'tenant-one' } } };
+    const foreign = { ...event, id: 'evt_foreign', object: { ...event.object, id: 'sub_foreign', customer: 'cus_foreign' } };
+    assert.equal((await f.billing.handleEvent(foreign)).action, 'foreign_subscription');
+    assert.equal((await operations(f.db))[0].checkout_status, 'open');
+    assert.equal((await f.billing.handleEvent(event)).handled, true);
+    assert.equal((await operations(f.db))[0].checkout_status, 'consumed');
+  });
+});
+
+test('248 webhooks: terminal evidence survives timeout reconciliation of the original response', async t => {
+  const f = await fixture(t), create = f.stripe.createCheckoutSession;
+  let fail = true;
+  f.stripe.createCheckoutSession = async input => {
+    const session = { ...await create(input) };
+    if (fail) { fail = false; throw new Error('timeout after Stripe creation'); }
+    // Stripe may replay the original open POST response for the same key.
+    return { ...session, status: 'open' };
+  };
+  await assert.rejects(f.billing.createCheckoutSession('tenant-one', 'light'), { code: 'STRIPE_REQUEST_FAILED' });
+  const session = f.objects.values().next().value;
+  await f.billing.handleEvent(f.checkoutEvent(session.id, 'expired'));
+  assert.equal((await operations(f.db))[0].checkout_status, 'expired');
+  await f.billing.createCheckoutSession('tenant-one', 'light');
+  assert.equal((await operations(f.db))[0].checkout_status, 'expired');
+  assert.deepEqual(f.calls[0], f.calls[1]);
 });
 
 test('248 operations: persist Stripe lifecycle/expiry and migrate legacy rows without inventing evidence', async t => {

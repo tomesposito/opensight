@@ -201,7 +201,7 @@ const SUBSCRIPTION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted',
 ]);
 const BILLING_EVENT_TYPES: ReadonlySet<string> = new Set([
-  'checkout.session.completed', ...SUBSCRIPTION_EVENT_TYPES,
+  'checkout.session.completed', 'checkout.session.expired', ...SUBSCRIPTION_EVENT_TYPES,
   'invoice.payment_failed', 'invoice.paid', 'invoice.payment_succeeded',
 ]);
 type StripeDomain = 'subscription' | 'invoice' | 'checkout';
@@ -605,7 +605,8 @@ export class HostedBilling {
         return { error: new MetadataError('STRIPE_REQUEST_FAILED', 502) };
       }
       await c.query(`UPDATE h9_billing_operations SET status = 'completed', stripe_object_id = ?, stripe_url = ?, updated_at = ?,
-        checkout_status = ?, checkout_expires_at = ? WHERE operation_id = ?`,
+        checkout_status = CASE WHEN checkout_status IN ('complete', 'expired', 'consumed') THEN checkout_status ELSE ? END,
+        checkout_expires_at = ? WHERE operation_id = ?`,
       [result.id, result.url, this.nowIso(), checkoutStatus(result.status), checkoutExpiry(result.expiresAt), operationId]);
       if (kind === 'payment_link') await c.query('INSERT INTO h9_billing_links (link_id, tenant_id, tier, created_at) VALUES (?,?,?,?)', [result.id, tenantId, reservedTier, this.nowIso()]);
       await appendOperatorAudit(c, { action: kind === 'payment_link' ? 'billing.payment_link.created' : 'billing.checkout.created', tenantId, subject: result.id,
@@ -632,6 +633,11 @@ export class HostedBilling {
     const metadata = nested(object.metadata);
     const metaTenant = stringOrNull(metadata.tenant_id);
     if (metaTenant) { try { return { tenantId: identifier(metaTenant), checkoutBinding: event.type === 'checkout.session.completed', ...(event.type === 'checkout.session.completed' && PAID_TIERS.includes(metadata.tier as BillingTier) ? { linkTier: metadata.tier as BillingTier } : {}) }; } catch { /* fall through to durable bindings */ } }
+    if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.expired') {
+      const sessionId = stringOrNull(object.id);
+      const operation = sessionId && (await c.query("SELECT tenant_id, tier FROM h9_billing_operations WHERE kind = 'checkout_session' AND stripe_object_id = ?", [sessionId]))[0];
+      if (operation) return { tenantId: String(operation.tenant_id), checkoutBinding: event.type === 'checkout.session.completed', linkTier: String(operation.tier) as BillingTier };
+    }
     const paymentLink = event.type === 'checkout.session.completed' ? stringOrNull(object.payment_link) : null;
     if (paymentLink) {
       const link = (await c.query('SELECT tenant_id, tier FROM h9_billing_links WHERE link_id = ?', [paymentLink]))[0];
@@ -648,6 +654,20 @@ export class HostedBilling {
       if (row) return { tenantId: String(row.tenant_id) };
     }
     return undefined;
+  }
+  private async consumeCheckoutOperations(c: SqlConnection, tenantId: string, event: StripeEvent): Promise<void> {
+    const checkout = event.type === 'checkout.session.completed' || event.type === 'checkout.session.expired';
+    // Stripe event times have one-second precision. Invalidate reservations
+    // already present in that second, never later re-checkout attempts. A
+    // pending/failed POST may have succeeded at Stripe before its response was
+    // lost; keep its terminal evidence until the original key is reconciled.
+    const before = new Date((event.created + 1) * 1000).toISOString();
+    await c.query(`UPDATE h9_billing_operations SET checkout_status = ?, updated_at = ?
+      WHERE tenant_id = ? AND kind = 'checkout_session'
+      AND (checkout_status IS NULL OR checkout_status = 'open')
+      AND ${checkout ? '(stripe_object_id = ? OR (stripe_object_id IS NULL AND created_at < ?))' : 'created_at < ?'}`,
+    [event.type === 'checkout.session.expired' ? 'expired' : checkout ? 'complete' : 'consumed', this.nowIso(), tenantId,
+      ...(checkout ? [stringOrNull(event.object.id), before] : [before])]);
   }
   /**
    * Apply one verified webhook event exactly once. The event ID is recorded
@@ -686,6 +706,15 @@ export class HostedBilling {
         const row = (await c.query('SELECT * FROM h9_billing WHERE tenant_id = ?', [tenantId]))[0];
         const existing = asRecord(row);
         const object = event.object;
+        if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.expired') {
+          // Session terminal state is independent of entitlement ordering and
+          // payment success. Even a stale/unpaid completion consumes its URL.
+          await this.consumeCheckoutOperations(c, tenantId, event);
+          if (event.type === 'checkout.session.expired') {
+            await c.query('UPDATE h9_billing_events SET tenant_id = ?, outcome = ? WHERE event_id = ?', [tenantId, 'applied', event.id]);
+            return { duplicate: false, handled: true, tenantId, action: 'checkout_expired' } satisfies BillingEventResult;
+          }
+        }
         const subscriptionId = SUBSCRIPTION_EVENT_TYPES.has(event.type) ? stringOrNull(object.id) : stringOrNull(object.subscription);
         // Only tenant-bound checkout (metadata or a stored operator payment
         // link), or subscription.created for the bound customer, may replace a
@@ -714,6 +743,7 @@ export class HostedBilling {
           await c.query('UPDATE h9_billing_events SET tenant_id = ?, outcome = ? WHERE event_id = ?', [tenantId, 'stale', event.id]);
           return { duplicate: false, handled: false, tenantId, action: 'stale' } satisfies BillingEventResult;
         }
+        if (SUBSCRIPTION_EVENT_TYPES.has(event.type)) await this.consumeCheckoutOperations(c, tenantId, event);
         if (replacing) ordering = { bindingCreated: event.created };
         const previousAccess = ordering.access;
         await c.query('UPDATE h9_billing_events SET tenant_id = ?, outcome = ? WHERE event_id = ?', [tenantId, 'applied', event.id]);
