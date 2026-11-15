@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeForecast, forecastConfigValid, DEFAULT_FORECAST_CONFIG, MIN_FORECAST_POINTS } from '../build/test/forecast.js';
+import { computeForecast, forecastConfigValid, DEFAULT_FORECAST_CONFIG, MIN_FORECAST_POINTS, MAX_FORECAST_GRID_STEPS } from '../build/test/forecast.js';
 
 const cfg = { ...DEFAULT_FORECAST_CONFIG };
 const round = (xs, d = 4) => xs.map(x => x === null ? null : +x.toFixed(d));
@@ -166,4 +166,44 @@ test('nonfinite arithmetic: when no finite model remains the result is unavailab
   // returns null — the surfaces render their unavailable state.
   assert.equal(computeForecast([1e308, -1e308, 1e308, -1e308], 'DAY', { ...cfg, seasonality: 'none' }), null);
   assert.equal(computeForecast([-1e308, 1e308, -1e308, 1e308], 'DAY', { ...cfg, seasonality: 'none' }), null);
+});
+
+test('work bound: maximum-seasonality workload (m=366, n=732) forecasts seasonally on the full grid', () => {
+  // Issue #262's representative maximum: season length 366 at its minimum
+  // 732 observations. The old slice-and-spread rotation processed ~683M
+  // seasonal-array elements per series here; the ring buffer makes each
+  // observation O(1), and the full grid (5,610 fits x 732 = 4,106,920
+  // steps) stays within MAX_FORECAST_GRID_STEPS, so results are the
+  // full-grid results, not a coarsened approximation.
+  assert.ok(MAX_FORECAST_GRID_STEPS >= 5610 * 732);
+  // A sharp seasonal step pattern: one-step-ahead tracking cannot
+  // anticipate the jumps, so the seasonal model wins on merit. (A smooth
+  // slow sine at this season length is legitimately tracked one-step by
+  // trend models and loses to them on the seasonal initials' AIC penalty.)
+  const y = Array.from({ length: 732 }, (_, i) => 100 + ((i % 366) < 183 ? 20 : -20) + i * 0.01);
+  const r = computeForecast(y, 'DAY', { ...cfg, seasonality: 366 });
+  assert.ok(r, 'forecast exists');
+  assert.equal(r.seasonalApplied, true);
+  assert.equal(r.fitted.length, 732);
+  assert.ok(Number.isFinite(r.sigma));
+  for (const p of r.future) {
+    assert.ok(Number.isFinite(p.value) && Number.isFinite(p.lower) && Number.isFinite(p.upper));
+    assert.ok(p.lower <= p.value && p.value <= p.upper, 'interval stays ordered');
+  }
+  // Deterministic: same input, same output.
+  assert.deepEqual(computeForecast(y, 'DAY', { ...cfg, seasonality: 366 }), r);
+});
+
+test('work bound: a very long seasonal series still forecasts under the coarsened grid tiers', () => {
+  // 20,000 observations at season 366 would be 112M full-grid steps —
+  // far past the budget — so a coarser deterministic tier must take
+  // over and still return a finite, deterministic forecast. Under the
+  // old per-observation O(m) rotation this input could not finish in
+  // reasonable time at any grid size.
+  const y = Array.from({ length: 20000 }, (_, i) => 50 + 10 * Math.sin(2 * Math.PI * (i % 366) / 366) + (i % 7));
+  const r = computeForecast(y, 'DAY', { ...cfg, seasonality: 366 });
+  assert.ok(r, 'forecast exists');
+  assert.equal(r.fitted.length, 20000);
+  assert.ok(r.future.every(p => Number.isFinite(p.value) && Number.isFinite(p.lower) && Number.isFinite(p.upper)));
+  assert.deepEqual(computeForecast(y, 'DAY', { ...cfg, seasonality: 366 }), r);
 });
