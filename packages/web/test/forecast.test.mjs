@@ -40,6 +40,31 @@ test('seasonality none never fits seasonal; custom period is honored', () => {
   assert.equal(r.seasonalApplied, true);
 });
 
+test('fit selection: a candidate whose AICc correction is undefined is not rewarded for escaping it', () => {
+  // Five constant points (issue #260): level-only (k=2, 4 errors) pays an
+  // AICc correction of 12, while Holt (k=4) and damped (k=5) have too few
+  // observations for their corrections to be defined at all. The old
+  // per-candidate fallback scored Holt and damped by plain AIC while
+  // level-only paid the full correction, so Holt won despite identical
+  // zero residual error and more parameters. With one common criterion
+  // for the whole comparison (plain AIC for all, because some corrections
+  // are undefined) the simpler candidate wins.
+  const r = computeForecast([7, 7, 7, 7, 7], 'DAY', { ...cfg, seasonality: 'none' });
+  assert.equal(r.modelName, 'level-only (simple exponential smoothing)');
+  assert.ok(r.future.every(p => p.value === 7 && p.lower === 7 && p.upper === 7));
+});
+
+test('fit selection: when no candidate has a defined AICc, the common plain-AIC fallback still forecasts', () => {
+  // Four points is the floor: level-only has 3 errors for k=2 (correction
+  // denominator 0) and the trend candidates are further under water, so
+  // NO candidate qualifies for AICc. Selection falls back to plain AIC
+  // for all alike rather than refusing to forecast, and the exact linear
+  // series picks the trend model that fits it with zero residual error.
+  const r = computeForecast([1, 2, 3, 4], 'DAY', { ...cfg, seasonality: 'none' });
+  assert.ok(r);
+  assert.equal(r.modelName, 'Holt trend');
+});
+
 test('minimum points: fewer than 4 usable points refuses', () => {
   assert.equal(MIN_FORECAST_POINTS, 4);
   assert.equal(computeForecast([1, 2, 3], 'DAY', cfg), null);
