@@ -90,7 +90,12 @@ export const ACCESS_REQUEST_NOTIFY_CLAIM_MS = 5 * 60_000;
  * Each row is claimed atomically before anything is sent (issue #232): the
  * claim is a conditional UPDATE that only succeeds while the row is
  * unnotified and unclaimed (or its previous claim's lease has expired, i.e.
- * that sender died mid-send). Concurrent submissions or maintenance calls
+ * that sender died mid-send). The lease starts at the moment that row is
+ * claimed, not when the batch started (issue #250), so a slow batch never
+ * hands out an already-expired lease; no mid-send renewal is needed
+ * because a claim is taken immediately before its send and the
+ * transport's own deadline (at most 60 seconds) is well under the lease.
+ * Concurrent submissions or maintenance calls
  * therefore never send the same row twice, even through a transport that
  * does not deduplicate. The send keeps the stable per-request dedupe key
  * (#224), so a retry after a crash between send and stamp still carries the
@@ -99,23 +104,33 @@ export const ACCESS_REQUEST_NOTIFY_CLAIM_MS = 5 * 60_000;
  */
 export async function notifyAccessRequests(db: Database, mail: MailTransport, to: string | null, now: number, limit = 20): Promise<number> {
   if (!to || !mail.configured) return 0;
-  const nowIso = new Date(now).toISOString();
   const claimToken = randomUUID();
-  const claimExpiresAt = new Date(now + ACCESS_REQUEST_NOTIFY_CLAIM_MS).toISOString();
+  // Each row's lease starts when that row is claimed (issue #250): `now`
+  // is the caller's logical start time, and a claim's time advances it by
+  // the wall-clock time elapsed since this call began, so later rows in a
+  // slow batch are never claimed with an already-expired lease. In
+  // production `now` is Date.now() at the call site, so the claim time is
+  // the real claim time; under a fake clock the elapsed delta is exactly
+  // the ticked amount.
+  const startedAt = Date.now();
+  const claimTime = () => now + Math.max(0, Date.now() - startedAt);
   // Rows are claimed one at a time, immediately before their send: claiming
   // a whole batch up front would leave its later rows claimed (and skipped
   // by other senders) when the batch stops at an early failure.
   const claimNext = () => db.transaction(async c => {
+    const claimedAt = claimTime();
+    const claimedIso = new Date(claimedAt).toISOString();
+    const claimExpiresAt = new Date(claimedAt + ACCESS_REQUEST_NOTIFY_CLAIM_MS).toISOString();
     const [candidate] = await c.query(
       `SELECT * FROM h8_access_requests WHERE notified_at IS NULL
         AND (notify_claim_expires_at IS NULL OR notify_claim_expires_at <= ?)
-        ORDER BY created_at ASC, id ASC LIMIT 1`, [nowIso]);
+        ORDER BY created_at ASC, id ASC LIMIT 1`, [claimedIso]);
     if (!candidate) return null;
     const taken = await c.query(
       `UPDATE h8_access_requests SET notify_claim_token = ?, notify_claim_expires_at = ?
         WHERE id = ? AND notified_at IS NULL
           AND (notify_claim_expires_at IS NULL OR notify_claim_expires_at <= ?) RETURNING id`,
-      [claimToken, claimExpiresAt, String(candidate.id), nowIso]);
+      [claimToken, claimExpiresAt, String(candidate.id), claimedIso]);
     return taken.length ? candidate : 'lost';
   });
   let sent = 0;
@@ -149,7 +164,7 @@ export async function notifyAccessRequests(db: Database, mail: MailTransport, to
     }
     await db.transaction(c => c.query(
       `UPDATE h8_access_requests SET notified_at = ?, notify_claim_token = NULL, notify_claim_expires_at = NULL
-        WHERE id = ? AND notify_claim_token = ?`, [new Date(now).toISOString(), String(row.id), claimToken]));
+        WHERE id = ? AND notify_claim_token = ?`, [new Date(claimTime()).toISOString(), String(row.id), claimToken]));
     sent++;
   }
   return sent;
