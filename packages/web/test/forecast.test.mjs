@@ -142,3 +142,28 @@ test('config validation is fail-closed', () => {
   assert.equal(forecastConfigValid({ ...cfg, extra: 1 }), false);
   assert.equal(forecastConfigValid(null), false);
 });
+
+test('nonfinite arithmetic: residuals that square past the double range still forecast finitely', () => {
+  // Issue #261: every observation is finite, but (1e200)^2 overflows, so the
+  // old SSE was Infinity, sigma was Infinity, and the returned interval
+  // endpoints were infinite. The scaled SSE / log-domain scoring keeps every
+  // returned number finite.
+  for (const history of [[0, 1e200, 0, 1e200], [0, 1e200, 0, 1e200, 0, 1e200, 0, 1e200], [1e200, 2e200, 3e200, 4e200, 5e200, 6e200]]) {
+    const r = computeForecast(history, 'DAY', { ...cfg, seasonality: 'none' });
+    assert.ok(r, `forecast exists for ${JSON.stringify(history)}`);
+    assert.ok(Number.isFinite(r.sigma), 'sigma is finite');
+    assert.ok(r.fitted.every(v => v === null || Number.isFinite(v)), 'fitted values are finite');
+    for (const p of r.future) {
+      assert.ok(Number.isFinite(p.value) && Number.isFinite(p.lower) && Number.isFinite(p.upper), `finite point ${JSON.stringify(p)}`);
+      assert.ok(p.lower <= p.value && p.value <= p.upper, 'interval stays ordered');
+    }
+  }
+});
+
+test('nonfinite arithmetic: when no finite model remains the result is unavailable, never nonfinite', () => {
+  // Alternating extremes at the edge of the double range: every candidate's
+  // filter overflows (initial trend and residuals alike), so computeForecast
+  // returns null — the surfaces render their unavailable state.
+  assert.equal(computeForecast([1e308, -1e308, 1e308, -1e308], 'DAY', { ...cfg, seasonality: 'none' }), null);
+  assert.equal(computeForecast([-1e308, 1e308, -1e308, 1e308], 'DAY', { ...cfg, seasonality: 'none' }), null);
+});

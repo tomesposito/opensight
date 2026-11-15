@@ -134,6 +134,18 @@ test('forecast narrative treats mixed raw aliases of distinct periods as one can
   assert.equal(narrative([...mixed].reverse()).text, narrative(seriesRows).text, 'reversed mixed-alias rows give the same chronological narrative');
 });
 
+test('forecast narrative stays finite for observations whose residual squares overflow', () => {
+  // Issue #261: finite observations near 1e200 used to make the engine return
+  // infinite endpoints, which the narrative's own validation rejected instead
+  // of producing its sentence. Now the sentence renders with finite values.
+  const hugeRows = [0, 1e200, 0, 1e200, 0, 1e200].map((n, i) => ({ category: `2024-0${i + 1}`, values: [n] }));
+  const result = narrative(hugeRows);
+  assert.match(result.text, /Statistical forecast for revenue in 3 months/);
+  const values = result.paragraphs[0].parts.filter(p => p.value !== undefined).map(p => p.value);
+  assert.equal(values.length, 3);
+  assert.ok(values.every(v => Number.isFinite(v)), `finite narrative values ${JSON.stringify(values)}`);
+});
+
 test('forecast rejects duplicate periods, invalid dates and nonfinite values before projecting', () => {
   for (const category of ['2024-01', '2024-01-01', '2024-01-01T00:00:00Z']) assert.throws(() => narrative([...seriesRows, { category, values: [1] }]), /INSIGHT_VALUE_INVALID/);
   for (const category of ['not-a-date', '2024-02-30', null]) assert.throws(() => narrative([{ category, values: [1] }]), /INSIGHT_TIME_REQUIRED/);

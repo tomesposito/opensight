@@ -12,7 +12,12 @@
  * AIC. When any candidate's AICc correction is undefined (too few
  * observations for its parameter count), every candidate is compared by
  * plain AIC instead — one common criterion for the whole comparison, never
- * a per-candidate mix (issue #260). Same input, same output, every run.
+ * a per-candidate mix (issue #260). Finite observations can still overflow
+ * intermediate arithmetic (a residual near 1e200 squares past the double
+ * range), so scoring and sigma carry a scaled/log-domain SSE, every fit is
+ * validated finite before it can win, and every returned number is checked
+ * — when no finite model remains the result is null, the surfaces'
+ * unavailable state (issue #261). Same input, same output, every run.
  *
  * Prediction intervals come from the one-step residual variance, widening
  * with horizon through the model's exact state-space psi-weights:
@@ -107,7 +112,17 @@ interface Fit {
   alpha: number; beta: number; phi: number; gamma: number;
   /** One-step fitted values aligned to the input points; null before the first predictable index. */
   fitted: (number | null)[];
-  sse: number; errors: number;
+  sse: number;
+  /** Natural log of the true SSE (issue #261): the SSE itself overflows to
+   *  Infinity for large-but-finite observations (residuals near 1e200 square
+   *  past the double range), while its log stays a small finite number, so
+   *  scoring and sigma can be computed in the log domain exactly when the
+   *  direct value is unusable. -Infinity when every residual is zero. */
+  logSse: number;
+  /** False when the filter's own arithmetic went nonfinite (a fitted value
+   *  or a residual overflowed): such a fit is rejected, never scored. */
+  valid: boolean;
+  errors: number;
   level: number; trendValue: number; seasonalState: number[];
   aic: number;
   /** Corrected AIC, or null when its correction is undefined
@@ -136,24 +151,48 @@ function runFilter(y: readonly number[], m: number, cand: Candidate, alpha: numb
   }
   const c = cand.trend === 'none' ? 0 : cand.trend === 'add' ? 1 : phi;
   const fitted: (number | null)[] = new Array<number | null>(n).fill(null);
-  let sse = 0, errors = 0;
+  // SSE accumulated in scaled form (issue #261): each squared residual is
+  // divided by the running maximum |residual| before summing, so the sum
+  // itself can never overflow for finite residuals; the true SSE is
+  // sseScaled * errScale^2, recovered directly when that product is finite
+  // (the ordinary path, bit-for-bit the old arithmetic) and through logSse
+  // when it is not.
+  let sseScaled = 0, errScale = 0, errors = 0;
+  let valid = Number.isFinite(level) && Number.isFinite(trendValue) && s.every(v => Number.isFinite(v));
   const start = seasonal ? m : 1;
   for (let t = 0; t < n; t++) {
     if (t < start) continue;
     const yhat = level + c * trendValue + (seasonal ? s[0]! : 0);
     const e = y[t]! - yhat;
+    if (!Number.isFinite(yhat) || !Number.isFinite(e)) { valid = false; break; }
     fitted[t] = yhat;
-    sse += e * e; errors++;
+    const ae = Math.abs(e);
+    if (ae > errScale) {
+      if (errScale > 0) sseScaled *= (errScale / ae) ** 2;
+      errScale = ae;
+    }
+    if (errScale > 0) { const r = e / errScale; sseScaled += r * r; }
+    errors++;
     const nextLevel = level + c * trendValue + alpha * e;
     const nextTrend = cand.trend === 'none' ? 0 : cand.trend === 'add' ? trendValue + beta * e : phi * trendValue + beta * e;
     if (seasonal) s = [...s.slice(1), s[0]! + gamma * e];
     level = nextLevel; trendValue = nextTrend;
+    if (!Number.isFinite(level) || !Number.isFinite(trendValue) || s.some(v => !Number.isFinite(v))) { valid = false; break; }
   }
+  const sse = sseScaled * errScale * errScale;
+  const logSse = sseScaled > 0 && errScale > 0 ? Math.log(sseScaled) + 2 * Math.log(errScale) : -Infinity;
   const k = 1 + 1 // alpha + initial level
     + (cand.trend !== 'none' ? 2 : 0) // beta + initial trend
     + (cand.trend === 'damped' ? 1 : 0) // phi
     + (seasonal ? 1 + m : 0); // gamma + seasonal initials
-  const aic = errors * Math.log(Math.max(sse, 1e-12) / errors) + 2 * k;
+  // AIC from the true SSE when it is finite (the ordinary path, unchanged);
+  // in the log domain when the SSE overflowed — the old code scored such a
+  // fit errors * log(Infinity) = Infinity and then still returned it as the
+  // winner when every candidate overflowed, leaking infinite endpoints to
+  // the surfaces (issue #261). A zero SSE keeps the historical 1e-12 floor.
+  const aic = errors === 0 ? Infinity
+    : Number.isFinite(sse) ? errors * Math.log(Math.max(sse, 1e-12) / errors) + 2 * k
+    : errors * (logSse - Math.log(errors)) + 2 * k;
   // Corrected AIC. When the correction denominator is not positive the
   // correction is undefined — report null instead of silently falling
   // back to plain AIC for this candidate alone: the old per-candidate
@@ -163,16 +202,29 @@ function runFilter(y: readonly number[], m: number, cand: Candidate, alpha: numb
   // correction (issue #260). computeForecast picks one common
   // criterion for the whole comparison.
   const aicc = errors - k - 1 > 0 ? aic + (2 * k * (k + 1)) / (errors - k - 1) : null;
-  return { candidate: cand, alpha, beta, phi, gamma, fitted, sse, errors, level, trendValue, seasonalState: s, aic, aicc };
+  return { candidate: cand, alpha, beta, phi, gamma, fitted, sse, logSse, valid, errors, level, trendValue, seasonalState: s, aic, aicc };
 }
 
-function fitCandidate(y: readonly number[], m: number, cand: Candidate): Fit {
+/** A fit is usable only when every number it carries is finite (issue #261):
+ *  the filter stayed finite, the score is a real number, and no fitted value
+ *  overflowed. Nonfinite fits are rejected outright, never scored. */
+function fitUsable(fit: Fit): boolean {
+  return fit.valid
+    && Number.isFinite(fit.aic)
+    && (fit.aicc === null || Number.isFinite(fit.aicc))
+    && Number.isFinite(fit.level) && Number.isFinite(fit.trendValue)
+    && fit.seasonalState.every(v => Number.isFinite(v))
+    && fit.fitted.every(v => v === null || Number.isFinite(v));
+}
+
+function fitCandidate(y: readonly number[], m: number, cand: Candidate): Fit | null {
   const seasonal = cand.seasonal && m >= 2;
   const alphas = GRID, betas = cand.trend === 'none' ? [0] : GRID, phis = cand.trend === 'damped' ? PHIS : [1], gammas = seasonal ? GRID : [0];
   let best: Fit | undefined;
   let bestScore = Infinity;
   for (const alpha of alphas) for (const beta of betas) for (const phi of phis) for (const gamma of gammas) {
     const fit = runFilter(y, m, cand, alpha, beta, phi, gamma);
+    if (!fitUsable(fit)) continue;
     // Every grid point of one candidate shares k and errors, so the AICc
     // correction is a constant across the grid (or undefined for all of
     // them): ranking by AICc when defined and by plain AIC otherwise
@@ -180,7 +232,7 @@ function fitCandidate(y: readonly number[], m: number, cand: Candidate): Fit {
     const score = fit.aicc ?? fit.aic;
     if (score < bestScore) { best = fit; bestScore = score; }
   }
-  return best!;
+  return best ?? null;
 }
 
 export interface ForecastFuturePoint { value: number; lower: number; upper: number }
@@ -225,7 +277,10 @@ export function computeForecast(values: readonly (number | null)[], grain: Forec
   // seasonal candidate's k includes its m seasonal initials, so its
   // correction is undefined at exactly two cycles — so the consistent
   // scoring is a common criterion, never a per-candidate mix.
-  const fits = candidates.map(cand => fitCandidate(y, m, cand));
+  const fits = candidates.map(cand => fitCandidate(y, m, cand)).filter((f): f is Fit => f !== null);
+  // No finite model remains (issue #261): the surfaces' unavailable result,
+  // never a forecast carrying infinite or NaN numbers.
+  if (fits.length === 0) return null;
   const useAicc = fits.every(f => f.aicc !== null);
   let best: Fit | undefined;
   let bestScore = Infinity;
@@ -236,7 +291,13 @@ export function computeForecast(values: readonly (number | null)[], grain: Forec
   const fit = best!;
   const seasonal = fit.candidate.seasonal && m >= 2;
   const k = 1 + 1 + (fit.candidate.trend !== 'none' ? 2 : 0) + (fit.candidate.trend === 'damped' ? 1 : 0) + (seasonal ? 1 + m : 0);
-  const sigma = Math.sqrt(fit.sse / Math.max(1, fit.errors - k));
+  // Sigma from the true SSE when it is finite (unchanged); in the log domain
+  // when the SSE overflowed, where the old sqrt(Infinity / …) made every
+  // interval endpoint infinite (issue #261). A zero SSE is a zero sigma.
+  const sigmaDenominator = Math.max(1, fit.errors - k);
+  const sigma = fit.sse === 0 ? 0
+    : Number.isFinite(fit.sse) ? Math.sqrt(fit.sse / sigmaDenominator)
+    : Math.exp(0.5 * (fit.logSse - Math.log(sigmaDenominator)));
   // State-space form x = [level, trend, s0..s_{m-1}] (seasonal state rotated so
   // s0 is the next period's index) for exact psi-weights and h-step forecasts.
   const c = fit.candidate.trend === 'none' ? 0 : fit.candidate.trend === 'add' ? 1 : fit.phi;
@@ -278,6 +339,15 @@ export function computeForecast(values: readonly (number | null)[], grain: Forec
     const clip = (v: number): number => Math.min(Math.max(v, floor), ceiling);
     future.push({ value: clip(raw), lower: clip(raw - half), upper: clip(raw + half) });
   }
+  // Last gate (issue #261): validate every number about to be returned. A
+  // finite fit can still project past the double range over the horizon
+  // (state growth times a huge sigma); if any fitted value, future endpoint
+  // or sigma is nonfinite, the result is unavailable — the caller renders
+  // its unavailable state instead of an invalid chart band or a narrative
+  // number its own validation would reject.
+  if (!Number.isFinite(sigma)
+    || fit.fitted.some(v => v !== null && !Number.isFinite(v))
+    || future.some(p => !Number.isFinite(p.value) || !Number.isFinite(p.lower) || !Number.isFinite(p.upper))) return null;
   const trendName = fit.candidate.trend === 'none' ? 'level-only' : fit.candidate.trend === 'add' ? 'Holt trend' : 'damped trend';
   const modelName = seasonal ? `Holt-Winters seasonal (${trendName})` : trendName === 'level-only' ? 'level-only (simple exponential smoothing)' : trendName;
   return { fitted: fit.fitted, future, modelName, seasonalApplied: seasonal, seasonalSkipped, sigma };
