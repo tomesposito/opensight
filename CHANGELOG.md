@@ -76,6 +76,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Hosted Ask O answer receipts now prune expired answers and abandoned
+  reservations in indexed, bounded batches across distinct keys, protect active
+  replays, and enforce configurable per-tenant entry and payload limits (#249).
+
 - Checkout reuses a URL only while its Stripe session is open and unexpired;
   cancellation, consumption and early expiry now allow a fresh checkout, and
   delayed timeout reconciliation no longer extends the old session's lifetime
