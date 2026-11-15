@@ -38,6 +38,41 @@ export const DEFAULT_FORECAST_CONFIG: ForecastConfig = {
 
 export const MIN_FORECAST_POINTS = 4;
 
+/** One item of a dated series after chronological preparation: the decoded
+ *  period start and the item's index in its source (display) order, so fitted
+ *  values computed chronologically can be mapped back to displayed rows. */
+export interface ChronologicalEntry<T> { item: T; date: Date; index: number }
+
+export type ChronologicalPreparation<T> =
+  | { ok: true; entries: ChronologicalEntry<T>[] }
+  | { ok: false; reason: 'invalid' | 'duplicate' };
+
+/**
+ * Shared chronological preparation for every dated forecast surface — chart
+ * line/area overlays and Insight narratives (issue #259). The caller decodes
+ * each item to its period-start date at the bound grain; preparation sorts
+ * ascending by decoded period (stable for equal keys, though equal keys are
+ * then rejected), and reports the two fail-closed states the surfaces share:
+ * an item that does not decode to a period ('invalid'), and two items that
+ * decode to the SAME period ('duplicate') — raw aliases such as `2024-01`
+ * and `2024-01-01T00:00:00Z` at MONTH grain are one period, not two
+ * observations. Anchoring to the latest period is `entries.at(-1)` here,
+ * never the last row in display order.
+ */
+export function prepareChronological<T>(items: readonly T[], decode: (item: T) => Date | null): ChronologicalPreparation<T> {
+  const entries: ChronologicalEntry<T>[] = [];
+  for (let index = 0; index < items.length; index++) {
+    const date = decode(items[index]!);
+    if (!date) return { ok: false, reason: 'invalid' };
+    entries.push({ item: items[index]!, date, index });
+  }
+  entries.sort((a, b) => a.date.getTime() - b.date.getTime() || a.index - b.index);
+  for (let i = 1; i < entries.length; i++) {
+    if (entries[i]!.date.getTime() === entries[i - 1]!.date.getTime()) return { ok: false, reason: 'duplicate' };
+  }
+  return { ok: true, entries };
+}
+
 /** Fail-closed shape check shared by the authoring draft validator and the compiler. */
 export function forecastConfigValid(value: unknown): value is ForecastConfig {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
