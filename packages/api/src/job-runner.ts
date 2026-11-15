@@ -24,7 +24,9 @@ export class JobRunner {
   async recover(): Promise<void> {
     await this.store.db.transaction(async c => {
       await c.query("UPDATE h7_occurrences SET state = 'queued' WHERE state = 'running'");
-      await c.query("UPDATE h7_deliveries SET state = 'pending', next_attempt = ?, error_code = 'DELIVERY_INTERRUPTED' WHERE state = 'sending'", [this.store.clock().toISOString()]);
+      const exhausted = await c.query("UPDATE h7_deliveries SET state = 'dead', error_code = 'DELIVERY_INTERRUPTED', message = NULL WHERE state = 'sending' AND attempts >= ? RETURNING tenant_id, namespace_id, occurrence_id", [MAX_DELIVERY_ATTEMPTS]);
+      await c.query("UPDATE h7_deliveries SET state = 'pending', next_attempt = ?, error_code = 'DELIVERY_INTERRUPTED' WHERE state = 'sending' AND attempts < ?", [this.store.clock().toISOString(), MAX_DELIVERY_ATTEMPTS]);
+      for (const d of exhausted) await this.settleOccurrence(c, { tenantId: String(d.tenant_id), namespaceId: String(d.namespace_id), id: String(d.occurrence_id) });
     });
   }
   tick(): Promise<void> { return this.pending ??= this.work().finally(() => { this.pending = undefined; }); }

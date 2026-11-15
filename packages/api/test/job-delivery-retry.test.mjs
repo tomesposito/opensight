@@ -55,6 +55,26 @@ test('H7 restart recovery never resurrects a dead delivery and a recovered sendi
   assert.equal((await f.store.deliveries(c, 'job'))[0].state, 'dead');
 });
 
+for (const attempts of [MAX_DELIVERY_ATTEMPTS, MAX_DELIVERY_ATTEMPTS + 1]) {
+  test(`#251 recovery dead-letters an interrupted delivery with ${attempts} attempts without another send`, async t => {
+    const mail = new StubMailTransport(), send = t.mock.method(mail, 'send');
+    const f = await jobFixture(t, executor(), mail); await f.put('job');
+    const c = await f.login(), run = await f.store.enqueue(c, 'job'); await f.runner.execute(run);
+    await f.db.transaction(c => c.query("UPDATE h7_deliveries SET state = 'sending', attempts = ?, message = 'cached' WHERE job_id = 'job'", [attempts]));
+    const restarted = new JobRunner(f.store, f.executor, mail); await restarted.recover();
+    const delivery = (await f.store.deliveries(c, 'job'))[0], settled = (await f.store.history(c, 'job'))[0];
+    assert.equal(delivery.state, 'dead'); assert.equal(delivery.attempts, attempts);
+    assert.equal(delivery.error_code, 'DELIVERY_INTERRUPTED');
+    assert.equal((await f.db.transaction(c => c.query('SELECT message FROM h7_deliveries')))[0].message, null);
+    assert.equal(settled.state, 'failed'); assert.equal(settled.errorCode, 'JOB_DELIVERY_EXHAUSTED');
+    assert.equal(settled.finishedAt, f.store.clock().toISOString());
+    for (let i = 0; i < 3; i++) { await restarted.recover(); await restarted.deliver(); await restarted.tick(); }
+    assert.equal(send.mock.callCount(), 0);
+    assert.deepEqual(await f.store.deliveries(c, 'job'), [delivery]);
+    assert.deepEqual(await f.store.history(c, 'job'), [settled]);
+  });
+}
+
 test('H7 operator retry restarts a dead delivery in place and the occurrence can still succeed', async t => {
   const mail = failingMail(), f = await jobFixture(t, executor(), mail); await f.put('job');
   const c = await f.login(), run = await f.store.enqueue(c, 'job');
