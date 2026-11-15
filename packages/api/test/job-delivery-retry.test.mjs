@@ -75,6 +75,26 @@ for (const attempts of [MAX_DELIVERY_ATTEMPTS, MAX_DELIVERY_ATTEMPTS + 1]) {
   });
 }
 
+for (const attempts of [MAX_DELIVERY_ATTEMPTS, MAX_DELIVERY_ATTEMPTS + 1]) {
+  test(`#251 a due pending delivery with ${attempts} attempts dead-letters without being claimed or sent`, async t => {
+    const mail = new StubMailTransport(), send = t.mock.method(mail, 'send');
+    const f = await jobFixture(t, executor(), mail); await f.put('job');
+    const c = await f.login(), run = await f.store.enqueue(c, 'job'); await f.runner.execute(run);
+    await f.db.transaction(c => c.query("UPDATE h7_deliveries SET attempts = ?, error_code = 'SMTP_SEND_FAILED', message = ? WHERE job_id = 'job'", [attempts, JSON.stringify({ subject: 'Cached report', html: '<p>Cached report</p>' })]));
+    await f.runner.deliver();
+    const delivery = (await f.store.deliveries(c, 'job'))[0], settled = (await f.store.history(c, 'job'))[0];
+    assert.equal(delivery.state, 'dead'); assert.equal(delivery.attempts, attempts);
+    assert.equal(delivery.error_code, 'SMTP_SEND_FAILED');
+    assert.equal((await f.db.transaction(c => c.query('SELECT message FROM h7_deliveries')))[0].message, null);
+    assert.equal(settled.state, 'failed'); assert.equal(settled.errorCode, 'JOB_DELIVERY_EXHAUSTED');
+    assert.equal(settled.finishedAt, f.store.clock().toISOString());
+    for (let i = 0; i < 3; i++) { await f.runner.deliver(); await f.runner.tick(); }
+    assert.equal(send.mock.callCount(), 0);
+    assert.deepEqual(await f.store.deliveries(c, 'job'), [delivery]);
+    assert.deepEqual(await f.store.history(c, 'job'), [settled]);
+  });
+}
+
 test('H7 operator retry restarts a dead delivery in place and the occurrence can still succeed', async t => {
   const mail = failingMail(), f = await jobFixture(t, executor(), mail); await f.put('job');
   const c = await f.login(), run = await f.store.enqueue(c, 'job');

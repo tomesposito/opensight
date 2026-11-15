@@ -148,8 +148,14 @@ export class JobRunner {
             if (!delivery || !['pending', 'sending'].includes(String(delivery.state))) throw new MetadataError('JOB_CANCELLED', 403);
           });
         };
-        await verify();
-        const claimed = await this.store.db.transaction(c => c.query(`UPDATE h7_deliveries SET state = 'sending', attempts = attempts + 1 WHERE ${scoped} AND delivery_id = ? AND state = 'pending' RETURNING delivery_id`, [...scopeArgs(run), id]));
+        // Exhausted pending rows need only terminal bookkeeping; below the
+        // cap, keep authorization ahead of the attempt-consuming claim.
+        if (Number(d.attempts) < MAX_DELIVERY_ATTEMPTS) await verify();
+        const claimed = await this.store.db.transaction(async c => {
+          const exhausted = await c.query(`UPDATE h7_deliveries SET state = 'dead', error_code = COALESCE(error_code, 'JOB_DELIVERY_EXHAUSTED'), message = NULL WHERE ${scoped} AND delivery_id = ? AND state = 'pending' AND attempts >= ? RETURNING delivery_id`, [...scopeArgs(run), id, MAX_DELIVERY_ATTEMPTS]);
+          if (exhausted.length) { await this.settleOccurrence(c, run); return []; }
+          return c.query(`UPDATE h7_deliveries SET state = 'sending', attempts = attempts + 1 WHERE ${scoped} AND delivery_id = ? AND state = 'pending' AND attempts < ? RETURNING delivery_id, attempts`, [...scopeArgs(run), id, MAX_DELIVERY_ATTEMPTS]);
+        });
         if (!claimed.length) continue;
         const owner = await this.store.context(run, run.ownerId);
         await this.checkAccess?.(run.tenantId);
