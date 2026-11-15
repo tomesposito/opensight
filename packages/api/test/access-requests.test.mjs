@@ -332,6 +332,39 @@ test('an unexpired claim blocks other senders; an expired claim is recovered and
   assert.equal(raw.notify_claim_token, null); assert.equal(raw.notify_claim_expires_at, null);
 });
 
+test('each lease starts at its row claim: a batch slower than five minutes is not stolen mid-send (issue #250)', async t => {
+  const f = await h8Fixture(t);
+  await initializeAccessRequests(f.db);
+  const stored = [];
+  for (const [name, day] of [['First', 28], ['Second', 29], ['Third', 30]]) {
+    stored.push(await storeAccessRequest(f.db, { name, email: `${name.toLowerCase()}@example.com`, now: Date.UTC(2026, 9, day) }));
+  }
+  t.mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 10, 9, 12) });
+  // Every send takes four fake minutes, so the batch spans twelve minutes —
+  // past one five-minute lease measured from the batch start. A competing
+  // notifier runs during the second row's live send: it may take the still
+  // unclaimed third row, but it must not steal the in-flight second row,
+  // whose lease started when that row was claimed (four minutes in).
+  const calls = [], competingCalls = [];
+  let competingResult = null;
+  const competing = { configured: true, async send(message) { competingCalls.push(message); calls.push(message); } };
+  const transport = { configured: true, async send(message) {
+    calls.push(message);
+    t.mock.timers.tick(4 * 60_000);
+    if (calls.length === 2 && competingResult === null) {
+      competingResult = await notifyAccessRequests(f.db, competing, 'ops@example.com', Date.now());
+    }
+  } };
+  const sent = await notifyAccessRequests(f.db, transport, 'ops@example.com', Date.now());
+  assert.equal(calls.length, 3);
+  assert.equal(new Set(calls.map(m => m.dedupeKey)).size, 3);
+  assert.equal(sent + (competingResult ?? 0), 3);
+  assert.equal(competingCalls.length, 1);
+  assert.equal(competingCalls[0].dedupeKey,
+    createHash('sha256').update(`access-request:${stored[2].id}`).digest('hex'));
+  assert.ok((await listAccessRequests(f.db)).every(r => r.notifiedAt !== null));
+});
+
 test('initializer adds the claim columns to a pre-claim table without losing rows (issue #232)', async t => {
   const f = await h8Fixture(t);
   await f.db.transaction(c => c.query(`CREATE TABLE h8_access_requests (
