@@ -164,6 +164,40 @@ function filters(raw: unknown, target: Visual, all: Visual[], sheetIds: Set<stri
   return result;
 }
 
+/**
+ * Issue #257: validate a LineChartVisual's ForecastConfigurations against the
+ * same contract the web compiler enforces (parseForecastConfigurations in
+ * packages/web/src/compiler.ts), in the API (PascalCase) dialect. The forecast
+ * itself is a rendering overlay computed from the planned time series; the
+ * native plan only carries the underlying aggregation, so acceptance here is
+ * validation, never execution of unvalidated properties. Returns the number
+ * of configurations present.
+ */
+function forecastConfigurationCount(raw: unknown, path: string): number {
+  if (raw === undefined) return 0;
+  const entries = array(raw, path);
+  for (const [i, value] of entries.entries()) {
+    const p = `${path}[${i}]`;
+    const entry = object(value, p);
+    keys(entry, ['PeriodsForward', 'PeriodsBackward', 'PredictionInterval', 'Seasonality', 'CustomSeasonalityValue', 'UpperBoundary', 'LowerBoundary'], p);
+    for (const name of ['PeriodsForward', 'PeriodsBackward'] as const) {
+      const v = entry[name];
+      if (v !== undefined && (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 100)) fail('INVALID_INPUT', `${p}.${name}`, 'expected an integer between 0 and 100');
+    }
+    if (entry.PredictionInterval !== undefined && ![80, 90, 95].includes(entry.PredictionInterval as number)) fail('INVALID_INPUT', `${p}.PredictionInterval`, 'prediction interval must be 80, 90 or 95');
+    const seasonality = entry.Seasonality === undefined ? 'AUTOMATIC' : entry.Seasonality;
+    if (!['AUTOMATIC', 'NONE', 'CUSTOM'].includes(seasonality as string)) fail('INVALID_INPUT', `${p}.Seasonality`, 'seasonality must be AUTOMATIC, NONE or CUSTOM');
+    const custom = entry.CustomSeasonalityValue;
+    if (seasonality === 'CUSTOM' && (typeof custom !== 'number' || !Number.isInteger(custom) || custom < 2 || custom > 366)) fail('INVALID_INPUT', `${p}.CustomSeasonalityValue`, 'a custom seasonality period between 2 and 366 is required');
+    for (const name of ['LowerBoundary', 'UpperBoundary'] as const) {
+      const v = entry[name];
+      if (v !== undefined && (typeof v !== 'number' || !Number.isFinite(v))) fail('INVALID_INPUT', `${p}.${name}`, 'expected a finite number');
+    }
+    if (typeof entry.LowerBoundary === 'number' && typeof entry.UpperBoundary === 'number' && entry.LowerBoundary > entry.UpperBoundary) fail('INVALID_INPUT', p, 'lower boundary must not exceed upper boundary');
+  }
+  return entries.length;
+}
+
 const wellKinds: Record<string, string> = {
   BarChartVisual: 'BarChartAggregatedFieldWells', LineChartVisual: 'LineChartAggregatedFieldWells',
   TableVisual: 'TableAggregatedFieldWells', PieChartVisual: 'PieChartAggregatedFieldWells', KPIVisual: '',
@@ -176,7 +210,12 @@ function fieldWells(visual: Visual, binder: ExpressionBinder): { dimensions: Dim
   const cp = `${path}.ChartConfiguration`;
   const config = object(body.ChartConfiguration, cp);
   // These properties affect rendering only; query-affecting properties still fail closed.
-  keys(config, ['FieldWells', 'Legend', 'DataLabels', 'Tooltip', 'Orientation', 'BarsArrangement', 'DonutOptions', 'TotalOptions', 'OpenSightSubtotalOptions'], cp);
+  // ForecastConfigurations and the line Type are line-family only (issue #257):
+  // on any other visual kind they remain unrecognized and fail closed above.
+  const lineFamily = kind === 'LineChartVisual';
+  keys(config, ['FieldWells', 'Legend', 'DataLabels', 'Tooltip', 'Orientation', 'BarsArrangement', 'DonutOptions', 'TotalOptions', 'OpenSightSubtotalOptions', ...(lineFamily ? ['ForecastConfigurations', 'Type'] : [])], cp);
+  if (lineFamily && config.Type !== undefined && !['LINE', 'AREA', 'STACKED_AREA'].includes(config.Type as string)) fail('UNSUPPORTED_FEATURE', `${cp}.Type`, 'line chart type must be LINE, AREA or STACKED_AREA');
+  const forecastCount = lineFamily ? forecastConfigurationCount(config.ForecastConfigurations, `${cp}.ForecastConfigurations`) : 0;
   let wp = `${cp}.FieldWells`;
   let wells = object(config.FieldWells, wp);
   const expectedKind = wellKinds[kind];
@@ -236,6 +275,9 @@ function fieldWells(visual: Visual, binder: ExpressionBinder): { dimensions: Dim
       aggregation: aggregationValue as Aggregation, path: fp };
   });
   if (!measures.length) fail('INVALID_INPUT', `${wp}.Values`, 'at least one explicit measure is required');
+  // A forecast is computed over a time series: without a date dimension there
+  // is no series to project, so the configuration cannot execute as defined.
+  if (forecastCount && !dimensions.some(d => d.granularity !== undefined)) fail('UNSUPPORTED_FEATURE', `${cp}.ForecastConfigurations`, 'forecast configurations require a date dimension');
   return { dimensions, measures };
 }
 

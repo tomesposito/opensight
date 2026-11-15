@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { planVisual, QueryEngineError } from '@opensight/query-engine';
-import { calculation, deferredExpressions, dimension, expected, measure, request, selectedScope, semantics, wells } from './helpers.mjs';
+import { planPreparedVisual, planVisual, QueryEngineError } from '@opensight/query-engine';
+import { body, calculation, deferredExpressions, dimension, expected, measure, request, selectedScope, semantics, wells } from './helpers.mjs';
 
 for (const oracle of expected) {
   test(`planner SQL shape agrees with expected-queries: ${oracle.visualId}`, () => {
@@ -122,6 +122,66 @@ test('SQL literals are parameters and identifiers are escaped', () => {
   assert.deepEqual(p.parameters, [value]);
   assert.ok(!p.sql.includes(value));
   assert.match(p.sql, /AS "sum""; DROP TABLE sales; --"/);
+});
+
+test('issue #257: a validated forecast line chart plans the same time series', () => {
+  const baseline = planVisual(request('revenue-trend'));
+  const r = request('revenue-trend');
+  body(r).ChartConfiguration.ForecastConfigurations = [{ PeriodsForward: 3, PeriodsBackward: 1, PredictionInterval: 90, Seasonality: 'CUSTOM', CustomSeasonalityValue: 12, LowerBoundary: 0, UpperBoundary: 1000 }];
+  const p = planVisual(r);
+  assert.equal(p.sql, baseline.sql);
+  assert.deepEqual(p.parameters, baseline.parameters);
+  assert.deepEqual(p.dimensions.map(d => d.outputName), ['month']);
+  // The hosted/prepared path (planPreparedVisual) accepts the same definition
+  // (the fixture's region filter is dropped: the prepared table has no region).
+  const columns = [{ name: 'order_date', type: 'DATETIME' }, { name: 'revenue', type: 'DECIMAL' }];
+  const preparedAnalysis = structuredClone(r.analysis);
+  preparedAnalysis.Definition.FilterGroups = [];
+  const prepared = planPreparedVisual(columns, preparedAnalysis, 'revenue-trend', r.localData.dataSetArn);
+  assert.deepEqual(prepared.dimensions.map(d => d.outputName), ['month']);
+  assert.deepEqual(prepared.measures.map(m => m.outputName), ['revenue']);
+});
+
+test('issue #257: area line charts and empty forecast arrays plan', () => {
+  const r = request('revenue-trend');
+  body(r).ChartConfiguration.Type = 'AREA';
+  body(r).ChartConfiguration.ForecastConfigurations = [];
+  assert.doesNotThrow(() => planVisual(r));
+  body(r).ChartConfiguration.Type = 'STACKED_AREA';
+  body(r).ChartConfiguration.ForecastConfigurations = [{ Seasonality: 'NONE' }];
+  assert.doesNotThrow(() => planVisual(r));
+});
+
+test('issue #257: malformed forecast configurations fail closed', () => {
+  const cases = [
+    [{ PeriodsForward: -1 }, 'INVALID_INPUT'], [{ PeriodsForward: 101 }, 'INVALID_INPUT'],
+    [{ PeriodsBackward: 1.5 }, 'INVALID_INPUT'], [{ PredictionInterval: 99 }, 'INVALID_INPUT'],
+    [{ Seasonality: 'WEEKLY' }, 'INVALID_INPUT'], [{ Seasonality: 'CUSTOM' }, 'INVALID_INPUT'],
+    [{ Seasonality: 'CUSTOM', CustomSeasonalityValue: 1 }, 'INVALID_INPUT'],
+    [{ LowerBoundary: 10, UpperBoundary: 5 }, 'INVALID_INPUT'], [{ UpperBoundary: Infinity }, 'INVALID_INPUT'],
+    [{ Unknown: true }, 'UNSUPPORTED_FEATURE'],
+  ];
+  for (const [patch, code] of cases) {
+    const r = request('revenue-trend');
+    body(r).ChartConfiguration.ForecastConfigurations = [patch];
+    assert.throws(() => planVisual(r), { code }, JSON.stringify(patch));
+  }
+  const notArray = request('revenue-trend');
+  body(notArray).ChartConfiguration.ForecastConfigurations = { PeriodsForward: 3 };
+  assert.throws(() => planVisual(notArray), { code: 'INVALID_INPUT' });
+  const badType = request('revenue-trend');
+  body(badType).ChartConfiguration.Type = 'PIE';
+  assert.throws(() => planVisual(badType), { code: 'UNSUPPORTED_FEATURE' });
+});
+
+test('issue #257: forecast stays line-only and requires a date dimension', () => {
+  const bar = request('revenue-by-region');
+  body(bar).ChartConfiguration.ForecastConfigurations = [{ PeriodsForward: 3 }];
+  assert.throws(() => planVisual(bar), { code: 'UNSUPPORTED_FEATURE' });
+  const categorical = request('revenue-trend');
+  wells(categorical).Category = [dimension('region')];
+  body(categorical).ChartConfiguration.ForecastConfigurations = [{ PeriodsForward: 3 }];
+  assert.throws(() => planVisual(categorical), { code: 'UNSUPPORTED_FEATURE' });
 });
 
 test('physical names cannot shadow internal CTEs', () => {

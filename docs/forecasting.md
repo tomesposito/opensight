@@ -53,6 +53,15 @@ The [Insight visual's Forecast computation](insight-visual.md) also uses
 narrative. It requires a date dimension and shows an unavailable sentence for
 short histories or a zero forward horizon.
 
+Native and hosted planning (`planVisual` / `planPreparedVisual`) accepts a
+line or area chart's `ForecastConfigurations` after validating them against
+the same contract as the compiler above; the plan carries the underlying
+time-series aggregation and the overlay is computed at render time. The
+secured planning path stays fail-closed where rendering only warns: a
+forecast configuration on a non-line visual, a malformed configuration, or
+a forecast whose chart has no date dimension is rejected with a named
+error (#257).
+
 Out of scope: anomaly detection, Ask O forecast phrasing, and forecasts on
 other chart types.
 
