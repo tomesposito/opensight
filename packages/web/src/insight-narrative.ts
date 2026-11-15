@@ -3,7 +3,7 @@ import type { Cell, Field } from './model.js';
 import type { VisualFormatting } from './formatting.js';
 import { fieldName } from './formatting.js';
 import { insightFail, normalizeInsight } from './insight-configuration.js';
-import { computeForecast, MIN_FORECAST_POINTS } from './forecast.js';
+import { computeForecast, MIN_FORECAST_POINTS, prepareChronological } from './forecast.js';
 export { InsightError } from './insight-configuration.js';
 
 export interface NarrativePart { text: string; value?: number }
@@ -30,13 +30,12 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
     if (new Set(rows.map(r => JSON.stringify([r.category, r.time]))).size !== rows.length) insightFail('INSIGHT_VALUE_INVALID', 'expected unique aggregated category/period rows');
   } else if (new Set(rows.map(r => JSON.stringify(r.category))).size !== rows.length) insightFail(duplicateCode, 'expected unique aggregated categories');
   const datedRows = () => {
-    const dated = rows.map(row => {
-      const date = groupedPeriodDate(row.category, input.category!.dateGranularity!);
-      if (!date) return insightFail('INSIGHT_TIME_REQUIRED', 'invalid date/time category for the bound grain');
-      return { row, date };
-    }).sort((a, b) => a.date.getTime() - b.date.getTime());
-    if (new Set(dated.map(r => r.date.getTime())).size !== dated.length) insightFail(duplicateCode, 'duplicate date/time periods');
-    return dated;
+    // Shared chronological preparation with the chart forecast surfaces
+    // (issue #259): sort by decoded period, reject decoded duplicates.
+    const prepared = prepareChronological(rows, row => groupedPeriodDate(row.category, input.category!.dateGranularity!));
+    if (!prepared.ok && prepared.reason === 'invalid') return insightFail('INSIGHT_TIME_REQUIRED', 'invalid date/time category for the bound grain');
+    if (!prepared.ok) return insightFail(duplicateCode, 'duplicate date/time periods');
+    return prepared.entries.map(({ item, date }) => ({ row: item, date }));
   };
   const sum = (index: number, groups = rows): number | null => {
     try { return aggregateValue('sum', groups.map(r => r.values[index]!)) as number | null; }

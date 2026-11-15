@@ -128,6 +128,12 @@ test('forecast unavailable cases contain no invented computed values', () => {
   assert.deepEqual(narrative([]), { paragraphs: [], text: '' }); // Common empty-result state stays intact.
 });
 
+test('forecast narrative treats mixed raw aliases of distinct periods as one canonical series', () => {
+  const mixed = seriesRows.map((r, i) => i % 2 ? { ...r, category: `${r.category}-01T00:00:00Z` } : r);
+  assert.equal(narrative(mixed).text, narrative(seriesRows).text);
+  assert.equal(narrative([...mixed].reverse()).text, narrative(seriesRows).text, 'reversed mixed-alias rows give the same chronological narrative');
+});
+
 test('forecast rejects duplicate periods, invalid dates and nonfinite values before projecting', () => {
   for (const category of ['2024-01', '2024-01-01', '2024-01-01T00:00:00Z']) assert.throws(() => narrative([...seriesRows, { category, values: [1] }]), /INSIGHT_VALUE_INVALID/);
   for (const category of ['not-a-date', '2024-02-30', null]) assert.throws(() => narrative([{ category, values: [1] }]), /INSIGHT_TIME_REQUIRED/);
