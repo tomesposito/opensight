@@ -11,6 +11,7 @@ import { StubMailTransport } from '../dist/mail.js';
 import { purgeTenantRows, tenantDeletionInventory } from '../dist/tenant-erasure.js';
 import { migrateReference } from '../dist/single-node.js';
 import { ReferenceMaintenance } from '../dist/single-node-maintenance.js';
+import { billingRaceConnections, billingRead, tenantLock, storedBilling, paidResolutionRace } from './hosted-billing-race-helpers.mjs';
 
 const quotas = { apiCalls: 30000, storageBytes: 10000000000, computeAttempts: 1500 };
 const entitlementEnv = { OPENSIGHT_TRIAL_ENTITLEMENT: JSON.stringify(quotas), OPENSIGHT_BILLING_TIER_ENTITLEMENTS: JSON.stringify({ light: quotas, regular: { ...quotas, apiCalls: 90000 }, heavy: { ...quotas, apiCalls: 300000 } }) };
@@ -121,6 +122,69 @@ test('241/256 PostgreSQL requests, resolution and expiry lock the parent before 
   await billing.resolvePaidRequest('tenant-one', 'declined', undefined, undefined, undefined, 'regular');
   assert.equal(locks, 6);
   assert.equal((await f.billing.state('tenant-one')).retentionDueAt, new Date(f.clock() + 30 * DAY_MS).toISOString());
+});
+
+for (const order of ['resolution-first', 'expiry-first']) for (const resolution of ['declined', 'withdrawn', 'granted']) {
+  test(`256 PostgreSQL interleaving: ${order} with ${resolution} preserves retention`, { timeout: 10000 }, async t => {
+    const f = await fixture(t); await f.ask(); f.advance(13);
+    await paidResolutionRace(f, resolution, order);
+  });
+}
+
+for (const order of ['request-first', 'expiry-first']) for (const changeTier of [false, true]) {
+  test(`256 PostgreSQL interleaving: ${order} with ${changeTier ? 'tier change' : 'new request'} holds retention`, { timeout: 10000 }, async t => {
+    const f = await fixture(t); if (changeTier) await f.ask(); f.advance(13);
+    let injected = false, expiry, expiryRun;
+    const blocked = Promise.withResolvers();
+    const connections = billingRaceConnections(f.db, {
+      async beforeQuery({ label, sql }) {
+        if (label === 'request' && sql === tenantLock && !injected && order === 'expiry-first') {
+          injected = true; f.advance(1); await expiry.expireTrials();
+          const { billing, pending } = await storedBilling(f.db, 'tenant-one');
+          assert.equal(billing.access_state, 'paused');
+          assert.equal(pending.length, changeTier ? 1 : 0);
+          assert.equal(billing.retention_due_at, changeTier ? null : new Date(f.clock() + 30 * DAY_MS).toISOString());
+        }
+      },
+      blocked({ label }) { if (label === 'expiry') blocked.resolve(); },
+      async afterQuery({ label, sql, rows }) {
+        if (label !== 'request' || sql !== billingRead || injected || order !== 'request-first') return;
+        injected = true; assert.equal(rows[0].access_state, 'active'); f.advance(1);
+        expiryRun = expiry.expireTrials(); await Promise.race([expiryRun, blocked.promise]);
+      },
+    });
+    const options = f.options;
+    const requester = new HostedBilling(connections('request'), f.config, options);
+    expiry = new HostedBilling(connections('expiry'), f.config, options);
+    await f.ask('heavy', requester); await expiryRun; assert.equal(injected, true);
+    const { billing, pending } = await storedBilling(f.db, 'tenant-one');
+    assert.equal(billing.access_state, 'paused'); assert.equal(billing.retention_due_at, null);
+    assert.equal(pending.length, 1); assert.equal((await requester.latestPaidRequest('tenant-one')).tier, 'heavy');
+    assert.equal((await readOperatorAudit(f.db)).filter(a => a.action === 'billing.access.paused').length, 1);
+  });
+}
+
+test('256 expiry rolls back audit failure and notifies only after commit, with reentrant load', { timeout: 10000 }, async t => {
+  const f = await fixture(t); await f.ask(); f.advance(20);
+  const before = await storedBilling(f.db, 'tenant-one'), mailCount = f.mail.messages.length;
+  const failingDb = { dialect: 'sqlite', transaction: work => f.db.transaction(c => work({ query: (sql, args) => {
+    if (sql.startsWith('INSERT INTO h8_audit') && args.includes('billing.access.paused')) throw new Error('pause audit unavailable');
+    return c.query(sql, args);
+  } })) };
+  await assert.rejects(new HostedBilling(failingDb, f.config, f.options).expireTrials(), /pause audit unavailable/);
+  assert.deepEqual(await storedBilling(f.db, 'tenant-one'), before);
+  assert.equal(f.mail.messages.length, mailCount);
+  const notices = [];
+  const billing = new HostedBilling(f.db, f.config, { ...f.options, mail: { configured: true, async send(message) {
+    notices.push({ message, state: await storedBilling(f.db, 'tenant-one') });
+    await billing.load(); // No transaction/lock may survive into mail delivery.
+  } } });
+  await Promise.all([billing.load(), billing.expireTrials()]);
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0].state.billing.access_state, 'paused');
+  assert.equal(notices[0].state.billing.retention_due_at, null); assert.equal(notices[0].state.pending.length, 1);
+  assert.match(notices[0].message.html, /retention clock is held/);
+  assert.equal((await readOperatorAudit(f.db)).filter(a => a.action === 'billing.access.paused').length, 1);
 });
 
 test('241 grant during trial applies immediately, discards clock, survives reload and is operator-audited', async t => {
