@@ -88,11 +88,11 @@ export function OperatorTenant({ tenantId, ...props }: OperatorProps & { tenantI
           {view.billing.paidRequest?.state === 'pending' && <div className="operator-banner">
             <p>{tiers[view.billing.paidRequest.tier]} requested by {view.billing.paidRequest.requestedByEmail}.</p>
             <button className="operator-primary" disabled={work.busy || tenant.state !== 'active'} onClick={() => void work.run(async () => {
-              await operatorRequest(props, key)(`${path}/billing/paid-request/grant`, 'POST', { requestId: view.billing!.paidRequest!.id });
+              await operatorRequest(props, key)(`${path}/billing/paid-request/grant`, 'POST', { requestId: view.billing!.paidRequest!.id, expectedTier: view.billing!.paidRequest!.tier });
               await load(key); work.setMessage('Plan granted. No payment taken and no subscription created.');
             })}>Grant {titleCase(view.billing.paidRequest.tier)} (manual)</button>
             <button disabled={work.busy || tenant.state !== 'active'} onClick={() => void work.run(async () => {
-              await operatorRequest(props, key)(`${path}/billing/paid-request/decline`, 'POST', { requestId: view.billing!.paidRequest!.id });
+              await operatorRequest(props, key)(`${path}/billing/paid-request/decline`, 'POST', { requestId: view.billing!.paidRequest!.id, expectedTier: view.billing!.paidRequest!.tier });
               await load(key); work.setMessage('Request declined. The administrator may request again.');
             })}>Decline request</button>
           </div>}

@@ -381,9 +381,9 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
             send(response, 201, await billingService.createPaymentLink(tenantId, input.tier)); return;
           }
           if (billingAction === 'paid-request/grant' || billingAction === 'paid-request/decline') {
-            const input = await body(request, ['requestId']);
+            const input = await body(request, ['requestId', 'expectedTier']);
             if (typeof input.requestId !== 'string') throw new MetadataError('METADATA_INVALID', 400);
-            await billingService.resolvePaidRequest(tenantId, billingAction === 'paid-request/grant' ? 'granted' : 'declined', undefined, input.requestId);
+            await billingService.resolvePaidRequest(tenantId, billingAction === 'paid-request/grant' ? 'granted' : 'declined', undefined, input.requestId, undefined, input.expectedTier);
             send(response, 200, { billing: await billingService.viewState(tenantId, true) }); return;
           }
         }
