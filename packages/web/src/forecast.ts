@@ -190,11 +190,22 @@ export function computeForecast(values: readonly (number | null)[], grain: Forec
     state = matVec(F, state);
     if (h > 1) { psiSumSquares += dot(w, psiVec) ** 2; psiVec = matVec(F, psiVec); }
     const half = z * sigma * Math.sqrt(psiSumSquares);
-    let value = raw, lower = raw - half, upper = raw + half;
-    if (allNonNegative) lower = Math.max(lower, 0);
-    if (config.lowerBoundary !== undefined) { lower = Math.max(lower, config.lowerBoundary); value = Math.max(value, config.lowerBoundary); }
-    if (config.upperBoundary !== undefined) { upper = Math.min(upper, config.upperBoundary); value = Math.min(value, config.upperBoundary); }
-    future.push({ value, lower, upper });
+    // One clipping range for the estimate and both interval endpoints
+    // (issue #258): the floor combines the automatic zero floor for
+    // non-negative histories with any imported lower boundary, and the
+    // ceiling is any imported upper boundary. Clipping is monotonic, so
+    // lower <= value <= upper always holds — clamping only one side used
+    // to leave reversed intervals (negative chart band widths, reversed
+    // Insight ranges) when a boundary sat outside the raw interval. A
+    // validated config never has lowerBoundary > upperBoundary, so
+    // floor > ceiling only when an explicit upper boundary sits below
+    // the automatic zero floor; the explicit boundary wins and the point
+    // collapses to it, still ordered.
+    let floor = Math.max(allNonNegative ? 0 : -Infinity, config.lowerBoundary ?? -Infinity);
+    const ceiling = config.upperBoundary ?? Infinity;
+    if (floor > ceiling) floor = ceiling;
+    const clip = (v: number): number => Math.min(Math.max(v, floor), ceiling);
+    future.push({ value: clip(raw), lower: clip(raw - half), upper: clip(raw + half) });
   }
   const trendName = fit.candidate.trend === 'none' ? 'level-only' : fit.candidate.trend === 'add' ? 'Holt trend' : 'damped trend';
   const modelName = seasonal ? `Holt-Winters seasonal (${trendName})` : trendName === 'level-only' ? 'level-only (simple exponential smoothing)' : trendName;

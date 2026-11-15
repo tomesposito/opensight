@@ -44,6 +44,18 @@ test('forecast tooltip reads Forecast and shows the interval', () => {
   assert.match(text, /\(Forecast\): 221\.73 · 95% interval 215\.3–228\.16/);
 });
 
+test('disjoint lower boundary: chart band never gets a negative width', () => {
+  const rows = months(6).map(month => ({ month, revenue: 10 }));
+  const { option } = compileVisual(withForecast(rows, { PeriodsForward: 3, Seasonality: 'NONE', LowerBoundary: 20 }));
+  const found = extras(option);
+  const seg = found.find(s => s.id.startsWith('forecast-seg'));
+  const bandHi = found.find(s => s.id.startsWith('forecast-band-hi'));
+  for (let i = 6; i < 9; i++) {
+    assert.deepEqual([seg.data[i].value, seg.data[i].lower, seg.data[i].upper], [20, 20, 20]);
+    assert.equal(bandHi.data[i], 0, 'band delta is upper - lower and must not be negative');
+  }
+});
+
 test('fewer than 4 points: actuals only plus the quiet note', () => {
   const { option, forecastNote } = compileVisual(withForecast(trendRows.slice(0, 3), { PeriodsForward: 3 }));
   assert.equal(forecastNote, 'Not enough history to forecast — showing actuals. A forecast needs at least 4 data points.');
