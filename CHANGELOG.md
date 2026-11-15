@@ -76,6 +76,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Trial expiry now serializes with paid-plan requests and their resolution, so
+  a concurrent decline or withdrawal cannot leave a paused workspace without
+  a retention deadline. Pending requests still hold retention, and grants
+  restore access (#256).
+
 - Session billing state no longer discloses the paid-plan requester's email
   address to non-administrator workspace members: `requestedByEmail` is
   included only in administrator and operator billing views, for pending and
