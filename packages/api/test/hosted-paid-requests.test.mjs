@@ -117,7 +117,7 @@ test('241 PostgreSQL mutation path locks the parent before request reads and wri
 
 test('241 grant during trial applies immediately, discards clock, survives reload and is operator-audited', async t => {
   const f = await fixture(t), request = await f.ask('heavy');
-  f.advance(2); await f.billing.resolvePaidRequest('tenant-one', 'granted', undefined, request.id);
+  f.advance(2); await f.billing.resolvePaidRequest('tenant-one', 'granted', undefined, request.id, undefined, 'heavy');
   const state = await f.billing.state('tenant-one');
   assert.equal(state.tier, 'heavy'); assert.equal(state.entitlementSource, 'manual'); assert.equal(state.trialEndsAt, null);
   assert.equal(state.stripeSubscriptionId, null); assert.equal(state.stripeCustomerId, null);
@@ -142,25 +142,25 @@ test('241 expiry with pending request pauses without retention; restart/migratio
   assert.equal((await f.billing.state('tenant-one')).retentionDueAt, null);
   const status = await f.ops.status(); assert.equal(status.retentionDue.length, 0); assert.equal(status.paidRequestsOpen, 1);
   assert.doesNotMatch(f.mail.messages.at(-1).html, /retained for 30 days/);
-  await f.billing.resolvePaidRequest('tenant-one', 'granted');
+  await f.billing.resolvePaidRequest('tenant-one', 'granted', undefined, undefined, undefined, 'regular');
   assert.equal((await f.billing.state('tenant-one')).accessState, 'active'); assert.doesNotThrow(() => f.billing.assertAccess('tenant-one'));
 });
 
 for (const resolution of ['withdrawn', 'declined']) test(`241 ${resolution} restarts retention from resolution and permits a fresh request`, async t => {
   const f = await fixture(t); const first = await f.ask(); f.advance(60);
-  await f.billing.resolvePaidRequest('tenant-one', resolution, resolution === 'withdrawn' ? 'one' : undefined);
+  await f.billing.resolvePaidRequest('tenant-one', resolution, resolution === 'withdrawn' ? 'one' : undefined, undefined, undefined, resolution === 'declined' ? 'regular' : undefined);
   const state = await f.billing.state('tenant-one');
   assert.equal(state.accessState, 'paused'); assert.equal(state.retentionDueAt, new Date(f.clock() + 30 * DAY_MS).toISOString());
   assert.equal((await f.billing.viewState('tenant-one')).paidRequest.state, resolution);
   f.advance(1); const second = await f.ask('light'); assert.notEqual(second.id, first.id);
   assert.equal((await f.billing.state('tenant-one')).retentionDueAt, null);
-  await assert.rejects(f.billing.resolvePaidRequest('tenant-one', 'granted', undefined, first.id), { code: 'BILLING_PAID_REQUEST_NOT_PENDING' });
+  await assert.rejects(f.billing.resolvePaidRequest('tenant-one', 'granted', undefined, first.id, undefined, 'light'), { code: 'BILLING_PAID_REQUEST_NOT_PENDING' });
   assert.equal((await requests(f)).filter(r => r.state === 'pending').length, 1);
 });
 
 test('241 decline/withdraw during trial preserves the trial deadline and no paused retention starts early', async t => {
   const f = await fixture(t); const before = await f.billing.state('tenant-one');
-  await f.ask(); await f.billing.resolvePaidRequest('tenant-one', 'declined');
+  await f.ask(); await f.billing.resolvePaidRequest('tenant-one', 'declined', undefined, undefined, undefined, 'regular');
   assert.equal((await f.billing.state('tenant-one')).trialEndsAt, before.trialEndsAt);
   assert.equal((await f.billing.state('tenant-one')).retentionDueAt, null);
   assert.doesNotThrow(() => f.billing.assertAccess('tenant-one'));
@@ -171,13 +171,13 @@ test('241 decline/withdraw during trial preserves the trial deadline and no paus
 test('241 missing entitlements and audit failures roll back grant/request, with no notification', async t => {
   const f = await fixture(t), request = await f.ask();
   const unconfigured = new HostedBilling(f.db, { tierEntitlements: {}, trialEntitlement: quotas }, f.options);
-  await assert.rejects(unconfigured.resolvePaidRequest('tenant-one', 'granted'), { code: 'ENTITLEMENT_UNRESOLVED' });
+  await assert.rejects(unconfigured.resolvePaidRequest('tenant-one', 'granted', undefined, undefined, undefined, 'regular'), { code: 'ENTITLEMENT_UNRESOLVED' });
   assert.equal((await f.billing.latestPaidRequest('tenant-one')).state, 'pending');
   const db = { dialect: 'sqlite', transaction: work => f.db.transaction(c => work({ query: (sql, args) => {
     if (sql.startsWith('INSERT INTO h8_audit') && args.includes('billing.paid_request.granted')) throw new Error('audit unavailable');
     return c.query(sql, args);
   } })) };
-  await assert.rejects(new HostedBilling(db, f.config, f.options).resolvePaidRequest('tenant-one', 'granted'), /audit unavailable/);
+  await assert.rejects(new HostedBilling(db, f.config, f.options).resolvePaidRequest('tenant-one', 'granted', undefined, undefined, undefined, 'regular'), /audit unavailable/);
   assert.equal((await f.billing.latestPaidRequest('tenant-one')).id, request.id);
   assert.equal((await f.billing.state('tenant-one')).tier, null); assert.equal(f.mail.messages.length, 1);
 });
@@ -190,7 +190,7 @@ test('241 operator queue is oldest first, excludes closed tenants and never list
   assert.deepEqual(status.retentionDue, []);
   await f.db.transaction(c => c.query("UPDATE h1_tenants SET state = 'deleting' WHERE tenant_id = 'tenant-two'"));
   assert.equal((await f.ops.status()).paidRequestsOpen, 1);
-  await assert.rejects(f.billing.resolvePaidRequest('tenant-two', 'granted'), { code: 'TENANT_UNAVAILABLE' });
+  await assert.rejects(f.billing.resolvePaidRequest('tenant-two', 'granted', undefined, undefined, undefined, 'light'), { code: 'TENANT_UNAVAILABLE' });
 });
 
 test('241 HTTP tenant-admin and narrow operator boundaries, including origin, scope and stale request defenses', async t => {
@@ -211,13 +211,13 @@ test('241 HTTP tenant-admin and narrow operator boundaries, including origin, sc
   assert.equal((await request(path, { method: 'POST', headers, body: { requestId: pending.id } })).status, 403);
   assert.equal((await request(path, { method: 'POST', headers: { ...op, origin: 'https://hostile.example' }, body: { requestId: pending.id } })).status, 403);
   assert.equal((await request(path, { method: 'GET', headers: op })).status, 403);
-  assert.equal((await request(path, { method: 'POST', headers: op, body: { requestId: 'stale' } })).status, 409);
-  const granted = await request(path, { method: 'POST', headers: op, body: { requestId: pending.id } }); assert.equal(granted.status, 200);
+  assert.equal((await request(path, { method: 'POST', headers: op, body: { requestId: 'stale', expectedTier: 'regular' } })).status, 409);
+  const granted = await request(path, { method: 'POST', headers: op, body: { requestId: pending.id, expectedTier: 'regular' } }); assert.equal(granted.status, 200);
   const session = await request('/api/session', { headers }); assert.equal(session.body.billingPaused, false); assert.equal(session.body.trial, null);
   assert.equal(session.body.billing.entitlementSource, 'manual');
   await f.db.transaction(c => c.query("UPDATE h1_resources SET body = ? WHERE tenant_id = 'tenant-one' AND resource_id = 'admin' AND kind = 'user'", [JSON.stringify({ name: 'Admin', role: 'administrator' })]));
   const access = await request('/api/users', { headers }); assert.equal(access.status, 200, JSON.stringify(access.body));
-  assert.equal((await request(path, { method: 'POST', headers: op, body: { requestId: pending.id } })).status, 409);
+  assert.equal((await request(path, { method: 'POST', headers: op, body: { requestId: pending.id, expectedTier: 'regular' } })).status, 409);
   assert.equal((await request('/api/host/signups', { headers: op })).body.paidRequestsOpen, 0);
   for (const action of ['payment-link', 'webhook']) assert.equal((await request(action === 'webhook' ? '/api/host/billing/webhook' : `/api/host/tenants/tenant-one/billing/${action}`, { method: 'POST', headers: operator, body: { tier: 'light' } })).status, 404);
 });
@@ -242,7 +242,7 @@ test('253 session billing projection includes the requester email only for admin
   }
   // Resolved: the granted request stays the latest request, under the same rule.
   await setRole('administrator');
-  await f.billing.resolvePaidRequest('tenant-one', 'granted');
+  await f.billing.resolvePaidRequest('tenant-one', 'granted', undefined, undefined, undefined, 'regular');
   let resolved = await sessionPaidRequest();
   assert.equal(resolved.state, 'granted'); assert.equal(resolved.requestedByEmail, 'one@example.test');
   for (const role of ['author', 'reader']) {
@@ -255,7 +255,7 @@ test('253 session billing projection includes the requester email only for admin
 
 test('241 grant email uses exact copy, escaped workspace names and valid stable dedupe keys', async t => {
   const f = await fixture(t); await f.db.transaction(c => c.query('UPDATE h1_tenants SET display_name = ? WHERE tenant_id = ?', ['Reports <img src=x> & Ops', 'tenant-one']));
-  const r = await f.ask(); await f.billing.resolvePaidRequest('tenant-one', 'granted');
+  const r = await f.ask(); await f.billing.resolvePaidRequest('tenant-one', 'granted', undefined, undefined, undefined, 'regular');
   assert.equal(f.mail.messages.length, 2);
   const [operator, admin] = f.mail.messages;
   assert.deepEqual(operator.to, ['operator@example.test']); assert.match(operator.html, /Paid requests queue/);
@@ -270,7 +270,7 @@ test('241 mail failure is logged safely and cannot undo requests or grants', asy
   const mail = { configured: true, send: async () => { throw new Error('sensitive transport details'); } };
   const billing = new HostedBilling(f.db, f.config, { ...f.options, mail });
   const r = await f.ask('regular', billing); assert.equal((await requests(f)).length, 1);
-  await billing.resolvePaidRequest('tenant-one', 'granted');
+  await billing.resolvePaidRequest('tenant-one', 'granted', undefined, undefined, undefined, 'regular');
   assert.equal((await billing.state('tenant-one')).entitlementSource, 'manual');
   assert.deepEqual(warnings.map(w => w.kind), ['created', 'granted']);
   for (const w of warnings) assert.deepEqual(w, { code: 'BILLING_PAID_REQUEST_MAIL_FAILED', requestId: r.id, kind: w.kind });
@@ -312,7 +312,7 @@ test('241 HTTP withdrawal and decline are audited; no-Stripe signup can be enabl
     const created = await request('/api/billing/paid-request', { method: 'POST', headers, body: { tier: 'light' } }); assert.equal(created.status, 200);
     const pending = await f.billing.latestPaidRequest('tenant-one');
     const result = action === 'withdrawn' ? await request('/api/namespaces/one/billing/paid-request', { method: 'DELETE', headers })
-      : await request('/api/host/tenants/tenant-one/billing/paid-request/decline', { method: 'POST', headers: { ...operator, origin: headers.origin }, body: { requestId: pending.id } });
+      : await request('/api/host/tenants/tenant-one/billing/paid-request/decline', { method: 'POST', headers: { ...operator, origin: headers.origin }, body: { requestId: pending.id, expectedTier: 'light' } });
     assert.equal(result.status, 200); assert.equal(result.body.billing.paidRequest.state, action);
     const audit = (await readOperatorAudit(f.db)).find(a => a.action === `billing.paid_request.${action}`);
     assert.equal(audit.actor, action === 'withdrawn' ? 'one' : 'deployment-operator'); assert.equal(audit.detail.requestId, pending.id);
@@ -320,7 +320,7 @@ test('241 HTTP withdrawal and decline are audited; no-Stripe signup can be enabl
 });
 
 test('241 adding Stripe leaves manually granted tenants on their manual tier without a subscription', async t => {
-  const f = await fixture(t); await f.ask(); await f.billing.resolvePaidRequest('tenant-one', 'granted');
+  const f = await fixture(t); await f.ask(); await f.billing.resolvePaidRequest('tenant-one', 'granted', undefined, undefined, undefined, 'regular');
   Object.assign(f.env, stripeEnv);
   const { request } = await serveH8(t, f, { clock: f.clock });
   const result = await request('/api/session', { headers: { authorization: 'one' } });
@@ -335,4 +335,53 @@ test('241 waiting retention remains held when Stripe is later configured and an 
     metadata: { tenant_id: 'tenant-one', tier: 'regular' }, subscription: 'sub_waiting', customer: 'cus_waiting', payment_status: 'unpaid',
   } });
   assert.equal((await billing.state('tenant-one')).retentionDueAt, null); assert.equal((await f.ops.status()).retentionDue.length, 0);
+});
+
+test('255 operator grant/decline bind to the reviewed tier; a tier change after load rejects the stale decision', async t => {
+  const f = await fixture(t);
+  const reviewed = await f.ask('light');
+  // Precondition is required and must name a real tier before anything runs.
+  await assert.rejects(f.billing.resolvePaidRequest('tenant-one', 'granted', undefined, reviewed.id), { code: 'BILLING_PAID_REQUEST_TIER_REQUIRED' });
+  await assert.rejects(f.billing.resolvePaidRequest('tenant-one', 'declined', undefined, reviewed.id, undefined, 'free'), { code: 'BILLING_TIER_INVALID' });
+  assert.equal((await f.billing.latestPaidRequest('tenant-one')).state, 'pending');
+  // The tenant changes Light -> Heavy under the same request ID after the
+  // operator loaded the queue: the reviewed Light decision is now stale.
+  const changed = await f.ask('heavy'); assert.equal(changed.id, reviewed.id); assert.equal(changed.tier, 'heavy');
+  const mailBefore = f.mail.messages.length;
+  for (const resolution of ['granted', 'declined'])
+    await assert.rejects(f.billing.resolvePaidRequest('tenant-one', resolution, undefined, reviewed.id, undefined, 'light'), { code: 'BILLING_PAID_REQUEST_TIER_CHANGED' });
+  // Nothing moved: request still pending at Heavy, no tier granted, no
+  // resolution audit entry, no grant mail, trial untouched.
+  const pending = await f.billing.latestPaidRequest('tenant-one');
+  assert.equal(pending.state, 'pending'); assert.equal(pending.tier, 'heavy');
+  assert.equal((await f.billing.state('tenant-one')).tier, null);
+  assert.equal((await f.billing.state('tenant-one')).entitlementSource, 'trial');
+  const audit = await readOperatorAudit(f.db);
+  assert.equal(audit.filter(a => a.action === 'billing.paid_request.granted' || a.action === 'billing.paid_request.declined').length, 0);
+  assert.equal(f.mail.messages.length, mailBefore);
+  // A fresh review of the current tier resolves exactly that tier.
+  await f.billing.resolvePaidRequest('tenant-one', 'granted', undefined, reviewed.id, undefined, 'heavy');
+  assert.equal((await f.billing.state('tenant-one')).tier, 'heavy');
+  assert.equal((await f.billing.latestPaidRequest('tenant-one')).state, 'granted');
+});
+
+test('255 HTTP operator grant requires the reviewed tier and rejects a stale one without side effects', async t => {
+  const f = await fixture(t);
+  const { request, operator } = await serveH8(t, f, { clock: f.clock, mailTransport: f.mail });
+  const headers = { authorization: 'one', origin: f.env.OPENSIGHT_PUBLIC_ORIGIN }, op = { ...operator, origin: headers.origin };
+  const created = await request('/api/billing/paid-request', { method: 'POST', headers, body: { tier: 'light' } });
+  assert.equal(created.status, 200);
+  const pending = await f.billing.latestPaidRequest('tenant-one');
+  const path = '/api/host/tenants/tenant-one/billing/paid-request/grant';
+  // Missing precondition fails closed; the request stays pending.
+  const missing = await request(path, { method: 'POST', headers: op, body: { requestId: pending.id } });
+  assert.equal(missing.status, 400); assert.equal(missing.body.errorCode, 'BILLING_PAID_REQUEST_TIER_REQUIRED');
+  // Tenant changes the tier, then the stale Light grant is rejected.
+  await f.ask('heavy');
+  const stale = await request(path, { method: 'POST', headers: op, body: { requestId: pending.id, expectedTier: 'light' } });
+  assert.equal(stale.status, 409); assert.equal(stale.body.errorCode, 'BILLING_PAID_REQUEST_TIER_CHANGED');
+  assert.equal((await f.billing.latestPaidRequest('tenant-one')).state, 'pending');
+  assert.equal((await f.billing.state('tenant-one')).tier, null);
+  const granted = await request(path, { method: 'POST', headers: op, body: { requestId: pending.id, expectedTier: 'heavy' } });
+  assert.equal(granted.status, 200); assert.equal((await f.billing.state('tenant-one')).tier, 'heavy');
 });
