@@ -85,6 +85,14 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Imported line/area forecast configurations are now validated in full before
+  any editable state is built (#263): a malformed configuration — a string
+  boundary, an unknown property, an inverted boundary pair, or any other
+  invalid shape — no longer has the offending value silently dropped and a
+  sanitized forecast executed in the preview. It stays out of the draft, the
+  original definition is preserved verbatim for export, and a blocking
+  diagnostic from the compiler normalization check stops the preview.
+
 - Forecasts over very large finite values (residuals near 1e200) no longer
   produce infinite prediction endpoints: the fit scoring and interval width
   are computed in a numerically stable scaled/log form, nonfinite fits are
