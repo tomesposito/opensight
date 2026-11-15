@@ -11,7 +11,10 @@ An administrator can request Light, Regular or Heavy from day one of a trial,
 change the pending request's tier, or withdraw it. `POST /api/billing/paid-request`
 accepts only `{ tier }`; `DELETE` withdraws. Both require a tenant administrator
 and the configured app origin. The server resolves the requester from active
-membership/identity records. The `h11_paid_requests` ledger records the request,
+membership/identity records, and the mutation rechecks the requester's current
+administrator role inside its own locking boundary (#254): a downgrade or a
+membership/identity suspension landing after the route's initial check still
+fails the create, tier change, or withdrawal. The `h11_paid_requests` ledger records the request,
 requester, tier and lifecycle. Tenant locking inside the write transaction and
 a partial unique index enforce one pending request per tenant on both database
 dialects. Tier changes preserve its ID, original date and requester.

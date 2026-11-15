@@ -1,5 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
+import { hasCapability } from '@opensight/query-engine';
 import { MetadataError, type Database, type SqlConnection } from './metadata-db.js';
 import { identifier } from './metadata-resources.js';
 import { appendOperatorAudit } from './operator-audit.js';
@@ -495,6 +496,22 @@ export class HostedBilling {
     if (!record) throw new MetadataError('BILLING_PAID_REQUEST_UNAVAILABLE', 409);
     return record;
   }
+  /** Recheck the requester's CURRENT authority inside the mutation's locking
+   * boundary (#254): the route's administrator check runs before the request
+   * body is awaited, so a role downgrade, membership suspension, or identity
+   * suspension landing while the body is in flight must still fail the commit.
+   * Same pattern as the tenantAdmin recheck in hosted-provisioning. Returns
+   * the resolved membership/identity row for the caller to reuse. */
+  private async currentPaidRequestAdmin(c: SqlConnection, tenantId: string, namespaceId: string, userId: string) {
+    const row = (await c.query(`SELECT m.subject, i.email, u.body AS user_body FROM h2_memberships m JOIN h2_identities i ON i.subject = m.subject
+      LEFT JOIN h1_resources u ON u.tenant_id = m.tenant_id AND u.namespace_id = m.namespace_id AND u.resource_id = m.user_id AND u.kind = 'user' AND u.owner_id = ''
+      WHERE m.tenant_id = ? AND m.namespace_id = ? AND m.user_id = ? AND m.status = 'active' AND i.status = 'active'`, [tenantId, namespaceId, userId]))[0];
+    if (!row) throw new MetadataError('BILLING_REQUESTER_UNRESOLVED', 403);
+    let role: unknown;
+    try { role = row.user_body ? (JSON.parse(String(row.user_body)) as { role?: unknown }).role : undefined; } catch { role = undefined; }
+    if (!hasCapability(role, 'admin')) throw new MetadataError('SECURITY_ADMIN_REQUIRED', 403);
+    return row;
+  }
   async requestPaidPlan(tenantId: string, tier: unknown, userId: string, namespaceId: string): Promise<PaidRequest> {
     if (this.billingMode !== 'waitlist') throw new MetadataError('BILLING_WAITLIST_UNAVAILABLE', 409);
     if (typeof tier !== 'string' || !PAID_TIERS.includes(tier as BillingTier)) throw new MetadataError('BILLING_TIER_INVALID', 400);
@@ -503,9 +520,8 @@ export class HostedBilling {
       const record = await this.lockPaidRequestTenant(c, identifier(tenantId));
       if (!record.trialEndsAt || record.tier && PAID_TIERS.includes(record.tier) || record.stripeSubscriptionId)
         throw new MetadataError('BILLING_PAID_REQUEST_UNAVAILABLE', 409);
-      const identity = (await c.query(`SELECT m.subject, i.email FROM h2_memberships m JOIN h2_identities i ON i.subject = m.subject
-        WHERE m.tenant_id = ? AND m.namespace_id = ? AND m.user_id = ? AND m.status = 'active' AND i.status = 'active'`, [tenantId, namespaceId, userId]))[0];
-      if (!identity || !emailAddress(identity.email)) throw new MetadataError('BILLING_REQUESTER_UNRESOLVED', 403);
+      const identity = await this.currentPaidRequestAdmin(c, tenantId, namespaceId, userId);
+      if (!emailAddress(identity.email)) throw new MetadataError('BILLING_REQUESTER_UNRESOLVED', 403);
       const existing = (await c.query("SELECT * FROM h11_paid_requests WHERE tenant_id = ? AND state = 'pending'", [tenantId]))[0];
       const id = existing ? String(existing.id) : randomUUID();
       if (existing) {
@@ -530,10 +546,19 @@ export class HostedBilling {
     if (outcome.created) await notifyPaidRequest(this.db, this.options.mail, this.options.notifyTo, outcome.request, 'created');
     return outcome.request;
   }
-  async resolvePaidRequest(tenantId: string, resolution: 'granted' | 'declined' | 'withdrawn', actor = 'deployment-operator', requestId?: unknown): Promise<PaidRequest> {
+  async resolvePaidRequest(tenantId: string, resolution: 'granted' | 'declined' | 'withdrawn', actor = 'deployment-operator', requestId?: unknown,
+    requester?: { userId: string; namespaceId: string }): Promise<PaidRequest> {
     await this.expireTrials();
     const request = await this.db.transaction(async c => {
       const record = await this.lockPaidRequestTenant(c, identifier(tenantId));
+      // Tenant-initiated withdrawal (#254): recheck the requester's current
+      // administrator authority, membership, and identity inside the locking
+      // boundary, and bind the actor to that requester's membership subject.
+      // Operator grant/decline passes no requester and is unchanged.
+      if (requester) {
+        const identity = await this.currentPaidRequestAdmin(c, tenantId, requester.namespaceId, requester.userId);
+        if (String(identity.subject) !== actor) throw new MetadataError('BILLING_REQUESTER_UNRESOLVED', 403);
+      }
       const row = (await c.query("SELECT * FROM h11_paid_requests WHERE tenant_id = ? AND state = 'pending'", [tenantId]))[0];
       if (!row || requestId !== undefined && requestId !== row.id) throw new MetadataError('BILLING_PAID_REQUEST_NOT_PENDING', 409);
       const request = paidRequest(row), now = this.nowIso();

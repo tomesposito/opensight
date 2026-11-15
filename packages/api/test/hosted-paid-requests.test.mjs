@@ -59,6 +59,46 @@ test('241 concurrent requests and tier changes use one pending row, preserve req
   await assert.rejects(f.ask('free'), { code: 'BILLING_TIER_INVALID' });
 });
 
+test('254 paid-request mutations recheck current admin authority inside the mutation', async t => {
+  const f = await fixture(t);
+  const setRole = role => f.db.transaction(c => c.query("UPDATE h1_resources SET body = ? WHERE tenant_id = 'tenant-one' AND resource_id = 'admin' AND kind = 'user'", [JSON.stringify({ name: 'Admin', role })]));
+  // Downgraded before any request: create is denied with no row, mail, or audit.
+  await setRole('reader');
+  await assert.rejects(f.ask(), { code: 'SECURITY_ADMIN_REQUIRED' });
+  assert.equal((await requests(f)).length, 0); assert.equal(f.mail.messages.length, 0);
+  assert.equal((await readOperatorAudit(f.db)).filter(a => a.action.startsWith('billing.paid_request')).length, 0);
+  // Restored admin creates; a later downgrade blocks the tier change and the
+  // withdrawal, leaving the pending request untouched.
+  await setRole('administrator');
+  const created = await f.ask('regular');
+  await setRole('author');
+  await assert.rejects(f.ask('heavy'), { code: 'SECURITY_ADMIN_REQUIRED' });
+  await assert.rejects(f.billing.resolvePaidRequest('tenant-one', 'withdrawn', 'one', undefined, { userId: 'admin', namespaceId: 'one' }), { code: 'SECURITY_ADMIN_REQUIRED' });
+  const pending = await f.billing.latestPaidRequest('tenant-one');
+  assert.equal(pending.id, created.id); assert.equal(pending.tier, 'regular'); assert.equal(pending.state, 'pending');
+  // The withdrawal actor must be the requester's own membership subject.
+  await setRole('administrator');
+  await assert.rejects(f.billing.resolvePaidRequest('tenant-one', 'withdrawn', 'two', undefined, { userId: 'admin', namespaceId: 'one' }), { code: 'BILLING_REQUESTER_UNRESOLVED' });
+  assert.equal((await f.billing.latestPaidRequest('tenant-one')).state, 'pending');
+  await f.billing.resolvePaidRequest('tenant-one', 'withdrawn', 'one', undefined, { userId: 'admin', namespaceId: 'one' });
+  assert.equal((await f.billing.latestPaidRequest('tenant-one')).state, 'withdrawn');
+});
+
+test('254 suspended membership or identity blocks create, tier change and withdraw', async t => {
+  const f = await fixture(t); await f.ask();
+  // 'removed' membership / non-active identity: the requester is no longer active.
+  await f.db.transaction(c => c.query("UPDATE h2_memberships SET status = 'removed' WHERE tenant_id = 'tenant-one' AND user_id = 'admin'"));
+  await assert.rejects(f.ask('heavy'), { code: 'BILLING_REQUESTER_UNRESOLVED' });
+  await assert.rejects(f.billing.resolvePaidRequest('tenant-one', 'withdrawn', 'one', undefined, { userId: 'admin', namespaceId: 'one' }), { code: 'BILLING_REQUESTER_UNRESOLVED' });
+  assert.equal((await f.billing.latestPaidRequest('tenant-one')).state, 'pending');
+  await f.db.transaction(c => c.query("UPDATE h2_memberships SET status = 'active' WHERE tenant_id = 'tenant-one' AND user_id = 'admin'"));
+  await f.db.transaction(c => c.query("UPDATE h2_identities SET status = 'invited' WHERE subject = 'one'"));
+  await assert.rejects(f.ask('heavy'), { code: 'BILLING_REQUESTER_UNRESOLVED' });
+  await assert.rejects(f.billing.resolvePaidRequest('tenant-one', 'withdrawn', 'one', undefined, { userId: 'admin', namespaceId: 'one' }), { code: 'BILLING_REQUESTER_UNRESOLVED' });
+  const pending = await f.billing.latestPaidRequest('tenant-one');
+  assert.equal(pending.tier, 'regular'); assert.equal(pending.state, 'pending');
+});
+
 test('241 PostgreSQL mutation path locks the parent before request reads and writes', async t => {
   const f = await fixture(t); let locks = 0;
   const db = { dialect: 'postgres', transaction: work => f.db.transaction(c => {

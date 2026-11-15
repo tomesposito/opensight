@@ -437,6 +437,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Security
 
+- Waiting-list paid requests now recheck the requester's current administrator
+  role, active membership, and active identity inside the mutation's locking
+  boundary, for create, tier change, and withdrawal alike: a downgrade or
+  suspension landing after the route's initial administrator check can no
+  longer complete a paid request (#254).
 - Notebook retained results are now bounded by aggregate byte budgets, not
   only per cell: a run retains at most 8 MiB of result payloads
   (`NOTEBOOK_RESULT_BUDGET_EXCEEDED` past that), each notebook at most 64 MiB
