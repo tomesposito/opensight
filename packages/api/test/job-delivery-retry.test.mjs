@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JobRunner } from '../dist/job-runner.js';
 import { MailError, StubMailTransport } from '../dist/mail.js';
-import { MAX_DELIVERY_ATTEMPTS } from '../dist/digest-delivery.js';
+import { MAX_DELIVERY_ATTEMPTS, MAX_DELIVERY_RETRY_SEQUENCES, MAX_DELIVERY_TOTAL_ATTEMPTS } from '../dist/digest-delivery.js';
 import { jobFixture, executor, report } from './job-helpers.mjs';
 
 const failingMail = () => { const mail = new StubMailTransport(); mail.send = async () => { throw new MailError('SMTP_SEND_FAILED'); }; return mail; };
@@ -297,4 +297,44 @@ test('H7 mixed outcomes settle by the worst terminal state: dead beats cancelled
     const history = await f.store.history(c, 'job');
     assert.equal(history[0].state, 'failed'); assert.equal(history[0].errorCode, expected);
   }
+});
+
+test('H7 #252 repeated operator retries exhaust the cumulative budget and the delivery stays dead across restarts', async t => {
+  const mail = failingMail(), f = await jobFixture(t, executor(), mail); await f.put('job');
+  const c = await f.login(), first = await f.store.enqueue(c, 'job');
+  for (let s = 0; s <= MAX_DELIVERY_RETRY_SEQUENCES; s++) {
+    await attemptTicks(f, f.runner, MAX_DELIVERY_ATTEMPTS);
+    const dead = (await f.store.deliveries(c, 'job'))[0];
+    assert.equal(dead.state, 'dead'); assert.equal(dead.attempts, MAX_DELIVERY_ATTEMPTS);
+    assert.equal(dead.total_attempts, (s + 1) * MAX_DELIVERY_ATTEMPTS); assert.equal(dead.retry_sequences, s);
+    if (s < MAX_DELIVERY_RETRY_SEQUENCES) {
+      const retried = await f.store.retryDelivery(c, 'job', dead.delivery_id);
+      assert.equal(retried.state, 'pending'); assert.equal(retried.attempts, 0);
+      assert.equal(retried.total_attempts, (s + 1) * MAX_DELIVERY_ATTEMPTS); assert.equal(retried.retry_sequences, s + 1);
+      assert.equal((await f.store.deliveries(c, 'job'))[0].total_attempts, (s + 1) * MAX_DELIVERY_ATTEMPTS);
+    }
+  }
+  const dead = (await f.store.deliveries(c, 'job'))[0];
+  assert.equal(dead.total_attempts, MAX_DELIVERY_TOTAL_ATTEMPTS); assert.equal(dead.retry_sequences, MAX_DELIVERY_RETRY_SEQUENCES);
+  // The budget binds a fresh session of the same administrator too: no
+  // caller of the tenant retry path can rearm past the cumulative cap.
+  await assert.rejects(f.store.retryDelivery(c, 'job', dead.delivery_id), { code: 'DELIVERY_RETRY_BUDGET_EXHAUSTED' });
+  await assert.rejects(f.store.retryDelivery(await f.login(), 'job', dead.delivery_id), { code: 'DELIVERY_RETRY_BUDGET_EXHAUSTED' });
+  // A restarted runner neither resurrects nor sends the exhausted delivery.
+  const restarted = new JobRunner(f.store, f.executor, mail);
+  await restarted.recover(); await restarted.deliver();
+  const after = (await f.store.deliveries(c, 'job')).find(d => d.occurrence_id === first.id);
+  assert.equal(after.state, 'dead'); assert.equal(after.total_attempts, MAX_DELIVERY_TOTAL_ATTEMPTS);
+  assert.equal(after.retry_sequences, MAX_DELIVERY_RETRY_SEQUENCES);
+  const settled = (await f.store.history(c, 'job'))[0];
+  assert.equal(settled.id, first.id); assert.equal(settled.state, 'failed'); assert.equal(settled.errorCode, 'JOB_DELIVERY_EXHAUSTED');
+  // Future occurrences of the same job proceed with their own budget.
+  const stub = new StubMailTransport(); mail.send = stub.send.bind(stub);
+  const second = await f.store.enqueue(c, 'job'); assert.equal(second.state, 'queued'); assert.notEqual(second.id, first.id);
+  await f.runner.tick();
+  const deliveries = await f.store.deliveries(c, 'job'); assert.equal(deliveries.length, 2);
+  const current = deliveries.find(d => d.occurrence_id === second.id);
+  assert.equal(current.state, 'sent'); assert.equal(current.total_attempts, 1); assert.equal(current.retry_sequences, 0);
+  assert.equal(deliveries.find(d => d.occurrence_id === first.id).state, 'dead');
+  assert.equal((await f.store.history(c, 'job')).find(r => r.id === second.id).state, 'succeeded');
 });

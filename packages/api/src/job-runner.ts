@@ -154,7 +154,7 @@ export class JobRunner {
         const claimed = await this.store.db.transaction(async c => {
           const exhausted = await c.query(`UPDATE h7_deliveries SET state = 'dead', error_code = COALESCE(error_code, 'JOB_DELIVERY_EXHAUSTED'), message = NULL WHERE ${scoped} AND delivery_id = ? AND state = 'pending' AND attempts >= ? RETURNING delivery_id`, [...scopeArgs(run), id, MAX_DELIVERY_ATTEMPTS]);
           if (exhausted.length) { await this.settleOccurrence(c, run); return []; }
-          return c.query(`UPDATE h7_deliveries SET state = 'sending', attempts = attempts + 1 WHERE ${scoped} AND delivery_id = ? AND state = 'pending' AND attempts < ? RETURNING delivery_id, attempts`, [...scopeArgs(run), id, MAX_DELIVERY_ATTEMPTS]);
+          return c.query(`UPDATE h7_deliveries SET state = 'sending', attempts = attempts + 1, total_attempts = total_attempts + 1 WHERE ${scoped} AND delivery_id = ? AND state = 'pending' AND attempts < ? RETURNING delivery_id, attempts`, [...scopeArgs(run), id, MAX_DELIVERY_ATTEMPTS]);
         });
         if (!claimed.length) continue;
         attempt = Number(claimed[0]!.attempts);

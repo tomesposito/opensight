@@ -173,7 +173,7 @@ export class DurableJobs {
     }
     await this.execution.checked(handle, async c => {
       await this.store.checkRun(c, run);
-      await c.query(`UPDATE h7_deliveries SET state = 'sending', attempts = attempts + 1, message = NULL WHERE ${scoped} AND delivery_id = ?`, [...scopeArgs(run), handle.event.aggregateId]);
+      await c.query(`UPDATE h7_deliveries SET state = 'sending', attempts = attempts + 1, total_attempts = total_attempts + 1, message = NULL WHERE ${scoped} AND delivery_id = ?`, [...scopeArgs(run), handle.event.aggregateId]);
     });
     await this.execution.sending(handle); sending();
     await this.mail.send(message, authorize);

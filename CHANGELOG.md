@@ -76,6 +76,13 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Operator retries of dead-lettered job deliveries are now cumulatively
+  bounded: a delivery's total attempts and retry sequences are counted
+  durably and never reset, and after 2 retries or 30 total attempts a
+  further retry is refused with `DELIVERY_RETRY_BUDGET_EXHAUSTED`, so one
+  delivery can no longer be rearmed through unlimited dead-letter cycles
+  (#252).
+
 - Job mail delivery now enforces its 10-attempt limit during crash recovery,
   pending claims and receipt failures after SMTP acceptance. Exhausted
   deliveries dead-letter and settle their occurrences instead of sending again

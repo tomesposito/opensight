@@ -1,4 +1,5 @@
 import { digestPeriods } from './digest-computation.js';
+import { MAX_DELIVERY_RETRY_SEQUENCES, MAX_DELIVERY_TOTAL_ATTEMPTS } from './digest-delivery.js';
 import { randomUUID } from 'node:crypto';
 import { resourceBytes } from './hosted-usage.js';
 import { hasCapability, isRole, type Role } from '@opensight/query-engine';
@@ -147,13 +148,19 @@ export class JobStore {
   }
   async deliveries(context: TenantContext, id: string) {
     return this.checked(context, async (c, admin) => { const job = await this.find(c, context, id); if (!admin && job.ownerId !== context.userId) missing();
-      return c.query(`SELECT delivery_id, occurrence_id, recipient_id, state, attempts, error_code, sent_at FROM h7_deliveries WHERE ${scoped} AND job_id = ? ORDER BY delivery_id`, [...scopeArgs(context), id]);
+      return c.query(`SELECT delivery_id, occurrence_id, recipient_id, state, attempts, total_attempts, retry_sequences, error_code, sent_at FROM h7_deliveries WHERE ${scoped} AND job_id = ? ORDER BY delivery_id`, [...scopeArgs(context), id]);
     });
   }
   /** Operator retry of a dead-lettered delivery (#233): the SAME delivery row
    * starts a new bounded sequence — delivery identity (the dedupe key) never
    * changes and no new delivery row is created. This is a deliberate domain
-   * action, distinct from dispatch replay, which never resets counters. */
+   * action, distinct from dispatch replay, which never resets counters.
+   * The sequence is not free (#252): the delivery's durable cumulative
+   * budget (total attempts and operator retries, never reset) must still
+   * have room, checked here inside the tenant-locked transaction before
+   * any mutation or rearm, so a refused retry leaves the delivery dead,
+   * its occurrence settled, the durable event terminal and its execution
+   * record intact. The budget binds owner and administrator alike. */
   async retryDelivery(context: TenantContext, id: string, deliveryId: string) {
     identifier(deliveryId);
     const requested = await this.checked(context, async (c, admin) => {
@@ -165,12 +172,14 @@ export class JobStore {
       const row = (await c.query(`SELECT * FROM h7_deliveries WHERE ${scoped} AND job_id = ? AND delivery_id = ?`, [...scopeArgs(context), id, deliveryId]))[0];
       if (!row) missing();
       if (String(row.state) !== 'dead') throw new MetadataError('DELIVERY_NOT_DEAD', 409);
+      if (Number(row.retry_sequences) >= MAX_DELIVERY_RETRY_SEQUENCES || Number(row.total_attempts) >= MAX_DELIVERY_TOTAL_ATTEMPTS)
+        throw new MetadataError('DELIVERY_RETRY_BUDGET_EXHAUSTED', 409);
       const occurrence = (await c.query(`SELECT * FROM h7_occurrences WHERE ${scoped} AND occurrence_id = ?`, [...scopeArgs(context), String(row.occurrence_id)]))[0];
       if (!occurrence) missing();
       const run = readOccurrence(occurrence);
       if (job.stopped) throw new MetadataError('JOB_STOPPED', 409);
       if (!job.spec.enabled || job.version !== run.jobVersion || job.ownerId !== run.ownerId) throw new MetadataError('JOB_REVISED', 403);
-      await c.query(`UPDATE h7_deliveries SET state = 'pending', attempts = 0, next_attempt = ?, error_code = NULL, message = NULL WHERE ${scoped} AND delivery_id = ?`, [this.clock().toISOString(), ...scopeArgs(context), deliveryId]);
+      await c.query(`UPDATE h7_deliveries SET state = 'pending', attempts = 0, retry_sequences = retry_sequences + 1, next_attempt = ?, error_code = NULL, message = NULL WHERE ${scoped} AND delivery_id = ?`, [this.clock().toISOString(), ...scopeArgs(context), deliveryId]);
       await c.query(`UPDATE h7_occurrences SET state = 'delivering', error_code = NULL, finished_at = NULL WHERE ${scoped} AND occurrence_id = ? AND state = 'failed' AND error_code = 'JOB_DELIVERY_EXHAUSTED'`, [...scopeArgs(context), run.id]);
       await appendMetadataEvent(c, job, 'job.delivery.retried');
       if (this.dispatch) {
@@ -180,14 +189,16 @@ export class JobStore {
           // The original event cannot be re-appended (outbox uniqueness), so
           // rearm it in place with a fresh window; deleting the execution
           // claim record (attempts are CHECK-bound to 1..5) lets the next
-          // claim start a fresh bounded sequence for the same event.
+          // claim start a fresh bounded sequence for the same event. The
+          // rearm itself was already charged to the delivery's cumulative
+          // retry budget above (#252), so this cannot repeat without bound.
           const now = this.clock().getTime();
           await c.query(`UPDATE sr_outbox SET state = 'pending', due_at = ?, expires_at = ? WHERE deployment = ? AND event_id = ?`, [now, now + 86400000, this.dispatch.deployment, String(outbox.event_id)]);
           await c.query(`DELETE FROM sr_execution WHERE deployment = ? AND event_id = ?`, [this.dispatch.deployment, String(outbox.event_id)]);
           rearmed = { intentId: String(outbox.intent_id), epoch: Number(outbox.control_epoch) };
         } else if (!outbox) needsEvent = true;
       }
-      return { delivery_id: deliveryId, occurrence_id: run.id, recipient_id: String(row.recipient_id), state: 'pending', attempts: 0, error_code: null, sent_at: null };
+      return { delivery_id: deliveryId, occurrence_id: run.id, recipient_id: String(row.recipient_id), state: 'pending', attempts: 0, total_attempts: Number(row.total_attempts), retry_sequences: Number(row.retry_sequences) + 1, error_code: null, sent_at: null };
     }, false, requested.spec.kind === 'digest',
       now => needsEvent ? [{ aggregateId: deliveryId, aggregateRevision: requested.version, kind: 'job-deliver', dueAt: now, expiresAt: now + 86400000 }] : []);
     if (rearmed) await this.dispatch!.flush(rearmed.intentId, rearmed.epoch);

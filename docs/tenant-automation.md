@@ -57,6 +57,19 @@ One API process owns one scheduler. Multi-node scheduling remains H10.
   store error. Occurrences settle only after all deliveries are terminal:
   any dead delivery yields `JOB_DELIVERY_EXHAUSTED`, otherwise cancellation
   yields `JOB_DELIVERY_CANCELLED`, and all-sent occurrences succeed.
+- Explicit retries are cumulatively bounded (#252): each delivery carries
+  durable, monotonic `total_attempts` and `retry_sequences` counters that a
+  retry never resets. An operator retry is refused with
+  `DELIVERY_RETRY_BUDGET_EXHAUSTED` once the delivery has spent 2 retry
+  sequences or 30 total attempts (three bounded sequences in all); the
+  delivery then stays `dead` permanently, its occurrence stays settled,
+  and — in the durable-events deployment — its event stays terminal with
+  its execution record intact instead of being deleted for a fresh
+  sequence. The budget binds the job owner and tenant administrators
+  alike; there is no bypass on this path. Later occurrences of the same
+  job create their own deliveries with their own budgets and proceed
+  unaffected. The deliveries list and the retry response expose both
+  counters.
 
 ## User removal
 
