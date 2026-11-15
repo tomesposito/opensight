@@ -76,6 +76,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Job mail delivery now enforces its 10-attempt limit during crash recovery,
+  pending claims and receipt failures after SMTP acceptance. Exhausted
+  deliveries dead-letter and settle their occurrences instead of sending again
+  or retrying indefinitely (#251).
+
 - Access-request notification leases now start when each row is claimed, not
   when the batch started, so a notification batch slower than the five-minute
   lease can no longer have a later row claimed by a competing notifier during

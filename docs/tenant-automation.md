@@ -28,8 +28,9 @@ One API process owns one scheduler. Multi-node scheduling remains H10.
 - A completed report or alert evaluation atomically creates one outbox entry
   per recipient. Delivery retries use bounded exponential backoff and an
   immutable tenant/job/occurrence/recipient dedupe key. Interrupted execution
-  returns to the queue; interrupted delivery returns to pending with the same
-  key. A successful send receipt is durable. Retries reauthorize before sending.
+  returns to the queue; interrupted delivery below the attempt cap returns to
+  pending with the same key. A successful send receipt is durable. Retries
+  reauthorize before sending.
   SMTP receives a stable Message-ID; an SMTP acceptance followed by a crash
   before receipt commit can still duplicate mail. This is at-least-once delivery,
   not exactly-once SMTP. The stub transport honors dedupe keys, including an
@@ -45,6 +46,17 @@ One API process owns one scheduler. Multi-node scheduling remains H10.
   non-dead deliveries (`DELIVERY_NOT_DEAD`) and for stopped or revised jobs.
   In the durable-events deployment the retry rearms the delivery's original
   event in place with a fresh window and execution sequence.
+- The single-node runner enforces the same cap during crash recovery and
+  atomically when claiming pending deliveries (#251). Interrupted `sending`
+  rows and due `pending` rows already at or above 10 attempts dead-letter
+  without another send or increment. If SMTP accepts the tenth attempt but
+  its durable receipt fails, the delivery also dead-letters; below the cap,
+  that ambiguous claim remains recoverable. Recovery records
+  `DELIVERY_INTERRUPTED`; claim exhaustion preserves the previous error (or
+  uses `JOB_DELIVERY_EXHAUSTED` when absent), and receipt failure records the
+  store error. Occurrences settle only after all deliveries are terminal:
+  any dead delivery yields `JOB_DELIVERY_EXHAUSTED`, otherwise cancellation
+  yields `JOB_DELIVERY_CANCELLED`, and all-sent occurrences succeed.
 
 ## User removal
 
