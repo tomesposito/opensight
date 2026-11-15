@@ -373,7 +373,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         if (billingTenant) {
           if (!billingService) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
           const tenantId = identifier(billingTenant[1]), billingAction = billingTenant[2];
-          if (!billingAction) { method(request, response, ['GET']); send(response, 200, { billing: { ...await billingService.viewState(tenantId), paidRequest: await billingService.latestPaidRequest(tenantId) } }); return; }
+          if (!billingAction) { method(request, response, ['GET']); send(response, 200, { billing: { ...await billingService.viewState(tenantId, true), paidRequest: await billingService.latestPaidRequest(tenantId) } }); return; }
           method(request, response, ['POST']);
           if (billingAction === 'payment-link') {
             if (!billingCfg) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
@@ -384,7 +384,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
             const input = await body(request, ['requestId']);
             if (typeof input.requestId !== 'string') throw new MetadataError('METADATA_INVALID', 400);
             await billingService.resolvePaidRequest(tenantId, billingAction === 'paid-request/grant' ? 'granted' : 'declined', undefined, input.requestId);
-            send(response, 200, { billing: await billingService.viewState(tenantId) }); return;
+            send(response, 200, { billing: await billingService.viewState(tenantId, true) }); return;
           }
         }
         const tenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)(?:\/(suspend|resume|invitations|users)(?:\/([A-Za-z0-9_-]+))?)?$/.exec(path);
@@ -469,7 +469,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
         if (['/api/billing', '/api/billing/paid-request', '/api/signup/checkout', '/api/workspace/export', '/api/workspace/close'].includes(path)) {
           if (!hasCapability(user.body.role as Parameters<typeof hasCapability>[0], 'admin')) throw new MetadataError('SECURITY_ADMIN_REQUIRED', 403);
-          if (path === '/api/billing') { method(request, response, ['GET']); send(response, 200, { billing: await billingService.viewState(context.tenantId), trial: billingService.trial(context.tenantId), checkoutEnabled: signupCfg.enabled && !!billingCfg }); return; }
+          if (path === '/api/billing') { method(request, response, ['GET']); send(response, 200, { billing: await billingService.viewState(context.tenantId, true), trial: billingService.trial(context.tenantId), checkoutEnabled: signupCfg.enabled && !!billingCfg }); return; }
           if (path === '/api/billing/paid-request') {
             if (request.headers.origin !== config.origin) throw new MetadataError('UNTRUSTED_ORIGIN', 403);
             method(request, response, ['POST', 'DELETE']);
@@ -481,7 +481,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
               if (!member) throw new MetadataError('BILLING_REQUESTER_UNRESOLVED', 403);
               await billingService.resolvePaidRequest(context.tenantId, 'withdrawn', String(member.subject));
             }
-            send(response, 200, { billing: await billingService.viewState(context.tenantId) }); return;
+            send(response, 200, { billing: await billingService.viewState(context.tenantId, true) }); return;
           }
           if (path === '/api/signup/checkout') {
             if (!billingCfg) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
@@ -553,7 +553,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         const tenant = (await options.membershipDatabase.transaction(c => c.query('SELECT display_name, slug FROM h1_tenants WHERE tenant_id = ?', [context.tenantId])))[0];
         const workspaceName = workspaceLabel(tenant?.display_name, context.tenantId);
         const workspaceSlug = typeof tenant?.slug === 'string' ? tenant.slug : null;
-        send(response, 200, { id: user.id, namespaceId: context.namespaceId, tenantId: context.tenantId, workspaceName, workspaceSlug, ...user.body, trial: billingService?.trial(context.tenantId) ?? null, billingPaused: billingService?.accessPaused(context.tenantId) ?? false, ...(billingService ? { billing: await billingService.viewState(context.tenantId) } : {}), ...(invocation ? { capabilities: invocation.capabilities } : {}) }); return;
+        send(response, 200, { id: user.id, namespaceId: context.namespaceId, tenantId: context.tenantId, workspaceName, workspaceSlug, ...user.body, trial: billingService?.trial(context.tenantId) ?? null, billingPaused: billingService?.accessPaused(context.tenantId) ?? false, ...(billingService ? { billing: await billingService.viewState(context.tenantId, hasCapability(user.body.role as Parameters<typeof hasCapability>[0], 'admin')) } : {}), ...(invocation ? { capabilities: invocation.capabilities } : {}) }); return;
       }
       if (path === '/api/auth/switch' || path === '/api/auth/logout') {
         if (!options.builtinAuth) throw new MetadataError('BUILTIN_AUTH_UNAVAILABLE', 503);

@@ -475,12 +475,16 @@ export class HostedBilling {
       ORDER BY CASE WHEN state = 'pending' THEN 0 ELSE 1 END, created_at DESC, resolved_at DESC, id DESC LIMIT 1`, [identifier(tenantId)]));
     return rows[0] ? paidRequest(rows[0]) : null;
   }
-  async viewState(tenantId: string) {
+  async viewState(tenantId: string, includeRequesterEmail = false) {
     const record = await this.state(tenantId), request = await this.latestPaidRequest(tenantId);
     return { ...record, billingMode: this.billingMode, paidRequest: request ? {
       tier: request.tier, state: request.state, createdAt: request.createdAt,
-      // The requesting admin may differ from the admin viewing the panel.
-      requestedByEmail: request.requestedByEmail,
+      // The requesting admin may differ from the admin viewing the panel, so
+      // administrator and operator views name the recipient (#241). Member
+      // views (e.g. /api/session for readers/authors) must not disclose the
+      // address: it is included only on an explicit privileged request
+      // (#253, fail closed by default).
+      ...(includeRequesterEmail ? { requestedByEmail: request.requestedByEmail } : {}),
     } : null };
   }
   private async lockPaidRequestTenant(c: SqlConnection, tenantId: string): Promise<BillingRecord> {
