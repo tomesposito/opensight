@@ -12,7 +12,8 @@ The fingerprint is SHA-256 of canonical JSON containing the path and request
 body; object property order does not matter. Reusing an unexpired key with a
 different body returns 409 `IDEMPOTENCY_CONFLICT`. Receipts expire 60 minutes
 after creation; an expired receipt is treated as absent and a subsequent
-request generates and charges anew. Expired rows are replaced on key reuse.
+request generates and charges anew. Expiration cleanup also runs independently
+of key reuse, as described below.
 
 Only the validated answer-function result is stored, never raw provider text.
 A plan stores its whole answer, including failed/credit-limited tiles and the
@@ -63,8 +64,60 @@ erasure and backup/restore; snapshots predating them remain supported. Receipts
 use their own database store so reader AI users need no metadata write capability.
 No endpoints, web-client retries or dependencies were added.
 
+## Expiration cleanup and tenant admission (#249)
+
+Every `run()` starts by pruning expired receipts and abandoned reservations in
+its first transaction, before acquiring its reservation and reading a replay.
+`HostedAIReceipts.pruneExpired()` exposes the same cleanup for maintenance without
+generating an answer. Each table is processed in batches of at most 500 full
+primary keys, stopping after a short batch or 20 batches per table. A call removes
+at most 10,000 expired rows per table; repeated calls converge on a larger
+backlog. Requests from any tenant trigger this global cleanup. Scope-specific
+cleanup also lets the current key recover even if the global batch budget is
+exhausted.
+
+An expired receipt is protected while an unexpired reservation exists for its
+exact tenant, namespace, user, route and idempotency key. This keeps a receipt
+already read for replay available through the active attempt. Live reservations
+and unexpired receipts are never pruned; after a reservation expires or is
+released, its expired receipt becomes eligible. Both tables have `expires_at`
+indexes, and receipts also have a `(tenant_id, expires_at)` index.
+`CREATE INDEX IF NOT EXISTS` adds them when the initializer runs against an
+existing database, including through the owner migration for serverless.
+
+`HostedAIReceipts(db, clock, env)` accepts an optional environment argument,
+defaulting to `process.env`; the existing `(db)` and `(db, clock)` forms still
+work. The following limits apply to each tenant across all namespaces, users,
+routes and keys, including pending and committed receipts:
+
+| Variable | Default |
+| --- | --- |
+| `OPENSIGHT_AI_RECEIPT_PER_TENANT_MAX_ENTRIES` | 250 |
+| `OPENSIGHT_AI_RECEIPT_PER_TENANT_MAX_BYTES` | 16,777,216 (16 MiB) |
+
+Values must be positive safe integers written as decimal digits without leading
+zeros; invalid values fail construction with an error naming the variable.
+Inside `pending()`'s write transaction, after lease renewal, expired receipts for
+the tenant are removed with the same active-reservation protection. Admission
+then aggregates `COUNT(*)` and `SUM(LENGTH(answer) + LENGTH(revisions))` over the
+remaining stored rows. The incoming row's size is the sum of
+`Buffer.byteLength(JSON.stringify(answer))` and
+`Buffer.byteLength(JSON.stringify(revisions))`; the budget excludes keys and
+database overhead. Protected expired receipts still count toward admission.
+If adding the row would exceed either limit, the transaction fails with
+`IDEMPOTENCY_CAPACITY_EXCEEDED` (429) and inserts nothing. Other tenants retain
+their own capacity, and replaying a stored receipt needs no new admission.
+
 ## Regression test names
 
+- #249 initialization adds expiry and tenant indexes to existing receipt tables
+- #249 unrelated tenant requests prune distinct expired receipts and abandoned reservations
+- #249 pruning protects only the full scope of a live replay reservation until its lease expires
+- #249 expiration maintenance bounds each table to twenty batches of five hundred and converges
+- #249 tenant entry admission rejects overflow atomically across keys and namespaces
+- #249 tenant byte admission counts answer and revisions and rejects oversized or aggregate overflow
+- #249 pending admission reclaims receipts expiring during generation but protects active replays
+- #249 receipt admission limits require positive safe integers
 - #229 receipts preserve pending answers after commit failure and replay across store instances
 - #229 receipt reservations exclude concurrent workers, release failures and fence expired owners
 - #229 receipt fingerprints conflict, scope isolates keys and TTL regenerates after 60 minutes
