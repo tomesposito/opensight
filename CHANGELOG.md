@@ -76,6 +76,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Access-request notification leases now start when each row is claimed, not
+  when the batch started, so a notification batch slower than the five-minute
+  lease can no longer have a later row claimed by a competing notifier during
+  its live send and emailed twice (#250).
+
 - Hosted Ask O answer receipts now prune expired answers and abandoned
   reservations in indexed, bounded batches across distinct keys, protect active
   replays, and enforce configurable per-tenant entry and payload limits (#249).
