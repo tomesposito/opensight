@@ -188,7 +188,7 @@ test('241 tenant detail resolves only pending request IDs, refreshes grant/decli
     const ui = await mount(t, OperatorTenant, call => {
       if (call.path.endsWith('/billing')) return response({ billing });
       if (call.path.endsWith(`/paid-request/${action}`)) {
-        assert.deepEqual(call.input, { requestId: 'request-one' });
+        assert.deepEqual(call.input, { requestId: 'request-one', expectedTier: 'regular' });
         billing = { ...billing, tier: action === 'grant' ? 'regular' : null, entitlementSource: action === 'grant' ? 'manual' : 'trial', paidRequest: { ...billing.paidRequest, state: action === 'grant' ? 'granted' : 'declined' } };
         return response({ billing });
       }

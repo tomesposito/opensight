@@ -11,7 +11,7 @@ test('241 operator queue renders server order, count, workspace links and resolv
     { id: 'older', tenantId: 'tenant-old', displayName: 'Older workspace', tier: 'light', requestedByEmail: 'old@example.test', createdAt: '2026-11-18T00:00:00Z', state: 'pending' },
     { id: 'newer', tenantId: 'tenant-new', displayName: 'Newer workspace', tier: 'regular', requestedByEmail: 'new@example.test', createdAt: '2026-11-19T00:00:00Z', state: 'pending' },
   ] };
-  const fetcher = async (url, init) => { calls.push({ url, ...init }); if (init.method === 'POST') { assert.deepEqual(JSON.parse(init.body), { requestId: 'older' }); status = { ...status, paidRequestsOpen: 1, paidRequests: status.paidRequests.slice(1) }; } return { ok: true, status: 200, json: async () => status }; };
+  const fetcher = async (url, init) => { calls.push({ url, ...init }); if (init.method === 'POST') { assert.deepEqual(JSON.parse(init.body), { requestId: 'older', expectedTier: 'light' }); status = { ...status, paidRequestsOpen: 1, paidRequests: status.paidRequests.slice(1) }; } return { ok: true, status: 200, json: async () => status }; };
   let ui; await act(() => { ui = create(createElement(OperatorSignups, { fetcher })); }); t.after(() => act(() => ui.unmount()));
   assert.equal(calls.length, 0);
   await act(() => ui.root.findByProps({ type: 'password' }).props.onChange({ target: { value: 'fixture-key' } }));

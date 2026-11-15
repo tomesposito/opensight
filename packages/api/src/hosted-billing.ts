@@ -547,7 +547,17 @@ export class HostedBilling {
     return outcome.request;
   }
   async resolvePaidRequest(tenantId: string, resolution: 'granted' | 'declined' | 'withdrawn', actor = 'deployment-operator', requestId?: unknown,
-    requester?: { userId: string; namespaceId: string }): Promise<PaidRequest> {
+    requester?: { userId: string; namespaceId: string }, expectedTier?: unknown): Promise<PaidRequest> {
+    // Operator grant/decline must bind to the tier the operator reviewed
+    // (#255): tier changes preserve the request ID, so the ID alone cannot
+    // prove the decision still matches the request. The precondition is
+    // required for operator resolutions and checked against the pending row
+    // inside the locking transaction below; tenant withdrawal is the
+    // requester's own pending request and carries no tier decision.
+    if (!requester && resolution !== 'withdrawn') {
+      if (expectedTier === undefined) throw new MetadataError('BILLING_PAID_REQUEST_TIER_REQUIRED', 400);
+      if (typeof expectedTier !== 'string' || !PAID_TIERS.includes(expectedTier as BillingTier)) throw new MetadataError('BILLING_TIER_INVALID', 400);
+    }
     await this.expireTrials();
     const request = await this.db.transaction(async c => {
       const record = await this.lockPaidRequestTenant(c, identifier(tenantId));
@@ -562,6 +572,11 @@ export class HostedBilling {
       const row = (await c.query("SELECT * FROM h11_paid_requests WHERE tenant_id = ? AND state = 'pending'", [tenantId]))[0];
       if (!row || requestId !== undefined && requestId !== row.id) throw new MetadataError('BILLING_PAID_REQUEST_NOT_PENDING', 409);
       const request = paidRequest(row), now = this.nowIso();
+      // The tier may have changed after the operator loaded the request
+      // (#255): reject the stale decision and leave the request pending for
+      // a fresh review — never grant or decline a tier nobody reviewed.
+      if (!requester && resolution !== 'withdrawn' && expectedTier !== request.tier)
+        throw new MetadataError('BILLING_PAID_REQUEST_TIER_CHANGED', 409);
       if (resolution === 'granted') {
         if (record.stripeSubscriptionId || record.tier && PAID_TIERS.includes(record.tier)) throw new MetadataError('BILLING_PAID_REQUEST_UNAVAILABLE', 409);
         if (!this.config.tierEntitlements[request.tier]) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);

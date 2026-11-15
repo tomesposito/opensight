@@ -18,9 +18,9 @@ export function OperatorSignups(props: OperatorProps) {
           <td><a href={`#operator-tenant/${request.tenantId}`}>{request.displayName ?? request.tenantId}</a></td><td>{tiers[request.tier]}</td>
           <td>{request.requestedByEmail}</td><td>{new Date(request.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</td><td>{request.state}</td>
           <td><button className="operator-primary" disabled={work.busy} onClick={() => void work.run(async () => {
-            await operatorRequest(props, key!)(`tenants/${request.tenantId}/billing/paid-request/grant`, 'POST', { requestId: request.id }); await load(key!);
+            await operatorRequest(props, key!)(`tenants/${request.tenantId}/billing/paid-request/grant`, 'POST', { requestId: request.id, expectedTier: request.tier }); await load(key!);
           })}>Grant {titleCase(request.tier)} (manual)</button><button disabled={work.busy} onClick={() => void work.run(async () => {
-            await operatorRequest(props, key!)(`tenants/${request.tenantId}/billing/paid-request/decline`, 'POST', { requestId: request.id }); await load(key!);
+            await operatorRequest(props, key!)(`tenants/${request.tenantId}/billing/paid-request/decline`, 'POST', { requestId: request.id, expectedTier: request.tier }); await load(key!);
           })}>Decline request</button></td>
         </tr>)}</tbody></table></div> : <p>No pending paid requests.</p>}
       <p>Granting sets the tier and restores access immediately. No payment is taken and no subscription is created; the grant is recorded in the operator audit log.</p>
