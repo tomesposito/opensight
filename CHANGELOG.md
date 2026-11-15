@@ -437,6 +437,13 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Security
 
+- Operator grant/decline of a waiting-list paid request is now bound to the
+  tier the operator reviewed: both operator surfaces send the displayed tier
+  as a required precondition, and if the tenant changed the tier after the
+  operator loaded the request, the resolution is rejected with
+  `BILLING_PAID_REQUEST_TIER_CHANGED` and the request stays pending for a
+  fresh review — a stale screen can no longer grant a tier nobody reviewed
+  (#255).
 - Waiting-list paid requests now recheck the requester's current administrator
   role, active membership, and active identity inside the mutation's locking
   boundary, for create, tier change, and withdrawal alike: a downgrade or
