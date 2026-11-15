@@ -176,7 +176,11 @@ test('work bound: maximum-seasonality workload (m=366, n=732) forecasts seasonal
   // steps) stays within MAX_FORECAST_GRID_STEPS, so results are the
   // full-grid results, not a coarsened approximation.
   assert.ok(MAX_FORECAST_GRID_STEPS >= 5610 * 732);
-  const y = Array.from({ length: 732 }, (_, i) => 100 + 30 * Math.sin(2 * Math.PI * (i % 366) / 366) + i * 0.01);
+  // A sharp seasonal step pattern: one-step-ahead tracking cannot
+  // anticipate the jumps, so the seasonal model wins on merit. (A smooth
+  // slow sine at this season length is legitimately tracked one-step by
+  // trend models and loses to them on the seasonal initials' AIC penalty.)
+  const y = Array.from({ length: 732 }, (_, i) => 100 + ((i % 366) < 183 ? 20 : -20) + i * 0.01);
   const r = computeForecast(y, 'DAY', { ...cfg, seasonality: 366 });
   assert.ok(r, 'forecast exists');
   assert.equal(r.seasonalApplied, true);
