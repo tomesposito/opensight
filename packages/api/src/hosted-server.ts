@@ -479,7 +479,9 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
             } else {
               const member = (await options.membershipDatabase.transaction(c => c.query("SELECT subject FROM h2_memberships WHERE tenant_id = ? AND namespace_id = ? AND user_id = ? AND status = 'active'", [context.tenantId, context.namespaceId, context.userId])))[0];
               if (!member) throw new MetadataError('BILLING_REQUESTER_UNRESOLVED', 403);
-              await billingService.resolvePaidRequest(context.tenantId, 'withdrawn', String(member.subject));
+              // The mutation rechecks current admin authority inside its own
+              // locking boundary (#254); this read only names the audit actor.
+              await billingService.resolvePaidRequest(context.tenantId, 'withdrawn', String(member.subject), undefined, { userId: context.userId, namespaceId: context.namespaceId });
             }
             send(response, 200, { billing: await billingService.viewState(context.tenantId, true) }); return;
           }
