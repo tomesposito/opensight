@@ -18,6 +18,12 @@ export interface AiAnswerAttempt {
   committed(): Promise<void>;
 }
 const conflict = (): never => { throw new MetadataError('IDEMPOTENCY_CONFLICT', 409); };
+function positive(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const raw = env[name];
+  if (raw === undefined) return fallback;
+  if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(Number(raw))) throw new Error(`${name} must be a positive integer`);
+  return Number(raw);
+}
 export async function initializeAiAnswerReceipts(db: Database): Promise<void> {
   await db.transaction(async c => {
     await c.query(`CREATE TABLE IF NOT EXISTS ai_answer_receipts (
@@ -39,7 +45,12 @@ export async function initializeAiAnswerReceipts(db: Database): Promise<void> {
   });
 }
 export class HostedAIReceipts {
-  constructor(private readonly db: Database, private readonly clock: () => number = Date.now) {}
+  private readonly maxEntries: number;
+  private readonly maxBytes: number;
+  constructor(private readonly db: Database, private readonly clock: () => number = Date.now, env: NodeJS.ProcessEnv = process.env) {
+    this.maxEntries = positive(env, 'OPENSIGHT_AI_RECEIPT_PER_TENANT_MAX_ENTRIES', 250);
+    this.maxBytes = positive(env, 'OPENSIGHT_AI_RECEIPT_PER_TENANT_MAX_BYTES', 16 * 1024 * 1024);
+  }
   private async prune(c: SqlConnection, now: string): Promise<void> {
     for (const table of aiReceiptTables) {
       const expired = `expires_at <= ?${table === 'ai_answer_receipts' ? ` AND ${withoutActiveReservation}` : ''}`;
@@ -91,10 +102,18 @@ export class HostedAIReceipts {
     try {
       return await work({ receipt, beforeCommit: () => write(async () => {}),
         pending: (answer, chargedCount, managed, revisions) => write(async c => {
-          const created = this.clock();
+          const created = this.clock(), now = new Date(created).toISOString();
+          await c.query(`DELETE FROM ai_answer_receipts WHERE tenant_id = ? AND expires_at <= ? AND ${withoutActiveReservation}`, [context.tenantId, now, now]);
+          const usage = (await c.query(`SELECT COUNT(*) AS entries, COALESCE(SUM(LENGTH(answer) + LENGTH(revisions)), 0) AS bytes
+            FROM ai_answer_receipts WHERE tenant_id = ?`, [context.tenantId]))[0];
+          const serializedAnswer = JSON.stringify(answer), serializedRevisions = JSON.stringify(revisions);
+          const newBytes = Buffer.byteLength(serializedAnswer) + Buffer.byteLength(serializedRevisions);
+          if (Number(usage?.entries) + 1 > this.maxEntries || Number(usage?.bytes) + newBytes > this.maxBytes) {
+            throw new MetadataError('IDEMPOTENCY_CAPACITY_EXCEEDED', 429);
+          }
           if (!(await c.query(`INSERT INTO ai_answer_receipts VALUES (?,?,?,?,?,?,'pending',?,?,?,?,?,?)
             ON CONFLICT (tenant_id, namespace_id, user_id, route, idempotency_key) DO NOTHING RETURNING idempotency_key`,
-          [...args, fingerprint, JSON.stringify(answer), chargedCount, managed ? 1 : 0, JSON.stringify(revisions), new Date(created).toISOString(), new Date(created + ttl).toISOString()])).length) conflict();
+          [...args, fingerprint, serializedAnswer, chargedCount, managed ? 1 : 0, serializedRevisions, now, new Date(created + ttl).toISOString()])).length) conflict();
         }),
         committed: () => write(async c => {
           if (!(await c.query(`UPDATE ai_answer_receipts SET state = 'committed' WHERE ${scope} AND fingerprint = ? RETURNING idempotency_key`, [...args, fingerprint])).length) conflict();

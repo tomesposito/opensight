@@ -10,7 +10,7 @@ async function fixture(t) {
   const db = new SqliteMetadataDatabase(':memory:'); t.after(() => db.close());
   await initializeAiAnswerReceipts(db); await initializeAiAnswerReceipts(db);
   let now = Date.parse('2026-11-09T00:00:00Z');
-  return { db, store: new HostedAIReceipts(db, () => now), nextStore: () => new HostedAIReceipts(db, () => now), advance: ms => { now += ms; } };
+  return { db, store: new HostedAIReceipts(db, () => now), nextStore: (env = process.env) => new HostedAIReceipts(db, () => now, env), advance: ms => { now += ms; } };
 }
 test('#229 receipts preserve pending answers after commit failure and replay across store instances', async t => {
   const f = await fixture(t), answer = { question: 'sum revenue', interpretations: [] };
@@ -152,4 +152,78 @@ test('#249 expiration maintenance bounds each table to twenty batches of five hu
   assert.deepEqual(selections, [1, 1]);
   assert.equal((await storedRows(f.db, 'ai_answer_receipts')).length, 0);
   assert.equal((await storedRows(f.db, 'ai_answer_receipt_reservations')).length, 0);
+});
+
+test('#249 tenant entry admission rejects overflow atomically across keys and namespaces', async t => {
+  const f = await fixture(t), store = f.nextStore({ OPENSIGHT_AI_RECEIPT_PER_TENANT_MAX_ENTRIES: '3' });
+  for (let i = 0; i < 3; i++) await saveReceipt(store, `key-${i}`, { ...context, namespaceId: `namespace-${i}` });
+  const before = await storedRows(f.db, 'ai_answer_receipts');
+  await assert.rejects(saveReceipt(store, 'overflow'), { code: 'IDEMPOTENCY_CAPACITY_EXCEEDED', status: 429 });
+  assert.deepEqual(await storedRows(f.db, 'ai_answer_receipts'), before);
+  assert.equal((await storedRows(f.db, 'ai_answer_receipt_reservations')).length, 0);
+  await saveReceipt(store, 'overflow', { ...context, tenantId: 'other-tenant' });
+  await store.run({ ...context, namespaceId: 'namespace-0' }, route, 'key-0', 'hash', async attempt => {
+    assert.equal(attempt.receipt.state, 'committed');
+  });
+  assert.equal((await storedRows(f.db, 'ai_answer_receipts')).filter(row => row.tenant_id === context.tenantId).length, 3);
+});
+
+test('#249 tenant byte admission counts answer and revisions and rejects oversized or aggregate overflow', async t => {
+  const f = await fixture(t), answer = { question: 'sales' };
+  const rowBytes = Buffer.byteLength(JSON.stringify(answer)) + Buffer.byteLength(JSON.stringify(revisions));
+  const store = f.nextStore({ OPENSIGHT_AI_RECEIPT_PER_TENANT_MAX_BYTES: String(rowBytes * 2) });
+  await assert.rejects(saveReceipt(store, 'oversized', context, 'é'.repeat(rowBytes)), { code: 'IDEMPOTENCY_CAPACITY_EXCEEDED', status: 429 });
+  assert.equal((await storedRows(f.db, 'ai_answer_receipts')).length, 0);
+  await saveReceipt(store, 'one', context, answer);
+  await saveReceipt(store, 'two', context, answer);
+  const before = await storedRows(f.db, 'ai_answer_receipts');
+  await assert.rejects(saveReceipt(store, 'three', context, answer), { code: 'IDEMPOTENCY_CAPACITY_EXCEEDED', status: 429 });
+  assert.deepEqual(await storedRows(f.db, 'ai_answer_receipts'), before);
+  await saveReceipt(store, 'three', { ...context, tenantId: 'other-tenant' }, answer);
+  f.advance(receiptTtl);
+  await saveReceipt(store, 'new', context, answer);
+  const rows = await storedRows(f.db, 'ai_answer_receipts');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].idempotency_key, 'new');
+});
+
+test('#249 pending admission reclaims receipts expiring during generation but protects active replays', async t => {
+  const f = await fixture(t);
+  const rowBytes = Buffer.byteLength('{}') + Buffer.byteLength(JSON.stringify(revisions));
+  const store = f.nextStore({ OPENSIGHT_AI_RECEIPT_PER_TENANT_MAX_ENTRIES: '1', OPENSIGHT_AI_RECEIPT_PER_TENANT_MAX_BYTES: String(rowBytes) });
+  await saveReceipt(store, 'old');
+  f.advance(receiptTtl - 1);
+  await store.run(context, route, 'old', 'hash', async replay => {
+    assert.equal(replay.receipt.state, 'committed');
+    await store.run(context, route, 'new', 'hash', async next => {
+      f.advance(1);
+      await assert.rejects(next.pending({}, 1, true, revisions), { code: 'IDEMPOTENCY_CAPACITY_EXCEEDED', status: 429 });
+      assert.equal((await storedRows(f.db, 'ai_answer_receipts'))[0].idempotency_key, 'old');
+    });
+    await replay.committed();
+  });
+  await saveReceipt(store, 'new');
+  f.advance(receiptTtl - 1);
+  await store.run(context, route, 'after-generation', 'hash', async attempt => {
+    assert.equal((await storedRows(f.db, 'ai_answer_receipts')).length, 1);
+    f.advance(1);
+    await attempt.pending({}, 1, true, revisions);
+    await attempt.committed();
+  });
+  const rows = await storedRows(f.db, 'ai_answer_receipts');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].idempotency_key, 'after-generation');
+});
+
+test('#249 receipt admission limits require positive safe integers', async t => {
+  const f = await fixture(t);
+  for (const name of ['OPENSIGHT_AI_RECEIPT_PER_TENANT_MAX_ENTRIES', 'OPENSIGHT_AI_RECEIPT_PER_TENANT_MAX_BYTES']) {
+    for (const value of ['', '0', '-1', '1.5', '01', ' 1', '1 ', '1e3', 'Infinity', 'NaN', '9007199254740992']) {
+      assert.throws(() => f.nextStore({ [name]: value }), { message: `${name} must be a positive integer` });
+    }
+    assert.doesNotThrow(() => f.nextStore({ [name]: '1' }));
+    assert.doesNotThrow(() => f.nextStore({ [name]: '9007199254740991' }));
+  }
+  assert.doesNotThrow(() => new HostedAIReceipts(f.db));
+  assert.doesNotThrow(() => f.nextStore({}));
 });
