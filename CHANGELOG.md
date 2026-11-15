@@ -76,6 +76,13 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Forecast line and area charts now plan through the native/hosted query
+  planner: `ForecastConfigurations` and the line `Type` are validated against
+  the same contract as the web compiler (period bounds, prediction interval,
+  seasonality, boundaries) instead of failing with `UNSUPPORTED_FEATURE`, and
+  a forecast without a date dimension fails closed. Insight visuals remain
+  unsupported in the native planner (#257, forecast increment).
+
 - Trial expiry now serializes with paid-plan requests and their resolution, so
   a concurrent decline or withdrawal cannot leave a paused workspace without
   a retention deadline. Pending requests still hold retention, and grants
