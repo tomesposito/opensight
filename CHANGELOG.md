@@ -83,6 +83,16 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Forecast dates are now canonicalized consistently across charts and
+  Insight: both surfaces share one chronological preparation that sorts by
+  decoded period, rejects two rows that decode to the same period (raw
+  aliases such as `2025-01` and `2025-01-01T00:00:00Z` at MONTH grain are
+  one period, not two observations), and anchors future dates to the
+  latest period — including a trailing null group — instead of the last
+  row in display order. Reordered or descending chart rows no longer
+  change the fitted history, and fitted values map back to the displayed
+  rows they belong to (#259).
+
 - Forecast prediction intervals are now clipped consistently: the estimate
   and both interval endpoints share one clipping range built from the
   imported lower/upper boundaries and the automatic zero floor for
