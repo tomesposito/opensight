@@ -182,6 +182,37 @@ test('241 HTTP tenant-admin and narrow operator boundaries, including origin, sc
   for (const action of ['payment-link', 'webhook']) assert.equal((await request(action === 'webhook' ? '/api/host/billing/webhook' : `/api/host/tenants/tenant-one/billing/${action}`, { method: 'POST', headers: operator, body: { tier: 'light' } })).status, 404);
 });
 
+test('253 session billing projection includes the requester email only for administrators, pending and resolved', async t => {
+  const f = await fixture(t); await f.ask('regular');
+  const { request } = await serveH8(t, f, { clock: f.clock, mailTransport: f.mail });
+  const headers = { authorization: 'one' };
+  const setRole = role => f.db.transaction(c => c.query("UPDATE h1_resources SET body = ? WHERE tenant_id = 'tenant-one' AND resource_id = 'admin' AND kind = 'user'", [JSON.stringify({ name: 'Member', role })]));
+  const sessionPaidRequest = async () => (await request('/api/session', { headers })).body.billing.paidRequest;
+  // Unit level: the default projection is member-safe; the privileged one names the requester.
+  assert.equal('requestedByEmail' in (await f.billing.viewState('tenant-one')).paidRequest, false);
+  assert.equal((await f.billing.viewState('tenant-one', true)).paidRequest.requestedByEmail, 'one@example.test');
+  // Pending: the administrator sees the address; author and reader do not.
+  let pending = await sessionPaidRequest();
+  assert.equal(pending.state, 'pending'); assert.equal(pending.requestedByEmail, 'one@example.test');
+  for (const role of ['author', 'reader']) {
+    await setRole(role);
+    pending = await sessionPaidRequest();
+    assert.equal(pending.state, 'pending'); assert.equal(pending.tier, 'regular');
+    assert.equal('requestedByEmail' in pending, false, `${role} session must not carry the requester email`);
+  }
+  // Resolved: the granted request stays the latest request, under the same rule.
+  await setRole('administrator');
+  await f.billing.resolvePaidRequest('tenant-one', 'granted');
+  let resolved = await sessionPaidRequest();
+  assert.equal(resolved.state, 'granted'); assert.equal(resolved.requestedByEmail, 'one@example.test');
+  for (const role of ['author', 'reader']) {
+    await setRole(role);
+    resolved = await sessionPaidRequest();
+    assert.equal(resolved.state, 'granted');
+    assert.equal('requestedByEmail' in resolved, false, `${role} session must not carry the requester email`);
+  }
+});
+
 test('241 grant email uses exact copy, escaped workspace names and valid stable dedupe keys', async t => {
   const f = await fixture(t); await f.db.transaction(c => c.query('UPDATE h1_tenants SET display_name = ? WHERE tenant_id = ?', ['Reports <img src=x> & Ops', 'tenant-one']));
   const r = await f.ask(); await f.billing.resolvePaidRequest('tenant-one', 'granted');
