@@ -259,7 +259,11 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   async function rawResource(route: string, method = 'GET', body?: unknown, signal?: AbortSignal, key?: string, headers: Record<string, string> = {}, received?: (response: Response) => void): Promise<unknown> {
     const expected = generation;
     const response = await authenticatedFetch(`${base}${route}`, { method, ...(signal ? { signal } : {}), credentials: 'same-origin', headers: { ...headers, Accept: 'application/json', ...(key ? { 'Idempotency-Key': key } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: controlBody(body) }) });
-    const value: unknown = await response.json();
+    // Error responses are not always JSON: the edge and a starting workspace
+    // can answer with an empty body. Never let the parser's raw TypeError
+    // reach the UI; name the failure like the auth paths already do.
+    const value: unknown = await response.json().catch(() => undefined);
+    if (value === undefined) throw new ApiError('The server returned an unreadable response.', response.status, 'API_RESPONSE_INVALID');
     if (!response.ok) {
       const error = object(value, 'API error');
       throw new ApiError(`${typeof error.errorCode === 'string' ? `${error.errorCode}: ` : ''}${typeof error.Message === 'string' ? error.Message : 'Request failed'}`, response.status, typeof error.errorCode === 'string' ? error.errorCode : undefined);

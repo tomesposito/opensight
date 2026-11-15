@@ -32,6 +32,13 @@ test('session errors preserve structured reason and HTTP status without leaking 
   }
 });
 
+test('resource errors with empty or non-JSON bodies reject as ApiError, never a raw TypeError', async () => {
+  for (const reply of [new Response('', { status: 403 }), new Response('<h1>proxy failure</h1>', { status: 502 }), new Response('', { status: 200 })]) {
+    const client = createApiClient('/api', async () => reply);
+    await assert.rejects(client.listNotebooks(), error => error instanceof ApiError && error.status === reply.status && error.errorCode === 'API_RESPONSE_INVALID' && !/Failed to execute 'json'/.test(error.message));
+  }
+});
+
 test('session success keeps the existing request transport and rejects malformed identities', async () => {
   const controller = new AbortController();
   const session = { id: 'u', namespaceId: 'n', name: 'User', role: 'author' };

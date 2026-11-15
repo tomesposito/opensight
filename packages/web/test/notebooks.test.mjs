@@ -7,7 +7,7 @@ import { notebookVisual } from '../build/test/notebooks.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { AccessProvider } from '../build/test/access.js';
 import { parseRoute, routeHash, routeProblem } from '../build/test/app-navigation.js';
-import { createApiClient } from '../build/test/api-client.js';
+import { ApiError, createApiClient } from '../build/test/api-client.js';
 const data = { columns: [{ name: 'region', type: 'STRING' }, { name: 'amount', type: 'DECIMAL' }], rows: [{ region: 'East', amount: 2 }, { region: 'East', amount: 4 }, { region: 'West', amount: 8 }], rowCount: 3, truncated: false };
 for (const type of ['bar', 'line', 'pie', 'table']) for (const [aggregation, east] of [['SUM', 6], ['AVG', 3], ['COUNT', 2], ['MIN', 2], ['MAX', 4]]) test(`notebook visuals: ${type}/${aggregation} uses shared evaluation and compiler`, () => {
   const visual = notebookVisual({ id: 'v', kind: 'visual', sourceCellId: 's', chart: { type, dimension: 'region', measure: 'amount', aggregation } }, data);
@@ -60,6 +60,12 @@ test('notebook UI: static demo is honest and reader routes remain reachable', as
   const ui = await mount(t, {}); assert.match(JSON.stringify(ui.toJSON()), /static demo cannot store or run notebooks/); assert.equal(button(ui, 'Run all'), undefined);
   assert.equal(routeProblem({ mode: 'hosted', session: { role: 'reader' } }, 'notebooks'), undefined);
   const route = { page: 'notebooks', notebookId: 'notebook-1' }; assert.deepEqual(parseRoute(routeHash(route)), route);
+});
+test('notebook UI: a server without notebook routes shows the unavailable notice, not an error banner', async t => {
+  const ui = await mount(t, { client: client({ listNotebooks: async () => { throw new ApiError('RESOURCE_NOT_FOUND: Request failed', 404, 'RESOURCE_NOT_FOUND'); } }) });
+  const rendered = JSON.stringify(ui.toJSON());
+  assert.match(rendered, /Notebooks are not available on this server/);
+  assert.doesNotMatch(rendered, /notebook-error|Failed to execute/);
 });
 test('notebook API client preserves structured payloads and named errors', async () => {
   const calls = [], api = createApiClient('', async (url, init) => { calls.push([url, init]); return new Response(JSON.stringify({ errorCode: 'NOTEBOOK_DATASET_ACCESS_DENIED', Message: 'Denied' }), { status: 403 }); });
