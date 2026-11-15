@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { createApiClient } from './api-client.js';
+import { ApiError, type createApiClient } from './api-client.js';
 import { allowed, useAccess } from './access.js';
 import { VisualCard } from './VisualCard.js';
 import { notebookVisual, type Notebook, type NotebookCell, type NotebookData, type NotebookDataset, type NotebookParameter, type NotebookRun, type NotebookSummary } from './notebooks.js';
@@ -13,18 +13,19 @@ export function Notebooks({ client, id, onOpen }: { client?: NotebookClient; id?
   const [datasets, setDatasets] = useState<NotebookDataset[]>([]), [runs, setRuns] = useState<NotebookRun[]>([]), [run, setRun] = useState<NotebookRun>();
   const [canCreate, setCanCreate] = useState(false), [editing, setEditing] = useState(false), [dirty, setDirty] = useState(false);
   const [error, setError] = useState(''), [busy, setBusy] = useState(false), [loading, setLoading] = useState(!!client), [name, setName] = useState('');
+  const [unsupported, setUnsupported] = useState(false);
   const [bindings, setBindings] = useState<Record<string, string>>({});
   useEffect(() => {
     if (!client) return;
     const controller = new AbortController();
-    setLoading(true); setError(''); setNotebook(undefined); setRun(undefined); setDirty(false);
+    setLoading(true); setError(''); setUnsupported(false); setNotebook(undefined); setRun(undefined); setDirty(false);
     void (async () => {
       if (!id) { const list = await client.listNotebooks(controller.signal); if (!controller.signal.aborted) { setItems(list.notebooks); setCanCreate(list.canCreate); } }
       else {
         const [n, sources, history] = await Promise.all([client.getNotebook(id, controller.signal), client.notebookDatasets(controller.signal), client.notebookRuns(id, controller.signal)]);
         if (!controller.signal.aborted) { setNotebook(n); setDatasets(sources.datasets); setRuns(history.runs); setEditing(n.canEdit && !n.published); setBindings({}); }
       }
-    })().catch(e => { if (!controller.signal.aborted) setError(message(e)); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    })().catch(e => { if (!controller.signal.aborted) { if (e instanceof ApiError && (e.status === 404 || e.errorCode === 'RESOURCE_NOT_FOUND')) setUnsupported(true); else setError(message(e)); } }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [client, id]);
   const action = async (operation: () => Promise<void>) => {
@@ -66,8 +67,8 @@ export function Notebooks({ client, id, onOpen }: { client?: NotebookClient; id?
   return <section className="notebooks-page" aria-label="Notebooks">
     <header className="notebooks-heading"><div><h1>{notebook?.name ?? 'Notebooks'}</h1><p>SQL, notes and visuals · Published apps run with each viewer’s own data permissions.</p></div>{id && <button disabled={busy || dirty} onClick={() => onOpen()}>All notebooks</button>}</header>
     <p className="data-note">Available on the local and organization API. Hosted notebook support is not available in v1.</p>
-    {!client ? <div className="data-card notebooks-notice"><h2>Connect a local or organization API</h2><p>The static demo cannot store or run notebooks. No queries run here.</p></div> : <>
-      {error && <p className="notebook-error" role="alert">{error}{!notebook && <span> · This server may not support notebooks; hosted routes are not available in v1.</span>}</p>}
+    {!client ? <div className="data-card notebooks-notice"><h2>Connect a local or organization API</h2><p>The static demo cannot store or run notebooks. No queries run here.</p></div> : unsupported ? <div className="data-card notebooks-notice"><h2>Notebooks are not available on this server</h2><p>This server does not provide notebooks. Notebooks are available on the local and organization API; hosted notebook support is not available in v1.</p></div> : <>
+      {error && <p className="notebook-error" role="alert">{error}</p>}
       {loading && <p role="status">Loading notebooks…</p>}
       {!id && !loading && <div className="data-card notebook-list">
         {canCreate && <form onSubmit={event => { event.preventDefault(); void action(async () => { const n = await client.createNotebook({ name, published: false, parameters: [], cells: [] }); onOpen(n.id); }); }}><label>Notebook name<input required maxLength={120} value={name} onChange={event => setName(event.target.value)} /></label><button disabled={busy || !name.trim()} className="data-primary">Create notebook</button></form>}

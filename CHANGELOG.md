@@ -83,6 +83,12 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Notebooks on a server without notebook routes (including the hosted app
+  in v1) now show the designed "not available on this server" notice
+  instead of a red banner carrying a raw JSON parse error; the API client
+  names unreadable response bodies as API_RESPONSE_INVALID with the HTTP
+  status instead of leaking the parser's TypeError to any page (#281).
+
 - Forecast model selection now uses one common criterion for every
   candidate: corrected AIC when every candidate's correction is defined,
   plain AIC for all candidates when any correction is undefined (too few
