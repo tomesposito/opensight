@@ -9,7 +9,10 @@
  * Holt-Winters seasonal variants of each when a season length applies.
  * Smoothing parameters are fit by a bounded deterministic grid search
  * minimizing one-step-ahead squared error; the winner is picked by corrected
- * AIC. Same input, same output, every run.
+ * AIC. When any candidate's AICc correction is undefined (too few
+ * observations for its parameter count), every candidate is compared by
+ * plain AIC instead — one common criterion for the whole comparison, never
+ * a per-candidate mix (issue #260). Same input, same output, every run.
  *
  * Prediction intervals come from the one-step residual variance, widening
  * with horizon through the model's exact state-space psi-weights:
@@ -106,7 +109,12 @@ interface Fit {
   fitted: (number | null)[];
   sse: number; errors: number;
   level: number; trendValue: number; seasonalState: number[];
-  aicc: number;
+  aic: number;
+  /** Corrected AIC, or null when its correction is undefined
+   *  (errors - k - 1 <= 0): the candidate has too few observations for
+   *  its parameter count. Selection never compares a defined AICc
+   *  against an undefined one (issue #260). */
+  aicc: number | null;
 }
 
 const GRID = [0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95];
@@ -146,19 +154,31 @@ function runFilter(y: readonly number[], m: number, cand: Candidate, alpha: numb
     + (cand.trend === 'damped' ? 1 : 0) // phi
     + (seasonal ? 1 + m : 0); // gamma + seasonal initials
   const aic = errors * Math.log(Math.max(sse, 1e-12) / errors) + 2 * k;
-  // Corrected AIC; at the minimum-points floor the correction denominator
-  // vanishes, so fall back to plain AIC rather than ruling every model out.
-  const aicc = errors - k - 1 > 0 ? aic + (2 * k * (k + 1)) / (errors - k - 1) : aic;
-  return { candidate: cand, alpha, beta, phi, gamma, fitted, sse, errors, level, trendValue, seasonalState: s, aicc };
+  // Corrected AIC. When the correction denominator is not positive the
+  // correction is undefined — report null instead of silently falling
+  // back to plain AIC for this candidate alone: the old per-candidate
+  // fallback removed the complexity penalty precisely from the
+  // candidates with too few observations for their parameter count,
+  // letting them beat simpler candidates scored with the full
+  // correction (issue #260). computeForecast picks one common
+  // criterion for the whole comparison.
+  const aicc = errors - k - 1 > 0 ? aic + (2 * k * (k + 1)) / (errors - k - 1) : null;
+  return { candidate: cand, alpha, beta, phi, gamma, fitted, sse, errors, level, trendValue, seasonalState: s, aic, aicc };
 }
 
 function fitCandidate(y: readonly number[], m: number, cand: Candidate): Fit {
   const seasonal = cand.seasonal && m >= 2;
   const alphas = GRID, betas = cand.trend === 'none' ? [0] : GRID, phis = cand.trend === 'damped' ? PHIS : [1], gammas = seasonal ? GRID : [0];
   let best: Fit | undefined;
+  let bestScore = Infinity;
   for (const alpha of alphas) for (const beta of betas) for (const phi of phis) for (const gamma of gammas) {
     const fit = runFilter(y, m, cand, alpha, beta, phi, gamma);
-    if (!best || fit.aicc < best.aicc) best = fit;
+    // Every grid point of one candidate shares k and errors, so the AICc
+    // correction is a constant across the grid (or undefined for all of
+    // them): ranking by AICc when defined and by plain AIC otherwise
+    // picks the same grid point either way.
+    const score = fit.aicc ?? fit.aic;
+    if (score < bestScore) { best = fit; bestScore = score; }
   }
   return best!;
 }
@@ -192,10 +212,26 @@ export function computeForecast(values: readonly (number | null)[], grain: Forec
     { trend: 'none', seasonal: false }, { trend: 'add', seasonal: false }, { trend: 'damped', seasonal: false },
     ...(seasonalAdmissible ? [{ trend: 'none' as Trend, seasonal: true }, { trend: 'add' as Trend, seasonal: true }, { trend: 'damped' as Trend, seasonal: true }] : []),
   ];
+  // Candidate selection uses ONE criterion for every candidate in the
+  // comparison (issue #260): corrected AIC when every candidate's
+  // correction is defined, plain AIC for ALL candidates when any
+  // candidate's correction is undefined. The old code fell back per
+  // candidate, so a complex candidate with too few observations for
+  // its parameter count escaped the correction entirely and beat
+  // simpler candidates that paid it in full (five constant points
+  // picked Holt over level-only). Excluding the undefined candidates
+  // instead would make seasonal admission at two full cycles
+  // (docs/forecasting.md) unwinnable for every season length — a
+  // seasonal candidate's k includes its m seasonal initials, so its
+  // correction is undefined at exactly two cycles — so the consistent
+  // scoring is a common criterion, never a per-candidate mix.
+  const fits = candidates.map(cand => fitCandidate(y, m, cand));
+  const useAicc = fits.every(f => f.aicc !== null);
   let best: Fit | undefined;
-  for (const cand of candidates) {
-    const fit = fitCandidate(y, m, cand);
-    if (!best || fit.aicc < best.aicc) best = fit;
+  let bestScore = Infinity;
+  for (const fit of fits) {
+    const score = useAicc ? fit.aicc! : fit.aic;
+    if (score < bestScore) { best = fit; bestScore = score; }
   }
   const fit = best!;
   const seasonal = fit.candidate.seasonal && m >= 2;

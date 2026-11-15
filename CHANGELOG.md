@@ -83,6 +83,14 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Forecast model selection now uses one common criterion for every
+  candidate: corrected AIC when every candidate's correction is defined,
+  plain AIC for all candidates when any correction is undefined (too few
+  observations for that candidate's parameter count). The old per-candidate
+  fallback let a complex candidate escape the correction entirely and beat
+  simpler candidates that paid it in full — five constant points picked
+  Holt over level-only despite identical zero residual error (#260).
+
 - Forecast dates are now canonicalized consistently across charts and
   Insight: both surfaces share one chronological preparation that sorts by
   decoded period, rejects two rows that decode to the same period (raw
