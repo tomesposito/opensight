@@ -421,23 +421,32 @@ export class HostedBilling {
   }
   /** Lazy durable expiry uses the actual deadline, never the polling time. */
   async expireTrials(): Promise<void> {
-    const expired = await this.db.transaction(async c => {
-      // Any row still carrying a trial deadline is unconverted (conversion
-      // and manual grants clear it), so an expired deadline pauses access
-      // even when a trialing subscription recorded a paid tier (#243).
-      const rows = await c.query(`UPDATE h9_billing SET access_state = 'paused', pause_effective_at = trial_ends_at,
-        updated_at = ? WHERE trial_ends_at <= ? AND access_state <> 'paused' RETURNING *`, [this.nowIso(), this.nowIso()]);
-      for (const row of rows) {
+    const now = this.nowIso();
+    const candidates = await this.db.transaction(c => c.query(`SELECT tenant_id FROM h9_billing
+      WHERE trial_ends_at <= ? AND access_state <> 'paused'`, [now]));
+    for (const candidate of candidates) {
+      const tenantId = String(candidate.tenant_id);
+      const row = await this.db.transaction(async c => {
+        // Same tenant-first order as paid requests and Stripe mutations
+        // (#256). The scan is only a hint: recheck expiry under the lock so
+        // a concurrent grant or another expiry pass cannot be overwritten.
+        await this.lockTenant(c, tenantId);
+        // A deadline still present means the trial is unconverted, even if
+        // a trialing subscription recorded a paid tier (#243).
+        const row = (await c.query(`UPDATE h9_billing SET access_state = 'paused', pause_effective_at = trial_ends_at,
+          updated_at = ? WHERE tenant_id = ? AND trial_ends_at <= ? AND access_state <> 'paused' RETURNING *`, [now, tenantId, now]))[0];
+        if (!row) return undefined;
         const pending = (await c.query("SELECT id FROM h11_paid_requests WHERE tenant_id = ? AND state = 'pending'", [row.tenant_id!])).length > 0;
         const retentionDueAt = pending ? null : new Date(Date.parse(String(row.trial_ends_at)) + 30 * DAY_MS).toISOString();
-        await c.query('UPDATE h9_billing SET retention_due_at = ? WHERE tenant_id = ?', [retentionDueAt, String(row.tenant_id)]);
+        await c.query('UPDATE h9_billing SET retention_due_at = ? WHERE tenant_id = ?', [retentionDueAt, tenantId]);
         row.retention_due_at = retentionDueAt;
-        await appendOperatorAudit(c, { action: 'billing.access.paused', tenantId: String(row.tenant_id),
+        await appendOperatorAudit(c, { action: 'billing.access.paused', tenantId,
           detail: { reason: 'trial_expired', pauseEffectiveAt: row.trial_ends_at, retentionDueAt } }, Date.parse(String(row.trial_ends_at)));
-      }
-      return rows;
-    });
-    for (const row of expired) {
+        return row;
+      });
+      if (!row) continue;
+      // Each tenant commits before notification; notifyPause may read the
+      // database, and public methods/load can safely invoke expiry again.
       const record = asRecord(row)!; this.records.set(record.tenantId, record);
       await this.notifyPause(record.tenantId, record.pauseEffectiveAt!, 'trial_expired');
     }
@@ -488,10 +497,17 @@ export class HostedBilling {
       ...(includeRequesterEmail ? { requestedByEmail: request.requestedByEmail } : {}),
     } : null };
   }
-  private async lockPaidRequestTenant(c: SqlConnection, tenantId: string): Promise<BillingRecord> {
+  /** Expiry, paid requests and Stripe lock the tenant before billing/request rows.
+   * SQLite serializes write transactions without row-level FOR UPDATE. */
+  private async lockTenant(c: SqlConnection, tenantId: string): Promise<void> {
     if (this.db.dialect === 'postgres') await c.query('SELECT tenant_id FROM h1_tenants WHERE tenant_id = ? FOR UPDATE', [tenantId]);
+  }
+  private async lockPaidRequestTenant(c: SqlConnection, tenantId: string): Promise<BillingRecord> {
+    await this.lockTenant(c, tenantId);
     const tenant = (await c.query('SELECT state FROM h1_tenants WHERE tenant_id = ?', [tenantId]))[0];
     if (tenant?.state !== 'active') throw new MetadataError('TENANT_UNAVAILABLE', 403);
+    // Read current billing state inside the common lock: expiry cannot
+    // pause it between this read and a request/resolution retention write.
     const record = asRecord((await c.query('SELECT * FROM h9_billing WHERE tenant_id = ?', [tenantId]))[0]);
     if (!record) throw new MetadataError('BILLING_PAID_REQUEST_UNAVAILABLE', 409);
     return record;
@@ -602,7 +618,7 @@ export class HostedBilling {
     return this.createBillingObject(tenantId, tier as 'light' | 'regular' | 'heavy', 'payment_link');
   }
   private async lockBillingTenant(c: SqlConnection, tenantId: string, kind: BillingOperationKind): Promise<void> {
-    if (this.db.dialect === 'postgres') await c.query('SELECT tenant_id FROM h1_tenants WHERE tenant_id = ? FOR UPDATE', [tenantId]);
+    await this.lockTenant(c, tenantId);
     const tenant = (await c.query('SELECT state FROM h1_tenants WHERE tenant_id = ?', [tenantId]))[0];
     if (!tenant || (kind === 'checkout_session' ? tenant.state !== 'active' : tenant.state === 'deleted'))
       throw new MetadataError('TENANT_UNAVAILABLE', 403);
@@ -763,7 +779,7 @@ export class HostedBilling {
         const { tenantId } = resolved;
         // Lock the parent even before the first billing row exists. PostgreSQL
         // transactions otherwise race at READ COMMITTED; SQLite uses BEGIN IMMEDIATE.
-        if (this.db.dialect === 'postgres') await c.query('SELECT tenant_id FROM h1_tenants WHERE tenant_id = ? FOR UPDATE', [tenantId]);
+        await this.lockTenant(c, tenantId);
         const row = (await c.query('SELECT * FROM h9_billing WHERE tenant_id = ?', [tenantId]))[0];
         const existing = asRecord(row);
         const object = event.object;

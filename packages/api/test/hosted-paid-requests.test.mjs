@@ -99,20 +99,28 @@ test('254 suspended membership or identity blocks create, tier change and withdr
   assert.equal(pending.tier, 'regular'); assert.equal(pending.state, 'pending');
 });
 
-test('241 PostgreSQL mutation path locks the parent before request reads and writes', async t => {
+test('241/256 PostgreSQL requests, resolution and expiry lock the parent before billing/request reads and writes', async t => {
   const f = await fixture(t); let locks = 0;
   const db = { dialect: 'postgres', transaction: work => f.db.transaction(c => {
     let locked = false;
     return work({ query: (sql, args) => {
       if (sql === 'SELECT tenant_id FROM h1_tenants WHERE tenant_id = ? FOR UPDATE') { locked = true; locks++; return c.query(sql.replace(' FOR UPDATE', ''), args); }
-      if (sql.startsWith('SELECT * FROM h11_paid_requests WHERE tenant_id') || sql.startsWith('INSERT INTO h11_paid_requests') || sql.startsWith('UPDATE h11_paid_requests')) assert.equal(locked, true);
+      if (sql.startsWith('SELECT * FROM h11_paid_requests WHERE tenant_id') || sql.startsWith('SELECT id FROM h11_paid_requests')
+        || sql.startsWith('INSERT INTO h11_paid_requests') || sql.startsWith('UPDATE h11_paid_requests')
+        || sql.startsWith('SELECT * FROM h9_billing WHERE tenant_id') || sql.startsWith('UPDATE h9_billing')) assert.equal(locked, true);
       return c.query(sql, args);
     } });
   }) };
-  const billing = new HostedBilling(db, f.config, f.options);
+  const billing = new HostedBilling(db, f.config, { ...f.options, notifyTo: null });
   await f.ask('regular', billing); await f.ask('heavy', billing);
   await billing.resolvePaidRequest('tenant-one', 'withdrawn', 'one');
   assert.equal(locks, 3);
+  await f.ask('regular', billing); f.advance(16);
+  await billing.expireTrials(); assert.equal(locks, 5);
+  assert.equal((await f.billing.state('tenant-one')).retentionDueAt, null);
+  await billing.resolvePaidRequest('tenant-one', 'declined', undefined, undefined, undefined, 'regular');
+  assert.equal(locks, 6);
+  assert.equal((await f.billing.state('tenant-one')).retentionDueAt, new Date(f.clock() + 30 * DAY_MS).toISOString());
 });
 
 test('241 grant during trial applies immediately, discards clock, survives reload and is operator-audited', async t => {
