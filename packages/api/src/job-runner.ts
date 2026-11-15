@@ -1,6 +1,6 @@
 import { occurrenceTime, deliveryKey, deliveryRecipients, isRetryableDeliveryError, MAX_DELIVERY_ATTEMPTS } from './digest-delivery.js';
 import { checksum } from './metadata-operator.js';
-import { MetadataError } from './metadata-db.js';
+import { MetadataError, type SqlConnection } from './metadata-db.js';
 import { MailError, type MailMessage, type MailTransport } from './mail.js';
 import { nextRun } from './schedule.js';
 import { cancelJob, lockTenant, member, readJob, readOccurrence, scoped, scopeArgs, type Occurrence } from './job-schema.js';
@@ -123,6 +123,12 @@ export class JobRunner {
       });
     }
   }
+  private async settleOccurrence(c: SqlConnection, run: Pick<Occurrence, 'tenantId' | 'namespaceId' | 'id'>): Promise<void> {
+    const rows = await c.query(`SELECT state FROM h7_deliveries WHERE ${scoped} AND occurrence_id = ?`, [...scopeArgs(run), run.id]);
+    if (rows.some(r => ['pending', 'sending'].includes(String(r.state)))) return;
+    const failed = rows.some(r => r.state !== 'sent'), dead = rows.some(r => r.state === 'dead');
+    await c.query(`UPDATE h7_occurrences SET state = ?, error_code = ?, finished_at = ? WHERE ${scoped} AND occurrence_id = ? AND state = 'delivering'`, [failed ? 'failed' : 'succeeded', failed ? dead ? 'JOB_DELIVERY_EXHAUSTED' : 'JOB_DELIVERY_CANCELLED' : null, this.store.clock().toISOString(), ...scopeArgs(run), run.id]);
+  }
   async deliver(): Promise<void> {
     const deliveries = await this.store.db.transaction(c => c.query("SELECT * FROM h7_deliveries WHERE state = 'pending' AND next_attempt <= ? ORDER BY next_attempt, delivery_id", [this.store.clock().toISOString()]));
     for (const d of deliveries) {
@@ -194,12 +200,7 @@ export class JobRunner {
         await this.store.db.transaction(c => c.query(`UPDATE h7_deliveries SET state = ?, error_code = ?, next_attempt = ?, message = CASE WHEN ? = 1 THEN message ELSE NULL END WHERE ${scoped} AND delivery_id = ? AND state IN ('pending','sending')`,
           [state, code, new Date(this.store.clock().getTime() + delay).toISOString(), state === 'pending' ? 1 : 0, ...scopeArgs(run), id]));
       }
-      await this.store.db.transaction(async c => {
-        const rows = await c.query(`SELECT state FROM h7_deliveries WHERE ${scoped} AND occurrence_id = ?`, [...scopeArgs(run), run.id]);
-        if (rows.some(r => ['pending', 'sending'].includes(String(r.state)))) return;
-        const failed = rows.some(r => r.state !== 'sent'), dead = rows.some(r => r.state === 'dead');
-        await c.query(`UPDATE h7_occurrences SET state = ?, error_code = ?, finished_at = ? WHERE ${scoped} AND occurrence_id = ? AND state = 'delivering'`, [failed ? 'failed' : 'succeeded', failed ? dead ? 'JOB_DELIVERY_EXHAUSTED' : 'JOB_DELIVERY_CANCELLED' : null, this.store.clock().toISOString(), ...scopeArgs(run), run.id]);
-      });
+      await this.store.db.transaction(c => this.settleOccurrence(c, run));
     }
   }
 }
