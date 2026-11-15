@@ -57,6 +57,45 @@ test('lower clamp: non-negative series never projects a negative interval edge',
   assert.equal(bounded.future[2].upper, 240);
 });
 
+test('boundary clipping keeps intervals ordered when a boundary is disjoint from the raw interval', () => {
+  const flat = [10, 10, 10, 10, 10, 10];
+  // Lower boundary above the whole raw interval: estimate and both endpoints move up together.
+  const raised = computeForecast(flat, 'DAY', { ...cfg, lowerBoundary: 20 });
+  assert.ok(raised.future.every(p => p.value === 20 && p.lower === 20 && p.upper === 20));
+  // Upper boundary below the whole raw interval: the mirror image.
+  const lowered = computeForecast(flat, 'DAY', { ...cfg, upperBoundary: 5 });
+  assert.ok(lowered.future.every(p => p.value === 5 && p.lower === 5 && p.upper === 5));
+  // A boundary inside the interval clips only the side it names, preserving the rest.
+  const inside = computeForecast(trendSeries, 'MONTH', { ...cfg, lowerBoundary: 225 });
+  assert.equal(inside.future[0].lower, 225);
+  assert.ok(inside.future[0].upper > 225, 'upper endpoint survives a lower-only boundary');
+});
+
+test('every future point is ordered across boundary and zero-floor combinations', () => {
+  const histories = [
+    [10, 10, 10, 10, 10, 10], // constant
+    [20, 16, 12, 8, 4, 0], // descending to zero: raw forecast goes negative
+    [5, 3, 4, 2, 3, 1, 2, 0], // noisy descending non-negative
+    trendSeries,
+    [-5, -10, -3, -8, -12, -6], // negative history: no automatic zero floor
+  ];
+  const configs = [{}, { lowerBoundary: 20 }, { upperBoundary: 5 }, { lowerBoundary: 20, upperBoundary: 26 },
+    { lowerBoundary: -100 }, { upperBoundary: -1 }, { lowerBoundary: 0, upperBoundary: 0 }];
+  for (const history of histories) for (const patch of configs) {
+    const r = computeForecast(history, 'DAY', { ...cfg, seasonality: 'none', ...patch });
+    for (const p of r.future) {
+      assert.ok(p.lower <= p.value && p.value <= p.upper, `ordered ${JSON.stringify(p)} for ${JSON.stringify(patch)}`);
+      if (patch.lowerBoundary !== undefined) assert.ok(p.lower >= patch.lowerBoundary || p.lower === patch.upperBoundary);
+      if (patch.upperBoundary !== undefined) assert.ok(p.upper <= patch.upperBoundary);
+      if (history.every(v => v >= 0) && patch.upperBoundary === undefined) assert.ok(p.lower >= 0, 'zero floor holds');
+    }
+  }
+  // Descending non-negative history: the zero floor applies to the whole
+  // point, so no endpoint or estimate projects below zero.
+  const descending = computeForecast([20, 16, 12, 8, 4, 0], 'DAY', { ...cfg, seasonality: 'none' });
+  assert.ok(descending.future.every(p => p.lower >= 0 && p.value >= 0 && p.upper >= 0));
+});
+
 test('flat series forecasts flat with a zero-width interval', () => {
   const r = computeForecast([10, 10, 10, 10, 10, 10], 'DAY', cfg);
   assert.ok(r.future.every(p => p.value === 10 && p.lower === 10 && p.upper === 10));

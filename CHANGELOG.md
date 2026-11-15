@@ -83,6 +83,13 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Forecast prediction intervals are now clipped consistently: the estimate
+  and both interval endpoints share one clipping range built from the
+  imported lower/upper boundaries and the automatic zero floor for
+  non-negative histories, so a boundary outside the raw interval can no
+  longer leave a reversed range — charts no longer receive negative band
+  widths and Insight no longer displays intervals backwards (#258).
+
 - Forecast line and area charts now plan through the native/hosted query
   planner: `ForecastConfigurations` and the line `Type` are validated against
   the same contract as the web compiler (period bounds, prediction interval,

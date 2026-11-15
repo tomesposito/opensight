@@ -106,6 +106,14 @@ test('forecast honors intervals, custom seasonality, boundaries, nulls and bound
   assert.deepEqual(bounded.paragraphs[0].parts.filter(p => p.value !== undefined).map(p => p.value), [expected.value, expected.lower, expected.upper]);
 });
 
+test('forecast narrative never displays a reversed range under a disjoint boundary', () => {
+  const flatRows = series.map(() => ({ category: '2024-01', values: [10] })).map((r, i) => ({ ...r, category: `2024-0${i + 1}` }));
+  const result = narrative(flatRows, { lowerBoundary: 20 });
+  const values = result.paragraphs[0].parts.filter(p => p.value !== undefined).map(p => p.value);
+  assert.deepEqual(values, [20, 20, 20]);
+  assert.match(result.text, /prediction interval 20\.00–20\.00\./);
+});
+
 test('forecast unavailable cases contain no invented computed values', () => {
   for (const [rows, properties, reason] of [
     [seriesRows.slice(0, 3), {}, /at least 4 usable data points/],
