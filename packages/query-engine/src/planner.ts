@@ -8,7 +8,7 @@ import { validateParameters, type ParameterValue } from './parameters.js';
 import { ExpressionBinder, expressionSql } from './expressions.js';
 import { bindMetadata } from './metadata.js';
 import { matchingAggregate, validateAggregates } from './live-performance.js';
-import type { Aggregation, Dimension, Measure, PlanOptions, PlanRequest, QueryPlan, RowFilter, RowExpression } from './types.js';
+import type { Aggregation, BoundColumn, Dimension, Measure, PlanOptions, PlanRequest, QueryPlan, RowFilter, RowExpression } from './types.js';
 import { array, emptyArray, equals, fail, keys, object, quoteIdentifier, string, unique, variant } from './validation.js';
 import type { ObjectValue } from './validation.js';
 
@@ -198,12 +198,168 @@ function forecastConfigurationCount(raw: unknown, path: string): number {
   return entries.length;
 }
 
+/** One Insight computation field binding, reduced to its bound column and grain. */
+interface InsightBoundField { fieldId: string; columnName: string; scalarType: Dimension['scalarType']; grain?: string; path: string }
+
+function insightDimension(raw: unknown, path: string, binder: ExpressionBinder, expected: 'date' | 'category'): InsightBoundField {
+  const [kind, f] = variant(raw, path);
+  const fp = `${path}.${kind}`;
+  const wanted = expected === 'date' ? 'DateDimensionField' : 'CategoricalDimensionField';
+  if (kind !== wanted) fail('UNSUPPORTED_FEATURE', fp, `insight ${expected} binding must be a ${wanted}`);
+  keys(f, expected === 'date' ? ['FieldId', 'Column', 'DateGranularity'] : ['FieldId', 'Column'], fp);
+  const fieldId = string(f.FieldId, `${fp}.FieldId`);
+  const name = column(f.Column, `${fp}.Column`, binder);
+  const binding = binder.bind(name, fp);
+  if (binding.level === 'aggregate' || binding.level === 'table') fail('TYPE_MISMATCH', fp, 'an aggregate calculation cannot be a grouping dimension');
+  if (expected === 'date') {
+    const grain = f.DateGranularity === undefined ? 'DAY' : string(f.DateGranularity, `${fp}.DateGranularity`);
+    if (!['YEAR', 'QUARTER', 'MONTH', 'DAY'].includes(grain)) fail('UNSUPPORTED_FEATURE', `${fp}.DateGranularity`, 'unsupported date granularity');
+    if (binding.scalarType !== 'datetime') fail('TYPE_MISMATCH', fp, 'insight time binding requires a datetime column');
+    return { fieldId, columnName: name, scalarType: 'datetime', grain, path: fp };
+  }
+  if (binding.scalarType !== 'string') fail('TYPE_MISMATCH', fp, 'insight category binding requires a string column');
+  return { fieldId, columnName: name, scalarType: 'string', path: fp };
+}
+
+function insightMeasure(raw: unknown, path: string, binder: ExpressionBinder): InsightBoundField {
+  const [kind, f] = variant(raw, path);
+  const fp = `${path}.${kind}`;
+  if (kind !== 'NumericalMeasureField') fail('UNSUPPORTED_FEATURE', fp, 'insight value binding must be a NumericalMeasureField');
+  keys(f, ['FieldId', 'Column', 'AggregationFunction'], fp);
+  const fieldId = string(f.FieldId, `${fp}.FieldId`);
+  const name = column(f.Column, `${fp}.Column`, binder);
+  const aggregationObject = object(f.AggregationFunction, `${fp}.AggregationFunction`);
+  keys(aggregationObject, ['SimpleNumericalAggregation'], `${fp}.AggregationFunction`);
+  // The web narrative compiler (normalizeInsight) accepts only explicit SUM
+  // value bindings; the secured planning path holds the same line.
+  if (aggregationObject.SimpleNumericalAggregation !== 'SUM') fail('UNSUPPORTED_FEATURE', `${fp}.AggregationFunction`, 'insight computations require an explicit SUM value binding');
+  if (binder.bind(name, fp).scalarType !== 'number') fail('TYPE_MISMATCH', fp, 'insight value binding requires a numeric column');
+  return { fieldId, columnName: name, scalarType: 'number', path: fp };
+}
+
+/**
+ * Issue #257 (Insight half): derive an InsightVisual's dimensions and
+ * measures from its InsightConfiguration computations — the planner has no
+ * field wells for this kind, the computations own the fields (the web
+ * compiler's insightWells projection works the same way). Validation mirrors
+ * the bundle-parser insight validation plus the web compiler's binding rules:
+ * forecast properties share the chart forecast contract, movers bind
+ * category+time and cannot combine with other computations, forecast and
+ * period-to-date need a date dimension, and a uniqueValues-only insight
+ * carries a plan-only COUNT measure (the author-query treatment) that the
+ * narrative compiler discards. Everything unvalidated fails closed.
+ */
+function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly BoundColumn[]): { dimensions: Dimension[]; measures: Measure[] } {
+  const { path, body } = visual;
+  keys(body, ['VisualId', 'Title', 'Subtitle', 'InsightConfiguration', 'Actions', 'OpenSightPalette', 'OpenSightFormatting', 'OpenSightReferenceLines'], path);
+  emptyArray(body.Actions, `${path}.Actions`);
+  const cp = `${path}.InsightConfiguration`;
+  const config = object(body.InsightConfiguration, cp);
+  keys(config, ['Computations'], cp);
+  const entries = array(config.Computations, `${cp}.Computations`);
+  if (!entries.length || entries.length > 100) fail('INVALID_INPUT', `${cp}.Computations`, 'expected between 1 and 100 computations');
+  const fieldIds = new Set<string>();
+  const outputs = new Set<string>();
+  const outputName = (fieldId: string, grain: string | undefined, p: string) => {
+    unique(fieldIds, fieldId, `${p}.FieldId`);
+    const alias = grain ? grain.toLowerCase() : fieldId;
+    unique(outputs, alias, p);
+    return alias;
+  };
+  const dimensionsById = new Map<string, Dimension>();
+  const measuresById = new Map<string, Measure>();
+  const addDimension = (bound: InsightBoundField): Dimension => {
+    const existing = dimensionsById.get(bound.fieldId);
+    if (existing) {
+      if (existing.columnName !== bound.columnName || existing.granularity !== bound.grain) fail('UNRESOLVED_BINDING', bound.path, `field ${bound.fieldId} is bound inconsistently across computations`);
+      return existing;
+    }
+    const dimension: Dimension = { fieldId: bound.fieldId, outputName: outputName(bound.fieldId, bound.grain, bound.path), columnName: bound.columnName,
+      ...(bound.grain ? { granularity: bound.grain as NonNullable<Dimension['granularity']> } : {}), scalarType: bound.scalarType, path: bound.path };
+    dimensionsById.set(bound.fieldId, dimension);
+    return dimension;
+  };
+  const addMeasure = (bound: InsightBoundField): Measure => {
+    const existing = measuresById.get(bound.fieldId);
+    if (existing) {
+      if (existing.columnName !== bound.columnName) fail('UNRESOLVED_BINDING', bound.path, `field ${bound.fieldId} is bound inconsistently across computations`);
+      return existing;
+    }
+    const measure: Measure = { fieldId: bound.fieldId, outputName: outputName(bound.fieldId, undefined, bound.path), columnName: bound.columnName, aggregation: 'SUM', path: bound.path };
+    measuresById.set(bound.fieldId, measure);
+    return measure;
+  };
+  const computationIds = new Set<string>();
+  const categoryIds = new Set<string>();
+  const timeIds = new Set<string>();
+  const kinds: string[] = [];
+  for (const [i, value] of entries.entries()) {
+    const ep = `${cp}.Computations[${i}]`;
+    const [kind, c] = variant(value, ep);
+    const kp = `${ep}.${kind}`;
+    if (!['Forecast', 'PeriodToDate', 'UniqueValues', 'TopBottomMovers'].includes(kind)) {
+      fail('UNSUPPORTED_FEATURE', kp, /anomaly/i.test(kind) ? 'anomaly computations are not supported' : 'insight computation is not executable in the native planning slice');
+    }
+    kinds.push(kind);
+    const id = c.ComputationId;
+    if (typeof id !== 'string' || !/^[\w-]{1,512}$/.test(id)) fail('INVALID_INPUT', `${kp}.ComputationId`, 'a computationId is required');
+    unique(computationIds, id, `${kp}.ComputationId`);
+    if (c.Name !== undefined && typeof c.Name !== 'string') fail('INVALID_INPUT', `${kp}.Name`, 'name must be a string');
+    if (kind === 'Forecast' || kind === 'PeriodToDate') {
+      keys(c, kind === 'Forecast' ? ['ComputationId', 'Name', 'Time', 'Value', 'ForecastProperties'] : ['ComputationId', 'Name', 'Time', 'Value', 'PeriodTimeGranularity'], kp);
+      if (kind === 'Forecast' && c.ForecastProperties !== undefined) forecastConfigurationCount([c.ForecastProperties], `${kp}.ForecastProperties`);
+      if (kind === 'PeriodToDate' && c.PeriodTimeGranularity !== undefined && !['DAY', 'MONTH', 'QUARTER', 'YEAR'].includes(c.PeriodTimeGranularity as string)) fail('INVALID_INPUT', `${kp}.PeriodTimeGranularity`, 'periodTimeGranularity must be DAY, MONTH, QUARTER or YEAR');
+      if (c.Time !== undefined) timeIds.add(addDimension(insightDimension(c.Time, `${kp}.Time`, binder, 'date')).fieldId);
+      if (c.Value !== undefined) addMeasure(insightMeasure(c.Value, `${kp}.Value`, binder));
+    } else if (kind === 'UniqueValues') {
+      keys(c, ['ComputationId', 'Name', 'Category'], kp);
+      if (c.Category !== undefined) categoryIds.add(addDimension(insightDimension(c.Category, `${kp}.Category`, binder, 'category')).fieldId);
+    } else {
+      keys(c, ['ComputationId', 'Name', 'Time', 'Category', 'Value', 'MoverSize', 'SortOrder', 'Type'], kp);
+      if (c.Type !== 'TOP' && c.Type !== 'BOTTOM') fail('INVALID_INPUT', `${kp}.Type`, 'type must be TOP or BOTTOM');
+      if (c.MoverSize !== undefined && (typeof c.MoverSize !== 'number' || !Number.isInteger(c.MoverSize) || c.MoverSize < 1 || c.MoverSize > 20)) fail('INVALID_INPUT', `${kp}.MoverSize`, 'moverSize must be an integer between 1 and 20');
+      if (c.SortOrder !== undefined && c.SortOrder !== 'PERCENT_DIFFERENCE' && c.SortOrder !== 'ABSOLUTE_DIFFERENCE') fail('INVALID_INPUT', `${kp}.SortOrder`, 'sortOrder must be PERCENT_DIFFERENCE or ABSOLUTE_DIFFERENCE');
+      if (c.Category !== undefined) categoryIds.add(addDimension(insightDimension(c.Category, `${kp}.Category`, binder, 'category')).fieldId);
+      if (c.Time !== undefined) timeIds.add(addDimension(insightDimension(c.Time, `${kp}.Time`, binder, 'date')).fieldId);
+      if (c.Value !== undefined) addMeasure(insightMeasure(c.Value, `${kp}.Value`, binder));
+    }
+  }
+  const movers = kinds.filter(k => k === 'TopBottomMovers').length;
+  let dimensions: Dimension[];
+  if (movers) {
+    if (movers !== kinds.length) fail('UNSUPPORTED_FEATURE', cp, 'topBottomMovers computations cannot be combined with other computations');
+    if (categoryIds.size !== 1 || timeIds.size !== 1) fail('INVALID_INPUT', cp, 'movers computations require exactly one category field and one time field');
+    const category = dimensionsById.get([...categoryIds][0]!)!;
+    const time = dimensionsById.get([...timeIds][0]!)!;
+    if (category === time) fail('UNRESOLVED_BINDING', cp, 'movers category and time must bind distinct fields');
+    dimensions = [category, time];
+  } else {
+    if (dimensionsById.size !== 1) fail('INVALID_INPUT', cp, 'insight computations must derive exactly one dimension');
+    dimensions = [...dimensionsById.values()];
+    if ((kinds.includes('Forecast') || kinds.includes('PeriodToDate')) && dimensions[0]!.granularity === undefined) {
+      fail('UNSUPPORTED_FEATURE', cp, 'forecast and period-to-date computations require a date dimension');
+    }
+  }
+  const measures = [...measuresById.values()];
+  if (!measures.length) {
+    if (!kinds.every(k => k === 'UniqueValues')) fail('INVALID_INPUT', cp, 'at least one value binding is required unless every computation is uniqueValues');
+    // A uniqueValues-only insight binds no measure; carry a COUNT like the
+    // web author query does — the narrative compiler discards it. Binding it
+    // through the binder keeps a denied carrier column fail-closed (#180).
+    const carrierName = columns.find(c => c.scalarType === 'number')?.name ?? dimensions[0]!.columnName;
+    binder.bind(carrierName, cp);
+    measures.push({ fieldId: '__unique_count', outputName: outputName('__unique_count', undefined, cp), columnName: carrierName, aggregation: 'COUNT', path: cp });
+  }
+  return { dimensions, measures };
+}
+
 const wellKinds: Record<string, string> = {
   BarChartVisual: 'BarChartAggregatedFieldWells', LineChartVisual: 'LineChartAggregatedFieldWells',
   TableVisual: 'TableAggregatedFieldWells', PieChartVisual: 'PieChartAggregatedFieldWells', KPIVisual: '',
 };
-function fieldWells(visual: Visual, binder: ExpressionBinder): { dimensions: Dimension[]; measures: Measure[] } {
+function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly BoundColumn[]): { dimensions: Dimension[]; measures: Measure[] } {
   const { path, body, kind } = visual;
+  if (kind === 'InsightVisual') return insightFieldWells(visual, binder, columns);
   if (!Object.hasOwn(wellKinds, kind)) fail('UNSUPPORTED_FEATURE', path, 'unsupported visual kind');
   keys(body, ['VisualId', 'Title', 'Subtitle', 'ChartConfiguration', 'Actions', 'OpenSightPalette', 'OpenSightFormatting', 'OpenSightReferenceLines'], path);
   emptyArray(body.Actions, `${path}.Actions`);
@@ -382,7 +538,7 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
     // #180: denied and missing names must expose the same binding diagnostic.
     if (security?.deniedColumns.includes(name)) fail('UNRESOLVED_BINDING', path, `unknown column: ${name}`);
   });
-  const fields = fieldWells(visual, binder);
+  const fields = fieldWells(visual, binder, metadata.columns);
   const sheetIds = new Set(array(definition.Sheets, `${dp}.Sheets`).map((s, i) => string(object(s, `${dp}.Sheets[${i}]`).SheetId, `${dp}.Sheets[${i}].SheetId`)));
   const predicates = filters(definition.FilterGroups, visual, all, sheetIds, binder, parameters);
   for (const [i, raw] of array(r.parameterFilters ?? [], '$.parameterFilters').entries()) {
