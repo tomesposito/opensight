@@ -184,6 +184,116 @@ test('issue #257: forecast stays line-only and requires a date dimension', () =>
   assert.throws(() => planVisual(categorical), { code: 'UNSUPPORTED_FEATURE' });
 });
 
+const insightDateField = (fieldId = 'order_date', columnName = 'order_date', grain = 'MONTH') => ({ DateDimensionField: { FieldId: fieldId, Column: { DataSetIdentifier: 'sales_data', ColumnName: columnName }, ...(grain ? { DateGranularity: grain } : {}) } });
+const insightCatField = (fieldId = 'region', columnName = 'region') => ({ CategoricalDimensionField: { FieldId: fieldId, Column: { DataSetIdentifier: 'sales_data', ColumnName: columnName } } });
+const insightValueField = (fieldId = 'revenue', columnName = 'revenue', aggregation = 'SUM') => ({ NumericalMeasureField: { FieldId: fieldId, Column: { DataSetIdentifier: 'sales_data', ColumnName: columnName }, AggregationFunction: { SimpleNumericalAggregation: aggregation } } });
+function insightRequest(computations, visualId = 'insight-1') {
+  const r = request('revenue-trend');
+  r.analysis.Definition.Sheets[0].Visuals = [{ InsightVisual: { VisualId: visualId, InsightConfiguration: { Computations: computations } } }];
+  r.visualId = visualId;
+  return r;
+}
+
+test('issue #257: a forecast insight plans its bound time series', () => {
+  const baseline = planVisual(request('revenue-trend'));
+  const r = insightRequest([{ Forecast: { ComputationId: 'fc', Name: 'Projection', Time: insightDateField(), Value: insightValueField(), ForecastProperties: { PeriodsForward: 3, PredictionInterval: 90, Seasonality: 'CUSTOM', CustomSeasonalityValue: 12 } } }]);
+  const p = planVisual(r);
+  assert.equal(p.sql, baseline.sql);
+  assert.deepEqual(p.dimensions.map(d => d.outputName), ['month']);
+  assert.deepEqual(p.measures.map(m => m.outputName), ['revenue']);
+  // The hosted/prepared path accepts the same exported-style definition.
+  const columns = [{ name: 'order_date', type: 'DATETIME' }, { name: 'revenue', type: 'DECIMAL' }];
+  const preparedAnalysis = structuredClone(r.analysis);
+  preparedAnalysis.Definition.FilterGroups = [];
+  const prepared = planPreparedVisual(columns, preparedAnalysis, 'insight-1', r.localData.dataSetArn);
+  assert.deepEqual(prepared.dimensions.map(d => d.outputName), ['month']);
+  assert.deepEqual(prepared.measures.map(m => m.outputName), ['revenue']);
+});
+
+test('issue #257: a period-to-date insight plans its bound time series', () => {
+  const p = planVisual(insightRequest([{ PeriodToDate: { ComputationId: 'ptd', Time: insightDateField(), Value: insightValueField(), PeriodTimeGranularity: 'MONTH' } }]));
+  assert.deepEqual(p.dimensions.map(d => d.outputName), ['month']);
+  assert.deepEqual(p.measures.map(m => [m.outputName, m.aggregation]), [['revenue', 'SUM']]);
+});
+
+test('issue #257: a unique-values insight plans category-only with a COUNT carrier', () => {
+  const r = insightRequest([{ UniqueValues: { ComputationId: 'uv', Name: 'Regions', Category: insightCatField() } }]);
+  const p = planVisual(r);
+  assert.deepEqual(p.dimensions.map(d => d.outputName), ['region']);
+  assert.equal(p.measures.length, 1);
+  assert.equal(p.measures[0].fieldId, '__unique_count');
+  assert.equal(p.measures[0].aggregation, 'COUNT');
+  assert.equal(p.measures[0].columnName, 'order_id', 'carrier is the first numeric column');
+  assert.match(p.sql, /COUNT\("order_id"\) AS "__unique_count"/);
+  const columns = [{ name: 'region', type: 'STRING' }, { name: 'revenue', type: 'DECIMAL' }];
+  const preparedAnalysis = structuredClone(r.analysis);
+  preparedAnalysis.Definition.FilterGroups = [];
+  const prepared = planPreparedVisual(columns, preparedAnalysis, 'insight-1', r.localData.dataSetArn);
+  assert.deepEqual(prepared.dimensions.map(d => d.outputName), ['region']);
+  assert.equal(prepared.measures[0].columnName, 'revenue', 'carrier follows the prepared column order');
+});
+
+test('issue #257: a top/bottom movers insight plans category then time', () => {
+  const p = planVisual(insightRequest([{ TopBottomMovers: { ComputationId: 'mv', Type: 'TOP', MoverSize: 5, SortOrder: 'ABSOLUTE_DIFFERENCE', Category: insightCatField(), Time: insightDateField(), Value: insightValueField() } }]));
+  assert.deepEqual(p.dimensions.map(d => d.outputName), ['region', 'month']);
+  assert.deepEqual(p.measures.map(m => m.outputName), ['revenue']);
+});
+
+test('issue #257: computations sharing fields dedupe to one dimension and measure', () => {
+  const p = planVisual(insightRequest([
+    { Forecast: { ComputationId: 'fc', Time: insightDateField(), Value: insightValueField() } },
+    { PeriodToDate: { ComputationId: 'ptd', Time: insightDateField(), Value: insightValueField() } },
+  ]));
+  assert.equal(p.dimensions.length, 1);
+  assert.equal(p.measures.length, 1);
+});
+
+test('issue #257: malformed insight configurations fail closed', () => {
+  const cases = [
+    [[{ Forecast: { ComputationId: 'bad id', Time: insightDateField(), Value: insightValueField() } }], 'INVALID_INPUT'],
+    [[{ Forecast: { ComputationId: 'a', Time: insightDateField(), Value: insightValueField() } }, { PeriodToDate: { ComputationId: 'a', Time: insightDateField(), Value: insightValueField() } }], 'INVALID_INPUT'],
+    [[{ Forecast: { ComputationId: 'a', Time: insightDateField(), Value: insightValueField(), Future: true } }], 'UNSUPPORTED_FEATURE'],
+    [[{ Forecast: { ComputationId: 'a', Time: insightDateField(), Value: insightValueField(), ForecastProperties: { PeriodsForward: 101 } } }], 'INVALID_INPUT'],
+    [[{ Forecast: { ComputationId: 'a', Time: insightDateField(), Value: insightValueField(), ForecastProperties: { Seasonality: 'CUSTOM' } } }], 'INVALID_INPUT'],
+    [[{ Anomaly: { ComputationId: 'a' } }], 'UNSUPPORTED_FEATURE'],
+    [[{ TotalAggregation: { ComputationId: 'a', Value: insightValueField() } }], 'UNSUPPORTED_FEATURE'],
+    [[{ FutureComputation: { ComputationId: 'a' } }], 'UNSUPPORTED_FEATURE'],
+    [[{ TopBottomMovers: { ComputationId: 'a', Category: insightCatField(), Time: insightDateField(), Value: insightValueField() } }], 'INVALID_INPUT'],
+    [[{ TopBottomMovers: { ComputationId: 'a', Type: 'TOP', MoverSize: 21, Category: insightCatField(), Time: insightDateField(), Value: insightValueField() } }], 'INVALID_INPUT'],
+    [[{ TopBottomMovers: { ComputationId: 'a', Type: 'TOP', SortOrder: 'RANK', Category: insightCatField(), Time: insightDateField(), Value: insightValueField() } }], 'INVALID_INPUT'],
+    [[{ TopBottomMovers: { ComputationId: 'a', Type: 'BOTTOM', Category: insightCatField(), Time: insightDateField(), Value: insightValueField() } }, { UniqueValues: { ComputationId: 'u', Category: insightCatField() } }], 'UNSUPPORTED_FEATURE'],
+    [[{ Forecast: { ComputationId: 'a', Time: insightCatField(), Value: insightValueField() } }], 'UNSUPPORTED_FEATURE'],
+    [[{ Forecast: { ComputationId: 'a', Time: insightDateField(), Value: insightValueField('revenue', 'revenue', 'AVG') } }], 'UNSUPPORTED_FEATURE'],
+    [[{ PeriodToDate: { ComputationId: 'a', Time: insightDateField(), Value: insightValueField(), PeriodTimeGranularity: 'WEEK' } }], 'INVALID_INPUT'],
+    [[{ UniqueValues: { ComputationId: 'a', Category: insightCatField(), Value: insightValueField() } }], 'UNSUPPORTED_FEATURE'],
+    [[{ UniqueValues: { ComputationId: 'u', Category: insightCatField() } }, { Forecast: { ComputationId: 'f' } }], 'UNSUPPORTED_FEATURE'],
+    [[], 'INVALID_INPUT'],
+  ];
+  for (const [computations, code] of cases) {
+    assert.throws(() => planVisual(insightRequest(computations)), { code }, JSON.stringify(computations).slice(0, 120));
+  }
+  const bare = insightRequest([{ UniqueValues: { ComputationId: 'u', Category: insightCatField() } }]);
+  delete bare.analysis.Definition.Sheets[0].Visuals[0].InsightVisual.InsightConfiguration;
+  assert.throws(() => planVisual(bare), { code: 'INVALID_INPUT' });
+  const cross = insightRequest([{ UniqueValues: { ComputationId: 'u', Category: { CategoricalDimensionField: { FieldId: 'region', Column: { DataSetIdentifier: 'other', ColumnName: 'region' } } } } }]);
+  assert.throws(() => planVisual(cross), { code: 'UNRESOLVED_BINDING' });
+});
+
+test('issue #257: insight planning honors protected datasets and CLS denial', () => {
+  const securedInsight = () => {
+    const r = insightRequest([{ Forecast: { ComputationId: 'fc', Time: insightDateField(), Value: insightValueField() } }]);
+    r.analysis.Definition.FilterGroups = [];
+    r.localData.security.dataset = 'protected';
+    r.security = { namespaceId: 'default', userId: 'alice', users: ['alice', 'bob'].map(id => ({ id, namespaceId: 'default' })), groups: [{ id: 'east-team', namespaceId: 'default', userIds: ['alice'] }],
+      policy: { namespaceId: 'default', dataSetArn: r.localData.dataSetArn, rowLevel: true, rowRules: [{ id: 'east', predicate: { column: 'region', operator: 'eq', value: 'East' }, principals: [{ type: 'group', id: 'east-team' }] }] } };
+    return r;
+  };
+  assert.equal(planVisual(securedInsight()).securityProtected, true);
+  const denied = securedInsight();
+  denied.security.policy.protectedColumns = ['revenue'];
+  assert.throws(() => planVisual(denied), { code: 'UNRESOLVED_BINDING' });
+});
+
 test('physical names cannot shadow internal CTEs', () => {
   const r = request();
   r.dataSet.DataSet.PhysicalTableMap.sales.RelationalTable.Name = '__opensight_filtered';

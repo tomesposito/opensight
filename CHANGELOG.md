@@ -19,6 +19,13 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Native and hosted query planning now supports Insight visuals: the secured
+  planner derives dimensions and measures from the insight computations
+  (forecast, period-to-date, unique values with a plan-only COUNT carrier,
+  and top/bottom movers over category and time), validated with the same
+  rules as bundle import, so insight dashboards plan through the hosted path
+  with row- and column-level security intact (#257).
+
 - Live-result cache statistics now report active fills and tracked fill keys,
   with executor regressions that detect retained fill state after distinct local
   and PostgreSQL failures (#246).
