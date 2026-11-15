@@ -22,6 +22,15 @@
  * Prediction intervals come from the one-step residual variance, widening
  * with horizon through the model's exact state-space psi-weights:
  * Var(h) = sigma^2 * sum_{j=0}^{h-1} psi_j^2.
+ *
+ * Synchronous work is bounded (issue #262): the seasonal state rotates
+ * through a ring buffer (O(1) per observation, not an O(m) array copy),
+ * fitted values are retained only for each candidate's winning grid
+ * point, and the grid search carries a step budget — when the full grid
+ * would exceed MAX_FORECAST_GRID_STEPS filter steps for a series, a
+ * deterministic coarser grid tier is used instead, down to a
+ * single-point tier, so total work stays linear-bounded per series no
+ * matter how long the history is.
  */
 
 export type ForecastGrain = 'YEAR' | 'QUARTER' | 'MONTH' | 'DAY';
@@ -135,12 +144,59 @@ interface Fit {
 const GRID = [0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95];
 const PHIS = [0.85, 0.9, 0.95, 0.98];
 
-/** Run one candidate's filter over the points. m is the season length (0 when not seasonal). */
-function runFilter(y: readonly number[], m: number, cand: Candidate, alpha: number, beta: number, phi: number, gamma: number): Fit {
+/**
+ * Workload budget for one series' grid search, in filter steps
+ * (fits × observations), issue #262. The representative maximum the
+ * old code handled worst — season length 366 at its minimum 732
+ * observations on the full grid (5,610 fits) — is 4,106,920 steps and
+ * stays on the full grid; longer series step down to coarser tiers.
+ */
+export const MAX_FORECAST_GRID_STEPS = 5_000_000;
+
+interface GridTier { values: number[]; phis: number[] }
+const GRID_TIERS: GridTier[] = [
+  { values: GRID, phis: PHIS },
+  { values: [0.05, 0.25, 0.45, 0.65, 0.85, 0.95], phis: [0.85, 0.95, 0.98] },
+  { values: [0.15, 0.45, 0.75, 0.95], phis: [0.9, 0.98] },
+  { values: [0.25, 0.65, 0.95], phis: [0.95] },
+  { values: [0.35], phis: [0.95] },
+];
+
+/** Number of filter runs a tier performs across all candidates. */
+function tierFitCount(tier: GridTier, seasonalAdmissible: boolean): number {
+  const a = tier.values.length, p = tier.phis.length;
+  let fits = a + a * a + a * a * p; // level-only, Holt, damped
+  if (seasonalAdmissible) fits += a * a + a * a * a + a * a * a * p; // seasonal variants (gamma grid)
+  return fits;
+}
+
+/** First (finest) tier whose estimated steps fit the budget; the
+ *  single-point tier is the floor and is used even past the budget —
+ *  six fits is the least work any ETS search can do. */
+function pickGridTier(n: number, seasonalAdmissible: boolean): GridTier {
+  for (const tier of GRID_TIERS) {
+    if (tierFitCount(tier, seasonalAdmissible) * n <= MAX_FORECAST_GRID_STEPS) return tier;
+  }
+  return GRID_TIERS[GRID_TIERS.length - 1]!;
+}
+
+/**
+ * Run one candidate's filter over the points. m is the season length
+ * (0 when not seasonal). The seasonal state lives in a ring buffer:
+ * `s[sHead]` is always the current period's seasonal index (the old
+ * array's s[0]), and updating it advances the head instead of copying
+ * the array — O(1) per observation where the old rotation was O(m)
+ * (issue #262). The returned seasonalState is materialized once, in
+ * the rotated order the old array held. When `collectFitted` is false
+ * the fitted array is not retained (grid search discards all but the
+ * winner's fitted values anyway).
+ */
+function runFilter(y: readonly number[], m: number, cand: Candidate, alpha: number, beta: number, phi: number, gamma: number, collectFitted = true): Fit {
   const n = y.length;
   const seasonal = cand.seasonal && m >= 2;
   let level: number, trendValue = 0;
   let s: number[] = [];
+  let sHead = 0;
   if (seasonal) {
     level = y.slice(0, m).reduce((a, b) => a + b, 0) / m;
     if (cand.trend !== 'none') trendValue = n >= 2 * m ? (y.slice(m, 2 * m).reduce((a, b) => a + b, 0) / m - level) / m : 0;
@@ -150,7 +206,7 @@ function runFilter(y: readonly number[], m: number, cand: Candidate, alpha: numb
     if (cand.trend !== 'none') trendValue = y[1]! - y[0]!;
   }
   const c = cand.trend === 'none' ? 0 : cand.trend === 'add' ? 1 : phi;
-  const fitted: (number | null)[] = new Array<number | null>(n).fill(null);
+  const fitted: (number | null)[] = collectFitted ? new Array<number | null>(n).fill(null) : [];
   // SSE accumulated in scaled form (issue #261): each squared residual is
   // divided by the running maximum |residual| before summing, so the sum
   // itself can never overflow for finite residuals; the true SSE is
@@ -162,10 +218,10 @@ function runFilter(y: readonly number[], m: number, cand: Candidate, alpha: numb
   const start = seasonal ? m : 1;
   for (let t = 0; t < n; t++) {
     if (t < start) continue;
-    const yhat = level + c * trendValue + (seasonal ? s[0]! : 0);
+    const yhat = level + c * trendValue + (seasonal ? s[sHead]! : 0);
     const e = y[t]! - yhat;
     if (!Number.isFinite(yhat) || !Number.isFinite(e)) { valid = false; break; }
-    fitted[t] = yhat;
+    if (collectFitted) fitted[t] = yhat;
     const ae = Math.abs(e);
     if (ae > errScale) {
       if (errScale > 0) sseScaled *= (errScale / ae) ** 2;
@@ -175,10 +231,23 @@ function runFilter(y: readonly number[], m: number, cand: Candidate, alpha: numb
     errors++;
     const nextLevel = level + c * trendValue + alpha * e;
     const nextTrend = cand.trend === 'none' ? 0 : cand.trend === 'add' ? trendValue + beta * e : phi * trendValue + beta * e;
-    if (seasonal) s = [...s.slice(1), s[0]! + gamma * e];
+    // Ring-buffer rotation: overwrite the consumed seasonal slot with
+    // its updated value and advance the head. Only the updated slot can
+    // change finiteness (the rest were verified finite when written and
+    // initially), so checking it replaces the old whole-array scan.
+    let seasonalFinite = true;
+    if (seasonal) {
+      const updated = s[sHead]! + gamma * e;
+      s[sHead] = updated;
+      sHead = (sHead + 1) % m;
+      seasonalFinite = Number.isFinite(updated);
+    }
     level = nextLevel; trendValue = nextTrend;
-    if (!Number.isFinite(level) || !Number.isFinite(trendValue) || s.some(v => !Number.isFinite(v))) { valid = false; break; }
+    if (!Number.isFinite(level) || !Number.isFinite(trendValue) || !seasonalFinite) { valid = false; break; }
   }
+  // Materialize the seasonal state in rotated order (s0 = next period),
+  // exactly the array the old slice-and-spread rotation maintained.
+  const seasonalState = seasonal ? Array.from({ length: m }, (_, i) => s[(sHead + i) % m]!) : s;
   const sse = sseScaled * errScale * errScale;
   const logSse = sseScaled > 0 && errScale > 0 ? Math.log(sseScaled) + 2 * Math.log(errScale) : -Infinity;
   const k = 1 + 1 // alpha + initial level
@@ -202,7 +271,7 @@ function runFilter(y: readonly number[], m: number, cand: Candidate, alpha: numb
   // correction (issue #260). computeForecast picks one common
   // criterion for the whole comparison.
   const aicc = errors - k - 1 > 0 ? aic + (2 * k * (k + 1)) / (errors - k - 1) : null;
-  return { candidate: cand, alpha, beta, phi, gamma, fitted, sse, logSse, valid, errors, level, trendValue, seasonalState: s, aic, aicc };
+  return { candidate: cand, alpha, beta, phi, gamma, fitted, sse, logSse, valid, errors, level, trendValue, seasonalState, aic, aicc };
 }
 
 /** A fit is usable only when every number it carries is finite (issue #261):
@@ -217,13 +286,15 @@ function fitUsable(fit: Fit): boolean {
     && fit.fitted.every(v => v === null || Number.isFinite(v));
 }
 
-function fitCandidate(y: readonly number[], m: number, cand: Candidate): Fit | null {
+function fitCandidate(y: readonly number[], m: number, cand: Candidate, tier: GridTier): Fit | null {
   const seasonal = cand.seasonal && m >= 2;
-  const alphas = GRID, betas = cand.trend === 'none' ? [0] : GRID, phis = cand.trend === 'damped' ? PHIS : [1], gammas = seasonal ? GRID : [0];
+  const alphas = tier.values, betas = cand.trend === 'none' ? [0] : tier.values, phis = cand.trend === 'damped' ? tier.phis : [1], gammas = seasonal ? tier.values : [0];
   let best: Fit | undefined;
   let bestScore = Infinity;
   for (const alpha of alphas) for (const beta of betas) for (const phi of phis) for (const gamma of gammas) {
-    const fit = runFilter(y, m, cand, alpha, beta, phi, gamma);
+    // Grid fits run without retaining fitted values (issue #262):
+    // scoring never reads them, and only the winner's are returned.
+    const fit = runFilter(y, m, cand, alpha, beta, phi, gamma, false);
     if (!fitUsable(fit)) continue;
     // Every grid point of one candidate shares k and errors, so the AICc
     // correction is a constant across the grid (or undefined for all of
@@ -232,7 +303,11 @@ function fitCandidate(y: readonly number[], m: number, cand: Candidate): Fit | n
     const score = fit.aicc ?? fit.aic;
     if (score < bestScore) { best = fit; bestScore = score; }
   }
-  return best ?? null;
+  if (!best) return null;
+  // Re-run the winning grid point once, retaining its fitted values.
+  // The filter is deterministic, so this reproduces the winning fit.
+  const winner = runFilter(y, m, cand, best.alpha, best.beta, best.phi, best.gamma, true);
+  return fitUsable(winner) ? winner : null;
 }
 
 export interface ForecastFuturePoint { value: number; lower: number; upper: number }
@@ -277,7 +352,8 @@ export function computeForecast(values: readonly (number | null)[], grain: Forec
   // seasonal candidate's k includes its m seasonal initials, so its
   // correction is undefined at exactly two cycles — so the consistent
   // scoring is a common criterion, never a per-candidate mix.
-  const fits = candidates.map(cand => fitCandidate(y, m, cand)).filter((f): f is Fit => f !== null);
+  const tier = pickGridTier(n, seasonalAdmissible);
+  const fits = candidates.map(cand => fitCandidate(y, m, cand, tier)).filter((f): f is Fit => f !== null);
   // No finite model remains (issue #261): the surfaces' unavailable result,
   // never a forecast carrying infinite or NaN numbers.
   if (fits.length === 0) return null;
