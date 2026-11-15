@@ -95,6 +95,32 @@ for (const attempts of [MAX_DELIVERY_ATTEMPTS, MAX_DELIVERY_ATTEMPTS + 1]) {
   });
 }
 
+test('#251 SMTP acceptance with a lost receipt on the cap attempt dead-letters and stops resending', async t => {
+  const mail = new StubMailTransport(), send = t.mock.method(mail, 'send');
+  const f = await jobFixture(t, executor(), mail); await f.put('job');
+  const c = await f.login(), run = await f.store.enqueue(c, 'job'); await f.runner.execute(run);
+  await f.db.transaction(c => c.query("UPDATE h7_deliveries SET attempts = ? WHERE job_id = 'job'", [MAX_DELIVERY_ATTEMPTS - 1]));
+  // Fail the durable receipt update after SMTP accepts, not the transport.
+  const transaction = f.db.transaction.bind(f.db); let receiptFailures = 0;
+  t.mock.method(f.db, 'transaction', work => transaction(c => work({ query(sql, args) {
+    if (sql.includes("SET state = 'sent'")) { receiptFailures++; throw Object.assign(new Error('receipt unavailable'), { code: 'METADATA_UNAVAILABLE' }); }
+    return c.query(sql, args);
+  } })));
+  await f.runner.deliver();
+  const delivery = (await f.store.deliveries(c, 'job'))[0], settled = (await f.store.history(c, 'job'))[0];
+  assert.equal(delivery.state, 'dead'); assert.equal(delivery.attempts, MAX_DELIVERY_ATTEMPTS);
+  assert.equal(delivery.error_code, 'METADATA_UNAVAILABLE'); assert.equal(delivery.sent_at, null);
+  assert.equal((await f.db.transaction(c => c.query('SELECT message FROM h7_deliveries')))[0].message, null);
+  assert.equal(settled.state, 'failed'); assert.equal(settled.errorCode, 'JOB_DELIVERY_EXHAUSTED');
+  assert.equal(settled.finishedAt, f.store.clock().toISOString());
+  const restarted = new JobRunner(f.store, f.executor, mail);
+  for (let i = 0; i < 3; i++) { await restarted.recover(); await restarted.deliver(); await restarted.tick(); }
+  assert.equal(send.mock.callCount(), 1); assert.equal(mail.messages.length, 1); assert.equal(receiptFailures, 1);
+  assert.equal(mail.messages[0].dedupeKey, delivery.delivery_id);
+  assert.deepEqual(await f.store.deliveries(c, 'job'), [delivery]);
+  assert.deepEqual(await f.store.history(c, 'job'), [settled]);
+});
+
 test('H7 operator retry restarts a dead delivery in place and the occurrence can still succeed', async t => {
   const mail = failingMail(), f = await jobFixture(t, executor(), mail); await f.put('job');
   const c = await f.login(), run = await f.store.enqueue(c, 'job');

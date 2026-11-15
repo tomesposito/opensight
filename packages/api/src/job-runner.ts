@@ -138,7 +138,7 @@ export class JobRunner {
       const scope = { tenantId: String(d.tenant_id), namespaceId: String(d.namespace_id) }, id = String(d.delivery_id);
       const row = (await this.store.db.transaction(c => c.query(`SELECT * FROM h7_occurrences WHERE ${scoped} AND occurrence_id = ?`, [...scopeArgs(scope), d.occurrence_id!])))[0]!;
       const run = readOccurrence(row);
-      let accepted = false;
+      let accepted = false, attempt = Number(d.attempts) + 1;
       try {
         const verify = async () => {
           await this.checkAccess?.(run.tenantId);
@@ -157,6 +157,7 @@ export class JobRunner {
           return c.query(`UPDATE h7_deliveries SET state = 'sending', attempts = attempts + 1 WHERE ${scoped} AND delivery_id = ? AND state = 'pending' AND attempts < ? RETURNING delivery_id, attempts`, [...scopeArgs(run), id, MAX_DELIVERY_ATTEMPTS]);
         });
         if (!claimed.length) continue;
+        attempt = Number(claimed[0]!.attempts);
         const owner = await this.store.context(run, run.ownerId);
         await this.checkAccess?.(run.tenantId);
         if (run.spec.kind === 'digest' && run.spec.destination === 'shared') {
@@ -197,16 +198,19 @@ export class JobRunner {
         accepted = true;
         await this.store.db.transaction(c => c.query(`UPDATE h7_deliveries SET state = 'sent', sent_at = ?, error_code = NULL, message = NULL WHERE ${scoped} AND delivery_id = ?`, [this.store.clock().toISOString(), ...scopeArgs(run), id]));
       } catch (error) {
-        // A receipt-store failure after acceptance must leave the durable claim
-        // recoverable. Do not turn an ambiguous external effect into a failure.
-        if (accepted) throw error;
-        const code = errorCode(error), retry = retryable(code);
-        // d.attempts counts attempts before the claim that ran this one.
-        const exhausted = retry && Number(d.attempts) + 1 >= MAX_DELIVERY_ATTEMPTS;
+        // Below the cap, leave an accepted send's lost receipt recoverable.
+        // At the cap, end the ambiguous sequence without another send (#251).
+        if (accepted && attempt < MAX_DELIVERY_ATTEMPTS) throw error;
+        const code = errorCode(error), retry = accepted || retryable(code);
+        const exhausted = retry && attempt >= MAX_DELIVERY_ATTEMPTS;
         const state = !retry ? 'cancelled' : exhausted ? 'dead' : 'pending';
         const delay = Math.min(3600000, 1000 * 2 ** Math.min(12, Number(d.attempts)));
-        await this.store.db.transaction(c => c.query(`UPDATE h7_deliveries SET state = ?, error_code = ?, next_attempt = ?, message = CASE WHEN ? = 1 THEN message ELSE NULL END WHERE ${scoped} AND delivery_id = ? AND state IN ('pending','sending')`,
-          [state, code, new Date(this.store.clock().getTime() + delay).toISOString(), state === 'pending' ? 1 : 0, ...scopeArgs(run), id]));
+        await this.store.db.transaction(async c => {
+          await c.query(`UPDATE h7_deliveries SET state = ?, error_code = ?, next_attempt = ?, message = CASE WHEN ? = 1 THEN message ELSE NULL END WHERE ${scoped} AND delivery_id = ? AND state IN ('pending','sending')`,
+            [state, code, new Date(this.store.clock().getTime() + delay).toISOString(), state === 'pending' ? 1 : 0, ...scopeArgs(run), id]);
+          await this.settleOccurrence(c, run);
+        });
+        continue;
       }
       await this.store.db.transaction(c => this.settleOccurrence(c, run));
     }
