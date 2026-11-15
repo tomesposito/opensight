@@ -83,6 +83,12 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Forecasts over very large finite values (residuals near 1e200) no longer
+  produce infinite prediction endpoints: the fit scoring and interval width
+  are computed in a numerically stable scaled/log form, nonfinite fits are
+  rejected, and when no finite model remains the chart and Insight surfaces
+  show their unavailable state instead of invalid numbers (#261).
+
 - Notebooks on a server without notebook routes (including the hosted app
   in v1) now show the designed "not available on this server" notice
   instead of a red banner carrying a raw JSON parse error; the API client
