@@ -76,6 +76,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Session billing state no longer discloses the paid-plan requester's email
+  address to non-administrator workspace members: `requestedByEmail` is
+  included only in administrator and operator billing views, for pending and
+  resolved requests alike (#253).
+
 - Operator retries of dead-lettered job deliveries are now cumulatively
   bounded: a delivery's total attempts and retry sequences are counted
   durably and never reset, and after 2 retries or 30 total attempts a

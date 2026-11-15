@@ -17,9 +17,11 @@ a partial unique index enforce one pending request per tenant on both database
 dialects. Tier changes preserve its ID, original date and requester.
 
 Session billing state contains `billingMode` and `paidRequest` (tier, state,
-createdAt, and requestedByEmail). The requesting address is included so the
-waiting screen names the correct recipient even when another administrator
-views it. Operator billing detail additionally supplies the durable request ID.
+createdAt, and — for administrators only — requestedByEmail). The requesting
+address is included in administrator and operator views so the waiting screen
+names the correct recipient even when another administrator views it; member
+sessions (readers, authors) receive the projection without it (#253). Operator
+billing detail additionally supplies the durable request ID.
 No client infers mode from checkout errors or configuration.
 
 A pending request holds paused retention indefinitely. Expiry still pauses
