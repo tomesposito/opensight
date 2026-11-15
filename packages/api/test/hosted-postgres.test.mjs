@@ -14,6 +14,33 @@ import { hostedConfig } from '../dist/hosted-config.js';
 import { environment, decode32 } from './hosted-helpers.mjs';
 import { totp } from '../dist/auth-crypto.js';
 import { HostedEmbedding, initializeEmbedding, embeddingPolicy, defaultEmbedConfig } from '../dist/embedding-config.js';
+import { HostedBilling, initializeBilling, DAY_MS } from '../dist/hosted-billing.js';
+import { paidResolutionRace } from './hosted-billing-race-helpers.mjs';
+
+test('256 live Postgres: trial expiry and paid-request resolution serialize in both orders',
+  { skip: process.env.DATABASE_URL ? false : 'DATABASE_URL is not set', timeout: 30000 }, async t => {
+    const schema = `billing_race_${randomUUID().replaceAll('-', '')}`;
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 4, options: `-c search_path=${schema} -c statement_timeout=5000` });
+    t.after(async () => { await pool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); await pool.end(); });
+    await pool.query(`CREATE SCHEMA ${schema}`);
+    const db = new PostgresMetadataDatabase(pool);
+    await initializeMetadata(db, 'postgres'); await db.transaction(c => initializeAudit(c)); await initializeBilling(db);
+    const quota = { apiCalls: 30000, storageBytes: 10000000000, computeAttempts: 1500 };
+    const config = { trialEntitlement: quota, tierEntitlements: { regular: quota } };
+    for (const order of ['resolution-first', 'expiry-first']) for (const resolution of ['declined', 'withdrawn', 'granted']) {
+      await t.test(`${order}: ${resolution}`, async () => {
+        const tenantId = `${order}-${resolution}`; let now = Date.UTC(2026, 10, 1);
+        const clock = () => now, options = { clock };
+        await db.transaction(c => c.query("INSERT INTO h1_tenants (tenant_id, state, version) VALUES (?, 'active', 1)", [tenantId]));
+        await new HostedBilling(db, config, options).startTrial(tenantId);
+        await db.transaction(c => c.query(`INSERT INTO h11_paid_requests
+          (id, tenant_id, tier, requested_by_subject, requested_by_email, state, created_at)
+          VALUES (?, ?, 'regular', 'admin', 'admin@example.test', 'pending', ?)`, [randomUUID(), tenantId, new Date(now).toISOString()]));
+        now += 13 * DAY_MS;
+        await paidResolutionRace({ db, tenantId, config, options, clock, advance: days => { now += days * DAY_MS; } }, resolution, order, false);
+      });
+    }
+  });
 
 test('H2 live Postgres: private credentials, concurrent onboarding/MFA/switch, cross-pool revocation and tenant RLS', { skip: process.env.DATABASE_URL ? false : 'DATABASE_URL is not set' }, async t => {
   const schema = `h2_test_${randomUUID().replaceAll('-', '')}`, role = `${schema}_tenant`;

@@ -36,6 +36,17 @@ clocks, restores access, and marks `entitlement_source = manual`. It creates no
 payment or subscription. Existing manually granted tenants keep their plan
 when Stripe is later configured. Subscription linking remains out of scope.
 
+Trial expiry, request creation/tier changes, and request resolution share the
+same PostgreSQL lock order: lock the `h1_tenants` row before reading or changing
+that tenant's billing/request state (#256). Expiry scans candidate tenant IDs,
+then rechecks the deadline and access state under the tenant lock in a separate
+transaction per tenant. Resolution reads current billing state under that same
+lock; a paused workspace ends with either a pending request or a retention
+deadline. A grant that wins the lock clears the deadline before expiry can
+pause it. SQLite keeps its serialized write transactions without `FOR UPDATE`.
+Pause audits commit with the billing change; notification happens after commit,
+so lazy expiry from public methods or `load()` does not nest locking transactions.
+
 `GET /api/host/signups` includes the pending paid-request queue, oldest first,
 its count, and billing mode. Pending requests never enter its retention-due
 list. Closed/deleting tenants are excluded. Tenant detail and the queue resolve
