@@ -33,10 +33,8 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
     // Shared chronological preparation with the chart forecast surfaces
     // (issue #259): sort by decoded period, reject decoded duplicates.
     const prepared = prepareChronological(rows, row => groupedPeriodDate(row.category, input.category!.dateGranularity!));
-    if (!prepared.ok) {
-      if (prepared.reason === 'invalid') insightFail('INSIGHT_TIME_REQUIRED', 'invalid date/time category for the bound grain');
-      insightFail(duplicateCode, 'duplicate date/time periods');
-    }
+    if (!prepared.ok && prepared.reason === 'invalid') return insightFail('INSIGHT_TIME_REQUIRED', 'invalid date/time category for the bound grain');
+    if (!prepared.ok) return insightFail(duplicateCode, 'duplicate date/time periods');
     return prepared.entries.map(({ item, date }) => ({ row: item, date }));
   };
   const sum = (index: number, groups = rows): number | null => {
