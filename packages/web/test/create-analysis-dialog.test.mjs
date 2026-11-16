@@ -41,11 +41,11 @@ test('dialog has named columns, disabled Topics explanation, pagination and empt
   assert.ok(prevented); assert.deepEqual(ui.actions, ['close', 'close', 'close']);
 });
 
-for (const [connectorId, name] of [['postgresql', 'PostgreSQL'], ['mysql', 'MySQL'], ['mariadb', 'MariaDB']]) test(`${name} datasets have their real labels and bind the exact schema`, async t => {
+for (const [connectorId, name] of [['postgresql', 'PostgreSQL'], ['mysql', 'MySQL'], ['mariadb', 'MariaDB'], ['redshift-manual', 'Redshift (manual)']]) test(`${name} datasets have their real labels and bind the exact schema`, async t => {
   const sources = [source('upload'), source('database', { connectorId, execution: { mode: 'DIRECT_QUERY' } }), { ...source('raw'), ref: 'raw' }];
   const ui = await mount(t, { client: { listPrepSources: async () => sources } });
   assert.equal(ui.radios().length, 2); assert.match(ui.text(), /BLAZE/); assert.match(ui.text(), /Direct query/);
-  assert.match(ui.text(), new RegExp(name)); assert.doesNotMatch(ui.text(), /Dataset raw/);
+  assert.ok(ui.text().includes(name)); assert.doesNotMatch(ui.text(), /Dataset raw/);
   assert.equal(ui.button('Select').props.disabled, true);
   await act(() => ui.radios()[1].props.onChange()); await ui.submit();
   assert.deepEqual(ui.selected, [{ id: 'database', name: 'Dataset database', columns: sources[1].columns }]);

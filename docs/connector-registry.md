@@ -17,16 +17,18 @@ returns availability; it never performs I/O or claims a successful connection.
 | Module / connectors | Dialect | Connection semantics |
 | --- | --- | --- |
 | File (CSV, TSV, JSON, XLS, XLSX) | DuckDB | Local or authenticated staging; static demo requires an API |
-| MySQL | MySQL | Library executor only; product API connection not yet implemented |
+| MySQL | MySQL | Operator-provisioned hosted sources and library executor; see [MySQL](connector-mysql.md) |
 | PostgreSQL | PostgreSQL | Operator-provisioned hosted sources; no local self-serve setup |
-| MariaDB | MySQL | SQL mapping only; connection not yet implemented |
+| MariaDB | MySQL | Operator-provisioned hosted sources and library executor; see [MariaDB](connector-mysql.md) |
+| Redshift (manual) | Redshift | Operator-provisioned hosted sources and library executor; loopback verified, live verification pending; see [Redshift](connector-redshift.md) |
 | SQL Server, Presto, Trino, Spark, Snowflake, Teradata | None | Not yet implemented |
 | Salesforce, GitHub, Twitter, Jira, ServiceNow | None | Needs a hosted connector implementation |
-| S3 Analytics, S3, Athena, RDS auto-discovery, Aurora, Redshift auto-discovery, Redshift manual, IoT Analytics | None | Needs a hosted connector implementation; no AWS calls |
+| S3 Analytics, S3, Athena, RDS auto-discovery, Aurora, Redshift auto-discovery, IoT Analytics | None | Needs a hosted connector implementation; no AWS calls |
 
 There are 23 gallery entries: separate Redshift discovery/manual entries plus
-Aurora and Trino. Redshift is not assumed to be the PostgreSQL dialect; its
-semantics need their own tests before execution. SaaS/AWS entries share a schema
+Aurora and Trino. Manual Redshift has a dedicated dialect with explicit SQL and
+wire tests; those tests do not establish live-cluster equivalence. Redshift
+auto-discovery remains unimplemented. SaaS/AWS entries share a schema
 family intentionally, pending hosted implementations. CLF is deferred beyond the
 Phase A CSV/TSV/JSON/Excel scope. Per-connector tests cover validation, state and
 explicit dialect availability; unsupported SQL never falls back to another engine.

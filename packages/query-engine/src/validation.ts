@@ -56,6 +56,7 @@ export function unique(names: Set<string>, name: string, path: string): void {
   names.add(folded);
 }
 export function quoteIdentifier(value: string, dialect?: import('./types.js').SqlDialect): string {
+  if (dialect === 'redshift' && (!value.length || value.includes('\0') || new TextEncoder().encode(value).length > 127)) fail('UNSUPPORTED_FEATURE', '$.redshift.identifier', 'Redshift identifiers require 1–127 UTF-8 bytes without NUL');
   if (dialect === 'mysql') return '`' + value.replaceAll('`', '``') + '`';
   return `"${value.replaceAll('"', '""')}"`;
 }

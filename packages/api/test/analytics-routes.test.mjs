@@ -86,7 +86,7 @@ test('committed uploads and prep saves emit fixed properties; rejected mutations
   const rows = await store.read(f.metadata, await f.login());
   assert.deepEqual(rows.map(r => [r.name, r.props]), [['dataset_uploaded', { sourceType: 'file', rowCountBucket: '1-99' }], ['dataset_prep_saved', {}]]);
 });
-for (const connectorId of ['postgresql', 'mysql', 'mariadb']) test(`Issue #270: a committed ${connectorId} source emits its connector type; rejected registration emits nothing`, async t => {
+for (const connectorId of ['postgresql', 'mysql', 'mariadb', 'redshift-manual']) test(`Issue #270: a committed ${connectorId} source emits its connector type; rejected registration emits nothing`, async t => {
   const { sourceFixture, registration } = await import('./source-helpers.mjs');
   const { HostedData } = await import('../dist/hosted-data.js');
   const f = await sourceFixture(t, { endpoints: [{ id: 'reference', host: 'localhost', port: 3306, database: 'opensight', tls: false, connectorId }] }); await initializeAnalytics(f.db);

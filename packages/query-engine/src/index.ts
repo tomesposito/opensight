@@ -51,3 +51,8 @@ export { relativeDifference, formatNumber, shiftDate, resultDate, groupedPeriodD
 export * from './governed-metrics.js';
 
 export { executeNotebookSql, NotebookSqlError, NOTEBOOK_EXECUTION_MS, NOTEBOOK_RESULT_BYTES } from './notebook-sql.js';
+
+export { executeRedshift } from './redshift-executor.js';
+export type { RedshiftExecuteOptions } from './redshift-executor.js';
+export { redshiftType } from './redshift-sql.js';
+export { streamSourceRedshift } from './source-redshift.js';

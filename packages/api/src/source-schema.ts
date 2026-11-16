@@ -2,8 +2,8 @@ import { prepColumns, validatePolicy, type BoundColumn, type DatasetPolicy, type
 import { MetadataError } from './metadata-db.js';
 import { object, identifier, type ResourceKey } from './metadata-resources.js';
 
-export type QueryConnectorId = 'postgresql' | 'mysql' | 'mariadb';
-export function isQueryConnectorId(value: unknown): value is QueryConnectorId { return value === 'postgresql' || value === 'mysql' || value === 'mariadb'; }
+export type QueryConnectorId = 'postgresql' | 'mysql' | 'mariadb' | 'redshift-manual';
+export function isQueryConnectorId(value: unknown): value is QueryConnectorId { return value === 'postgresql' || value === 'mysql' || value === 'mariadb' || value === 'redshift-manual'; }
 export type SourcePolicy = Omit<DatasetPolicy, 'namespaceId' | 'dataSetArn'>;
 export interface SourceBinding {
   version: 3 | 4; connectorId: 'file' | QueryConnectorId; state: 'active' | 'retired' | 'expired';

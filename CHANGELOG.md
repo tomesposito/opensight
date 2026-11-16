@@ -21,6 +21,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Manual Redshift sources now support registered-table discovery, dataset preparation and direct/BLAZE visual queries with tenant/RLS/CLS enforcement, credential rotation and a dedicated SQL layer over the existing pg driver (issue #271). Loopback coverage verifies wire flow and generated SQL; live-cluster verification remains pending.
+
 - MySQL and MariaDB hosted sources now support registered-table discovery, dataset preparation, direct/BLAZE visual queries, tenant/RLS/CLS enforcement and credential rotation, with matching-source selection in the app (issue #270).
 
 - Native and hosted query planning now supports Insight visuals: the secured

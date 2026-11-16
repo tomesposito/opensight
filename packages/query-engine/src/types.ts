@@ -2,7 +2,7 @@ import type { ParameterBindings, ParameterDeclaration, ParameterValue } from './
 export type ScalarType = 'number' | 'string' | 'datetime' | 'boolean' | 'unknown';
 export type ColumnType = 'INTEGER' | 'DECIMAL' | 'STRING' | 'DATETIME';
 export type Aggregation = 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX' | 'DISTINCT_COUNT';
-export type SqlDialect = 'duckdb' | 'postgres' | 'mysql';
+export type SqlDialect = 'duckdb' | 'postgres' | 'mysql' | 'redshift';
 export interface PlanOptions {
   readonly dialect?: SqlDialect;
   /** Trusted caller-owned configuration; do not accept assertions from an imported asset. */
@@ -102,6 +102,8 @@ export interface QueryPlan {
   readonly tableName: string;
   /** Postgres resolves the declared schema; DuckDB materializes a local table. */
   readonly tableSchema?: string;
+  /** Declared database, compared with the trusted Redshift connection before I/O. */
+  readonly tableDatabase?: string;
   readonly sourceColumns: readonly BoundColumn[];
   readonly localData: LocalDataBinding;
   readonly calculations: readonly Calculation[];

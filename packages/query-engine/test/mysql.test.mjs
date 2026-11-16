@@ -16,7 +16,7 @@ for (const connector of connectors) test(`${connector.name}: query dialect eithe
   if (!connector.dialect) { assert.throws(() => connectorDialect(connector.id), { code: 'CONNECTOR_NOT_IMPLEMENTED' }); return; }
   const plan = planVisual(request('revenue-trend'), { dialect: connectorDialect(connector.id) });
   assert.equal(plan.dialect, connector.dialect);
-  assert.match(plan.sql, connector.dialect === 'mysql' ? /DATE_FORMAT\(`order_date`, '%Y-%m'\)/ : connector.dialect === 'postgres' ? /to_char\(date_trunc/ : /strftime\(date_trunc/);
+  assert.match(plan.sql, connector.dialect === 'mysql' ? /DATE_FORMAT\(`order_date`, '%Y-%m'\)/ : ['postgres', 'redshift'].includes(connector.dialect) ? /to_char\(date_trunc/i : /strftime\(date_trunc/);
   assert.deepEqual(plan.parameters, ['East']);
 });
 test('MySQL escapes identifiers and never puts filter contents into SQL', () => {

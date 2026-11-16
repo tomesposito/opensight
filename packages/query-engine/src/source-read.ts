@@ -1,3 +1,4 @@
+import { redshiftTimestamp } from './redshift-sql.js';
 import type { PrepColumn } from '@opensight/bundle-parser/prep';
 import { prepColumns, type PrepSource } from './prep.js';
 import { resolveSecurity, rowSecuritySql, validateRowRule, type SecurityContext, type RowPredicate } from './security.js';
@@ -17,7 +18,7 @@ function bound(columns: readonly PrepColumn[]): BoundColumn[] {
     scalarType: c.type === 'BOOLEAN' ? 'boolean' : c.type === 'STRING' ? 'string' : c.type === 'DATETIME' ? 'datetime' : 'number', nullable: true }));
 }
 /** A single projection/predicate compiler for SQL, uploaded rows and server caches. */
-export function planSourceRead(read: SourceRead, limits: PrepReadLimits, dialect: 'postgres' | 'duckdb' | 'mysql', options: { mysqlVariant?: MySqlVariant } = {}) {
+export function planSourceRead(read: SourceRead, limits: PrepReadLimits, dialect: 'postgres' | 'duckdb' | 'mysql' | 'redshift', options: { mysqlVariant?: MySqlVariant } = {}) {
   const columns = prepColumns(read.source.columns, '$.columns'), physical = bound(columns);
   const resolved = resolveSecurity(read.security, physical, read.security.policy.dataSetArn);
   if (!read.columns.length || new Set(read.columns).size !== read.columns.length) fail('INVALID_INPUT', '$.columns', 'Expected unique requested columns');
@@ -34,7 +35,7 @@ export function planSourceRead(read: SourceRead, limits: PrepReadLimits, dialect
   if (resolved.rowPredicate) predicates.push(rowSecuritySql(resolved.rowPredicate, physical, bind, dialect, options.mysqlVariant));
   const quote = (name: string) => q(name, dialect);
   const projection = selected.map(c => {
-    const value = c.type !== 'DATETIME' ? quote(c.name) : dialect === 'mysql' ? mysqlTimestamp(quote(c.name)) : dialect === 'postgres' ? `TO_CHAR(${quote(c.name)}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` : `STRFTIME(${quote(c.name)}, '%Y-%m-%dT%H:%M:%S.%gZ')`;
+    const value = c.type !== 'DATETIME' ? quote(c.name) : dialect === 'redshift' ? redshiftTimestamp(quote(c.name)) : dialect === 'mysql' ? mysqlTimestamp(quote(c.name)) : dialect === 'postgres' ? `TO_CHAR(${quote(c.name)}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` : `STRFTIME(${quote(c.name)}, '%Y-%m-%dT%H:%M:%S.%gZ')`;
     return `${value} AS ${quote(c.name)}`;
   });
   const relation = (read.source.schema ? `${quote(read.source.schema)}.` : '') + quote(read.source.table);
