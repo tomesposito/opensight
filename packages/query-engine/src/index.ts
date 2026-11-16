@@ -55,3 +55,4 @@ export { executeNotebookSql, NotebookSqlError, NOTEBOOK_EXECUTION_MS, NOTEBOOK_R
 export { executeRedshift } from './redshift-executor.js';
 export type { RedshiftExecuteOptions } from './redshift-executor.js';
 export { redshiftType } from './redshift-sql.js';
+export { streamSourceRedshift } from './source-redshift.js';
