@@ -58,8 +58,38 @@ no Athena SDK execution commands or credential-provider code.
 | 3 | `5c0abce9` | SDK dependency, executor, source metadata and dispatch |
 | 4 | `f6e3fce2` | Fake SDK lifecycle, limits, result and security regression coverage |
 | 5 | `9216b783` | Connector documentation, registry table and changelog |
-| 6 | This checkpoint | Demo rebuild and screenshot/reference comparison |
+| 6 | `6a09766c` | Demo rebuild and screenshot/reference comparison |
+| 7 | This checkpoint | Independent full root test run and exact counts |
 
 ## Full-suite verification
 
-The final root `npm test` result will be recorded in the item 7 checkpoint.
+Root `npm test` completed successfully (exit **0**): **5,558 passed / 0 failed /
+37 skipped**, **5,595 tests total**, including 32 Python SDK tests. There were no
+cancelled tests or todos. All 37 skips are pre-existing live-PostgreSQL checks:
+36 require `DATABASE_URL`, and one requires live TLS PostgreSQL configuration.
+Every new Athena test ran without a skip.
+
+The run used `TZ=UTC`, `TMPDIR=/tmp` and installed headless Chromium through
+`OPENSIGHT_CHROMIUM`, with loopback access for the existing local server tests.
+No AWS calls or live-account verification were performed. Full output, exit
+status and parsed counts are retained in `.opensight/issue-272-verification/`
+as `root-npm-test.log`, `root-npm-test.exit` and `root-test-counts.json`.
+
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| @opensight/api | 1,450 | 0 | 35 |
+| @opensight/bundle-parser | 208 | 0 | 0 |
+| @opensight/cli | 73 | 0 | 0 |
+| @opensight/embedding-sdk | 10 | 0 | 0 |
+| @opensight/headless-sdk | 28 | 0 | 0 |
+| opensight-headless-sdk-python | 32 | 0 | 0 |
+| @opensight/mcp-server | 74 | 0 | 0 |
+| @opensight/o-interpreter | 42 | 0 | 0 |
+| @opensight/parity | 11 | 0 | 0 |
+| @opensight/query-engine | 799 | 0 | 2 |
+| @opensight/web | 2,721 | 0 | 0 |
+| root-conformance | 110 | 0 | 0 |
+
+All seven brief items are complete. The static demo remains rebuilt, with no
+visible gallery delta and no required README asset refresh. Hosted Athena source
+provisioning and Tom's live AWS verification remain explicitly out of scope.
