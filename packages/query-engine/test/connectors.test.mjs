@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { connectors, connectorDefinition, validateConnectorConfig, connectConnector, connectorState, connectorDialect } from '@opensight/query-engine';
-test('MySQL metadata and connect cannot imply an API query path', () => {
-  assert.equal(connectorDefinition('mysql').implementation, 'unimplemented');
+test('MySQL metadata exposes the API path but connect still requires operator configuration', () => {
+  assert.equal(connectorDefinition('mysql').implementation, 'query');
   const config = { hostEnv: 'DB_HOST', portEnv: 'DB_PORT', databaseEnv: 'DB_NAME', userEnv: 'DB_USER', passwordEnv: 'DB_PASSWORD' };
-  for (const apiAvailable of [false, true]) assert.deepEqual(connectConnector('mysql', config, apiAvailable), { state: 'not_implemented', message: 'Not yet implemented' });
+  for (const apiAvailable of [false, true]) assert.deepEqual(connectConnector('mysql', config, apiAvailable), connectorState('postgresql', apiAvailable));
 });
 test('availability copy describes the missing capability, including an existing local API', () => {
   assert.match(connectorState('file').message, /Uploads are unavailable in the static demo/);

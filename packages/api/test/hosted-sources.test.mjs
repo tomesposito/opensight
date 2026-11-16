@@ -27,7 +27,7 @@ test('H3 durable tenant and owner source isolation, encrypted secrets and rotati
 });
 test('H3 explicit source policy, scoped principal links and endpoint authorization fail before I/O', async t => {
   const f = await sourceFixture(t), a = await f.login();
-  for (const [changes, code] of [[{ policy: undefined }, 'SOURCE_POLICY_REQUIRED'], [{ endpointId: 'foreign' }, 'SOURCE_ENDPOINT_DENIED'], [{ connectorId: 'mysql' }, 'SOURCE_CONNECTOR_UNSUPPORTED'], [{ credentials: { connectionString: 'forged' } }, 'METADATA_INVALID'], [{ tenantId: 'tenant-two' }, 'METADATA_INVALID'], [{ policy: { rowLevel: true, rowRules: [{ id: 'r', principals: [{ type: 'user', id: 'foreign' }], predicate: { column: 'region', operator: 'eq', value: 'east' } }] } }, 'METADATA_REFERENCE_INVALID']]) {
+  for (const [changes, code] of [[{ policy: undefined }, 'SOURCE_POLICY_REQUIRED'], [{ endpointId: 'foreign' }, 'SOURCE_ENDPOINT_DENIED'], [{ connectorId: 'mysql' }, 'SOURCE_ENDPOINT_DENIED'], [{ connectorId: 'unknown' }, 'SOURCE_CONNECTOR_UNSUPPORTED'], [{ credentials: { connectionString: 'forged' } }, 'METADATA_INVALID'], [{ tenantId: 'tenant-two' }, 'METADATA_INVALID'], [{ policy: { rowLevel: true, rowRules: [{ id: 'r', principals: [{ type: 'user', id: 'foreign' }], predicate: { column: 'region', operator: 'eq', value: 'east' } }] } }, 'METADATA_REFERENCE_INVALID']]) {
     await assert.rejects(f.sources.create(a, 'invalid', { ...registration(), ...changes }), { code });
   }
   assert.deepEqual(await f.metadata.list(a, 'source'), []); assert.deepEqual(await f.metadata.list(a, 'secret'), []);

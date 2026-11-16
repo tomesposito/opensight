@@ -33,9 +33,11 @@ export async function streamSourceMySql(read: SourceRead, connection: SourceConn
   const client = createConnection({ ...connection, ssl: connection.ssl || undefined, connectTimeout: Math.min(duration, 3000),
     charset: 'utf8mb4', timezone: 'Z', dateStrings: true, supportBigNumbers: true, bigNumberStrings: true,
     rowsAsArray: true, multipleStatements: false, enableKeepAlive: false, queryFormat });
-  client.on('error', () => {});
   let consumerError: unknown, cancelRead: (() => void) | undefined, cancelled = false;
   const stopped = new Promise<never>((_resolve, reject) => {
+    // mysql2 emits fatal socket errors on the connection for callback-free queries.
+    // Race those as well as query errors; otherwise a disconnect waits for the deadline.
+    client.on('error', reject);
     cancelRead = () => { cancelled = true; client.destroy(); reject(new ExecutionCancelledError()); };
   });
   const cancel = () => cancelRead!();
