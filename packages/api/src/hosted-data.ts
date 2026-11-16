@@ -3,10 +3,10 @@ import { setImmediate as yieldTurn } from 'node:timers/promises';
 import { TenantBudgets, type WorkScope } from './budgets.js';
 import { HostedCache, type HostedCacheAdapter } from './hosted-cache.js';
 import { containedWork, wireTable, type TableResult, type QueryResult } from './contained-work.js';
-import { resolveSecurity, planSourceRead, planPreparedQuery, streamSourcePostgres,
+import { resolveSecurity, planSourceRead, planPreparedQuery, streamSourcePostgres, streamSourceMySql,
   type SecurityContext, type RowPredicate, type SourceRead, type PrepSource, type PrepMemoryTable, type InteractiveQuery } from '@opensight/query-engine';
 import { HostedSources, type HostedSource } from './hosted-sources.js';
-import { boundColumns, sourceCredentials, sourceError } from './source-schema.js';
+import { boundColumns, isQueryConnectorId, sourceCredentials, sourceError } from './source-schema.js';
 import { type TenantContext, type Revisions } from './metadata.js';
 import { object } from './metadata-resources.js';
 import { BlazeTable } from './blaze.js';
@@ -35,7 +35,7 @@ export class HostedData {
   begin(context: TenantContext, signal?: AbortSignal, verify?: () => Promise<void>, beforePublication?: () => Promise<void>): void { if (verify) this.verifiers.set(context, verify); if (beforePublication) this.publicationChecks.set(context, beforePublication); this.admitted.set(context, new Set()); if (signal) this.signals.set(context, signal); }
   async publication(context: TenantContext, revisions: Revisions): Promise<void> { await this.finish(context, [...this.admitted.get(context) ?? []], revisions); }
   constructor(readonly sources: HostedSources, private readonly postgres = streamSourcePostgres, readonly budgets?: TenantBudgets, cache?: HostedCacheAdapter,
-    private readonly durableWork?: HostedWorkAdapter, readonly analytics = disabledAnalytics) { this.cache = cache ?? (budgets ? new HostedCache(budgets) : undefined); }
+    private readonly durableWork?: HostedWorkAdapter, readonly analytics = disabledAnalytics, private readonly mysql = streamSourceMySql) { this.cache = cache ?? (budgets ? new HostedCache(budgets) : undefined); }
   scope(context: TenantContext): WorkScope {
     this.sources.metadata.assertContext(context);
     if (!this.budgets) throw new MetadataError('BUDGET_MIGRATION_REQUIRED', 503);
@@ -93,11 +93,11 @@ export class HostedData {
       return result;
     }, this.signals.get(context));
   }
-  /** Registering a live (PostgreSQL) source is the connection point for #179.
+  /** Registering a live database source is the connection point for #179.
    * File uploads emit `dataset_uploaded` instead and never this event. */
   async createSource(context: TenantContext, id: string, raw: unknown) {
     const result = await this.sources.create(context, id, raw);
-    this.analytics.track(context, { name: 'data_source_connected', props: { sourceType: 'postgresql' } });
+    if (isQueryConnectorId(result.connectorId)) this.analytics.track(context, { name: 'data_source_connected', props: { sourceType: result.connectorId } });
     return result;
   }
   async admit(context: TenantContext, id: string, path: DataPath, embedSecurity?: (security: SecurityContext) => SecurityContext): Promise<Admission> {
@@ -118,7 +118,7 @@ export class HostedData {
     const physical: PrepSource = { id, connectorId: b.connectorId, columns: b.columns, table: b.table ?? 'source_rows', ...(b.schema ? { schema: b.schema } : {}), security: protectedData ? 'protected' : 'unrestricted' };
     const admission = { source, security, physical, ...(tenantPredicate ? { tenantPredicate } : {}), deniedColumns: resolved.deniedColumns, revisions };
     // Validate the immutable predicate even on schema/discovery paths.
-    planSourceRead(this.read(admission), this.limits(context), 'postgres');
+    this.plan(context, this.read(admission));
     await this.finish(context, [admission]);
     this.admitted.get(context)?.add(admission);
     return admission;
@@ -133,6 +133,12 @@ export class HostedData {
   read(a: Admission, columns = a.physical.columns.filter(c => !a.deniedColumns.includes(c.name)).map(c => c.name)): SourceRead {
     return { source: a.physical, security: a.security, columns, ...(a.tenantPredicate ? { tenantPredicate: a.tenantPredicate } : {}) };
   }
+  private plan(context: TenantContext, read: SourceRead) {
+    const id = read.source.connectorId;
+    return planSourceRead(read, this.limits(context), id === 'postgresql' ? 'postgres' : id === 'mysql' || id === 'mariadb' ? 'mysql' : 'duckdb',
+      { mysqlVariant: id === 'mariadb' ? 'mariadb' : 'mysql' });
+  }
+  private streamer(a: Admission): typeof streamSourcePostgres { return a.source.binding.connectorId === 'postgresql' ? this.postgres : this.mysql; }
   async discover(context: TenantContext, path: 'discovery' | 'ai' = 'discovery') {
     const revisions = await this.sources.metadata.revisions(context);
     await this.sources.capability(context, path === 'ai' ? 'ai' : 'view');
@@ -164,7 +170,7 @@ export class HostedData {
     return { source: { ...a.physical, connectorId: 'file', schema: undefined, table: 'source_rows' }, rowCount: table.rowCount, value: table.value };
   }
   private async connection(context: TenantContext, a: Admission) {
-    const endpoint = this.sources.endpoint(a.source.binding.endpointId!);
+    const endpoint = this.sources.endpoint(a.source.binding.endpointId!, a.source.binding.connectorId);
     const credentials = sourceCredentials(await this.sources.payload(context, a.source));
     await this.finish(context, [a]);
     return { host: endpoint.host, port: endpoint.port, database: endpoint.database, ssl: endpoint.tls ? { rejectUnauthorized: true as const } : false as const,
@@ -172,10 +178,10 @@ export class HostedData {
   }
   /** Raw leaf snapshots stay internal and owner-scoped; prepared protected snapshots are forbidden. */
   private async raw(context: TenantContext, a: Admission, table: BlazeTable): Promise<void> {
-    if (a.source.binding.connectorId === 'postgresql') {
+    if (isQueryConnectorId(a.source.binding.connectorId)) {
       const raw: SourceRead = { source: a.physical, columns: a.physical.columns.map(c => c.name), security: { ...a.security,
         policy: { namespaceId: context.namespaceId, dataSetArn: a.security.policy.dataSetArn, rowLevel: false, rowRules: [] } }, ...(a.tenantPredicate ? { tenantPredicate: a.tenantPredicate } : {}) };
-      await this.postgres(raw, await this.connection(context, a), this.limits(context), this.sink(context, table, true), this.scope(context));
+      await this.streamer(a)(raw, await this.connection(context, a), this.limits(context), this.sink(context, table, true), this.scope(context));
     } else {
       const payload = object(await this.sources.payload(context, a.source), ['rows']);
       if (!Array.isArray(payload.rows) || payload.rows.length !== a.source.binding.rowCount) sourceError('SOURCE_PAYLOAD_INVALID', 503);
@@ -204,11 +210,11 @@ export class HostedData {
   async table(context: TenantContext, a: Admission, columns: readonly string[], mode: 'DIRECT_QUERY' | 'BLAZE' = 'DIRECT_QUERY'): Promise<BlazeTable> {
     const scope = this.scope(context);
     const read = this.read(a, [...columns]);
-    planSourceRead(read, this.limits(context), 'postgres'); // CLS and schema before secret or cache access.
+    this.plan(context, read); // CLS and schema before secret or cache access.
     await this.finish(context, [a]);
     const result = new BlazeTable(this.limits(context));
-    if (mode === 'DIRECT_QUERY' && a.source.binding.connectorId === 'postgresql') {
-      await this.postgres(read, await this.connection(context, a), this.limits(context), this.sink(context, result, true), scope);
+    if (mode === 'DIRECT_QUERY' && isQueryConnectorId(a.source.binding.connectorId)) {
+      await this.streamer(a)(read, await this.connection(context, a), this.limits(context), this.sink(context, result, true), scope);
     } else {
       let table: BlazeTable;
       if (mode === 'BLAZE') {
@@ -232,7 +238,7 @@ export class HostedData {
     if (!Array.isArray(columns) || columns.some(c => typeof c !== 'string')) sourceError('SOURCE_COLUMNS_INVALID');
     const limit = raw.limit ?? (path === 'preview' ? Math.min(100, this.limits(context).maxRows) : this.limits(context).maxRows);
     if (!Number.isSafeInteger(limit) || Number(limit) < 1 || Number(limit) > this.limits(context).maxRows) sourceError('SOURCE_LIMIT_INVALID');
-    planSourceRead(this.read(a, columns as string[]), this.limits(context), 'postgres');
+    this.plan(context, this.read(a, columns as string[]));
     return this.work(context, false, [a], async () => {
       const table = await this.table(context, a, columns as string[], mode);
       const result = query ? await this.computeQuery(context, table, query) : { columns: table.columns, rows: table.rows(Number(limit)), rowCount: table.rowCount, truncated: table.rowCount > Number(limit) };

@@ -2,7 +2,7 @@ import { MetadataError } from './metadata-db.js';
 import { randomUUID } from 'node:crypto';
 import type { Scope } from './metadata-resources.js';
 import type { AnalyticsStore } from './analytics-store.js';
-import type { SourceBinding } from './source-schema.js';
+import { isQueryConnectorId, type QueryConnectorId, type SourceBinding } from './source-schema.js';
 
 export const rowCountBuckets = ['0', '1-99', '100-999', '1000-9999', '10000+'] as const;
 export type RowCountBucket = typeof rowCountBuckets[number];
@@ -13,7 +13,7 @@ type EmptyEventName = 'tenant_provisioned' | 'user_invited' | 'user_activated' |
   | 'analysis_created' | 'analysis_first_visual' | 'dashboard_viewed' | 'dashboard_shared' | 'dashboard_edited' | 'embed_viewed' | 'sample_data_opted_in';
 export type AnalyticsEvent = { name: EmptyEventName; props?: Record<string, never> }
   | { name: 'dataset_uploaded'; props: { sourceType: SourceBinding['connectorId']; rowCountBucket: RowCountBucket } }
-  | { name: 'data_source_connected'; props: { sourceType: 'postgresql' } }
+  | { name: 'data_source_connected'; props: { sourceType: QueryConnectorId } }
   | { name: 'dashboard_saved'; props: { first: boolean } }
   | { name: 'ask_o_asked'; props: { count: number } };
 export interface AnalyticsRow { id: string; tenantId: string; namespaceId: string; name: AnalyticsEvent['name']; props: Record<string, string | number | boolean>; createdAt: string }
@@ -27,10 +27,10 @@ export function validateAnalyticsEvent(raw: unknown): Pick<AnalyticsRow, 'name' 
   const name = raw.name, props = raw.props === undefined ? {} : raw.props;
   if (!plain(props)) return;
   if (typeof name === 'string' && emptyNames.includes(name) && keys(props, [])) return { name: name as EmptyEventName, props: {} };
-  if (name === 'dataset_uploaded' && keys(props, ['sourceType', 'rowCountBucket']) && typeof props.sourceType === 'string' && ['file', 'postgresql'].includes(props.sourceType) && rowCountBuckets.includes(props.rowCountBucket as RowCountBucket)) {
+  if (name === 'dataset_uploaded' && keys(props, ['sourceType', 'rowCountBucket']) && typeof props.sourceType === 'string' && (props.sourceType === 'file' || isQueryConnectorId(props.sourceType)) && rowCountBuckets.includes(props.rowCountBucket as RowCountBucket)) {
     return { name, props: { sourceType: props.sourceType, rowCountBucket: props.rowCountBucket as RowCountBucket } };
   }
-  if (name === 'data_source_connected' && keys(props, ['sourceType']) && props.sourceType === 'postgresql') return { name, props: { sourceType: 'postgresql' } };
+  if (name === 'data_source_connected' && keys(props, ['sourceType']) && isQueryConnectorId(props.sourceType)) return { name, props: { sourceType: props.sourceType } };
   if (name === 'dashboard_saved' && keys(props, ['first']) && typeof props.first === 'boolean') return { name, props: { first: props.first } };
   if (name === 'ask_o_asked' && keys(props, ['count']) && typeof props.count === 'number' && Number.isSafeInteger(props.count) && props.count >= 0) return { name, props: { count: props.count } };
 }

@@ -82,8 +82,8 @@ export class SourceMigration {
           const body = sourceBody({ binding: input.binding, policy: input.policy, secretId });
           let payload: unknown;
           if (body.binding.state !== 'active') throw new MetadataError('MIGRATION_UNRESOLVED_SOURCE');
-          if (body.binding.connectorId === 'postgresql') {
-            if (input.uploadEnv || input.uploadConfig || !input.credentialsEnv || !this.endpoints.some(e => e.id === body.binding.endpointId)) throw new MetadataError('MIGRATION_UNRESOLVED_SOURCE');
+          if (body.binding.connectorId !== 'file') {
+            if (input.uploadEnv || input.uploadConfig || !input.credentialsEnv || !this.endpoints.some(e => e.id === body.binding.endpointId && (e.connectorId ?? 'postgresql') === body.binding.connectorId)) throw new MetadataError('MIGRATION_UNRESOLVED_SOURCE');
             try { payload = sourceCredentials(JSON.parse(env[input.credentialsEnv] ?? '')); } catch { throw new MetadataError('MIGRATION_SECRET_REQUIRED'); }
           } else {
             if (input.credentialsEnv || !input.uploadEnv || !input.uploadConfig || Date.parse(body.binding.expiresAt!) <= Date.now()) throw new MetadataError('MIGRATION_UPLOAD_REQUIRED');

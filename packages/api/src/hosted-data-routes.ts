@@ -35,7 +35,7 @@ export class HostedDataRoutes {
     };
     if (path === '/api/connectors') {
       method(request, response, ['GET']); await this.data.sources.capability(context, 'build');
-      await publish(200, connectors.filter(c => ['file', 'postgresql'].includes(c.id)).map(c => ({ id: c.id, name: c.name }))); return true;
+      await publish(200, connectors.filter(c => ['file', 'postgresql', 'mysql', 'mariadb'].includes(c.id)).map(c => ({ id: c.id, name: c.name }))); return true;
     }
     if (path === '/api/sources' || path === '/api/prep-sources' || path === '/api/ai/sources') {
       method(request, response, ['GET']); await publish(200, await this.data.discover(context, path === '/api/ai/sources' ? 'ai' : 'discovery')); return true;

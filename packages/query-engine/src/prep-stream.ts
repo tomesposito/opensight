@@ -42,10 +42,11 @@ export async function withPrepMemory<T>(tables: readonly PrepMemoryTable[], run:
   try { const connection = await instance.connect(); try { return await withPrepTables(connection, tables, () => run(connection)); } finally { connection.closeSync(); } } finally { instance.closeSync(); }
 }
 /** A per-row guard bounds driver allocation even for unexpectedly large source text. */
-export function boundedPrepSql(plan: Pick<PrepPlan, 'columns' | 'sql' | 'parameters'>, limits: PrepReadLimits): string {
-  const checks = plan.columns.map(c => `COALESCE(LENGTH(CAST(${q(c.name)} AS VARCHAR)), 0)`);
+export function boundedPrepSql(plan: Pick<PrepPlan, 'columns' | 'sql' | 'parameters'>, limits: PrepReadLimits, dialect: 'duckdb' | 'postgres' | 'mysql' = 'duckdb'): string {
+  const quote = (name: string) => q(name, dialect);
+  const checks = plan.columns.map(c => `COALESCE(${dialect === 'mysql' ? 'CHAR_LENGTH' : 'LENGTH'}(CAST(${quote(c.name)} AS ${dialect === 'mysql' ? 'CHAR' : 'VARCHAR'})), 0)`);
   const oversized = `(${checks.join(' + ')}) > ${limits.cellChars}`;
-  return `SELECT ${plan.columns.map((c, i) => `CASE WHEN ${oversized} THEN NULL ELSE ${q(c.name)} END AS ${q(`v${i}`)}`).join(', ')}, ${oversized} AS "oversized" FROM (${plan.sql}) AS "bounded_prep"`;
+  return `SELECT ${plan.columns.map((c, i) => `CASE WHEN ${oversized} THEN NULL ELSE ${quote(c.name)} END AS ${quote(`v${i}`)}`).join(', ')}, ${oversized} AS ${quote('oversized')} FROM (${plan.sql}) AS ${quote('bounded_prep')}`;
 }
 function intake(plan: Pick<PrepPlan, 'columns'>, raw: readonly unknown[], sink: PrepSink): void {
   if (raw[plan.columns.length] === true || raw[plan.columns.length] === 't') sink.oversized();

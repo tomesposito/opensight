@@ -51,7 +51,7 @@ for (const props of [{}, { client, local: true }, { client }]) test(`toggle grou
   const group = ui.root().findByProps({ 'aria-labelledby': 'unavailable-connectors-title' });
   assert.equal(group.findAllByType('button').length, 22);
   await ui.select('MySQL');
-  assert.match(ui.text(), /Not yet implemented/);
+  assert.match(ui.text(), /operator-configured connection/);
   assert.equal(ui.root().findByProps({ type: 'submit' }).props.disabled, true);
   await ui.select('PostgreSQL');
   assert.match(ui.text(), /operator-configured connection/);
@@ -77,19 +77,20 @@ test('browsing the unavailable catalog preserves the active upload form', async 
   await ui.toggle(true); await ui.toggle(false);
   assert.equal(ui.root().findAllByType('select')[0].props.value, 'tsv');
 });
-test('only a discovered available hosted PostgreSQL source exposes Needs setup and its prep action', async t => {
+for (const [connectorId, name] of [['postgresql', 'PostgreSQL'], ['mysql', 'MySQL'], ['mariadb', 'MariaDB']]) test(`only a discovered available hosted ${name} source exposes its prep action`, async t => {
+  const pg = { id: `operator-${connectorId}`, connectorId, available: true, columns: [] };
   const calls = [], onPrep = source => calls.push(source);
   const hosted = { ...client, listPrepSources: async () => [pg] };
   const ui = await mount(t, { client: hosted, onPrep });
-  assert.deepEqual(ui.cards(), ['Upload a file', 'PostgreSQL']);
-  await ui.select('PostgreSQL'); assert.match(ui.text(), /Needs setup/);
-  await act(() => ui.root().findAllByType('button').find(n => n.children[0] === 'Prepare PostgreSQL data').props.onClick());
+  assert.deepEqual(ui.cards(), ['Upload a file', name]);
+  await ui.select(name); assert.match(ui.text(), /Needs setup/);
+  await act(() => ui.root().findAllByType('button').find(n => n.children.join('') === `Prepare ${name} data`).props.onClick());
   assert.deepEqual(calls, [pg.id]);
   await ui.toggle(true);
   assert.equal(ui.root().findByProps({ 'aria-labelledby': 'unavailable-connectors-title' }).findAllByType('button').length, 21);
-  await ui.toggle(false); assert.match(ui.text(), /PostgreSQL setup/);
+  await ui.toggle(false); assert.match(ui.text(), new RegExp(`${name} setup`));
   await ui.update({ client: hosted, local: true, onPrep });
-  assert.deepEqual(ui.cards(), ['Upload a file']); assert.doesNotMatch(ui.text(), /PostgreSQL setup/);
+  assert.deepEqual(ui.cards(), ['Upload a file']); assert.doesNotMatch(ui.text(), new RegExp(`${name} setup`));
 });
 test('unavailable sources, prepared references, absent prep navigation and failed discovery cannot promote PostgreSQL', async t => {
   for (const sources of [[], [{ ...pg, available: false }], [{ ...pg, ref: { dataset: 'derived' } }]]) {
@@ -130,4 +131,14 @@ test('SR2d negotiated direct upload is available only on the file connector', as
   const html = id => renderToStaticMarkup(createElement(ConnectorDetails, { id, client: hosted, local: false }));
   assert.match(html('file'), /Data expires/); assert.match(html('file'), /8 MiB maximum/); assert.doesNotMatch(html('file'), /640 KiB|cleared when the API restarts/);
   for (const id of ['postgresql', 'mysql']) { assert.doesNotMatch(html(id), /Durable file upload|Data expires/); assert.match(html(id), /Validate configuration/); }
+});
+
+test('available MySQL does not promote MariaDB or unavailable MySQL sources', async t => {
+  for (const available of [true, false]) {
+    const ui = await mount(t, { client: { ...client, listPrepSources: async () => [{ ...pg, connectorId: 'mysql', available }] }, onPrep() {} });
+    assert.deepEqual(ui.cards(), available ? ['Upload a file', 'MySQL'] : ['Upload a file']);
+    await ui.toggle(true); await ui.select('MariaDB');
+    assert.match(ui.text(), /operator-configured connection/);
+    assert.equal(ui.root().findAllByType('button').some(n => n.children.join('') === 'Prepare MariaDB data'), false);
+  }
 });

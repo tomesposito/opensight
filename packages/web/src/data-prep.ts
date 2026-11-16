@@ -72,13 +72,18 @@ export function prepBindings(sources: readonly PrepSourceSummary[]): PrepSource[
 }
 export function prepPlan(pipeline: PrepPipeline, sources: readonly PrepSourceSummary[], through?: string | null, context: PrepSchemaContext = {}) {
   const input = sources.find(s => prepRefKey(prepSourceRef(s)) === prepRefKey(pipeline.input));
-  const dialect = input?.connectorId === 'postgresql' ? 'postgres' : 'duckdb';
+  const sourceDialect = input?.connectorId === 'postgresql' ? 'postgres' : input?.connectorId === 'mysql' || input?.connectorId === 'mariadb' ? 'mysql' : 'duckdb';
+  // Hosted MySQL/MariaDB prep reads admitted rows into DuckDB. The prep compiler
+  // has no native MySQL dialect: validate the same staged schema, keeping the
+  // source dialect separate from the SQL actually used for transformations.
+  const dialect = sourceDialect === 'mysql' ? 'duckdb' : sourceDialect;
+  const bindings = prepBindings(sources).map(s => s.connectorId === 'mysql' || s.connectorId === 'mariadb' ? { ...s, connectorId: 'file' } : s);
   const datasets = context.datasets?.filter(d => d.opensightPrep).map(d => {
     const cached = sources.find(s => typeof s.ref === 'object' && 'dataset' in s.ref && s.ref.dataset === d.dataSetId && s.execution?.mode === 'BLAZE');
     const materialized: PrepSource | undefined = cached ? { id: `cached-${cached.id}`, table: `cached-${cached.id}`, connectorId: 'file', columns: cached.columns, security: cached.available ? 'unrestricted' : 'protected' } : undefined;
     return { id: d.dataSetId, pipeline: d.opensightPrep!, ...(materialized ? { materialized } : {}) };
   });
-  return compilePrep(pipeline, prepBindings(sources), { dialect, through, datasetId: context.datasetId, datasets });
+  return { ...compilePrep(pipeline, bindings, { dialect, through, datasetId: context.datasetId, datasets }), sourceDialect, sourceConnectorId: input?.connectorId ?? 'file' };
 }
 export function prepSchema(pipeline: PrepPipeline, sources: readonly PrepSourceSummary[], through?: string | null, context: PrepSchemaContext = {}): PrepColumn[] {
   return prepPlan(pipeline, sources, through, context).columns;

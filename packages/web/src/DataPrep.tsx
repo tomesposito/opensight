@@ -141,7 +141,7 @@ export function DataPrep({ client, initialSource, initialDatasetId, onSources, o
   const editorSources = (): PrepSourceSummary[] => {
     try {
       const plan = prepPlan(prepPrefix(pipeline, index < 0 ? pipeline.steps.length : index), sources, undefined, schemaContext);
-      return [...sources, ...plan.stages.map((s, i) => ({ id: s.id, ref: { step: s.id }, name: `${i + 1}. ${prepStepLabel(pipeline.steps[i]!)}`, connectorId: plan.dialect === 'postgres' ? 'postgresql' : 'file', columns: s.columns, available: true }))];
+      return [...sources, ...plan.stages.map((s, i) => ({ id: s.id, ref: { step: s.id }, name: `${i + 1}. ${prepStepLabel(pipeline.steps[i]!)}`, connectorId: plan.sourceDialect === 'mysql' ? plan.sourceConnectorId : plan.dialect === 'postgres' ? 'postgresql' : 'file', columns: s.columns, available: true }))];
     } catch { return sources; }
   };
   const inspectInput = (node: { ref: PrepInput; instance: number; consumers: string[] }) => {

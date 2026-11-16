@@ -3,7 +3,7 @@ import { hasCapability, isRole, parseUpload, type UploadColumn, type UploadReque
 import { TenantMetadata, type TenantContext } from './metadata.js';
 import { object, identifier, type MetadataResource } from './metadata-resources.js';
 import { encryptMetadataSecret, decryptMetadataSecret } from './metadata-secrets.js';
-import { sourceBody, sourceCredentials, sourcePolicy, sourceError, type SourceBody, type SourceEndpoint } from './source-schema.js';
+import { sourceBody, isQueryConnectorId, sourceCredentials, sourcePolicy, sourceError, type SourceBody, type SourceEndpoint } from './source-schema.js';
 import type { JsonObject } from './mapping.js';
 
 export interface HostedSource extends SourceBody { id: string; version: number }
@@ -21,8 +21,10 @@ export class HostedSources {
     if (capability === 'view' ? !isRole(user.body.role) : !hasCapability(user.body.role, capability)) sourceError('SOURCE_ACCESS_DENIED', 403);
   }
   key(context: TenantContext, kind: 'source' | 'secret', id: string) { return { kind, id: identifier(id), ownerId: context.userId }; }
-  endpoint(id: string): SourceEndpoint {
-    return this.endpoints.find(e => e.id === id) ?? sourceError('SOURCE_ENDPOINT_DENIED', 403);
+  endpoint(id: string, connectorId?: string): SourceEndpoint {
+    const endpoint = this.endpoints.find(e => e.id === id) ?? sourceError('SOURCE_ENDPOINT_DENIED', 403);
+    if (connectorId !== undefined && connectorId !== (endpoint.connectorId ?? 'postgresql')) sourceError('SOURCE_ENDPOINT_DENIED', 403);
+    return endpoint;
   }
   async stored(context: TenantContext, id: string): Promise<HostedSource> {
     const r = await this.metadata.get(context, this.key(context, 'source', id));
@@ -32,7 +34,7 @@ export class HostedSources {
     if (source.binding.state === 'expired') sourceError('UPLOAD_EXPIRED', 403);
     if (source.binding.state !== 'active') sourceError('SOURCE_RETIRED', 403);
     if (source.binding.expiresAt && Date.parse(source.binding.expiresAt) <= this.clock()) sourceError('UPLOAD_EXPIRED', 403);
-    if (source.binding.endpointId) this.endpoint(source.binding.endpointId);
+    if (source.binding.endpointId) this.endpoint(source.binding.endpointId, source.binding.connectorId);
   }
   async get(context: TenantContext, id: string): Promise<HostedSource> {
     const source = await this.stored(context, id); this.active(source); return source;
@@ -66,10 +68,10 @@ export class HostedSources {
   async create(context: TenantContext, id: string, raw: unknown): Promise<ReturnType<HostedSources['summary']>> {
     await this.capability(context, 'build'); identifier(id);
     const r = object(structuredClone(raw), ['connectorId', 'endpointId', 'schema', 'table', 'columns', 'credentials', 'policy']);
-    if (r.connectorId !== 'postgresql') sourceError('SOURCE_CONNECTOR_UNSUPPORTED');
-    this.endpoint(identifier(r.endpointId));
+    if (!isQueryConnectorId(r.connectorId)) sourceError('SOURCE_CONNECTOR_UNSUPPORTED');
+    this.endpoint(identifier(r.endpointId), r.connectorId);
     const secretId = randomUUID();
-    const body = sourceBody({ binding: { version: 3, connectorId: 'postgresql', state: 'active', endpointId: r.endpointId, schema: r.schema, table: r.table, columns: r.columns }, secretId, policy: r.policy });
+    const body = sourceBody({ binding: { version: 3, connectorId: r.connectorId, state: 'active', endpointId: r.endpointId, schema: r.schema, table: r.table, columns: r.columns }, secretId, policy: r.policy });
     const secret = this.seal(context, secretId, sourceCredentials(r.credentials));
     await this.metadata.batch(context, [
       { key: this.key(context, 'secret', secretId), body: secret, expectedVersion: 0 },
@@ -96,17 +98,17 @@ export class HostedSources {
     const r = object(structuredClone(raw), ['expectedVersion', 'endpointId', 'schema', 'table', 'columns', 'policy']), source = await this.get(context, id);
     const binding = { ...source.binding };
     for (const k of ['endpointId', 'schema', 'table', 'columns'] as const) if (r[k] !== undefined) {
-      if (binding.connectorId !== 'postgresql') sourceError('SOURCE_BINDING_IMMUTABLE');
+      if (!isQueryConnectorId(binding.connectorId)) sourceError('SOURCE_BINDING_IMMUTABLE');
       Object.assign(binding, { [k]: r[k] });
     }
-    if (binding.endpointId) this.endpoint(binding.endpointId);
+    if (binding.endpointId) this.endpoint(binding.endpointId, binding.connectorId);
     const body = sourceBody({ binding, secretId: source.secretId, policy: r.policy === undefined ? source.policy : sourcePolicy(r.policy, binding.columns) });
     await this.metadata.put(context, this.key(context, 'source', id), json(body), r.expectedVersion as number);
   }
   async rotate(context: TenantContext, id: string, raw: unknown): Promise<void> {
     await this.capability(context, 'build');
     const r = object(structuredClone(raw), ['expectedVersion', 'credentials']), source = await this.get(context, id);
-    if (source.binding.connectorId !== 'postgresql' || !source.secretId) sourceError('SOURCE_ROTATION_UNSUPPORTED');
+    if (!isQueryConnectorId(source.binding.connectorId) || !source.secretId) sourceError('SOURCE_ROTATION_UNSUPPORTED');
     const key = this.key(context, 'secret', source.secretId), secret = await this.metadata.get(context, key);
     await this.metadata.batch(context, [
       { key, body: this.seal(context, source.secretId, sourceCredentials(r.credentials)), expectedVersion: secret.version },
