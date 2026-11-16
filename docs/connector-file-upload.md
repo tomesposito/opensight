@@ -72,3 +72,10 @@ The server permits 32 owner sessions and serializes ingestion within each owner.
 Staging is ephemeral, closes with the server, and is not an analysis dataset
 catalog. Upload errors carry `errorCode`, `Message`, and `path`; oversized requests
 return 413. No remote connector can be configured through upload request fields.
+
+## S3 input
+
+The [S3 file source](connector-s3.md) (#273) feeds downloaded bytes into this same
+parser and hosted prep/DuckDB path. Its streaming 8 MiB ceiling precedes parsing;
+all format, schema, row/column and XLSX declared/actual uncompressed-size checks
+remain in force. Prefix browsing returns only keys and sizes.
