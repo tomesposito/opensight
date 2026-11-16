@@ -2,6 +2,7 @@ import { redshiftGranularity, redshiftTimestamp } from './redshift-sql.js';
 import { definitionParameters, validateDefinitionControls } from './definition-parameters.js';
 import { rowFilterSql } from './row-filter.js';
 import { mysqlBindings, mysqlTimestamp, mysqlDateCast } from './mysql-sql.js';
+import { athenaBindings } from './athena-sql.js';
 import { resolveSecurity, rowSecuritySql } from './security.js';
 import { expressionChildren } from './evaluate.js';
 import { functionReference, functionError } from './catalog.js';
@@ -501,7 +502,7 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
   const opts = object(options, '$.options');
   keys(opts, ['dialect', 'aggregates'], '$.options');
   const dialect = opts.dialect === undefined ? 'duckdb' : opts.dialect;
-  if (dialect !== 'duckdb' && dialect !== 'postgres' && dialect !== 'mysql' && dialect !== 'redshift') fail('UNSUPPORTED_FEATURE', '$.options.dialect', 'expected duckdb, postgres, mysql or redshift');
+  if (dialect !== 'duckdb' && dialect !== 'postgres' && dialect !== 'mysql' && dialect !== 'redshift' && dialect !== 'athena') fail('UNSUPPORTED_FEATURE', '$.options.dialect', 'expected duckdb, postgres, mysql, redshift or athena');
   const r = object(request, '$');
   keys(r, ['analysis', 'dataSet', 'dataSource', 'localData', 'visualId', 'parameterDeclarations', 'parameterBindings', 'parameterFilters', 'security'], '$');
   const metadata = bindMetadata(r.dataSet, r.dataSource, r.localData, r.security !== undefined);
@@ -578,5 +579,5 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
   }
   const values: ParameterValue[] = [];
   const statement = sql(plan, values, aggregate?.countColumn);
-  return { ...plan, ...(dialect === 'mysql' ? mysqlBindings(statement, values) : { sql: statement, parameters: values }) };
+  return { ...plan, ...(dialect === 'mysql' ? mysqlBindings(statement, values) : dialect === 'athena' ? athenaBindings(statement, values) : { sql: statement, parameters: values }) };
 }
