@@ -21,6 +21,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- S3 objects can now become hosted file sources and prepared datasets, with bounded prefix browsing, operator-allowlisted environment-name configuration, all five upload formats, and the existing file/XLSX size guards (#273). Fake SDK coverage verifies the flow; live AWS verification is Tom's follow-on.
+
 - Athena now has a library query connector with a dedicated SQL dialect, typed results, bounded polling/pagination, timeout and abort cancellation, and sanitized failures (issue #272). Fake SDK tests verify the execution flow; hosted provisioning and live-account verification remain follow-on work.
 
 - Manual Redshift sources now support registered-table discovery, dataset preparation and direct/BLAZE visual queries with tenant/RLS/CLS enforcement, credential rotation and a dedicated SQL layer over the existing pg driver (issue #271). Loopback coverage verifies wire flow and generated SQL; live-cluster verification remains pending.

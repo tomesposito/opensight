@@ -24,7 +24,7 @@ export async function expireUploads(database: Database, now = Date.now()): Promi
       let changed = false;
       for (const r of await c.query("SELECT * FROM h1_resources WHERE tenant_id = ? AND namespace_id = ? AND kind = 'source'", [scope.tenantId, scope.namespaceId])) {
         const body = sourceBody(JSON.parse(String(r.body)));
-        if (body.binding.connectorId !== 'file' || body.binding.state !== 'active' || Date.parse(body.binding.expiresAt!) > now) continue;
+        if (!['file', 's3'].includes(body.binding.connectorId) || body.binding.state !== 'active' || Date.parse(body.binding.expiresAt!) > now) continue;
         const key = { kind: 'source' as const, id: String(r.resource_id), ownerId: String(r.owner_id) };
         const values = [scope.tenantId, scope.namespaceId, 'source', key.ownerId, key.id], predicate = 'tenant_id = ? AND namespace_id = ? AND kind = ? AND owner_id = ? AND resource_id = ?';
         const retired = { binding: { ...body.binding, state: 'expired' }, policy: body.policy };

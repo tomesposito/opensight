@@ -1,3 +1,4 @@
+import { hostedS3Settings } from './source-s3-config.js';
 import { HostedAIReceipts } from './hosted-ai-receipts.js';
 import { HostedAI } from './hosted-ai.js';
 import type { AiMeter } from './ai-settings.js';
@@ -77,8 +78,8 @@ export function serverlessAdapters(database: Database, metadata: TenantMetadata,
   const jobs = new JobStore(database, metadata, () => new Date(), dispatch);
   const work = new ServerlessWork(coordinator, manifests, dispatch, ledger, transfer, budgets, aws.scope, () => aws.close());
   const sourceArtifacts = new SourceArtifacts(coordinator, context => work.attempt(context), transfer, budgets);
-  const sources = new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(env), Date.now, sourceArtifacts.read);
-  const embedSources = new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(env), Date.now, sourceArtifacts.read);
+  const sources = new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(env), Date.now, sourceArtifacts.read, hostedS3Settings(env));
+  const embedSources = new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(env), Date.now, sourceArtifacts.read, hostedS3Settings(env));
   const results = new DurableResults(database, metadata, dispatch, ledger, new ResultObjects(aws, bucket), work, budgets);
   const authority = (request: Parameters<HostedAuth['resultSession']>[0]) => {
     if (!auth) throw new MetadataError('RESULT_SESSION_REQUIRED', 503); return auth.resultSession(request);

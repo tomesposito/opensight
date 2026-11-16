@@ -52,6 +52,7 @@ export function publicPath(path: unknown): string {
     && !/^\/api\/invitations(?:\/[A-Za-z0-9_-]+)?$/.test(unscoped)
     && !/^\/api\/(?:startup|session|ideas|namespaces|users|groups|connectors|sources|prep-sources|uploads|prep-datasets|automation-status|job-recipients|jobs)$/.test(unscoped)
     && !/^\/api\/auth\/(?:enroll|accept|login(?:\/select)?|switch|logout)$/.test(unscoped)
+    && unscoped !== '/api/connectors/s3/browse'
     && !/^\/api\/sources\/[A-Za-z0-9_-]+(?:\/(?:bind|rotate|preview|rows|output|query|refresh|policy))?$/.test(unscoped)
     && !/^\/api\/(?:uploads\/[A-Za-z0-9_-]+|ai\/sources(?:\/[A-Za-z0-9_-]+\/schema)?|prep-datasets\/import)$/.test(unscoped)
     && !/^\/api\/(?:uploads\/reservations(?:\/[A-Za-z0-9_-]+(?:\/complete)?)?|operations\/[A-Za-z0-9_-]+(?:\/result\/(?:0|[1-9]\d{0,5}))?)$/.test(unscoped)
@@ -66,6 +67,7 @@ function routeMethod(path: string, method: string): void {
   const p = path.replace(/^\/api\/namespaces\/[A-Za-z0-9_-]+\//, '/api/');
   let allowed: readonly string[] = ['GET'];
   if (serverlessV1Methods(p)) allowed = serverlessV1Methods(p)!;
+  else if (p === '/api/connectors/s3/browse') allowed = ['POST'];
   else if (path === '/api/access-requests') allowed = ['POST', 'OPTIONS'];
   else if (p === '/api/admin/ai') allowed = ['GET', 'POST'];
   else if (/^\/api\/(?:o\/(?:generate|calculation|query|plan|revise)|admin\/ai\/(?:key|test))$/.test(p)) allowed = ['POST'];

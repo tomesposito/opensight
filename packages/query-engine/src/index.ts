@@ -59,3 +59,4 @@ export { streamSourceRedshift } from './source-redshift.js';
 
 export { executeAthena } from './athena-executor.js';
 export type { AthenaExecuteOptions, AthenaQueryClient } from './athena-executor.js';
+export { readS3Upload, listS3Objects, S3SourceError, type S3SourceClient, type S3SourceOptions, type S3SourceErrorCode, type S3ObjectSummary } from './source-s3.js';

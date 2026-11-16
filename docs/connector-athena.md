@@ -135,4 +135,5 @@ TLS and username/password endpoint model does not fit Athena. This issue does
 not extend `QueryConnectorId`, hosted `/api/connectors` connection handling or web
 data-preparation staging to Athena. Shared gallery metadata reflects the library
 implementation; it does not establish a usable hosted source. The static demo
-cannot execute Athena or connect to AWS. Other AWS connectors remain hosted stubs.
+cannot execute Athena or connect to AWS. S3 now has a separate [file-source path](connector-s3.md); the remaining AWS
+connectors are hosted stubs.

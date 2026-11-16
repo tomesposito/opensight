@@ -1,3 +1,4 @@
+import { hostedS3Settings } from './source-s3-config.js';
 import { HostedAIReceipts, initializeAiAnswerReceipts } from './hosted-ai-receipts.js';
 import { DigestStore } from './digest-store.js';
 import { unsubscribeRoute } from './digest-routes.js';
@@ -17,7 +18,7 @@ import { HostedSources } from './hosted-sources.js';
 import { HostedData } from './hosted-data.js';
 import { HostedDataRoutes } from './hosted-data-routes.js';
 import { sourceEndpoints } from './source-schema.js';
-import { QueryEngineError, UploadError } from '@opensight/query-engine';
+import { QueryEngineError, UploadError, ConnectorError, S3SourceError } from '@opensight/query-engine';
 import { PrepError } from '@opensight/bundle-parser/prep';
 import { BlazeError } from './blaze.js';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -183,9 +184,9 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const budgets = await loadBudgets(options.membershipDatabase, metadata);
   const invocation = options.invocation?.compose?.(metadata, budgets, options.builtinAuth, usage?.aiMeter(), analytics);
   const jobs = invocation?.jobs ?? new JobStore(options.membershipDatabase, metadata);
-  const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets, undefined, undefined, analytics), jobs);
+  const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env), Date.now, undefined, hostedS3Settings(options.env)), undefined, budgets, undefined, undefined, analytics), jobs);
   const ai = invocation?.ai ?? new HostedAI(data, config.encryptionKey.toString('base64'), options.env ?? process.env, usage?.aiMeter(), options.ai, new HostedAIReceipts(options.membershipDatabase));
-  const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets, undefined, undefined, analytics));
+  const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env), Date.now, undefined, hostedS3Settings(options.env)), undefined, budgets, undefined, undefined, analytics));
   const mail = invocation?.mail ?? options.mailTransport ?? smtpFromEnvironment(options.env);
   // Billing and waiting-list conversion compose on the single-node hosted server;
   // invocation mode keeps /api/host closed, so billing stays out of it.
@@ -643,7 +644,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       throw new MetadataError('HOSTED_CAPABILITY_UNAVAILABLE', 503);
     })().catch((error: unknown) => {
       errors++; request.resume();
-      const dataError = error instanceof QueryEngineError || error instanceof PrepError || error instanceof UploadError || error instanceof BlazeError;
+      const dataError = error instanceof ConnectorError || error instanceof S3SourceError || error instanceof QueryEngineError || error instanceof PrepError || error instanceof UploadError || error instanceof BlazeError;
       const status = dataError ? 422 : error instanceof MetadataError || error instanceof RequestError || error instanceof SecurityError ? error.status : 500;
       const errorCode = dataError ? error.code : error instanceof MetadataError || error instanceof SecurityError ? error.code : error instanceof RequestError ? 'HOSTED_REQUEST_INVALID' : 'HOSTED_INTERNAL_ERROR';
       const quotaMessage = error instanceof AIError ? error.message : publicQuotaMessage(error);
