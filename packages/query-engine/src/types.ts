@@ -102,6 +102,8 @@ export interface QueryPlan {
   readonly tableName: string;
   /** Postgres resolves the declared schema; DuckDB materializes a local table. */
   readonly tableSchema?: string;
+  /** Declared database, compared with the trusted Redshift connection before I/O. */
+  readonly tableDatabase?: string;
   readonly sourceColumns: readonly BoundColumn[];
   readonly localData: LocalDataBinding;
   readonly calculations: readonly Calculation[];

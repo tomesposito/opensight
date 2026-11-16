@@ -566,6 +566,7 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
     dialect, mode: 'synthetic-local', visualId, dataSetIdentifier: identifier,
     tableName: metadata.tableName, sourceColumns: metadata.columns, localData: metadata.localData,
     ...(dialect !== 'duckdb' ? { tableSchema: metadata.tableSchema } : {}),
+    ...(dialect === 'redshift' ? { tableDatabase: metadata.tableDatabase } : {}),
     calculations: binder.calculations, filters: predicates, ...fields,
     ...(allNodes.some(e => ['table', 'pre_filter', 'pre_agg'].includes(e.level)) || predicates.some(f => ['aggregate', 'table'].includes(binder.bind(f.columnName, f.path).level ?? 'row')) ? { postProcess: true } : {}),
     stages: ['source', 'row-calculations', 'row-filters', 'visual-aggregation', 'order'],
