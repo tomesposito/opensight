@@ -294,10 +294,11 @@ See [Blaze configuration and limits](docs/blaze.md).
 
 Start with CSV/TSV/JSON/Excel file uploads into DuckDB staging, then prepare
 your data and build a chart. The **Create data source** dialog lists only
-connectors OpenSight can actually use — no AWS-only services. PostgreSQL, MySQL
-and MariaDB use operator-provisioned hosted sources. Database selection requires
+connectors OpenSight can actually use. PostgreSQL, MySQL, MariaDB and manual
+Redshift use operator-provisioned hosted sources. Database selection requires
 an available source of the matching connector. See the
-[MySQL and MariaDB configuration and verification limits](docs/connector-mysql.md).
+[MySQL and MariaDB configuration and verification limits](docs/connector-mysql.md)
+and [manual Redshift configuration and verification limits](docs/connector-redshift.md).
 The static demo shows the connector tiles with uploads disabled.
 
 ![Create data source dialog with the connector tile grid](docs/images/data-sources.png)
