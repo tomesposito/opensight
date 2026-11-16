@@ -30,6 +30,7 @@
     "typescript": "^5.6.0"
   },
   "dependencies": {
+    "@aws-sdk/client-athena": "3.1149.0",
     "@duckdb/node-api": "1.5.5-r.5",
     "@opensight/bundle-parser": "0.0.0",
     "mysql2": "3.24.4",

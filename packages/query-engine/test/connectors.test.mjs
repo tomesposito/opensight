@@ -45,3 +45,19 @@ test('Redshift manual is a database query connector; discovery remains an AWS ho
   assert.equal(discovery.implementation, 'hosted'); assert.equal(discovery.category, 'AWS');
   assert.throws(() => connectorDialect(discovery.id), { code: 'CONNECTOR_NOT_IMPLEMENTED' });
 });
+
+test('Athena has a dedicated environment-name schema and query dialect; other AWS stubs are unchanged', () => {
+  const athena = connectorDefinition('athena');
+  assert.equal(athena.implementation, 'query'); assert.equal(athena.category, 'AWS');
+  assert.equal(connectorDialect('athena'), 'athena');
+  assert.deepEqual(Object.keys(athena.schema), ['regionEnv', 'databaseEnv', 'workGroupEnv', 'outputLocationEnv']);
+  for (const [key, field] of Object.entries(athena.schema)) {
+    assert.equal(field.kind, 'environment'); assert.equal(field.required, key !== 'workGroupEnv');
+  }
+  const config = { regionEnv: 'ATHENA_REGION', databaseEnv: 'ATHENA_DATABASE', outputLocationEnv: 'ATHENA_OUTPUT' };
+  for (const key of ['credentialsEnv', 'resourceEnv', 'accessKeyId', 'secretAccessKey']) assert.throws(() => validateConnectorConfig('athena', { ...config, [key]: 'SECRET' }), { code: 'INVALID_CONNECTOR_CONFIG' });
+  for (const id of ['s3', 's3-analytics', 'rds', 'aurora', 'redshift', 'iot-analytics']) {
+    assert.equal(connectorDefinition(id).implementation, 'hosted');
+    assert.deepEqual(Object.keys(connectorDefinition(id).schema), ['regionEnv', 'resourceEnv', 'credentialsEnv']);
+  }
+});

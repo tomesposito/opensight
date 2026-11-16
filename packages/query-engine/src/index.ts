@@ -1,4 +1,4 @@
-/** Synthetic/provisional local query slice. No AWS, archive or source-compatibility claim. */
+/** Query planning and server-side executors; live connector compatibility requires operator verification. */
 export { planVisual } from './planner.js';
 export { LiveResultCache, liveDatasetCachePrefix } from './live-performance.js';
 export type { AggregateTableDeclaration, LiveCachePolicy, CachedLiveResult, LiveCacheFillToken } from './live-performance.js';
@@ -56,3 +56,6 @@ export { executeRedshift } from './redshift-executor.js';
 export type { RedshiftExecuteOptions } from './redshift-executor.js';
 export { redshiftType } from './redshift-sql.js';
 export { streamSourceRedshift } from './source-redshift.js';
+
+export { executeAthena } from './athena-executor.js';
+export type { AthenaExecuteOptions, AthenaQueryClient } from './athena-executor.js';

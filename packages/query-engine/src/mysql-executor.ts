@@ -1,3 +1,4 @@
+import { executeAthena } from './athena-executor.js';
 import { executeRedshift } from './redshift-executor.js';
 import { createConnection, type Connection, type RowDataPacket } from 'mysql2/promise';
 import { validateConnectorConfig, ConnectorError, connectorDefinition, type ConnectorConfig } from './connectors.js';
@@ -67,6 +68,7 @@ export async function executeMySql(request: PlanRequest, options: MySqlExecuteOp
 export async function executeConnector(id: string, config: unknown, request: PlanRequest, environment: Readonly<Record<string, string | undefined>> = process.env): Promise<QueryResult> {
   const c = connectorDefinition(id), validated = validateConnectorConfig(id, config);
   if (id === 'mysql' || id === 'mariadb') return executeMySql(request, { config: validated, environment, connectorId: id });
+  if (id === 'athena') return executeAthena(request, { config: validated, environment });
   if (id === 'redshift-manual') return executeRedshift(request, { config: validated, environment });
   if (id === 'postgresql') return executePostgres(request, { connectionString: resolveEnvironment(validated, environment).connectionEnv! });
   throw new ConnectorError(c.implementation === 'hosted' ? 'CONNECTOR_NOT_CONFIGURED' : 'CONNECTOR_NOT_IMPLEMENTED', '$.connector', c.implementation === 'hosted' ? 'Needs hosted API / not configured' : 'Query connection is not yet implemented; file uploads use DuckDB staging');

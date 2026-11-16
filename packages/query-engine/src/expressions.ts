@@ -1,3 +1,4 @@
+import { athenaDateCast } from './athena-sql.js';
 import { redshiftLiteral } from './redshift-sql.js';
 import { mysqlDateCast } from './mysql-sql.js';
 import type { ParameterBindings, ParameterDeclaration, ParameterValue } from './parameters.js';
@@ -159,17 +160,18 @@ function validateLevels(e: RowExpression): void {
 }
 
 export function expressionSql(expression: RowExpression, dialect: SqlDialect = 'duckdb', bind?: (value: ParameterValue) => string): string {
-  const textType = dialect === 'mysql' ? 'CHAR' : dialect === 'redshift' ? 'VARCHAR(65535)' : 'VARCHAR', dateType = dialect === 'mysql' ? 'DATETIME(3)' : 'TIMESTAMP';
-  const numericType = dialect === 'postgres' || dialect === 'redshift' ? 'DOUBLE PRECISION' : 'DOUBLE';
+  const textType = dialect === 'athena' ? 'VARCHAR' : dialect === 'mysql' ? 'CHAR' : dialect === 'redshift' ? 'VARCHAR(65535)' : 'VARCHAR', dateType = dialect === 'athena' ? 'TIMESTAMP' : dialect === 'mysql' ? 'DATETIME(3)' : 'TIMESTAMP';
+  const numericType = dialect === 'athena' ? 'DOUBLE' : dialect === 'postgres' || dialect === 'redshift' ? 'DOUBLE PRECISION' : 'DOUBLE';
   const compile = (e: RowExpression) => expressionSql(e, dialect, bind);
   const literal = dialect === 'redshift' ? redshiftLiteral : quoteLiteral;
   switch (expression.kind) {
     case 'parameter': {
       if (!bind) fail('INVALID_INPUT', expression.location.path, 'parameter SQL requires a binder');
+      if (dialect === 'athena' && expression.scalarType === 'datetime') return athenaDateCast(bind(expression.value));
       if (dialect === 'mysql' && expression.scalarType === 'datetime') return mysqlDateCast(bind(expression.value));
       return `CAST(${bind(expression.value)} AS ${expression.scalarType === 'number' ? numericType : expression.scalarType === 'datetime' ? dateType : textType})`;
     }
-    case 'literal': if (expression.scalarType === 'datetime' && typeof expression.value === 'string') return dialect === 'mysql' ? mysqlDateCast(bind ? bind(expression.value) : literal(expression.value)) : `CAST(${bind ? bind(expression.value) : literal(expression.value)} AS ${dateType})`;
+    case 'literal': if (expression.scalarType === 'datetime' && typeof expression.value === 'string') return dialect === 'athena' ? athenaDateCast(bind ? bind(expression.value) : literal(expression.value)) : dialect === 'mysql' ? mysqlDateCast(bind ? bind(expression.value) : literal(expression.value)) : `CAST(${bind ? bind(expression.value) : literal(expression.value)} AS ${dateType})`;
       return expression.value === null ? 'NULL' : expression.scalarType === 'boolean' ? expression.value ? 'TRUE' : 'FALSE' : typeof expression.value === 'number' ? `CAST(${expression.value} AS ${numericType})` : `CAST(${bind ? bind(expression.value) : literal(expression.value)} AS ${textType})`;
     case 'column': return quoteIdentifier(expression.columnName, dialect) + (dialect === 'mysql' && expression.scalarType === 'string' ? ' COLLATE utf8mb4_0900_bin' : '');
     case 'unary': return `(${expression.operator} ${compile(expression.operand)})`;

@@ -30,7 +30,11 @@ export const connectors: readonly ConnectorDefinition[] = [
   { id: 'redshift-manual', name: 'Redshift (manual)', category: 'Database', schema: sql, dialect: 'redshift', implementation: 'query' },
   ...[['sql-server', 'SQL Server'], ['presto', 'Presto'], ['trino', 'Trino'], ['spark', 'Spark'], ['teradata', 'Teradata'], ['snowflake', 'Snowflake']].map(([id, name]): ConnectorDefinition => ({ id: id!, name: name!, category: 'Database', schema: sql, implementation: 'unimplemented' })),
   ...[['salesforce', 'Salesforce'], ['github', 'GitHub'], ['twitter', 'Twitter'], ['jira', 'Jira'], ['servicenow', 'ServiceNow']].map(([id, name]): ConnectorDefinition => ({ id: id!, name: name!, category: 'SaaS', schema: saas, implementation: 'hosted' })),
-  ...[['s3-analytics', 'S3 Analytics'], ['s3', 'S3'], ['athena', 'Athena'], ['rds', 'RDS (auto-discovery)'], ['aurora', 'Aurora'], ['redshift', 'Redshift (auto-discovery)'], ['iot-analytics', 'AWS IoT Analytics']].map(([id, name]): ConnectorDefinition => ({ id: id!, name: name!, category: 'AWS', schema: aws, implementation: 'hosted' })),
+  { id: 'athena', name: 'Athena', category: 'AWS', implementation: 'query', dialect: 'athena', schema: {
+    regionEnv: env('AWS region environment variable'), databaseEnv: env('Database environment variable'),
+    workGroupEnv: env('Workgroup environment variable', false), outputLocationEnv: env('Output location environment variable'),
+  } },
+  ...[['s3-analytics', 'S3 Analytics'], ['s3', 'S3'], ['rds', 'RDS (auto-discovery)'], ['aurora', 'Aurora'], ['redshift', 'Redshift (auto-discovery)'], ['iot-analytics', 'AWS IoT Analytics']].map(([id, name]): ConnectorDefinition => ({ id: id!, name: name!, category: 'AWS', schema: aws, implementation: 'hosted' })),
 ];
 // Registry metadata is shared by API and browser. Callers cannot change validation rules.
 for (const connector of connectors) {
