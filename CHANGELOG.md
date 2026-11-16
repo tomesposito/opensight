@@ -85,6 +85,13 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Insight top/bottom movers now reject duplicate decoded category/period
+  pairs (#265): two rows for the same category whose time values are
+  different spellings of the same period (for example `2024-01` and
+  `2024-01-01` under a MONTH grain) fail with `INSIGHT_VALUE_INVALID`
+  instead of one silently overwriting the other and making the ranking
+  depend on input order.
+
 - Waterfall detailed tooltips now escape rich-text markup in aggregate
   (subtotal/Other/Total) bar labels and values (#264): a category name
   containing markup such as `{style|text}` displays literally in the
