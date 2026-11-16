@@ -3,7 +3,7 @@ import { setImmediate as yieldTurn } from 'node:timers/promises';
 import { TenantBudgets, type WorkScope } from './budgets.js';
 import { HostedCache, type HostedCacheAdapter } from './hosted-cache.js';
 import { containedWork, wireTable, type TableResult, type QueryResult } from './contained-work.js';
-import { resolveSecurity, planSourceRead, planPreparedQuery, streamSourcePostgres, streamSourceMySql,
+import { resolveSecurity, planSourceRead, planPreparedQuery, streamSourcePostgres, streamSourceMySql, streamSourceRedshift,
   type SecurityContext, type RowPredicate, type SourceRead, type PrepSource, type PrepMemoryTable, type InteractiveQuery } from '@opensight/query-engine';
 import { HostedSources, type HostedSource } from './hosted-sources.js';
 import { boundColumns, isQueryConnectorId, sourceCredentials, sourceError } from './source-schema.js';
@@ -35,7 +35,7 @@ export class HostedData {
   begin(context: TenantContext, signal?: AbortSignal, verify?: () => Promise<void>, beforePublication?: () => Promise<void>): void { if (verify) this.verifiers.set(context, verify); if (beforePublication) this.publicationChecks.set(context, beforePublication); this.admitted.set(context, new Set()); if (signal) this.signals.set(context, signal); }
   async publication(context: TenantContext, revisions: Revisions): Promise<void> { await this.finish(context, [...this.admitted.get(context) ?? []], revisions); }
   constructor(readonly sources: HostedSources, private readonly postgres = streamSourcePostgres, readonly budgets?: TenantBudgets, cache?: HostedCacheAdapter,
-    private readonly durableWork?: HostedWorkAdapter, readonly analytics = disabledAnalytics, private readonly mysql = streamSourceMySql) { this.cache = cache ?? (budgets ? new HostedCache(budgets) : undefined); }
+    private readonly durableWork?: HostedWorkAdapter, readonly analytics = disabledAnalytics, private readonly mysql = streamSourceMySql, private readonly redshift = streamSourceRedshift) { this.cache = cache ?? (budgets ? new HostedCache(budgets) : undefined); }
   scope(context: TenantContext): WorkScope {
     this.sources.metadata.assertContext(context);
     if (!this.budgets) throw new MetadataError('BUDGET_MIGRATION_REQUIRED', 503);
@@ -135,10 +135,10 @@ export class HostedData {
   }
   private plan(context: TenantContext, read: SourceRead) {
     const id = read.source.connectorId;
-    return planSourceRead(read, this.limits(context), id === 'postgresql' ? 'postgres' : id === 'mysql' || id === 'mariadb' ? 'mysql' : 'duckdb',
+    return planSourceRead(read, this.limits(context), id === 'redshift-manual' ? 'redshift' : id === 'postgresql' ? 'postgres' : id === 'mysql' || id === 'mariadb' ? 'mysql' : 'duckdb',
       { mysqlVariant: id === 'mariadb' ? 'mariadb' : 'mysql' });
   }
-  private streamer(a: Admission): typeof streamSourcePostgres { return a.source.binding.connectorId === 'postgresql' ? this.postgres : this.mysql; }
+  private streamer(a: Admission): typeof streamSourcePostgres { return a.source.binding.connectorId === 'redshift-manual' ? this.redshift : a.source.binding.connectorId === 'postgresql' ? this.postgres : this.mysql; }
   async discover(context: TenantContext, path: 'discovery' | 'ai' = 'discovery') {
     const revisions = await this.sources.metadata.revisions(context);
     await this.sources.capability(context, path === 'ai' ? 'ai' : 'view');

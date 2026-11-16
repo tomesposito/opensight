@@ -502,7 +502,7 @@ test('Issue #175: hosted invocation preserves an injected inline Analytics insta
 });
 
 test('Issue #270: analytics validates all database connector types without widening payload fields', () => {
-  for (const sourceType of ['postgresql', 'mysql', 'mariadb']) for (const name of ['dataset_uploaded', 'data_source_connected']) {
+  for (const sourceType of ['postgresql', 'mysql', 'mariadb', 'redshift-manual']) for (const name of ['dataset_uploaded', 'data_source_connected']) {
     const props = { sourceType, ...(name === 'dataset_uploaded' ? { rowCountBucket: '1-99' } : {}) };
     assert.deepEqual(validateAnalyticsEvent({ name, props }), { name, props });
     assert.equal(validateAnalyticsEvent({ name, props: { ...props, password: 'forbidden' } }), undefined);
