@@ -1,3 +1,4 @@
+import { athenaDatetimeSql } from './athena-sql.js';
 import type { ResultValue, RowExpression, SqlDialect } from './types.js';
 import { quoteLiteral as q } from './validation.js';
 export const dateUnits: Record<string, string> = { YYYY: 'year', YY: 'year', Q: 'quarter', MM: 'month', WK: 'week', DD: 'day', D: 'day', HH: 'hour', MI: 'minute', SS: 'second', MS: 'millisecond' };
@@ -89,6 +90,7 @@ export function datetimeValue(name: string, args: readonly ResultValue[]): Resul
 }
 export const constant = (e: RowExpression | undefined, fallback = ''): string => e?.kind === 'literal' || e?.kind === 'symbol' ? String(e.value) : fallback;
 export function datetimeSql(e: Extract<RowExpression, {kind: 'call'}>, dialect: SqlDialect, compile: (e: RowExpression) => string): string | undefined {
+  if (dialect === 'athena') return athenaDatetimeSql(e, compile);
   const node = (i: number) => compile(e.args[i]!);
   const trunc = (date: string, unit: string): string => unit === 'WK' ? `(DATE_TRUNC('week', ${date} + INTERVAL '1 day') - INTERVAL '1 day')` : `DATE_TRUNC('${dateUnits[unit]}', ${date})`;
   if (e.name === 'addDateTime') return `(${node(2)} + CAST(TRUNC(${node(0)}) AS INTEGER) * INTERVAL '1 ${dateUnits[constant(e.args[1]).toUpperCase()]}')`;
