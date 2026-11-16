@@ -30,7 +30,7 @@ export async function streamSourceMySql(read: SourceRead, connection: SourceConn
   if (control?.signal?.aborted) throw new ExecutionCancelledError();
   sink.start(plan.columns);
   const duration = Math.min(control?.executionMs ?? 10_000, 10_000);
-  const client = createConnection({ ...connection, ssl: connection.ssl || undefined, connectTimeout: Math.min(duration, 3000),
+  const client = createConnection({ ...connection, ssl: connection.ssl || undefined, connectTimeout: 3000,
     charset: 'utf8mb4', timezone: 'Z', dateStrings: true, supportBigNumbers: true, bigNumberStrings: true,
     rowsAsArray: true, multipleStatements: false, enableKeepAlive: false, queryFormat });
   let consumerError: unknown, cancelRead: (() => void) | undefined, cancelled = false;
@@ -47,13 +47,15 @@ export async function streamSourceMySql(read: SourceRead, connection: SourceConn
   try {
     await Promise.race([stopped, (async () => {
       check();
-      await client.promise().query({ sql: mysqlSessionSql(variant), timeout: duration });
+      // One deadline covers setup and rows. mysql2's per-query timer survives destroy(),
+      // and a second connect timer at the execution deadline races cancellation errors.
+      await client.promise().query({ sql: mysqlSessionSql(variant) });
       check();
       // The SQL guard suppresses oversized payloads before driver allocation; the sink still
       // checks every row and the maxRows+1 sentinel, just as for PostgreSQL source reads.
       await new Promise<void>((resolve, reject) => {
         let count = 0;
-        const query = client.query({ sql: boundedPrepSql(plan, limits, 'mysql'), values: plan.parameters, timeout: duration });
+        const query = client.query({ sql: boundedPrepSql(plan, limits, 'mysql'), values: plan.parameters });
         query.on('error', reject).on('end', resolve).on('result', (raw: unknown[]) => {
           if (consumerError !== undefined || cancelled) return;
           try {

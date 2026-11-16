@@ -133,3 +133,16 @@ test('MySQL source stream enforces sink bounds, preserves consumer errors, cance
   for (let i = 0; i < 20 && harness.sockets.size; i++) await delay(5);
   assert.equal(harness.sockets.size, 0);
 });
+
+test('MySQL execution deadline cancels stalled authentication before the independent connection cap', async t => {
+  const f = await fixture(t), { context, data, harness } = f;
+  await data.createSource(context, 'source', f.create(policy));
+  const read = data.read(await data.admit(context, 'source', 'query'));
+  const limits = { maxRows: 10, cellChars: 1000, maxBytes: 100000, datasetBytes: 100000 };
+  harness.mode = 'stall-auth';
+  for (let i = 0; i < 3; i++) {
+    await assert.rejects(streamSourceMySql(read, harness.connection, limits, new BlazeTable(limits), { executionMs: 30 }), { code: 'EXECUTION_CANCELLED' });
+  }
+  assert.equal(harness.queries.length, 0);
+  assert.ok(harness.authentications.every(a => a.accepted));
+});

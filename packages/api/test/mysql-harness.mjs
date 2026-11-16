@@ -61,6 +61,7 @@ export async function mysqlHarness(t, { columns, rows, password, username = 'syn
             const accepted = user === state.username && auth.equals(expected);
             state.authentications.push({ user, accepted });
             if (!accepted) { send(errorPacket('Synthetic authentication failed')); socket.end(); continue; }
+            if (state.mode === 'stall-auth') continue;
             authenticated = true; send(ok); continue;
           }
           if (packet[0] === 1) { socket.end(); continue; } // COM_QUIT
