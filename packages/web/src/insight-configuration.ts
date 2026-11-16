@@ -104,6 +104,28 @@ export function projectInsightBody(body: Obj): Obj {
   return { ...body, chartConfiguration: { fieldWells: { insightAggregatedFieldWells: insightWells(body.insightConfiguration ?? {}) } } };
 }
 
+/**
+ * Complete structural validation of an insight configuration, shared by draft
+ * admission, author query construction and the compiler (via normalizeInsight):
+ * every computation is a known, well-formed variant with only supported
+ * properties, computation IDs are unique, and topBottomMovers computations
+ * never mix with other computations. Field-binding and dimension/measure
+ * requirements are normalizeInsight's layer, enforced before querying and at
+ * compile time — not here, so an in-progress draft stays saveable.
+ */
+export function validateInsightConfiguration(config: unknown): void {
+  const entries = computations(config);
+  if (!entries) return;
+  const ids = new Set<string>();
+  for (const [, body] of entries) {
+    const id = body.computationId as string;
+    if (ids.has(id)) insightFail('INSIGHT_COMPUTATION_INVALID', 'duplicate computation IDs');
+    ids.add(id);
+  }
+  if (entries.some(([kind]) => kind === 'topBottomMovers') && !entries.every(([kind]) => kind === 'topBottomMovers'))
+    insightFail('INSIGHT_COMPUTATION_INVALID', 'topBottomMovers computations cannot be combined with other computations');
+}
+
 /** True when every configured computation is uniqueValues — the only variant that binds no measure. */
 export function uniqueValuesOnly(config: unknown): boolean {
   const entries = computations(config);
@@ -126,9 +148,9 @@ export function topBottomMoversTimeColumn(config: unknown): string | undefined {
 }
 
 export function normalizeInsight(config: unknown, dimensions: Field[], measures: Field[]): InsightRequest[] {
+  validateInsightConfiguration(config);
   const entries = computations(config);
   const moversOnly = !!entries?.length && entries.every(([kind]) => kind === 'topBottomMovers');
-  if (entries?.some(([kind]) => kind === 'topBottomMovers') && !moversOnly) insightFail('INSIGHT_COMPUTATION_INVALID', 'topBottomMovers computations cannot be combined with other computations');
   if (moversOnly ? dimensions.length !== 2 : dimensions.length !== 1) insightFail('INSIGHT_CATEGORY_REQUIRED', moversOnly ? 'expected a Category dimension and a Time dimension' : 'expected exactly one Category dimension');
   if (measures.length > 2 || (measures.length < 1 && !(entries?.length && entries.every(([kind]) => kind === 'uniqueValues')))) insightFail('INSIGHT_VALUES_REQUIRED', 'expected one Values measure, or two for comparison');
   if (!entries) return [
@@ -138,7 +160,6 @@ export function normalizeInsight(config: unknown, dimensions: Field[], measures:
     ...(dimensions[0]!.dateGranularity ? [{ kind: 'periodOverPeriod' as const, id: 'period', measure: 0 }] : []),
     ...(measures.length === 2 ? [{ kind: 'metricComparison' as const, id: 'comparison', measure: 0, target: 1 }] : []),
   ];
-  const ids = new Set<string>();
   const binding = (raw: unknown, fields: Field[], fallback: number): number => {
     if (raw === undefined) return fallback;
     const wrapper = insightObject(raw), pairs = Object.entries(wrapper);
@@ -160,7 +181,6 @@ export function normalizeInsight(config: unknown, dimensions: Field[], measures:
   };
   return entries.map(([kind, c]) => {
     const id = c.computationId as string;
-    if (ids.has(id)) insightFail('INSIGHT_COMPUTATION_INVALID', 'duplicate computation IDs'); ids.add(id);
     binding(c.category ?? c.time, dimensions, 0);
     if (kind === 'uniqueValues') return { kind, id, measure: 0 };
     const measure = binding(kind === 'metricComparison' ? c.fromValue : c.value, measures, 0);

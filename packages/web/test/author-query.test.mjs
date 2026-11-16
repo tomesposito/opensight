@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createApiClient, QueryError } from '../build/test/api-client.js';
-import { activeSheet, authorReducer, emptyDraft } from '../build/test/authoring.js';
+import { activeSheet, authorReducer, emptyDraft, validateDraft } from '../build/test/authoring.js';
 import { buildAuthorQuery, loadAuthorRows } from '../build/test/author-query.js';
 import { buildAuthorVisual } from '../build/test/author-preview.js';
 import { compileVisual } from '../build/test/compiler.js';
@@ -179,6 +179,54 @@ test('reopened prepared queries retry only the busy gate, with a finite retry bu
   assert.match((await loadAuthorRows(client, buildAuthorQuery(visual('kpi')), controller().signal)).message, /SECURITY_DENIED/);
   assert.equal(calls, 1);
 });
+test('malformed and mixed insight configurations fail closed with zero query calls (issue #267)', async () => {
+  const base = { ...visual('insight'), dimension: 'region', measures: ['revenue'] };
+  const dim = name => ({ categoricalDimensionField: { fieldId: name, column: { columnName: name, dataSetIdentifier: 'sales_data' } } });
+  const measure = name => ({ numericalMeasureField: { fieldId: name, column: { columnName: name, dataSetIdentifier: 'sales_data' }, aggregationFunction: { simpleNumericalAggregation: 'SUM' } } });
+  // Structural failures: draft admission and query construction both reject.
+  const structural = [
+    ['mixed movers collection', { computations: [{ topBottomMovers: { computationId: 'm', type: 'TOP' } }, { totalAggregation: { computationId: 't' } }] }],
+    ['unknown computation variant', { computations: [{ futureComputation: { computationId: 'x' } }] }],
+    ['unsupported computation property', { computations: [{ totalAggregation: { computationId: 't', futureOption: 1 } }] }],
+    ['duplicate computation IDs', { computations: [{ totalAggregation: { computationId: 't' } }, { totalAggregation: { computationId: 't' } }] }],
+    ['custom narrative', { customNarrative: { narrative: 'Total: ${total}' } }],
+    ['movers without a type', { computations: [{ topBottomMovers: { computationId: 'm' } }] }],
+    ['forecast periods out of range', { computations: [{ forecast: { computationId: 'f', forecastProperties: { periodsForward: 101 } } }] }],
+  ];
+  // Binding failures: the configuration is structurally sound, so a draft may
+  // hold it, but no query may be issued against this visual's wells.
+  const binding = [
+    ['forecast on a non-date dimension', { computations: [{ forecast: { computationId: 'f' } }] }],
+    ['metric comparison with one measure', { computations: [{ metricComparison: { computationId: 'c' } }] }],
+    ['metric comparison binding the same measure twice', { computations: [{ metricComparison: { computationId: 'c', fromValue: measure('revenue'), targetValue: measure('revenue') } }] }, { measures: ['revenue', 'profit'] }],
+  ];
+  const restored = (configuration, overrides = {}) => { const d = structuredClone(draft('insight')); Object.assign(activeSheet(d).visuals[0], { insightConfiguration: configuration, ...overrides }); return d; };
+  for (const [label, configuration, overrides] of [...structural, ...binding]) {
+    const item = { ...base, ...overrides, insightConfiguration: configuration };
+    let calls = 0;
+    const client = { async queryDataset() { calls++; return { rows: [] }; } };
+    const request = buildAuthorQuery(item);
+    assert.equal(request, null, label);
+    // LiveAuthorVisual's load gate: without a request, no query is issued.
+    if (request) await loadAuthorRows(client, request, controller().signal);
+    assert.equal(calls, 0, label);
+  }
+  for (const [label, configuration, overrides] of structural) assert.throws(() => validateDraft(restored(configuration, overrides)), /Invalid or unsupported author draft/, label);
+  for (const [label, configuration, overrides] of binding) assert.doesNotThrow(() => validateDraft(restored(configuration, overrides)), label);
+  // Valid configurations still query: an unbound total, a bound movers
+  // collection over (category, time), and a measure-free uniqueValues.
+  const total = { ...base, insightConfiguration: { computations: [{ totalAggregation: { computationId: 't' } }] } };
+  let calls = 0;
+  const client = { async queryDataset() { calls++; return { rows: [{ region: 'East', revenue: 5 }] }; } };
+  const data = await loadAuthorRows(client, buildAuthorQuery(total), controller().signal);
+  assert.equal(calls, 1); assert.deepEqual(data.rows, [{ region: 'East', revenue: 5 }]);
+  const movers = { ...base, insightConfiguration: { computations: [{ topBottomMovers: { computationId: 'm', type: 'TOP', category: dim('region'),
+    time: { dateDimensionField: { fieldId: 'order_date', column: { columnName: 'order_date', dataSetIdentifier: 'sales_data' }, dateGranularity: 'MONTH' } }, value: measure('revenue') } }] } };
+  assert.deepEqual(buildAuthorQuery(movers).dimensions.map(d => d.fieldId), ['region', 'order_date']);
+  const uv = { ...base, measures: [], insightConfiguration: { computations: [{ uniqueValues: { computationId: 'u', category: dim('region') } }] } };
+  assert.ok(buildAuthorQuery(uv));
+});
+
 test('cancelling a pending reopen retry prevents any later query', async t => {
   const { ApiError } = await import('../build/test/api-client.js');
   t.mock.timers.enable({ apis: ['setTimeout'] });

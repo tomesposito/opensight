@@ -85,6 +85,15 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Insight configurations are now validated completely before any author
+  query is issued (#267): draft admission rejects malformed native
+  configurations (unknown variants, unsupported properties, duplicate
+  computation IDs, custom narratives, mixed top/bottom-movers collections),
+  query construction applies the compiler's structural and field-binding
+  validation against the visual's own wells and fails closed with no query
+  instead of substituting an ordinary query, and bundle import now enforces
+  the same Movers-only collection rule as the compiler in both dialects.
+
 - Insight unique-values narratives are now bounded (#266): at most 20
   categories are named in the sentence, each label is truncated at 100
   characters, and the named text is capped at 1,000 characters in total,

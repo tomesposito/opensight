@@ -124,6 +124,20 @@ test('insight parser rejects malformed top/bottom movers bodies with named error
   assert.throws(() => parseBundleResource(bundle([{ topBottomMovers: { computationId: 'm', type: 'TOP', MoverSize: 3 } }])), /INSIGHT_CONFIGURATION_UNSUPPORTED/);
 });
 
+test('insight parser rejects top/bottom movers mixed with another computation in both dialects (issue #267)', () => {
+  const mixed = [{ topBottomMovers: { computationId: 'm', type: 'TOP' } }, { totalAggregation: { computationId: 't' } }];
+  for (const computations of [mixed, [...mixed].reverse()]) {
+    assert.throws(() => parseBundleResource(bundle(computations)), /INSIGHT_COMPUTATION_INVALID: topBottomMovers computations cannot be combined/);
+    const native = api(bundle(computations)); native.ResourceType = 'Analysis';
+    assert.throws(() => parseSyntheticAnalysis(native), /INSIGHT_COMPUTATION_INVALID: topBottomMovers computations cannot be combined/);
+  }
+  // An all-movers collection is the only multi-movers shape and stays valid.
+  const allMovers = bundle([{ topBottomMovers: { computationId: 'm1', type: 'TOP' } }, { topBottomMovers: { computationId: 'm2', type: 'BOTTOM' } }]);
+  assert.deepEqual(parseBundleResource(allMovers), allMovers);
+  const native = api(allMovers); native.ResourceType = 'Analysis';
+  assert.deepEqual(parseSyntheticAnalysis(native), native);
+});
+
 test('insight parser rejects malformed period-to-date bodies with named errors in both dialects', () => {
   const bodies = [
     ...[null, [], 3, 'invalid', {}, { computationId: '' }, { computationId: 'bad id' }, { computationId: 'x'.repeat(513) }, { computationId: 'p', name: 1 }].map(body => [body, /INSIGHT_COMPUTATION_INVALID/]),
