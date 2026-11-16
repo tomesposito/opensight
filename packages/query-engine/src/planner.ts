@@ -1,3 +1,4 @@
+import { redshiftGranularity, redshiftTimestamp } from './redshift-sql.js';
 import { definitionParameters, validateDefinitionControls } from './definition-parameters.js';
 import { rowFilterSql } from './row-filter.js';
 import { mysqlBindings, mysqlTimestamp, mysqlDateCast } from './mysql-sql.js';
@@ -458,7 +459,7 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterV
   }
   if (plan.postProcess) {
     const columns = [...plan.sourceColumns.filter(c => !plan.deniedColumns?.includes(c.name)).map(c => ({ name: c.name, type: c.scalarType })), ...plan.calculations.filter(c => c.expression.level === 'row').map(c => ({ name: c.name, type: c.expression.scalarType }))];
-    const projections = columns.map(c => `${c.type === 'datetime' ? plan.dialect === 'mysql' ? mysqlTimestamp(q(c.name)) : plan.dialect === 'postgres' ? `TO_CHAR(${q(c.name)}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` : `STRFTIME(${q(c.name)}, '%Y-%m-%dT%H:%M:%S.%gZ')` : q(c.name)} AS ${q(c.name)}`);
+    const projections = columns.map(c => `${c.type === 'datetime' ? plan.dialect === 'redshift' ? redshiftTimestamp(q(c.name)) : plan.dialect === 'mysql' ? mysqlTimestamp(q(c.name)) : plan.dialect === 'postgres' ? `TO_CHAR(${q(c.name)}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` : `STRFTIME(${q(c.name)}, '%Y-%m-%dT%H:%M:%S.%gZ')` : q(c.name)} AS ${q(c.name)}`);
     return `${ctes.length ? `WITH ${ctes.join(',\n')}\n` : ''}SELECT ${projections.join(', ')} FROM ${from}`;
   }
   if (plan.filters.length) {
@@ -469,6 +470,7 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterV
   }
   const dimensions = plan.dimensions.map(d => {
     if (!d.granularity) return plan.dialect === 'mysql' && d.scalarType === 'string' ? `${q(d.columnName)} COLLATE utf8mb4_0900_bin` : q(d.columnName);
+    if (plan.dialect === 'redshift') return redshiftGranularity(q(d.columnName), d.granularity);
     if (plan.dialect === 'mysql') return d.granularity === 'QUARTER' ? `CONCAT(YEAR(${q(d.columnName)}), '-Q', QUARTER(${q(d.columnName)}))` : `DATE_FORMAT(${q(d.columnName)}, '${d.granularity === 'YEAR' ? '%Y' : d.granularity === 'DAY' ? '%Y-%m-%d' : '%Y-%m'}')`;
     const grain = d.granularity.toLowerCase(), value = `date_trunc('${grain}', ${q(d.columnName)})`;
     if (d.granularity === 'QUARTER') return plan.dialect === 'postgres'

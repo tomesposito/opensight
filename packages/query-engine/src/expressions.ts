@@ -159,7 +159,7 @@ function validateLevels(e: RowExpression): void {
 
 export function expressionSql(expression: RowExpression, dialect: SqlDialect = 'duckdb', bind?: (value: ParameterValue) => string): string {
   const textType = dialect === 'mysql' ? 'CHAR' : 'VARCHAR', dateType = dialect === 'mysql' ? 'DATETIME(3)' : 'TIMESTAMP';
-  const numericType = dialect === 'postgres' ? 'DOUBLE PRECISION' : 'DOUBLE';
+  const numericType = dialect === 'postgres' || dialect === 'redshift' ? 'DOUBLE PRECISION' : 'DOUBLE';
   const compile = (e: RowExpression) => expressionSql(e, dialect, bind);
   switch (expression.kind) {
     case 'parameter': {
