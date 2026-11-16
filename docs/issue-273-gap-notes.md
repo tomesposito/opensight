@@ -66,6 +66,19 @@ not a deployed server.
 Logs, screenshots and pixel counts are retained in the ignored
 `.opensight/issue-273-verification/` directory.
 
+## Supervisor full-suite verification (2026-11-16)
+
+The Codex build's own full-suite run was cut off by the supervisor's launch
+timeout after item 5. The supervisor (Muse) committed item 5 and reran the
+full root suite independently: all 10 workspaces ran — node totals
+**5,482 tests / 5,444 passed / 1 failed / 37 skipped**, plus the Python SDK's
+32 tests (OK). The single failure was the H4 measured two-tenant flood test
+in `packages/api/test/containment.test.mjs`: one execution took 3,170 ms
+against the 3-second ceiling under full-suite load on the shared-CPU VM.
+Rerun in isolation it passes **6 / 6** (max execution 1,393 ms). This is the
+known load-sensitivity class recorded in AGENTS.md for this test, unrelated
+to the S3 changes (which touch no containment code).
+
 ## Checkpoint commits and files
 
 | Item | Commit | Scope |
