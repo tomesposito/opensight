@@ -9,6 +9,12 @@ export { InsightError } from './insight-configuration.js';
 export interface NarrativePart { text: string; value?: number }
 export interface NarrativeParagraph { id: string; parts: NarrativePart[] }
 export interface InsightNarrative { paragraphs: NarrativeParagraph[]; text: string }
+/** UniqueValues narrative budgets (issue #266): at most this many categories are named in the sentence. */
+export const UNIQUE_VALUES_MAX_CATEGORIES = 20;
+/** Each named category is truncated to at most this many characters. */
+export const UNIQUE_VALUES_MAX_LABEL_CHARS = 100;
+/** The named categories plus their separators occupy at most this many characters in total. */
+export const UNIQUE_VALUES_MAX_TEXT_CHARS = 1000;
 export interface InsightRow { category: Cell; time?: Cell; values: (number | null)[] }
 export interface InsightInput { category?: Field; time?: Field; measures: Field[]; computations?: unknown; formatting?: VisualFormatting }
 
@@ -48,8 +54,24 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
     if (request.kind === 'uniqueValues') {
       // Distinct categories in deterministic typed order, independent of incoming row order.
       const sorted = [...rows].sort((a, b) => { const ak = JSON.stringify(a.category), bk = JSON.stringify(b.category); return ak < bk ? -1 : ak > bk ? 1 : 0; });
+      // Bound the narrative (issue #266): cap the category count, each label
+      // length, and the total named text, and disclose how many categories
+      // were omitted. The complete authorized result stays available through
+      // View data/export; only this sentence is bounded.
+      const shown: string[] = [];
+      let used = 0;
+      for (const row of sorted) {
+        if (shown.length >= UNIQUE_VALUES_MAX_CATEGORIES) break;
+        const raw = label(row.category);
+        const named = raw.length > UNIQUE_VALUES_MAX_LABEL_CHARS ? `${raw.slice(0, UNIQUE_VALUES_MAX_LABEL_CHARS - 1)}…` : raw;
+        const cost = named.length + (shown.length ? 2 : 0);
+        if (used + cost > UNIQUE_VALUES_MAX_TEXT_CHARS) break;
+        shown.push(named); used += cost;
+      }
+      const omitted = sorted.length - shown.length;
       parts = [text(`Unique ${fieldName(input.category!, input.formatting)}: `),
-        ...sorted.flatMap((row, index) => [...(index ? [text('; ')] : []), text(label(row.category))]), text('.')];
+        ...shown.flatMap((named, index) => [...(index ? [text('; ')] : []), text(named)]),
+        ...(omitted ? [text(`; and ${omitted} more`)] : []), text('.')];
     } else if (request.kind === 'totalAggregation') {
       parts = [text(`Total ${name}: `), value(total), text('.')];
     } else if (request.kind === 'maximumMinimum' || request.kind === 'topBottomRanked') {

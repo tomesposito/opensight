@@ -85,6 +85,12 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Insight unique-values narratives are now bounded (#266): at most 20
+  categories are named in the sentence, each label is truncated at 100
+  characters, and the named text is capped at 1,000 characters in total,
+  with the omitted category count disclosed in the sentence. The complete
+  authorized result remains available through View data/export.
+
 - Insight top/bottom movers now reject duplicate decoded category/period
   pairs (#265): two rows for the same category whose time values are
   different spellings of the same period (for example `2024-01` and

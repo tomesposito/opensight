@@ -76,6 +76,26 @@ test('unique-values executes with no Values measure at all (native category-only
   assert.throws(() => normalizeInsight({ computations: [{ uniqueValues: { computationId: 'u' } }, { totalAggregation: { computationId: 't' } }] }, [category], []), error('INSIGHT_VALUES_REQUIRED'));
 });
 
+test('unique-values bounds the narrative at 20 categories and discloses the omitted count (issue #266)', () => {
+  const entries = Array.from({ length: 25 }, (_, i) => [`Cat${String(i).padStart(2, '0')}`, i]);
+  const result = narrative(rowsOf(entries));
+  const shown = Array.from({ length: 20 }, (_, i) => `Cat${String(i).padStart(2, '0')}`);
+  assert.equal(result.text, `Unique region: ${shown.join('; ')}; and 5 more.`);
+  // Deterministic under reversed input, and no disclosure at exactly the cap.
+  assert.deepEqual(narrative(rowsOf(entries.toReversed())), result);
+  assert.equal(narrative(rowsOf(entries.slice(0, 20))).text, `Unique region: ${shown.join('; ')}.`);
+});
+
+test('unique-values truncates long labels and caps the total named text (issue #266)', () => {
+  const long = 'x'.repeat(150);
+  assert.equal(narrative(rowsOf([[long, 1]])).text, `Unique region: ${'x'.repeat(99)}….`);
+  // Twenty 100-char labels: the 1,000-char text budget admits 9 (100 + 8×102 = 916); a 10th would reach 1,018.
+  const entries = Array.from({ length: 20 }, (_, i) => [`${String(i).padStart(2, '0')}${'y'.repeat(98)}`, i]);
+  const result = narrative(rowsOf(entries));
+  assert.match(result.text, /; and 11 more\.$/);
+  assert.ok(result.text.length <= 'Unique region: '.length + 1000 + '; and 11 more.'.length, result.text.length);
+});
+
 test('unique-values fails closed on duplicate categories and invalid measure values', () => {
   assert.throws(() => narrative(rowsOf([['East', 1], ['East', 2]])), error('INSIGHT_CATEGORY_INVALID'));
   for (const n of [Infinity, NaN, '3']) assert.throws(() => narrative(rowsOf([['East', n]])), error('INSIGHT_VALUE_INVALID'));
