@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { planVisual, ExpressionBinder, expressionSql, parseExpression } from '@opensight/query-engine';
-import { redshiftType, redshiftResultValue, redshiftGranularity } from '../dist/redshift-sql.js';
+import { redshiftType, redshiftResultValue, redshiftGranularity, redshiftLiteral } from '../dist/redshift-sql.js';
 import { quoteIdentifier } from '../dist/validation.js';
 import { request, calculation } from './helpers.mjs';
 const binder = new ExpressionBinder('sales_data', [{ name: 'region', scalarType: 'string', type: 'STRING', nullable: true }, { name: 'revenue', scalarType: 'number', type: 'DECIMAL', nullable: true }, { name: 'day', scalarType: 'datetime', type: 'DATETIME', nullable: true }], []);
@@ -59,4 +59,8 @@ test('Redshift native type mapping and wire scalar conversion are explicit', () 
     if (typeof type === 'number') assert.throws(() => redshiftResultValue(null, type), { code: 'UNSUPPORTED_FEATURE' });
   }
   for (const [oid, value] of [[701, 'NaN'], [1700, 'Infinity'], [16, 'yes'], [23, ''], [23, 'secret']]) assert.throws(() => redshiftResultValue(value, oid), { code: 'EXECUTION_ERROR' });
+});
+
+test('Redshift literals preserve backslashes without depending on session escape settings', () => {
+  assert.equal(redshiftLiteral("x\\' OR TRUE --"), "('x' || CHR(92) || ''' OR TRUE --')");
 });

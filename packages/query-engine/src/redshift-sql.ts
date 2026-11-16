@@ -3,6 +3,9 @@ import type { Dimension, ResultValue, RowExpression } from './types.js';
 import { constant, dateUnits, formatParts } from './datetime.js';
 import { fail, quoteLiteral } from './validation.js';
 
+/** Avoid dependence on server backslash-literal settings in generated format literals. */
+export const redshiftLiteral = (value: string): string => value.includes('\\')
+  ? `(${value.split('\\').map(quoteLiteral).join(' || CHR(92) || ')})` : quoteLiteral(value);
 export const redshiftTimestamp = (value: string): string => `TO_CHAR(${value}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
 export function redshiftGranularity(value: string, grain: NonNullable<Dimension['granularity']>): string {
   const format = { YEAR: 'YYYY', QUARTER: 'YYYY-"Q"Q', MONTH: 'YYYY-MM', DAY: 'YYYY-MM-DD' }[grain];
@@ -38,7 +41,7 @@ export function redshiftScalarSql(e: Extract<RowExpression, { kind: 'call' }>, c
       // Fixed-width numeric tokens and UTC offsets only; no unverified format modifiers.
       const formats: Record<string, string> = { yyyy: 'YYYY', YYYY: 'YYYY', yy: 'YY', MM: 'MM', dd: 'DD', HH: 'HH24', hh: 'HH12', mm: 'MI', ss: 'SS', S: 'MS', SS: 'MS', SSS: 'MS', a: 'AM' };
       const parts = formatParts(constant(e.args[1], "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")).map(p => {
-        if (p.literal !== undefined) return quoteLiteral(p.literal);
+        if (p.literal !== undefined) return redshiftLiteral(p.literal);
         const token = p.token!;
         if (token === 'Z' || token === 'ZZ') return quoteLiteral(token === 'Z' ? '+0000' : '+00:00');
         if (!Object.hasOwn(formats, token)) return unsupported();
