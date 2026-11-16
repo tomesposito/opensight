@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseQsBundle } from '@opensight/bundle-parser';
-import { activeSheet, authorReducer, emptyDraft, serializeDraft, serializeVisual, validateDraft } from '../build/test/authoring.js';
+import { activeSheet, authorReducer, authorVisualProblem, emptyDraft, serializeDraft, serializeVisual, validateDraft } from '../build/test/authoring.js';
 import { buildAuthorVisual } from '../build/test/author-preview.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { importBundle, exportBundle, downloadBundleBytes } from '../build/test/bundle-authoring.js';
@@ -98,6 +98,64 @@ test('disabled area forecast remains draft-local and serializes only after enabl
   assert.equal(serializeDraft(draft).definition.sheets[0].visuals[0].lineChartVisual.chartConfiguration.forecastConfigurations, undefined);
   assert.deepEqual(serializeVisual(selected(withForecast(draft))).lineChartVisual.chartConfiguration.forecastConfigurations,
     [{ periodsForward: 5, periodsBackward: 1, predictionInterval: 90, seasonality: 'AUTOMATIC' }]);
+});
+
+test('malformed imported forecast configurations are blocking and stay out of the draft (issue #263)', async () => {
+  const valid = { periodsForward: 5, periodsBackward: 1, predictionInterval: 90, seasonality: 'AUTOMATIC' };
+  const cases = [
+    ['string lower boundary', { ...valid, lowerBoundary: '20' }],
+    ['string upper boundary', { ...valid, upperBoundary: '500' }],
+    ['unknown property', { ...valid, unsupportedThing: true }],
+    ['inverted boundary pair', { ...valid, lowerBoundary: 500, upperBoundary: 10 }],
+    ['bad prediction interval', { ...valid, predictionInterval: 42 }],
+    ['string periodsForward', { ...valid, periodsForward: '5' }],
+    ['custom seasonality without a value', { ...valid, seasonality: 'CUSTOM' }],
+    ['unsupported seasonality', { ...valid, seasonality: 'WEEKLY' }],
+    ['non-object configuration', null],
+  ];
+  for (const [name, config] of cases) {
+    const bundle = await parseQsBundle(await downloadBundleBytes(withForecast(add('line'))));
+    const chart = bundle.members[0].resource.definition.sheets[0].visuals[0].lineChartVisual.chartConfiguration;
+    chart.forecastConfigurations = [config];
+    const restored = importBundle(bundle);
+    const visual = selected(restored);
+    assert.equal(visual.forecast, undefined, `${name}: malformed forecast must not become editable draft state`);
+    const problem = authorVisualProblem(visual);
+    assert.match(problem ?? '', /Unsupported features/, `${name}: preview must be blocked, got ${problem}`);
+    assert.match(problem ?? '', /forecast/i, `${name}: diagnostic must name the forecast configuration`);
+    assert.ok(restored.bundle.report[0].messages.some(m => /forecast/i.test(m)), `${name}: import report names the forecast problem`);
+    assert.deepEqual(exportBundle(restored), bundle, `${name}: unchanged export preserves the original definition verbatim`);
+  }
+});
+
+test('malformed imported forecast configurations block area visuals too (issue #263)', async () => {
+  const bundle = await parseQsBundle(await downloadBundleBytes(withForecast(add('area'))));
+  const chart = bundle.members[0].resource.definition.sheets[0].visuals[0].lineChartVisual.chartConfiguration;
+  chart.forecastConfigurations = [{ periodsForward: 5, predictionInterval: 90, seasonality: 'AUTOMATIC', upperBoundary: '500' }];
+  const restored = importBundle(bundle);
+  assert.equal(selected(restored).kind, 'area');
+  assert.equal(selected(restored).forecast, undefined);
+  assert.match(authorVisualProblem(selected(restored)) ?? '', /Unsupported features/);
+  assert.deepEqual(exportBundle(restored), bundle);
+});
+
+test('non-array forecastConfigurations is a blocking diagnostic (issue #263)', async () => {
+  const bundle = await parseQsBundle(await downloadBundleBytes(withForecast(add('line'))));
+  const chart = bundle.members[0].resource.definition.sheets[0].visuals[0].lineChartVisual.chartConfiguration;
+  chart.forecastConfigurations = { periodsForward: 5 };
+  const restored = importBundle(bundle);
+  assert.equal(selected(restored).forecast, undefined);
+  assert.match(authorVisualProblem(selected(restored)) ?? '', /Unsupported features/);
+  assert.deepEqual(exportBundle(restored), bundle);
+});
+
+test('valid imported forecast with boundaries still imports clean (issue #263)', async () => {
+  const bounded = { enabled: true, periodsForward: 2, periodsBackward: 0, predictionInterval: 80, seasonality: 7, lowerBoundary: 0, upperBoundary: 500 };
+  const bundle = await parseQsBundle(await downloadBundleBytes(authorReducer(add('line'), { type: 'forecast', forecast: bounded })));
+  const restored = importBundle(bundle);
+  assert.deepEqual(selected(restored).forecast, bounded);
+  assert.deepEqual(selected(restored).imported.issues, []);
+  assert.equal(authorVisualProblem(selected(restored)), undefined);
 });
 
 test('foreign AREA LineChartVisual hydrates forecast state and keeps the import report', () => {
