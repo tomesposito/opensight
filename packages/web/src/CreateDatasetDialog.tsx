@@ -4,11 +4,11 @@ import type { createApiClient } from './api-client.js';
 import { useAccess } from './access.js';
 import { DataDialog, DataTable } from './DataSectionUI.js';
 import { ConnectorDetails } from './DataSources.js';
+import { queryConnector } from './query-connectors.js';
 import { rawSources, useDataCatalog } from './data-section.js';
 
 export type DatasetCreationClient = Pick<ReturnType<typeof createApiClient>, 'listPrepSources' | 'listPrepDatasets' | 'uploadFile' | 'validateConnector'>;
-// MySQL is explicitly requested by the brief, but its registry status must stay visible.
-export const creationConnectors = connectors.filter(connector => connector.category !== 'AWS' && (connector.implementation === 'upload' || connector.implementation === 'query' || connector.id === 'mysql'));
+export const creationConnectors = connectors.filter(connector => connector.category !== 'AWS' && (connector.implementation === 'upload' || connector.implementation === 'query'));
 /**
  * Shimmer table placeholder shown while the data-source catalog loads (issue
  * #108 polish). It is sized so the dialog body stays at its 320px min-height
@@ -38,7 +38,7 @@ export function CreateDatasetDialog({ client, start = 'dataset', onClose, onPrep
   const nextStage = (next: typeof stage) => { setStage(next); setSearch(''); setSelectedSource(''); };
   const upload = () => { setConnectorId('file'); nextStage('config'); };
   const title = stage === 'dataset' ? 'Create dataset' : stage === 'source' ? 'Create data source' : `${connector?.name ?? 'Data source'} setup`;
-  const postgresSources = access.mode === 'hosted' ? sources.filter(source => source.connectorId === 'postgresql' && source.available) : [];
+  const querySources = access.mode === 'hosted' ? sources.filter(source => source.connectorId === connector?.id && !!queryConnector(source.connectorId) && source.available) : [];
   return <DataDialog title={title} description={stage === 'dataset' ? 'Choose a data source to create a dataset.' : stage === 'source' ? 'Choose a connector for your data.' : undefined} onClose={onClose}>
     <div className="data-dialog-body">
       {stage === 'dataset' ? <>
@@ -51,9 +51,9 @@ export function CreateDatasetDialog({ client, start = 'dataset', onClose, onPrep
         </label>)}</div>
         {!creationConnectors.some(item => item.name.toLowerCase().includes(search.trim().toLowerCase())) && <p role="status">No connectors match your search.</p>}
       </> : connector && <>
-        {connector.id === 'postgresql' && <><p>PostgreSQL credentials are configured by the operator through environment variables. This form cannot create a database connection.</p>
-          <label>Configured source<select aria-label="Configured PostgreSQL source" value={selectedSource} onChange={event => setSelectedSource(event.target.value)}><option value="">Choose a source</option>{postgresSources.map(item => <option value={item.id} key={item.id}>{item.name ?? item.id}</option>)}</select></label>
-          {catalog.loading ? <p role="status">Loading configured sources…</p> : catalog.error ? <p role="alert">{catalog.error}</p> : !postgresSources.length && <p role="status">No configured PostgreSQL sources. Needs hosted API and an operator-configured connection.</p>}</>}
+        {queryConnector(connector.id) && <><p>Database credentials are configured by the operator through environment variables. This form cannot create a database connection.</p>
+          <label>Configured source<select aria-label={`Configured ${connector.name} source`} value={selectedSource} onChange={event => setSelectedSource(event.target.value)}><option value="">Choose a source</option>{querySources.map(item => <option value={item.id} key={item.id}>{item.name ?? item.id}</option>)}</select></label>
+          {catalog.loading ? <p role="status">Loading configured sources…</p> : catalog.error ? <p role="alert">{catalog.error}</p> : !querySources.length && <p role="status">No configured {connector.name} sources. Needs hosted API and an operator-configured connection.</p>}</>}
         <ConnectorDetails key={connector.id} id={connector.id} client={client} local={access.mode === 'local'} onUploaded={onPrep} />
       </>}
       {!client && <p className="data-note">Static demo · Creating datasets needs a local or hosted API.</p>}
@@ -61,7 +61,7 @@ export function CreateDatasetDialog({ client, start = 'dataset', onClose, onPrep
     <footer>{stage !== 'dataset' && <button onClick={() => nextStage(stage === 'config' ? 'source' : 'dataset')}>Back</button>}<button onClick={onClose}>Cancel</button>
       {stage === 'dataset' && <button className="data-primary" disabled={!source} onClick={() => { if (source) onPrep(typeof source.ref === 'string' ? source.ref : source.id); }}>Select</button>}
       {stage === 'source' && <button className="data-primary" disabled={!connector || connector.implementation === 'unimplemented'} onClick={() => { if (connector && connector.implementation !== 'unimplemented') nextStage('config'); }}>Next</button>}
-      {stage === 'config' && connector?.id === 'postgresql' && <button className="data-primary" disabled={!client || catalog.loading || !!catalog.error || !postgresSources.some(item => item.id === selectedSource)} onClick={() => { const item = postgresSources.find(item => item.id === selectedSource); if (client && !catalog.loading && !catalog.error && item) onPrep(typeof item.ref === 'string' ? item.ref : item.id); }}>Select</button>}
+      {stage === 'config' && connector && queryConnector(connector.id) && <button className="data-primary" disabled={!client || catalog.loading || !!catalog.error || !querySources.some(item => item.id === selectedSource)} onClick={() => { const item = querySources.find(item => item.id === selectedSource); if (client && !catalog.loading && !catalog.error && item) onPrep(typeof item.ref === 'string' ? item.ref : item.id); }}>Select</button>}
     </footer>
   </DataDialog>;
 }

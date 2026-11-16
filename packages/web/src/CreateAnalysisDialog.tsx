@@ -4,6 +4,7 @@ import { FieldSearchInput } from './FieldSearchInput.js';
 import { createFieldSearchDraft } from './field-search.js';
 import type { QueryClient } from './author-query.js';
 import { EmptyPageState } from './LocalEmptyState.js';
+import { queryConnector } from './query-connectors.js';
 import { prepMessage, type PrepSourceSummary } from './data-prep.js';
 
 interface Props {
@@ -32,8 +33,8 @@ function choices(sources: PrepSourceSummary[], sampleAvailable: boolean, offline
     return [{
       key: `dataset:${source.ref.dataset}`, name: source.name ?? source.id,
       dataset: { id: source.ref.dataset, name: source.name ?? source.id, columns: source.columns },
-      source: source.connectorId === 'file' ? 'file' : source.connectorId === 'postgresql' ? 'database' : 'unknown',
-      sourceName: source.connectorId === 'file' ? 'File' : source.connectorId === 'postgresql' ? 'PostgreSQL' : 'Unavailable',
+      source: source.connectorId === 'file' ? 'file' : queryConnector(source.connectorId) ? 'database' : 'unknown',
+      sourceName: source.connectorId === 'file' ? 'File' : queryConnector(source.connectorId)?.name ?? 'Unavailable',
       mode: source.execution?.mode === 'BLAZE' ? 'BLAZE' : source.execution?.mode === 'DIRECT_QUERY' ? 'Direct query' : undefined,
       available: source.available, error: source.available ? undefined : source.errorCode ?? 'DATASET_UNAVAILABLE',
     }];

@@ -5,7 +5,7 @@ import { create } from 'react-test-renderer';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { DataPrep } from '../build/test/DataPrep.js';
 import { PrepStepEditor } from '../build/test/PrepStepEditor.js';
-import { prepBundle, prepCatalog, newPrepStep, prepSchema, prepStepIssue, prepStepLabel } from '../build/test/data-prep.js';
+import { prepPlan, prepBundle, prepCatalog, newPrepStep, prepSchema, prepStepIssue, prepStepLabel } from '../build/test/data-prep.js';
 import { createApiClient } from '../build/test/api-client.js';
 import { assembleQsBundle, parseQsBundle } from '@opensight/bundle-parser/browser';
 const source = { id: 'upload-source', connectorId: 'file', columns: [{ name: 'region', type: 'STRING' }, { name: 'amount', type: 'DECIMAL' }], available: true };
@@ -573,4 +573,14 @@ test('grid formula validation blocks unknown columns, new functions, aggregates 
   await ui.click('Preview'); await ui.click('Filter revenue'); await field(ui.renderer, 'Value', 'invalid');
   assert.equal(ui.button('Apply step').props.disabled, true); await submitStep(ui.renderer);
   assert.equal(graphPipeline(ui).steps.length, 0);
+});
+
+for (const connectorId of ['mysql', 'mariadb']) test(`${connectorId} prep validates staged DuckDB transformations and retains source dialect`, () => {
+  const database = { ...source, connectorId };
+  const transformed = { ...pipeline, steps: [{ id: 'rename', kind: 'rename', config: { column: 'region', name: 'area' } }, { id: 'filter', kind: 'filter', config: { filters: [{ columnName: 'area', operator: 'EQUALS', value: 'east' }] } }] };
+  const plan = prepPlan(transformed, [database]);
+  assert.equal(plan.sourceDialect, 'mysql'); assert.equal(plan.sourceConnectorId, connectorId);
+  assert.equal(plan.dialect, 'duckdb'); assert.deepEqual(plan.parameters, ['east']);
+  assert.deepEqual(plan.columns, [{ name: 'area', type: 'STRING' }, { name: 'amount', type: 'DECIMAL' }]);
+  assert.throws(() => prepPlan(transformed, [{ ...database, available: false }]), { code: 'PREP_SECURITY_REJECTED' });
 });

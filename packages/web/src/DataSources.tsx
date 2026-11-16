@@ -3,6 +3,7 @@ import { connectors, connectorDefinition, connectorState, validateConnectorConfi
 import type { createApiClient } from './api-client.js';
 import type { UploadSummary } from '@opensight/query-engine';
 import { DirectUpload, type DirectUploadClient } from './DirectUpload.js';
+import { queryConnector } from './query-connectors.js';
 import { useToast } from './Toasts.js';
 
 type Client = Pick<ReturnType<typeof createApiClient>, 'uploadFile' | 'validateConnector' | 'listPrepSources'> & Partial<DirectUploadClient & Pick<ReturnType<typeof createApiClient>, 'getTransportCapabilities'>>;
@@ -10,22 +11,22 @@ export function DataSources({ client, local = false, onPrep }: { client?: Client
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState('file');
   const [showUnavailable, setShowUnavailable] = useState(false);
-  const [discovery, setDiscovery] = useState<{ client: Client; source?: string; error?: string }>();
+  const [discovery, setDiscovery] = useState<{ client: Client; sources?: { id: string; connectorId: string }[]; error?: string }>();
   useEffect(() => {
     setDiscovery(undefined);
     if (!client || local) return;
     let active = true;
     void client.listPrepSources().then(sources => {
       // An API client alone is not proof of a usable hosted connection.
-      const source = sources.find(s => s.connectorId === 'postgresql' && s.available && (!s.ref || typeof s.ref === 'string'));
-      if (active) setDiscovery({ client, source: source?.id });
+      const available = sources.filter(s => queryConnector(s.connectorId) && s.available && (!s.ref || typeof s.ref === 'string'));
+      if (active) setDiscovery({ client, sources: available });
     }).catch(error => {
       if (active) setDiscovery({ client, error: error instanceof Error ? error.message : 'Source discovery failed' });
     });
     return () => { active = false; };
   }, [client, local]);
-  const postgresSource = !local && discovery?.client === client && onPrep ? discovery?.source : undefined;
-  const usable = (id: string) => id === 'file' || (id === 'postgresql' && !!postgresSource);
+  const configuredSource = (id: string) => !local && discovery?.client === client && onPrep ? discovery?.sources?.find(s => s.connectorId === id)?.id : undefined;
+  const usable = (id: string) => id === 'file' || !!configuredSource(id);
   const current = usable(selected) || showUnavailable ? selected : 'file';
   const matches = connectors.filter(c => `${c.name} ${c.category}`.toLowerCase().includes(search.toLowerCase()));
   const available = matches.filter(c => usable(c.id)), unavailable = matches.filter(c => !usable(c.id));
@@ -33,7 +34,7 @@ export function DataSources({ client, local = false, onPrep }: { client?: Client
     <span className={`connector-symbol category-${c.category.toLowerCase()}`} aria-hidden="true">{c.category === 'File' ? '↑' : c.category === 'AWS' ? '☁' : c.category === 'SaaS' ? '◇' : '▤'}</span>
     <span className="connector-name">{c.name}</span><span className="connector-category">{c.id === 'file' ? 'CSV, TSV, JSON and Excel' : c.category}</span>
     {c.id === 'file' && <span className="connector-description">{client ? 'Upload now, prepare your data, then build a chart.' : 'Explore the file setup. Uploads are unavailable in the static demo.'}</span>}
-    <span className="connector-state">{c.id === 'file' && client ? 'Upload available' : c.id === 'postgresql' && postgresSource ? 'Needs setup' : connectorState(c.id, !!client).message}</span>
+    <span className="connector-state">{c.id === 'file' && client ? 'Upload available' : configuredSource(c.id) ? 'Needs setup' : connectorState(c.id, !!client).message}</span>
   </button>)}</div>;
   return <section className="data-sources" aria-labelledby="data-sources-title">
     <div className="data-sources-heading"><div><p className="eyebrow">DATA SOURCES</p><h1 id="data-sources-title">Create a data set</h1><p>{client ? 'Start with a file: upload → prepare → build a chart.' : 'Explore file setup, then run a local or hosted API to upload your data.'}</p></div>{onPrep && <button onClick={() => onPrep()}>Prepare data</button>}</div>
@@ -43,11 +44,11 @@ export function DataSources({ client, local = false, onPrep }: { client?: Client
       <label className="connector-toggle"><input type="checkbox" checked={showUnavailable} onChange={e => { setShowUnavailable(e.target.checked); if (!e.target.checked && !usable(selected)) setSelected('file'); }} />Show unavailable connectors</label>
       {showUnavailable && <section className="connector-unavailable" aria-labelledby="unavailable-connectors-title"><h2 id="unavailable-connectors-title">Not yet available</h2><p>These sources cannot be connected from this gallery. Select one to see what is missing.</p>{!local && discovery?.client === client && discovery?.error && <p role="status">Could not check configured connections: {discovery.error}</p>}{cards(unavailable)}</section>}
       {available.length === 0 && (!showUnavailable || unavailable.length === 0) && <p role="status">No data sources match your search.{!showUnavailable && ' Turn on Show unavailable connectors to search the full catalog.'}</p>}</div>
-      <ConnectorDetails key={`${current}-${!!client}-${local}-${current === 'postgresql' ? postgresSource ?? '' : ''}`} id={current} client={client} local={local} postgresSource={postgresSource} onPrep={onPrep} />
+      <ConnectorDetails key={`${current}-${!!client}-${local}-${configuredSource(current) ?? ''}`} id={current} client={client} local={local} querySource={configuredSource(current)} onPrep={onPrep} />
     </div>
   </section>;
 }
-export function ConnectorDetails({ id, client, local, postgresSource, onPrep, onUploaded }: { id: string; client?: Client; local: boolean; postgresSource?: string; onPrep?: (source?: string) => void; onUploaded?: (source: string) => void }) {
+export function ConnectorDetails({ id, client, local, querySource, onPrep, onUploaded }: { id: string; client?: Client; local: boolean; querySource?: string; onPrep?: (source?: string) => void; onUploaded?: (source: string) => void }) {
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const connector = connectorDefinition(id), fileSource = id === 'file';
@@ -56,7 +57,7 @@ export function ConnectorDetails({ id, client, local, postgresSource, onPrep, on
   const [config, setConfig] = useState<Record<string, string>>(fileSource ? { format: 'csv' } : {});
   const [file, setFile] = useState<File>();
   const [busy, setBusy] = useState(false);
-  const availability = (): ConnectorState => id === 'postgresql' && postgresSource ? { state: 'not_configured', message: 'Needs setup · Prepare an operator-configured connection.' } : connectorState(id, !!client);
+  const availability = (): ConnectorState => queryConnector(id) && querySource ? { state: 'not_configured', message: 'Needs setup · Prepare an operator-configured connection.' } : connectorState(id, !!client);
   const [status, setStatus] = useState<ConnectorState>(availability);
   const [error, setError] = useState('');
   const [upload, setUpload] = useState<UploadSummary>();
@@ -89,8 +90,8 @@ export function ConnectorDetails({ id, client, local, postgresSource, onPrep, on
     finally { setBusy(false); }
   };
   return <aside className="connector-details" aria-label={`${connector.name} setup`}><p className="eyebrow">SOURCE DETAILS</p><h2>{connector.name}</h2><p className="connector-availability" role="status">{status.message}</p>
-    <p>{fileSource ? 'CSV, TSV, JSON, XLS and XLSX. The API validates every row and reports the staged schema and row count.' : id === 'postgresql' ? local ? 'PostgreSQL requires an operator-provisioned hosted source. Connection setup is unavailable in this local workspace.' : 'A hosted operator must provision the source and its credentials. This gallery cannot create a connection.' : 'Configuration is documented for future connection support. This connector has no product API connection path.'}</p>
-    {id === 'postgresql' && postgresSource && onPrep && <button onClick={() => onPrep(postgresSource)}>Prepare PostgreSQL data</button>}
+    <p>{fileSource ? 'CSV, TSV, JSON, XLS and XLSX. The API validates every row and reports the staged schema and row count.' : queryConnector(id) ? local ? `${connector.name} requires an operator-provisioned hosted source. Connection setup is unavailable in this local workspace.` : 'A hosted operator must provision the source and its credentials. This gallery cannot create a connection.' : 'Configuration is documented for future connection support. This connector has no product API connection path.'}</p>
+    {queryConnector(id) && querySource && onPrep && <button onClick={() => onPrep(querySource)}>Prepare {connector.name} data</button>}
     <form onSubmit={event => { event.preventDefault(); if (!direct) void submit(); }}>
       {fileSource && <label>File<input type="file" accept=".csv,.tsv,.json,.xls,.xlsx" disabled={!enabled || busy} onChange={e => { const next = e.target.files?.[0]; setFile(next); setUpload(undefined); setError(''); if (next) { const format = next.name.split('.').at(-1)?.toLowerCase(); if (format && ['csv', 'tsv', 'json', 'xls', 'xlsx'].includes(format)) setConfig({ format }); } }} /></label>}
       {Object.entries(connector.schema).filter(([key]) => key !== 'delimiter' || ['csv', 'tsv'].includes(config.format ?? '')).filter(([key]) => key !== 'sheet' || ['xls', 'xlsx'].includes(config.format ?? '')).map(([key, field]) => <label key={key}>{field.label}{field.required ? ' *' : ' (optional)'}{field.kind === 'choice' ? <select value={config[key] ?? ''} disabled={!enabled || busy} required={field.required} onChange={e => update(key, e.target.value)}>{!field.required && <option value="">Automatic</option>}{field.values.map(v => <option key={v} value={v}>{v === '\t' ? 'Tab' : v === ',' ? 'Comma' : v === ';' ? 'Semicolon' : v === '|' ? 'Pipe' : v.toUpperCase()}</option>)}</select> : <input value={config[key] ?? ''} disabled={!enabled || busy} required={field.required} maxLength={256} placeholder={field.kind === 'environment' ? `OPENSIGHT_${key.replace(/Env$/, '').toUpperCase()}` : 'Worksheet name'} onChange={e => update(key, e.target.value)} />}</label>)}
