@@ -20,7 +20,7 @@ test('Redshift library executor uses real pg wire binding, exact session SQL, ma
   const result = await executeRedshift(redshiftRequest(), { ...options, environment: { ...environment, DB_PORT: String(harness.port) } });
   assert.equal(result.plan.dialect, 'redshift'); assert.equal(result.plan.tableDatabase, 'synthetic_sales');
   assert.deepEqual(result.rows, [{ region: 'East', revenue: '9007199254740993' }]);
-  assert.deepEqual(harness.sessions, ["SET TIME ZONE 'UTC'", 'SET statement_timeout TO 10000']);
+  assert.deepEqual(harness.sessions, ["SET TIME ZONE 'UTC'", 'SET enable_case_sensitive_identifier TO true', 'SET statement_timeout TO 10000']);
   assert.equal(harness.startups[0].database, 'synthetic_sales'); assert.deepEqual(harness.errors, []);
   assert.equal(types.getTypeParser(1700), parser);
 });

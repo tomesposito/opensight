@@ -14,7 +14,7 @@ export interface RedshiftExecuteOptions {
   allowInsecureLoopback?: boolean;
 }
 /** Pin session SQL separately from Postgres: no backend PID, transaction or cursor assumptions. */
-export const redshiftSessionSql = ["SET TIME ZONE 'UTC'", 'SET statement_timeout TO 10000'] as const;
+export const redshiftSessionSql = ["SET TIME ZONE 'UTC'", 'SET enable_case_sensitive_identifier TO true', 'SET statement_timeout TO 10000'] as const;
 export async function executeRedshift(request: PlanRequest, options: RedshiftExecuteOptions): Promise<QueryResult> {
   const plan = planVisual(request, { dialect: 'redshift' });
   const config = validateConnectorConfig('redshift-manual', options?.config);

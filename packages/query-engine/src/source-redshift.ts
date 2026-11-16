@@ -16,7 +16,9 @@ export async function streamSourceRedshift(read: SourceRead, connection: SourceC
   if (connection.ssl === false && !['127.0.0.1', '::1'].includes(connection.host)) fail('INVALID_INPUT', '$.source', 'Unencrypted Redshift connections are restricted to loopback');
   sink.start(plan.columns);
   const duration = Math.min(control?.executionMs ?? 10_000, 10_000);
-  const client = new Client({ ...connection, connectionTimeoutMillis: 3000, query_timeout: duration });
+  // pg query_timeout installs a callback: it accumulates rows and swallows Query error
+  // events. The one execution timer below bounds connection, setup and streaming instead.
+  const client = new Client({ ...connection, connectionTimeoutMillis: 3000, query_timeout: 0 });
   let consumerError: unknown, cancelled = false, stop: () => void;
   const stopped = new Promise<never>((_resolve, reject) => {
     client.on('error', reject);

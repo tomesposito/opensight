@@ -8,6 +8,7 @@ const binder = new ExpressionBinder('sales_data', [{ name: 'region', scalarType:
 const sql = expression => expressionSql(parseExpression(expression, '$.test', { bind: (name, path) => binder.bind(name, path) }), 'redshift');
 
 test('Redshift identifiers, bound values and explicit NULLS FIRST grouped SQL', () => {
+  for (const name of ['x'.repeat(128), 'é'.repeat(64), 'bad\0name']) assert.throws(() => quoteIdentifier(name, 'redshift'), { code: 'UNSUPPORTED_FEATURE' });
   assert.equal(quoteIdentifier('Sales"$1', 'redshift'), '"Sales""$1"');
   const p = planVisual(request('revenue-by-region'), { dialect: 'redshift' });
   assert.equal(p.sql, 'WITH "__opensight_filtered" AS (SELECT * FROM "public"."sales" WHERE "region" = $1)\nSELECT "region" AS "region", SUM("revenue") AS "revenue"\nFROM "__opensight_filtered"\nGROUP BY 1\nORDER BY 1 ASC NULLS FIRST');
@@ -42,7 +43,7 @@ const cases = [
   ["formatDate({day}, 'SS ZZ')", '(CASE WHEN "day" IS NULL THEN NULL ELSE (LEFT(TO_CHAR("day", \'MS\'), 2) || \' \' || \'+00:00\') END)'],
   ['toString({day})', 'TO_CHAR("day", \'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"\')'],
   ['strlen(upper({region}))', 'LENGTH(upper("region"))'],
-  ["concat({region}, 'x')", '("region" || CAST(\'x\' AS VARCHAR))'],
+  ["concat({region}, 'x')", '("region" || CAST(\'x\' AS VARCHAR(65535)))'],
   ['distinct_count({region})', 'COUNT(DISTINCT "region")'],
   ['decimalToInt({revenue})', 'TRUNC("revenue")'],
   ['round({revenue}, 2)', '(SIGN("revenue") * FLOOR(ABS("revenue") * POWER(10, CAST(TRUNC(CAST(2 AS DOUBLE PRECISION)) AS INTEGER)) + 0.5) / POWER(10, CAST(TRUNC(CAST(2 AS DOUBLE PRECISION)) AS INTEGER)))'],

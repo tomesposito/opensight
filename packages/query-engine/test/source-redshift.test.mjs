@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { Client, Query } from 'pg';
 import { setTimeout as delay } from 'node:timers/promises';
 import { streamSourceRedshift, planSourceRead } from '@opensight/query-engine';
 import { boundedPrepSql } from '../dist/prep-stream.js';
@@ -20,10 +21,16 @@ test('Redshift source SELECT binds tenant policy, formats timestamps, bounds row
 });
 test('Redshift streams bounded wire rows without cursor/transaction/PG cancellation statements', async t => {
   const h = await redshiftHarness(t, { evaluate(sql, values) { assert.match(sql, /LIMIT 3/); assert.deepEqual(values, read.tenantPredicate ? [read.tenantPredicate.value] : []); return { fields, rows: [row] }; } });
+  let bufferedRows; const original = Client.prototype.query;
+  t.mock.method(Client.prototype, 'query', function (config, ...args) {
+    if (config instanceof Query) config.on('end', result => { bufferedRows = result.rows.length; });
+    return original.call(this, config, ...args);
+  });
   const output = sink(); await streamSourceRedshift(read, h.connection, limits, output);
+  assert.equal(bufferedRows, 0, 'row events must not also accumulate a result array');
   assert.deepEqual(output.rows, [['tenant', '2026-01-01T00:00:00.123Z', 12]]);
-  assert.deepEqual(h.sessions, ["SET TIME ZONE 'UTC'", 'SET statement_timeout TO 10000']);
-  assert.equal(h.queries.length, 3); assert.deepEqual(h.errors, []);
+  assert.deepEqual(h.sessions, ["SET TIME ZONE 'UTC'", 'SET enable_case_sensitive_identifier TO true', 'SET statement_timeout TO 10000']);
+  assert.equal(h.queries.length, 4); assert.deepEqual(h.errors, []);
 });
 for (const mode of ['sentinel', 'extra', 'guard', 'untrusted-guard', 'long', 'unknown', 'unknown-empty', 'consumer']) test(`Redshift source closes and fails closed: ${mode}`, async t => {
   const h = await redshiftHarness(t, { evaluate: () => ({ fields: mode.startsWith('unknown') ? [{ name: 'v0', oid: 4000 }, ...fields.slice(1)] : fields,
