@@ -42,6 +42,38 @@ test('movers rejects malformed bodies, mixing, and bad dimension bindings before
   assert.throws(() => normalizeInsight(unbound, [category, time], [measure]), error('INSIGHT_FIELD_UNBOUND'));
 });
 
+test('movers rejects bindings that resolve against reordered wells instead of executing swapped (issue #268)', () => {
+  const config = configuration({ category: catField(category), time: dateField(time), value: value(measure) });
+  assert.equal(normalizeInsight(config, [category, time], [measure]).length, 1);
+  // The same valid explicit bindings against wells listed time-first pass
+  // the distinct/dated checks but would execute with the fields swapped:
+  // the categorical field would be decoded as dates. Fail closed instead.
+  assert.throws(() => normalizeInsight(config, [time, category], [measure]), error('INSIGHT_FIELD_UNBOUND'));
+  // With two date fields the swap is silent — wrong grouping/period
+  // semantics, no decoding failure — so it is rejected the same way, while
+  // the canonical two-date order stays valid.
+  const shipTime = { ...field('ship_month'), dateGranularity: 'MONTH' };
+  const twoDates = configuration({ category: dateField(shipTime), time: dateField(time), value: value(measure) });
+  assert.throws(() => normalizeInsight(twoDates, [time, shipTime], [measure]), error('INSIGHT_FIELD_UNBOUND'));
+  assert.equal(normalizeInsight(twoDates, [shipTime, time], [measure]).length, 1);
+});
+
+test('movers rejects multiple computations with inconsistent category/time roles (issue #268)', () => {
+  const shipTime = { ...field('ship_month'), dateGranularity: 'MONTH' };
+  const first = { topBottomMovers: { computationId: 'a', type: 'TOP', category: dateField(shipTime), time: dateField(time), value: value(measure) } };
+  const swapped = { topBottomMovers: { computationId: 'b', type: 'TOP', category: dateField(time), time: dateField(shipTime), value: value(measure) } };
+  assert.throws(() => normalizeInsight({ computations: [first, swapped] }, [shipTime, time], [measure]), error('INSIGHT_FIELD_UNBOUND'));
+  const consistent = { topBottomMovers: { computationId: 'b', type: 'BOTTOM', category: dateField(shipTime), time: dateField(time), value: value(measure) } };
+  assert.equal(normalizeInsight({ computations: [first, consistent] }, [shipTime, time], [measure]).length, 2);
+});
+
+test('compiler fails closed on movers wells listed in time/category order (issue #268)', () => {
+  const definition = { insightVisual: { visualId: 'movers-reordered', insightConfiguration: configuration({ category: catField(category), time: dateField(time), value: value(measure) }),
+    chartConfiguration: { fieldWells: { insightAggregatedFieldWells: { category: [dateField(time), catField(category)], values: [value(measure)] } } } } };
+  assert.throws(() => compileVisual({ source: 'bundle', path: '$', bindings: {}, rows: [], definition }),
+    e => e instanceof CompileError && /INSIGHT_FIELD_UNBOUND/.test(e.message));
+});
+
 test('movers projects category and time wells in order and rebinds each by column', () => {
   const config = configuration({ category: catField(category), time: dateField(time), value: value(measure), moverSize: 5 });
   assert.deepEqual(insightWells(config), { category: [catField(category), dateField(time)], values: [value(measure)] });
