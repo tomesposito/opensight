@@ -85,6 +85,16 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Insight top/bottom movers now reject category/time bindings that resolve
+  against wells listed in the opposite order (#268): normalization resolves
+  each computation's category and time bindings and fails with
+  `INSIGHT_FIELD_UNBOUND` when they are not the category dimension first
+  and the time dimension second, instead of discarding the resolved indexes
+  and executing with the fields swapped (a date-decoding failure for a
+  categorical field, or silently wrong grouping/period semantics with two
+  date fields). Multiple movers computations with inconsistent
+  category/time roles against the same wells are rejected the same way.
+
 - Insight configurations are now validated completely before any author
   query is issued (#267): draft admission rejects malformed native
   configurations (unknown variants, unsupported properties, duplicate

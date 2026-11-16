@@ -188,6 +188,15 @@ export function normalizeInsight(config: unknown, dimensions: Field[], measures:
       const categoryIndex = binding(c.category, dimensions, 0);
       const timeIndex = binding(c.time, dimensions, 1);
       if (categoryIndex === timeIndex) insightFail('INSIGHT_FIELD_UNBOUND', 'movers category and time must bind distinct fields');
+      // Execution honors the wells in category/time order by construction —
+      // the compiler reads dimension 0 as category and dimension 1 as time,
+      // and the narrative receives its fields in that same order — so a
+      // computation whose resolved bindings point at the wells in the
+      // opposite order must fail closed here instead of executing with the
+      // fields swapped (issue #268). Checking every computation also rejects
+      // multiple movers computations that bind inconsistent category/time
+      // roles against the same two wells.
+      if (categoryIndex !== 0 || timeIndex !== 1) insightFail('INSIGHT_FIELD_UNBOUND', 'movers category and time must bind the category dimension first and the time dimension second, in wells order');
       if (!dimensions[timeIndex]!.dateGranularity) insightFail('INSIGHT_TIME_REQUIRED', 'movers computations require a date/time dimension');
       return { kind, id, measure, type: c.type as 'TOP' | 'BOTTOM', size: Number(c.moverSize ?? 3), sortOrder: (c.sortOrder as 'PERCENT_DIFFERENCE' | 'ABSOLUTE_DIFFERENCE' | undefined) ?? 'PERCENT_DIFFERENCE' };
     }
