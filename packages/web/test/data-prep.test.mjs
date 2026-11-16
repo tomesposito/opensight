@@ -575,11 +575,11 @@ test('grid formula validation blocks unknown columns, new functions, aggregates 
   assert.equal(graphPipeline(ui).steps.length, 0);
 });
 
-for (const connectorId of ['mysql', 'mariadb']) test(`${connectorId} prep validates staged DuckDB transformations and retains source dialect`, () => {
+for (const connectorId of ['mysql', 'mariadb', 'redshift-manual']) test(`${connectorId} prep validates staged DuckDB transformations and retains source dialect`, () => {
   const database = { ...source, connectorId };
   const transformed = { ...pipeline, steps: [{ id: 'rename', kind: 'rename', config: { column: 'region', name: 'area' } }, { id: 'filter', kind: 'filter', config: { filters: [{ columnName: 'area', operator: 'EQUALS', value: 'east' }] } }] };
   const plan = prepPlan(transformed, [database]);
-  assert.equal(plan.sourceDialect, 'mysql'); assert.equal(plan.sourceConnectorId, connectorId);
+  assert.equal(plan.sourceDialect, connectorId === 'redshift-manual' ? 'redshift' : 'mysql'); assert.equal(plan.sourceConnectorId, connectorId);
   assert.equal(plan.dialect, 'duckdb'); assert.deepEqual(plan.parameters, ['east']);
   assert.deepEqual(plan.columns, [{ name: 'area', type: 'STRING' }, { name: 'amount', type: 'DECIMAL' }]);
   assert.throws(() => prepPlan(transformed, [{ ...database, available: false }]), { code: 'PREP_SECURITY_REJECTED' });

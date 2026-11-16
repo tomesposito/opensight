@@ -77,7 +77,7 @@ test('browsing the unavailable catalog preserves the active upload form', async 
   await ui.toggle(true); await ui.toggle(false);
   assert.equal(ui.root().findAllByType('select')[0].props.value, 'tsv');
 });
-for (const [connectorId, name] of [['postgresql', 'PostgreSQL'], ['mysql', 'MySQL'], ['mariadb', 'MariaDB']]) test(`only a discovered available hosted ${name} source exposes its prep action`, async t => {
+for (const [connectorId, name] of [['postgresql', 'PostgreSQL'], ['mysql', 'MySQL'], ['mariadb', 'MariaDB'], ['redshift-manual', 'Redshift (manual)']]) test(`only a discovered available hosted ${name} source exposes its prep action`, async t => {
   const pg = { id: `operator-${connectorId}`, connectorId, available: true, columns: [] };
   const calls = [], onPrep = source => calls.push(source);
   const hosted = { ...client, listPrepSources: async () => [pg] };
@@ -88,9 +88,9 @@ for (const [connectorId, name] of [['postgresql', 'PostgreSQL'], ['mysql', 'MySQ
   assert.deepEqual(calls, [pg.id]);
   await ui.toggle(true);
   assert.equal(ui.root().findByProps({ 'aria-labelledby': 'unavailable-connectors-title' }).findAllByType('button').length, 21);
-  await ui.toggle(false); assert.match(ui.text(), new RegExp(`${name} setup`));
+  await ui.toggle(false); assert.ok(ui.text().includes(`${name} setup`));
   await ui.update({ client: hosted, local: true, onPrep });
-  assert.deepEqual(ui.cards(), ['Upload a file']); assert.doesNotMatch(ui.text(), new RegExp(`${name} setup`));
+  assert.deepEqual(ui.cards(), ['Upload a file']); assert.equal(ui.text().includes(`${name} setup`), false);
 });
 test('unavailable sources, prepared references, absent prep navigation and failed discovery cannot promote PostgreSQL', async t => {
   for (const sources of [[], [{ ...pg, available: false }], [{ ...pg, ref: { dataset: 'derived' } }]]) {

@@ -72,12 +72,12 @@ export function prepBindings(sources: readonly PrepSourceSummary[]): PrepSource[
 }
 export function prepPlan(pipeline: PrepPipeline, sources: readonly PrepSourceSummary[], through?: string | null, context: PrepSchemaContext = {}) {
   const input = sources.find(s => prepRefKey(prepSourceRef(s)) === prepRefKey(pipeline.input));
-  const sourceDialect = input?.connectorId === 'postgresql' ? 'postgres' : input?.connectorId === 'mysql' || input?.connectorId === 'mariadb' ? 'mysql' : 'duckdb';
-  // Hosted MySQL/MariaDB prep reads admitted rows into DuckDB. The prep compiler
-  // has no native MySQL dialect: validate the same staged schema, keeping the
+  const sourceDialect = input?.connectorId === 'redshift-manual' ? 'redshift' : input?.connectorId === 'postgresql' ? 'postgres' : input?.connectorId === 'mysql' || input?.connectorId === 'mariadb' ? 'mysql' : 'duckdb';
+  // Hosted MySQL/MariaDB/Redshift prep reads admitted rows into DuckDB. The prep compiler
+  // has no native dialect for these sources: validate the same staged schema, keeping the
   // source dialect separate from the SQL actually used for transformations.
-  const dialect = sourceDialect === 'mysql' ? 'duckdb' : sourceDialect;
-  const bindings = prepBindings(sources).map(s => s.connectorId === 'mysql' || s.connectorId === 'mariadb' ? { ...s, connectorId: 'file' } : s);
+  const dialect = sourceDialect === 'mysql' || sourceDialect === 'redshift' ? 'duckdb' : sourceDialect;
+  const bindings = prepBindings(sources).map(s => s.connectorId === 'mysql' || s.connectorId === 'mariadb' || s.connectorId === 'redshift-manual' ? { ...s, connectorId: 'file' } : s);
   const datasets = context.datasets?.filter(d => d.opensightPrep).map(d => {
     const cached = sources.find(s => typeof s.ref === 'object' && 'dataset' in s.ref && s.ref.dataset === d.dataSetId && s.execution?.mode === 'BLAZE');
     const materialized: PrepSource | undefined = cached ? { id: `cached-${cached.id}`, table: `cached-${cached.id}`, connectorId: 'file', columns: cached.columns, security: cached.available ? 'unrestricted' : 'protected' } : undefined;
