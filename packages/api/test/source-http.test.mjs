@@ -36,7 +36,7 @@ test('H3 HTTP durable source lifecycle, policy gates, uploads, owner prep and un
     return result;
   };
   for (const path of ['/api/sources', '/api/uploads', '/api/connectors', '/api/ai/sources', '/api/prep-datasets/import']) assert.equal((await call(path)).status, 401);
-  assert.deepEqual((await call('/api/connectors', 'GET', undefined, token)).body.map(c => c.id).sort(), ['file', 'postgresql']);
+  assert.deepEqual((await call('/api/connectors', 'GET', undefined, token)).body.map(c => c.id).sort(), ['file', 'mariadb', 'mysql', 'postgresql']);
   const raw = registration();
   let r = await write('/api/sources/tenant-source', 'PUT', raw); assert.equal(r.status, 201); assert.equal(JSON.stringify(r.body).includes(raw.credentials.password), false); assert.equal('secretId' in r.body, false);
   assert.equal((await write('/api/sources/tenant-source/rotate', 'POST', { expectedVersion: 1, credentials: credentials() })).status, 200);

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Analytics, analyticsFromEnvironment, rowCountBucket } from '../dist/analytics.js';
+import { Analytics, analyticsFromEnvironment, rowCountBucket, validateAnalyticsEvent } from '../dist/analytics.js';
 import { fixture } from './analytics-helpers.mjs';
 import { AnalyticsStore, initializeAnalytics } from '../dist/analytics-store.js';
 import { PostgresMetadataDatabase } from '../dist/metadata-db.js';
@@ -499,4 +499,12 @@ test('Issue #175: hosted invocation preserves an injected inline Analytics insta
     response.resolve({ ok: true }); await completion;
     assert.equal(finished, true); assert.deepEqual(await injected.store.undelivered(), []);
   } finally { response.resolve({ ok: true }); await drainHostedServer(server); }
+});
+
+test('Issue #270: analytics validates all database connector types without widening payload fields', () => {
+  for (const sourceType of ['postgresql', 'mysql', 'mariadb']) for (const name of ['dataset_uploaded', 'data_source_connected']) {
+    const props = { sourceType, ...(name === 'dataset_uploaded' ? { rowCountBucket: '1-99' } : {}) };
+    assert.deepEqual(validateAnalyticsEvent({ name, props }), { name, props });
+    assert.equal(validateAnalyticsEvent({ name, props: { ...props, password: 'forbidden' } }), undefined);
+  }
 });
