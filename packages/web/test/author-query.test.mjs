@@ -198,11 +198,11 @@ test('malformed and mixed insight configurations fail closed with zero query cal
   const binding = [
     ['forecast on a non-date dimension', { computations: [{ forecast: { computationId: 'f' } }] }],
     ['metric comparison with one measure', { computations: [{ metricComparison: { computationId: 'c' } }] }],
-    ['value bound to an unknown field', { computations: [{ totalAggregation: { computationId: 't', value: measure('missing') } }] }],
+    ['metric comparison binding the same measure twice', { computations: [{ metricComparison: { computationId: 'c', fromValue: measure('revenue'), targetValue: measure('revenue') } }] }, { measures: ['revenue', 'profit'] }],
   ];
-  const restored = configuration => { const d = structuredClone(draft('insight')); activeSheet(d).visuals[0].insightConfiguration = configuration; return d; };
-  for (const [label, configuration] of [...structural, ...binding]) {
-    const item = { ...base, insightConfiguration: configuration };
+  const restored = (configuration, overrides = {}) => { const d = structuredClone(draft('insight')); Object.assign(activeSheet(d).visuals[0], { insightConfiguration: configuration, ...overrides }); return d; };
+  for (const [label, configuration, overrides] of [...structural, ...binding]) {
+    const item = { ...base, ...overrides, insightConfiguration: configuration };
     let calls = 0;
     const client = { async queryDataset() { calls++; return { rows: [] }; } };
     const request = buildAuthorQuery(item);
@@ -211,8 +211,8 @@ test('malformed and mixed insight configurations fail closed with zero query cal
     if (request) await loadAuthorRows(client, request, controller().signal);
     assert.equal(calls, 0, label);
   }
-  for (const [label, configuration] of structural) assert.throws(() => validateDraft(restored(configuration)), /Invalid or unsupported author draft/, label);
-  for (const [label, configuration] of binding) assert.doesNotThrow(() => validateDraft(restored(configuration)), label);
+  for (const [label, configuration, overrides] of structural) assert.throws(() => validateDraft(restored(configuration, overrides)), /Invalid or unsupported author draft/, label);
+  for (const [label, configuration, overrides] of binding) assert.doesNotThrow(() => validateDraft(restored(configuration, overrides)), label);
   // Valid configurations still query: an unbound total, a bound movers
   // collection over (category, time), and a measure-free uniqueValues.
   const total = { ...base, insightConfiguration: { computations: [{ totalAggregation: { computationId: 't' } }] } };
