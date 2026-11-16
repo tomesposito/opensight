@@ -133,3 +133,16 @@ test('#196 generated and packaged edge admit plan/revise without opening neighbo
     e.request.uri += '/unknown'; assert.equal(context.handler(e).statusCode, 403);
   }
 });
+
+test('#273 generated and packaged edge admit S3 prefix browsing and reject neighboring connector routes', async () => {
+  for (const code of [source, await readFile(new URL('../../../ops/serverless/modules/edge/edge-viewer.js', import.meta.url), 'utf8')]) {
+    const edge = vm.createContext({ Buffer: { byteLength: Buffer.byteLength } });
+    vm.runInContext(code.replaceAll('__OPENSIGHT_ORIGIN__', JSON.stringify(origin)).replaceAll('__OPENSIGHT_HOST__', JSON.stringify(host)), edge);
+    for (const uri of ['/api/api/connectors/s3/browse', '/api/api/namespaces/one/connectors/s3/browse']) {
+      const e = frame(); e.request.uri = uri; e.request.method = 'POST'; assert.equal(edge.handler(e).uri, uri);
+    }
+    for (const uri of ['/api/api/connectors/s3/read', '/api/api/connectors/s3-analytics/browse', '/api/api/connectors/s3/browse/extra']) {
+      const e = frame(); e.request.uri = uri; assert.equal(edge.handler(e).statusCode, 403);
+    }
+  }
+});
