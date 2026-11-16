@@ -29,7 +29,10 @@ test('Postgres prep sanitizes query and connection construction failures', async
   await assert.rejects(previewPrepPostgres(pipeline, [source], config), safe);
 });
 test('Postgres prep validates authorization and environment config before connecting', async t => {
-  setup(t); const connect = t.mock.method(Client.prototype, 'connect', async () => { throw new Error('must not connect'); });
+  setup(t); const connect = Client.prototype.connect;
+  // Replacing an existing test mock twice leaks the first mock with --test-isolation=none.
+  // Update its implementation so later real pg-wire tests receive the restored client.
+  connect.mock.mockImplementation(async () => { throw new Error('must not connect'); });
   await assert.rejects(previewPrepPostgres(pipeline, [{ ...source, security: 'protected' }], config), e => e.code === 'PREP_SECURITY_REJECTED');
   delete process.env.OPENSIGHT_TEST_PREP_CONNECTION;
   await assert.rejects(previewPrepPostgres(pipeline, [source], config), e => e.code === 'PREP_SOURCE_NOT_FOUND');
