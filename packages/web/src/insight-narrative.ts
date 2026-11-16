@@ -107,6 +107,17 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
         return grain === 'YEAR' ? iso.slice(0, 4) : grain === 'MONTH' ? iso.slice(0, 7)
           : grain === 'QUARTER' ? `${iso.slice(0, 4)}-Q${Math.floor(d.getUTCMonth() / 3) + 1}` : iso.slice(0, 10);
       };
+      // Reject duplicate decoded category/period pairs before building the
+      // map (issue #265): raw spellings such as `2024-01` and `2024-01-01`
+      // decode to the same period, and a silent overwrite would make the
+      // ranking depend on input order. The category key stays typed via
+      // JSON, so a string and a number with the same text remain distinct.
+      const seenPairs = new Set<string>();
+      for (const { row, date } of dated) {
+        const pair = JSON.stringify([row.category, date.getTime()]);
+        if (seenPairs.has(pair)) return insightFail('INSIGHT_VALUE_INVALID', 'duplicate decoded category/period rows');
+        seenPairs.add(pair);
+      }
       interface Mover { category: Cell; prev: number; cur: number; diff: number; pct: number | null }
       const byCategory = new Map<string, { category: Cell; values: Map<number, number | null> }>();
       for (const { row, date } of dated) {
