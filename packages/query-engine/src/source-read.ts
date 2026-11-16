@@ -3,6 +3,8 @@ import { prepColumns, type PrepSource } from './prep.js';
 import { resolveSecurity, rowSecuritySql, validateRowRule, type SecurityContext, type RowPredicate } from './security.js';
 import { withPrepMemory, streamDuckDbPlan, streamPostgresPlan, type PrepMemoryTable, type PrepReadLimits, type PrepSink, type ExecutionControl } from './prep-stream.js';
 import { fail, quoteIdentifier as q } from './validation.js';
+import { mysqlTimestamp } from './mysql-sql.js';
+import type { MySqlVariant } from './mysql-session.js';
 import type { BoundColumn } from './types.js';
 export interface SourceRead {
   source: PrepSource; security: SecurityContext; columns: readonly string[];
@@ -15,7 +17,7 @@ function bound(columns: readonly PrepColumn[]): BoundColumn[] {
     scalarType: c.type === 'BOOLEAN' ? 'boolean' : c.type === 'STRING' ? 'string' : c.type === 'DATETIME' ? 'datetime' : 'number', nullable: true }));
 }
 /** A single projection/predicate compiler for SQL, uploaded rows and server caches. */
-export function planSourceRead(read: SourceRead, limits: PrepReadLimits, dialect: 'postgres' | 'duckdb') {
+export function planSourceRead(read: SourceRead, limits: PrepReadLimits, dialect: 'postgres' | 'duckdb' | 'mysql', options: { mysqlVariant?: MySqlVariant } = {}) {
   const columns = prepColumns(read.source.columns, '$.columns'), physical = bound(columns);
   const resolved = resolveSecurity(read.security, physical, read.security.policy.dataSetArn);
   if (!read.columns.length || new Set(read.columns).size !== read.columns.length) fail('INVALID_INPUT', '$.columns', 'Expected unique requested columns');
@@ -23,18 +25,19 @@ export function planSourceRead(read: SourceRead, limits: PrepReadLimits, dialect
     if (resolved.deniedColumns.includes(name)) fail('COLUMN_ACCESS_DENIED', '$.columns', 'Requested column is denied');
     return columns.find(c => c.name === name) ?? fail('INVALID_INPUT', '$.columns', 'Unknown requested column');
   });
-  const parameters: (string | number)[] = [], bind = (v: string | number) => { parameters.push(v); return `$${parameters.length}`; };
+  const parameters: (string | number)[] = [], bind = (v: string | number) => { parameters.push(v); return dialect === 'mysql' ? '?' : `$${parameters.length}`; };
   const predicates: string[] = [];
   if (read.tenantPredicate) {
     validateRowRule({ id: 'tenant', principals: [{ type: 'user', id: read.security.userId }], predicate: read.tenantPredicate }, physical);
-    predicates.push(rowSecuritySql(read.tenantPredicate, physical, bind, dialect));
+    predicates.push(rowSecuritySql(read.tenantPredicate, physical, bind, dialect, options.mysqlVariant));
   }
-  if (resolved.rowPredicate) predicates.push(rowSecuritySql(resolved.rowPredicate, physical, bind, dialect));
+  if (resolved.rowPredicate) predicates.push(rowSecuritySql(resolved.rowPredicate, physical, bind, dialect, options.mysqlVariant));
+  const quote = (name: string) => q(name, dialect);
   const projection = selected.map(c => {
-    const value = c.type !== 'DATETIME' ? q(c.name) : dialect === 'postgres' ? `TO_CHAR(${q(c.name)}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` : `STRFTIME(${q(c.name)}, '%Y-%m-%dT%H:%M:%S.%gZ')`;
-    return `${value} AS ${q(c.name)}`;
+    const value = c.type !== 'DATETIME' ? quote(c.name) : dialect === 'mysql' ? mysqlTimestamp(quote(c.name)) : dialect === 'postgres' ? `TO_CHAR(${quote(c.name)}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` : `STRFTIME(${quote(c.name)}, '%Y-%m-%dT%H:%M:%S.%gZ')`;
+    return `${value} AS ${quote(c.name)}`;
   });
-  const relation = (read.source.schema ? `${q(read.source.schema)}.` : '') + q(read.source.table);
+  const relation = (read.source.schema ? `${quote(read.source.schema)}.` : '') + quote(read.source.table);
   return { columns: selected, parameters, sql: `SELECT ${projection.join(', ')} FROM ${relation}${predicates.length ? ` WHERE ${predicates.map(p => `(${p})`).join(' AND ')}` : ''} LIMIT ${limits.maxRows + 1}` };
 }
 export async function streamSourcePostgres(read: SourceRead, connection: SourceConnection, limits: PrepReadLimits, sink: PrepSink, control?: ExecutionControl): Promise<void> {

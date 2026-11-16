@@ -42,6 +42,7 @@ export { artifactColumns, artifactScalar, writeArtifactParquet, readArtifactParq
 export type { PrepScalar, PrepSink, PrepReadLimits, PrepMemoryTable } from './prep-stream.js';
 export { queryPrepared } from './prepared-query.js';
 export { planPreparedQuery, planPreparedVisual, queryPreparedVisual } from './prepared-query.js';
+export { streamSourceMySql } from './source-mysql.js';
 export { planSourceRead, streamSourcePostgres, streamSourceMemory } from './source-read.js';
 export type { SourceRead, SourceConnection } from './source-read.js';
 
