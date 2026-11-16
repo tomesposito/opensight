@@ -93,6 +93,11 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- The generated connectors docs page is current again (#284): it now
+  describes the shipped S3, MySQL/MariaDB, Redshift and Athena connectors
+  instead of the pre-connector-batch text. The stale page also failed the
+  site check that runs in the CI test stage, taking master CI red.
+
 - Insight top/bottom movers now reject category/time bindings that resolve
   against wells listed in the opposite order (#268): normalization resolves
   each computation's category and time bindings and fails with
