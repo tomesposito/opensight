@@ -499,7 +499,7 @@ export function planVisual(request: PlanRequest, options: PlanOptions = {}): Que
   const opts = object(options, '$.options');
   keys(opts, ['dialect', 'aggregates'], '$.options');
   const dialect = opts.dialect === undefined ? 'duckdb' : opts.dialect;
-  if (dialect !== 'duckdb' && dialect !== 'postgres' && dialect !== 'mysql') fail('UNSUPPORTED_FEATURE', '$.options.dialect', 'expected duckdb, postgres or mysql');
+  if (dialect !== 'duckdb' && dialect !== 'postgres' && dialect !== 'mysql' && dialect !== 'redshift') fail('UNSUPPORTED_FEATURE', '$.options.dialect', 'expected duckdb, postgres, mysql or redshift');
   const r = object(request, '$');
   keys(r, ['analysis', 'dataSet', 'dataSource', 'localData', 'visualId', 'parameterDeclarations', 'parameterBindings', 'parameterFilters', 'security'], '$');
   const metadata = bindMetadata(r.dataSet, r.dataSource, r.localData, r.security !== undefined);

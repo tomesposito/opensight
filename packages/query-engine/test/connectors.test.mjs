@@ -36,3 +36,12 @@ test('unknown connectors, forged prototypes and incompatible file options fail c
   for (const id of ['missing', '__proto__', 'constructor']) assert.throws(() => connectorDefinition(id), { code: 'UNKNOWN_CONNECTOR' });
   for (const config of [{ format: 'json', delimiter: ',' }, { format: 'csv', sheet: 'Data' }, { format: 'tsv', delimiter: ',' }, Object.create({ format: 'csv' })]) assert.throws(() => validateConnectorConfig('file', config), { code: 'INVALID_CONNECTOR_CONFIG' });
 });
+
+test('Redshift manual is a database query connector; discovery remains an AWS hosted stub', () => {
+  const manual = connectorDefinition('redshift-manual'), discovery = connectorDefinition('redshift');
+  assert.equal(manual.implementation, 'query'); assert.equal(manual.category, 'Database');
+  assert.equal(connectorDialect(manual.id), 'redshift');
+  assert.deepEqual(manual.schema, connectorDefinition('mysql').schema);
+  assert.equal(discovery.implementation, 'hosted'); assert.equal(discovery.category, 'AWS');
+  assert.throws(() => connectorDialect(discovery.id), { code: 'CONNECTOR_NOT_IMPLEMENTED' });
+});
