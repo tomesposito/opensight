@@ -1130,7 +1130,7 @@ function waterfallTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: 
     const name = typeof first.name === 'string' ? first.name : '';
     const index = first.data?.sourceRowIndex;
     const row = typeof index === 'number' && Number.isInteger(index) ? rows[index] : undefined;
-    if (!row) return `${name}: ${String(first.data?.delta ?? '')}`;
+    if (!row) return `${richTextEscape(name)}: ${richTextEscape(String(first.data?.delta ?? ''))}`;
     const title = detail.titleType === 'primaryValue' ? name : fieldName(model.dimensions[0] ?? measure, model.formatting);
     const lines = [richTextEscape(title)];
     for (const field of fields) {

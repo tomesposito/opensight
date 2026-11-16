@@ -85,6 +85,12 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Waterfall detailed tooltips now escape rich-text markup in aggregate
+  (subtotal/Other/Total) bar labels and values (#264): a category name
+  containing markup such as `{style|text}` displays literally in the
+  aggregate fallback, matching the delta-bar detailed path, instead of
+  being interpreted as ECharts rich text.
+
 - Imported line/area forecast configurations are now validated in full before
   any editable state is built (#263): a malformed configuration — a string
   boundary, an unknown property, an inverted boundary pair, or any other
