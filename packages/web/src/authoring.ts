@@ -2,7 +2,7 @@ import { validOProvenance, oTitle, type OProvenance } from './o-provenance.js';
 import { metricColumn, type PublishedMetric } from '@opensight/query-engine/browser';
 import { metricFormatting, validMetricFormat } from './governed-metrics.js';
 import { defaultTextStyle, sheetObjectValid, serializeObjects, objectElementType, type SheetObject, type TextObject, type TextStyle } from './sheet-objects.js';
-import { rebindInsight, topBottomMoversTimeColumn } from './insight-configuration.js';
+import { rebindInsight, topBottomMoversTimeColumn, validateInsightConfiguration } from './insight-configuration.js';
 import { paletteValid, themeValid, type AnalysisTheme } from './themes.js';
 import { formattingValid, gaugeValid, binsValid, legendPositionValid, legendTitleValid, groupTitleValid, altTextValid, cleanAltText, legendTextStyleValid, dataLabelsValid, cardStyleValid, cardLayoutValid, rowGroupPathValid, type LegendPosition, type LegendTitle, type GroupTitle, type LegendTextStyle, type DataLabels, type CardStyle, type CardLayout, type VisualFormatting } from './formatting.js';
 import type { Cell, MultiplesOptions } from './model.js';
@@ -1200,6 +1200,15 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       if ((v.kind === 'radar' || v.kind === 'sankey') && !v.imported && (v.rows.length > 1 || v.columns.length > 1)) return fail();
       if (singleMeasure(v.kind as VisualKind) && v.measures.length > 1 || noDimensions(v.kind as VisualKind) && v.dimension !== null || v.kind !== 'pie' && v.donut || !splitDimensions(v.kind as VisualKind) && v.columns.length || (grouped(v.kind as VisualKind) ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
       if (v.insightConfiguration !== undefined && !isObject(v.insightConfiguration) || v.kind === 'insight' && !v.imported && v.measures.length > 2) return fail();
+      // A native insight configuration must be completely well-formed at draft
+      // admission — known variants, supported properties, unique computation
+      // IDs, Movers-only collections — not merely an object (#267). Imported
+      // visuals keep their retained configuration verbatim; the parser and the
+      // compiler remain their gates. Binding/dimension requirements are not
+      // enforced here, so an in-progress draft stays saveable.
+      if (v.kind === 'insight' && !imported && v.insightConfiguration !== undefined) {
+        try { validateInsightConfiguration(v.insightConfiguration); } catch { return fail(); }
+      }
       if (v.formatting !== undefined && !formattingValid(v.formatting) || v.gauge !== undefined && !gaugeValid(v.gauge) || v.bins !== undefined && !binsValid(v.bins)) return fail();
       if (v.subtitle !== undefined && typeof v.subtitle !== 'string' || v.subtitleVisible !== undefined && (typeof v.subtitleVisible !== 'boolean' || v.subtitle === undefined)) return fail();
       if (v.palette !== undefined && !paletteValid(v.palette)) return fail();

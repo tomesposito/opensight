@@ -83,10 +83,12 @@ export function validateInsightConfiguration(value: unknown, path: string, api =
   const key = (name: string) => api ? name[0]!.toUpperCase() + name.slice(1) : name;
   const config = object(value, path);
   optional(config, key('customNarrative'), path, (value, p) => required(object(value, p), key('narrative'), p, string));
+  const kinds: string[] = [];
   optional(config, key('computations'), path, array((value, p) => {
     const entries = Object.entries(object(value, p));
     if (entries.length !== 1) fail(p, 'INSIGHT_COMPUTATION_INVALID: expected exactly one computation variant');
     const [kind, raw] = entries[0]!;
+    kinds.push(kind);
     if (/anomaly/i.test(kind)) fail(p, 'INSIGHT_ANOMALY_UNSUPPORTED: anomaly computations are not supported');
     const known = ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison', 'forecast', 'periodToDate', 'topBottomMovers', 'uniqueValues'].map(key);
     if (!known.includes(kind)) fail(`${p}.${kind}`, 'INSIGHT_COMPUTATION_UNKNOWN: unknown computation type');
@@ -98,4 +100,8 @@ export function validateInsightConfiguration(value: unknown, path: string, api =
     required(body, key('computationId'), p, nonempty);
     optional(body, key('name'), p, string);
   }));
+  // Collection rule, shared with the web compiler: topBottomMovers binds two
+  // dimensions and can never be combined with another computation.
+  if (kinds.some(kind => kind === key('topBottomMovers')) && !kinds.every(kind => kind === key('topBottomMovers')))
+    fail(`${path}.${key('computations')}`, 'INSIGHT_COMPUTATION_INVALID: topBottomMovers computations cannot be combined with other computations');
 }
