@@ -34,7 +34,7 @@ export function redshiftScalarSql(e: Extract<RowExpression, { kind: 'call' }>, c
     }
     case 'extract': {
       const unit = constant(e.args[0]).toUpperCase(), value = node(1);
-      return unit === 'WD' ? `(DATE_PART(dow, ${value}) + 1)` : unit === 'MS' ? `MOD(CAST(DATE_PART(millisecond, ${value}) AS INTEGER), 1000)` : `FLOOR(DATE_PART(${dateUnits[unit]}, ${value}))`;
+      return unit === 'WD' ? `(DATE_PART(dow, ${value}) + 1)` : unit === 'MS' ? `MOD(CAST(FLOOR(DATE_PART(millisecond, ${value})) AS INTEGER), 1000)` : `FLOOR(DATE_PART(${dateUnits[unit]}, ${value}))`;
     }
     case 'formatDate': {
       const value = node(0);

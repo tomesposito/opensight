@@ -36,7 +36,7 @@ const cases = [
   ["truncDate('MS', {day})", 'DATE_TRUNC(\'millisecond\', "day")'],
   ["dateDiff({day}, {day}, 'DD')", 'DATEDIFF(day, "day", "day")'],
   ["dateDiff({day}, {day}, 'WK')", '(DATEDIFF(day, DATEADD(day, -1, DATE_TRUNC(\'week\', DATEADD(day, 1, "day"))), DATEADD(day, -1, DATE_TRUNC(\'week\', DATEADD(day, 1, "day")))) / 7)'],
-  ["extract('MS', {day})", 'MOD(CAST(DATE_PART(millisecond, "day") AS INTEGER), 1000)'],
+  ["extract('MS', {day})", 'MOD(CAST(FLOOR(DATE_PART(millisecond, "day")) AS INTEGER), 1000)'],
   ["extract('WD', {day})", '(DATE_PART(dow, "day") + 1)'],
   ["extract('Q', {day})", 'FLOOR(DATE_PART(quarter, "day"))'],
   ["formatDate({day}, 'yyyy-MM-dd')", '(CASE WHEN "day" IS NULL THEN NULL ELSE (TO_CHAR("day", \'YYYY\') || \'-\' || TO_CHAR("day", \'MM\') || \'-\' || TO_CHAR("day", \'DD\')) END)'],
