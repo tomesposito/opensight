@@ -19,7 +19,7 @@ export class HostedDataRoutes {
   async route(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, recheck: () => Promise<void>): Promise<boolean> {
     this.data.begin(context, undefined, recheck);
     const revisions = await this.data.sources.metadata.revisions(context);
-    const read = request.method === 'GET' || /\/(query|preview|rows|output|refresh|schema)$/.test(path);
+    const read = request.method === 'GET' || /\/(query|preview|rows|output|refresh|schema|browse)$/.test(path);
     const input = async () => {
       const body = await readBody(request);
       // A durable write invalidates revision-bound sessions, including this one.
@@ -35,7 +35,10 @@ export class HostedDataRoutes {
     };
     if (path === '/api/connectors') {
       method(request, response, ['GET']); await this.data.sources.capability(context, 'build');
-      await publish(200, connectors.filter(c => ['file', 'postgresql', 'mysql', 'mariadb', 'redshift-manual'].includes(c.id)).map(c => ({ id: c.id, name: c.name }))); return true;
+      await publish(200, connectors.filter(c => ['file', 'postgresql', 'mysql', 'mariadb', 'redshift-manual', 's3'].includes(c.id)).map(c => ({ id: c.id, name: c.name }))); return true;
+    }
+    if (path === '/api/connectors/s3/browse') {
+      method(request, response, ['POST']); await publish(200, await this.data.browseS3(context, await input())); return true;
     }
     if (path === '/api/sources' || path === '/api/prep-sources' || path === '/api/ai/sources') {
       method(request, response, ['GET']); await publish(200, await this.data.discover(context, path === '/api/ai/sources' ? 'ai' : 'discovery')); return true;

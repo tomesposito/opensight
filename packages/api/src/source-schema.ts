@@ -1,4 +1,4 @@
-import { prepColumns, validatePolicy, type BoundColumn, type DatasetPolicy, type UploadColumn } from '@opensight/query-engine';
+import { validateConnectorConfig, type ConnectorConfig, prepColumns, validatePolicy, type BoundColumn, type DatasetPolicy, type UploadColumn } from '@opensight/query-engine';
 import { MetadataError } from './metadata-db.js';
 import { object, identifier, type ResourceKey } from './metadata-resources.js';
 
@@ -6,9 +6,9 @@ export type QueryConnectorId = 'postgresql' | 'mysql' | 'mariadb' | 'redshift-ma
 export function isQueryConnectorId(value: unknown): value is QueryConnectorId { return value === 'postgresql' || value === 'mysql' || value === 'mariadb' || value === 'redshift-manual'; }
 export type SourcePolicy = Omit<DatasetPolicy, 'namespaceId' | 'dataSetArn'>;
 export interface SourceBinding {
-  version: 3 | 4; connectorId: 'file' | QueryConnectorId; state: 'active' | 'retired' | 'expired';
+  version: 3 | 4; connectorId: 'file' | 's3' | QueryConnectorId; state: 'active' | 'retired' | 'expired';
   columns: UploadColumn[]; endpointId?: string; schema?: string; table?: string;
-  expiresAt?: string; rowCount?: number; objectId?: string;
+  expiresAt?: string; rowCount?: number; objectId?: string; s3Config?: ConnectorConfig;
 }
 export interface SourceBody { binding: SourceBinding; secretId?: string; policy: SourcePolicy }
 export function sourceError(code = 'SOURCE_INVALID', status = 400): never { throw new MetadataError(code, status); }
@@ -33,13 +33,17 @@ export function sourceBody(raw: unknown): SourceBody {
   const body = object(raw, ['binding', 'secretId', 'policy']);
   const version = object(body.binding).version;
   if (version !== 3 && version !== 4) sourceError('SOURCE_MIGRATION_REQUIRED', 503);
-  const b = object(body.binding, ['version', 'connectorId', 'state', 'columns', 'endpointId', 'schema', 'table', 'expiresAt', 'rowCount', ...(version === 4 ? ['objectId'] : [])]);
-  if ((b.connectorId !== 'file' && !isQueryConnectorId(b.connectorId)) || !['active', 'retired', 'expired'].includes(String(b.state))) sourceError();
+  const b = object(body.binding, ['version', 'connectorId', 'state', 'columns', 'endpointId', 'schema', 'table', 'expiresAt', 'rowCount', 's3Config', ...(version === 4 ? ['objectId'] : [])]);
+  if ((b.connectorId !== 'file' && b.connectorId !== 's3' && !isQueryConnectorId(b.connectorId)) || !['active', 'retired', 'expired'].includes(String(b.state))) sourceError();
   if (!Array.isArray(b.columns)) sourceError();
   for (const column of b.columns) object(column, ['name', 'type']);
   const columns = prepColumns(b.columns as UploadColumn[], '$.columns');
-  if (b.connectorId !== 'file' && b.state === 'expired') sourceError();
-  if (b.connectorId === 'file') {
+  if (b.connectorId !== 'file' && b.connectorId !== 's3' && b.state === 'expired') sourceError();
+  if (b.connectorId === 's3') {
+    if (version !== 3) sourceError();
+    b.s3Config = validateConnectorConfig('s3', b.s3Config);
+  } else if (b.s3Config !== undefined) sourceError();
+  if (b.connectorId === 'file' || b.connectorId === 's3') {
     if (typeof b.expiresAt !== 'string' || !Number.isFinite(Date.parse(b.expiresAt)) || new Date(b.expiresAt).toISOString() !== b.expiresAt
       || !Number.isSafeInteger(b.rowCount) || Number(b.rowCount) < 0 || b.endpointId !== undefined || b.schema !== undefined || b.table !== undefined) sourceError();
   } else {

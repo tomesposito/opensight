@@ -1,19 +1,21 @@
 import { randomUUID } from 'node:crypto';
-import { hasCapability, isRole, parseUpload, type UploadColumn, type UploadRequest } from '@opensight/query-engine';
+import { hasCapability, isRole, parseUpload, readS3Upload, listS3Objects, type UploadColumn, type UploadRequest } from '@opensight/query-engine';
 import { TenantMetadata, type TenantContext } from './metadata.js';
 import { object, identifier, type MetadataResource } from './metadata-resources.js';
 import { encryptMetadataSecret, decryptMetadataSecret } from './metadata-secrets.js';
 import { sourceBody, isQueryConnectorId, sourceCredentials, sourcePolicy, sourceError, type SourceBody, type SourceEndpoint } from './source-schema.js';
+import { hostedS3Settings, permittedS3Config, type HostedS3Settings } from './source-s3-config.js';
 import type { JsonObject } from './mapping.js';
 
 export interface HostedSource extends SourceBody { id: string; version: number }
 export type SourceArtifactReader = (context: TenantContext, source: MetadataResource, verify: () => Promise<void>) => Promise<unknown>;
+export type UploadParser = (request: UploadRequest) => ReturnType<typeof parseUpload> | Promise<ReturnType<typeof parseUpload>>;
 const json = (value: unknown): JsonObject => object(value);
 /** Tenant/owner-scoped records and encrypted payloads share H1's atomic durable store. */
 export class HostedSources {
   readonly endpoints: readonly SourceEndpoint[];
   constructor(readonly metadata: TenantMetadata, protected readonly encryptionKey: string, endpoints: readonly SourceEndpoint[], readonly clock = Date.now,
-    protected readonly artifacts?: SourceArtifactReader) {
+    protected readonly artifacts?: SourceArtifactReader, private readonly s3: HostedS3Settings = hostedS3Settings()) {
     this.endpoints = structuredClone(endpoints);
   }
   async capability(context: TenantContext, capability: 'build' | 'view' | 'ai'): Promise<void> {
@@ -34,6 +36,7 @@ export class HostedSources {
     if (source.binding.state === 'expired') sourceError('UPLOAD_EXPIRED', 403);
     if (source.binding.state !== 'active') sourceError('SOURCE_RETIRED', 403);
     if (source.binding.expiresAt && Date.parse(source.binding.expiresAt) <= this.clock()) sourceError('UPLOAD_EXPIRED', 403);
+    if (source.binding.connectorId === 's3') permittedS3Config(source.binding.s3Config, this.s3);
     if (source.binding.endpointId) this.endpoint(source.binding.endpointId, source.binding.connectorId);
   }
   async get(context: TenantContext, id: string): Promise<HostedSource> {
@@ -65,8 +68,9 @@ export class HostedSources {
     try { return JSON.parse(decryptMetadataSecret(String(r.body.ciphertext), this.encryptionKey, context, key)) as unknown; }
     catch { return sourceError('SOURCE_SECRET_UNAVAILABLE', 503); }
   }
-  async create(context: TenantContext, id: string, raw: unknown): Promise<ReturnType<HostedSources['summary']>> {
+  async create(context: TenantContext, id: string, raw: unknown, parse: UploadParser = parseUpload, signal?: AbortSignal): Promise<ReturnType<HostedSources['summary']>> {
     await this.capability(context, 'build'); identifier(id);
+    if (object(raw).connectorId === 's3') return this.createS3(context, id, raw, parse, signal);
     const r = object(structuredClone(raw), ['connectorId', 'endpointId', 'schema', 'table', 'columns', 'credentials', 'policy']);
     if (!isQueryConnectorId(r.connectorId)) sourceError('SOURCE_CONNECTOR_UNSUPPORTED');
     this.endpoint(identifier(r.endpointId), r.connectorId);
@@ -79,7 +83,32 @@ export class HostedSources {
     ]);
     return this.summary({ ...body, id, version: 1 });
   }
-  async upload(context: TenantContext, raw: unknown, parse: (request: UploadRequest) => ReturnType<typeof parseUpload> | Promise<ReturnType<typeof parseUpload>> = parseUpload): Promise<ReturnType<HostedSources['summary']>> {
+  async browseS3(context: TenantContext, raw: unknown, signal?: AbortSignal) {
+    await this.capability(context, 'build');
+    const r = object(raw, ['config']), config = permittedS3Config(r.config, this.s3);
+    return listS3Objects(config, { ...this.s3, signal });
+  }
+  private async createS3(context: TenantContext, id: string, raw: unknown, parse: UploadParser, signal?: AbortSignal): Promise<ReturnType<HostedSources['summary']>> {
+    const r = object(structuredClone(raw), ['connectorId', 'config', 'fileConfig', 'columns', 'expiresAt', 'policy']);
+    const config = permittedS3Config(r.config, this.s3);
+    if (typeof r.expiresAt !== 'string' || !Number.isFinite(Date.parse(r.expiresAt)) || new Date(r.expiresAt).toISOString() !== r.expiresAt || Date.parse(r.expiresAt) <= this.clock()) sourceError('UPLOAD_EXPIRY_REQUIRED');
+    if (r.policy === undefined) sourceError('SOURCE_POLICY_REQUIRED', 403);
+    object(r.policy, ['rowLevel', 'rowRules', 'columnGrants', 'protectedColumns']);
+    const revisions = await this.metadata.revisions(context);
+    const request = await readS3Upload(config, r.fileConfig, { ...this.s3, signal });
+    const parsed = await parse({ ...request, ...(r.columns === undefined ? {} : { columns: r.columns as UploadColumn[] }) });
+    await this.capability(context, 'build'); await this.metadata.assertRevisions(context, revisions);
+    if (Date.parse(r.expiresAt) <= this.clock()) sourceError('UPLOAD_EXPIRED', 403);
+    const secretId = randomUUID();
+    const body = sourceBody({ binding: { version: 3, connectorId: 's3', s3Config: config, state: 'active', columns: parsed.columns, rowCount: parsed.rows.length, expiresAt: r.expiresAt }, secretId, policy: r.policy });
+    if (signal?.aborted) sourceError('EXECUTION_CANCELLED', 409);
+    await this.metadata.batch(context, [
+      { key: this.key(context, 'secret', secretId), body: this.seal(context, secretId, { rows: parsed.rows }), expectedVersion: 0 },
+      { key: this.key(context, 'source', id), body: json(body), expectedVersion: 0 },
+    ]);
+    return this.summary({ ...body, id, version: 1 });
+  }
+  async upload(context: TenantContext, raw: unknown, parse: UploadParser = parseUpload): Promise<ReturnType<HostedSources['summary']>> {
     await this.capability(context, 'build');
     const r = object(structuredClone(raw), ['config', 'base64', 'columns', 'expiresAt', 'policy']);
     if (typeof r.expiresAt !== 'string' || !Number.isFinite(Date.parse(r.expiresAt)) || Date.parse(r.expiresAt) <= this.clock()) sourceError('UPLOAD_EXPIRY_REQUIRED');

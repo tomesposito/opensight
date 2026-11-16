@@ -5,7 +5,7 @@ import { HostedCache, type HostedCacheAdapter } from './hosted-cache.js';
 import { containedWork, wireTable, type TableResult, type QueryResult } from './contained-work.js';
 import { resolveSecurity, planSourceRead, planPreparedQuery, streamSourcePostgres, streamSourceMySql, streamSourceRedshift,
   type SecurityContext, type RowPredicate, type SourceRead, type PrepSource, type PrepMemoryTable, type InteractiveQuery } from '@opensight/query-engine';
-import { HostedSources, type HostedSource } from './hosted-sources.js';
+import { HostedSources, type HostedSource, type UploadParser } from './hosted-sources.js';
 import { boundColumns, isQueryConnectorId, sourceCredentials, sourceError } from './source-schema.js';
 import { type TenantContext, type Revisions } from './metadata.js';
 import { object } from './metadata-resources.js';
@@ -75,6 +75,9 @@ export class HostedData {
     return containedWork<QueryResult>(scope, { kind: 'query', table: await wireTable(scope, table, source), query }, this.limits(context));
   }
   async upload(context: TenantContext, input: unknown) {
+    return this.ingestFile(context, parse => this.sources.upload(context, input, parse));
+  }
+  private async ingestFile(context: TenantContext, ingest: (parse: UploadParser) => Promise<ReturnType<HostedSources['summary']>>) {
     await this.sources.capability(context, 'build');
     if (!this.budgets) throw new MetadataError('BUDGET_MIGRATION_REQUIRED', 503);
     // Upload commits invalidate its own revision-bound session; verify before the atomic write.
@@ -82,7 +85,7 @@ export class HostedData {
     return this.budgets.run(context, false, async () => {
       await this.sources.capability(context, 'build'); if (!committed) await this.verifiers.get(context)?.();
     }, async () => {
-      const result = await this.sources.upload(context, input, async request => {
+      const result = await ingest(async request => {
         const scope = this.scope(context); scope.memory(request.data.byteLength);
         const parsed = await containedWork<TableResult>(scope, { kind: 'upload', request }, this.limits(context));
         scope.rows(parsed.rows.length); scope.memory(Buffer.byteLength(JSON.stringify(parsed)));
@@ -93,9 +96,14 @@ export class HostedData {
       return result;
     }, this.signals.get(context));
   }
+  async browseS3(context: TenantContext, raw: unknown) {
+    await this.sources.capability(context, 'build');
+    return this.work(context, false, [], () => this.sources.browseS3(context, raw, this.scope(context).signal), await this.sources.metadata.revisions(context));
+  }
   /** Registering a live database source is the connection point for #179.
    * File uploads emit `dataset_uploaded` instead and never this event. */
   async createSource(context: TenantContext, id: string, raw: unknown) {
+    if (object(raw).connectorId === 's3') return this.ingestFile(context, parse => this.sources.create(context, id, raw, parse, this.scope(context).signal));
     const result = await this.sources.create(context, id, raw);
     if (isQueryConnectorId(result.connectorId)) this.analytics.track(context, { name: 'data_source_connected', props: { sourceType: result.connectorId } });
     return result;
@@ -115,7 +123,7 @@ export class HostedData {
       policy: { ...source.policy, namespaceId: context.namespaceId, dataSetArn: `urn:opensight:source:${source.id}` } };
     if (embedSecurity) security = embedSecurity(security);
     const resolved = resolveSecurity(security, boundColumns(b.columns), security.policy.dataSetArn);
-    const physical: PrepSource = { id, connectorId: b.connectorId, columns: b.columns, table: b.table ?? 'source_rows', ...(b.schema ? { schema: b.schema } : {}), security: protectedData ? 'protected' : 'unrestricted' };
+    const physical: PrepSource = { id, connectorId: b.connectorId === 's3' ? 'file' : b.connectorId, columns: b.columns, table: b.table ?? 'source_rows', ...(b.schema ? { schema: b.schema } : {}), security: protectedData ? 'protected' : 'unrestricted' };
     const admission = { source, security, physical, ...(tenantPredicate ? { tenantPredicate } : {}), deniedColumns: resolved.deniedColumns, revisions };
     // Validate the immutable predicate even on schema/discovery paths.
     this.plan(context, this.read(admission));
