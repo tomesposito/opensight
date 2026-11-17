@@ -655,7 +655,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       const quotaMessage = error instanceof AIError ? error.message : publicQuotaMessage(error);
       const field = error instanceof MetadataError && error.code === 'METADATA_INVALID' && error.detail && typeof error.detail === 'object' && 'field' in error.detail
         && typeof error.detail.field === 'string' && ['name', 'displayName', 'slug', 'administrator.name', 'administrator.email'].includes(error.detail.field) ? error.detail.field : undefined;
-      send(response, status, { errorCode, ...(field ? { field } : {}), ...(quotaMessage === undefined ? {} : { Message: quotaMessage, ...(error instanceof MetadataError ? { detail: error.detail } : {}) }) });
+      send(response, status, { errorCode, ...(field ? { field } : {}), ...(quotaMessage === undefined ? {} : { Message: quotaMessage }) });
     }).finally(async () => {
       try { await egressSettle?.(); } finally { active.delete(work); }
     });
