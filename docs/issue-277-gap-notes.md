@@ -76,6 +76,38 @@ override. `npm run build` passed. `node --check` passed for J11 and run-all;
 the runner has 11 entries, with J11 immediately after J10 and `Author` matching
 the journey's persona. The aggregate run-all suite was not executed.
 
+## Full root suite
+
+`npm test` from the repository root exited **0**, using `TMPDIR=/tmp`, `TZ=UTC`
+and the installed Chromium headless shell. `DATABASE_URL` was unset for this
+command. Exact Node test-reporter counts, summed across all workspaces and the
+root conformance/site suite, are **5,565 passed / 0 failed / 37 skipped**
+(5,602 tests; zero cancelled or todo). The Python SDK also ran **32 tests, OK**.
+Including Python, the complete root command ran **5,634 tests: 5,597 passed /
+0 failed / 37 skipped**.
+
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 1,460 | 0 | 35 |
+| Bundle parser | 208 | 0 | 0 |
+| CLI | 73 | 0 | 0 |
+| Embedding SDK | 10 | 0 | 0 |
+| TypeScript headless SDK | 28 | 0 | 0 |
+| Python headless SDK | 32 | 0 | 0 |
+| MCP server | 74 | 0 | 0 |
+| O interpreter | 42 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 828 | 0 | 2 |
+| Web | 2,721 | 0 | 0 |
+| Root conformance/site | 110 | 0 | 0 |
+| **Total including Python** | **5,597** | **0** | **37** |
+
+All skips match the live-PostgreSQL pattern: 36 require `DATABASE_URL`, and one
+requires a configured live TLS PostgreSQL server. No browser test was skipped.
+The standalone J11 hosted check used localhost PostgreSQL separately as
+described above. Full output is retained locally in
+`/tmp/opensight-277-npm-test.log`.
+
 ## Demo and visual review
 
 `npm run build:demo --workspace @opensight/web` passed. A temporary capture
