@@ -65,7 +65,10 @@ test('SR1 startup without an invocation work budget returns STARTING before cons
 });
 
 test('SR1 startup cleanup failure and quarantine take precedence over retryable deadline exhaustion', async () => {
-  const { stdout } = await promisify(execFile)(process.execPath, [fileURLToPath(new URL('./support/runtime-startup-cleanup-worker.mjs', import.meta.url))], { timeout: 5000 });
+  // The worker imports the full dist/runtime.js graph, so cold startup takes
+  // seconds and far longer under full-suite load; the timeout is only a hang
+  // guard, not a performance assertion (a 5s kill flaked under load, #283).
+  const { stdout } = await promisify(execFile)(process.execPath, [fileURLToPath(new URL('./support/runtime-startup-cleanup-worker.mjs', import.meta.url))], { timeout: 30000 });
   assert.match(stdout, /startup cleanup quarantined/);
 });
 
