@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import type { PrepColumn, PrepStep } from '@opensight/bundle-parser/prep';
+import { suggestPrepJoinKeys } from '@opensight/query-engine/browser';
 import { PrepJoinIcon, PrepTypeIcon } from './PrepIcons.js';
 import { reorderPrepColumns, usePrepColumnDrag, type ColumnDrag } from './prep-column-drag.js';
 type JoinConfig = Extract<PrepStep, { kind: 'join' }>['config'];
@@ -29,6 +30,7 @@ export function PrepJoinEditor({ config, leftColumns, rightColumns, leftInput, r
   config: JoinConfig; leftColumns: readonly PrepColumn[]; rightColumns: readonly PrepColumn[];
   leftInput: ReactNode; rightInput: ReactNode; outputs: ReactNode; change: (config: JoinConfig) => void;
 }) {
+  const suggestions = suggestPrepJoinKeys(leftColumns, rightColumns).filter(key => !config.keys.some(k => k.left === key.left && k.right === key.right));
   const drag = usePrepColumnDrag(JSON.stringify([config, leftColumns, rightColumns]));
   const choose = (side: 'left' | 'right', value: string, position?: number) => {
     const keys = config.keys.map(k => ({ ...k }));
@@ -64,7 +66,10 @@ export function PrepJoinEditor({ config, leftColumns, rightColumns, leftInput, r
         change({ ...config, joinType: joinTypes[next]! });
         e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('button')[next]?.focus();
       }
-    }}><PrepJoinIcon type={type} /></button>)}</div></fieldset>
+    }}><PrepJoinIcon type={type} /><span>{joinLabel(type)}</span></button>)}</div></fieldset>
+      <fieldset className="prep-join-suggestions"><legend>Suggested keys</legend><p>Name and type matches. Confirm each key to use it.</p>
+        {suggestions.length ? suggestions.map(key => <button key={JSON.stringify(key)} type="button" disabled={config.keys.length >= 256} onClick={() => change({ ...config, keys: [...config.keys, key] })}>Use suggested key: {key.left} = {key.right}</button>) : <p>No additional name and type matches.</p>}
+      </fieldset>
       <fieldset className="prep-join-keys"><legend>Join keys</legend>{keys.map((key, i) => <div className="prep-join-key" key={i}>
         <KeyColumn side="left" index={i} value={key.left} columns={leftColumns} change={value => choose('left', value, i)} drag={drag} accepts={value => acceptsKey('left', i, value)} drop={value => dropKey('left', i, value)} /><span aria-hidden="true">=</span><KeyColumn side="right" index={i} value={key.right} columns={rightColumns} change={value => choose('right', value, i)} drag={drag} accepts={value => acceptsKey('right', i, value)} drop={value => dropKey('right', i, value)} />
         {i < config.keys.length && <button type="button" className="prep-remove-key" aria-label={`Remove key ${i + 1}`} title="Remove key" onClick={() => change({ ...config, keys: config.keys.filter((_, n) => n !== i) })}>×</button>}
