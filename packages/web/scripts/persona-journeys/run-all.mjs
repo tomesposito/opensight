@@ -15,6 +15,7 @@ const journeys = [
   ['j5-migration', 'Admin + Author'], ['j6-self-host', 'Self-Hoster'], ['j7-operator', 'Operator'], ['j8-embedding', 'Embedder (future)'],
   ['j9-ideas', 'Member + Operator'],
   ['j10-ai-agent-mcp', 'AI Agent'], // MCP-level; not browser-driven, zero screenshots.
+  ['j11-notebooks', 'Author'],
 ];
 const results = [];
 for (const [journey, persona] of journeys) {
