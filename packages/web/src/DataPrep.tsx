@@ -115,9 +115,7 @@ export function DataPrep({ client, initialSource, initialDatasetId, onSources, o
       const step = newPrepStep(kind, cols, sources, pipeline.input);
       if (staged && step.kind === 'join') {
         step.config.source = staged;
-        const rightCols = editorSources().find(s => prepRefKey(prepSourceRef(s)) === prepRefKey(staged))?.columns ?? [];
-        const left = cols[0]?.name ?? '', leftType = cols[0]?.type;
-        step.config.keys = [{ left, right: rightCols.find(c => c.name === left && c.type === leftType)?.name ?? rightCols.find(c => c.type === leftType)?.name ?? rightCols[0]?.name ?? '' }];
+
       } else if (staged && step.kind === 'append' && typeof staged === 'string') step.config.source = staged;
       setEditing(step); setSelected(null); setStaging(false); setTab('configure');
     } catch (e) { setError(prepMessage(e)); }

@@ -37,6 +37,7 @@ try {
   assert.equal(await page.getByLabel('New type', { exact: true }).inputValue(), 'INTEGER');
   await button('Apply step').click();
   await button('＋ Join').click();
+  await button('Use suggested key: region = region').click();
   await page.getByLabel('Step name (optional)', { exact: true }).fill('Regional sales');
   assert.equal(await page.getByRole('radio', { name: 'Left join', exact: true }).getAttribute('aria-checked'), 'true');
   await page.getByRole('radio', { name: 'Left join', exact: true }).press('ArrowRight');
@@ -99,6 +100,7 @@ try {
   await base.getByRole('button', { name: 'Add branch', exact: true }).click();
   await button('Apply step').click();
   await button('＋ Join').click();
+  await button('Use suggested key: region = region').click();
   await page.getByLabel('Left table', { exact: true }).selectOption(baseId);
   await button('Apply step').click();
   const overlaps = await page.locator('.prep-graph .prep-node').evaluateAll(nodes => {
