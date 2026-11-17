@@ -87,6 +87,11 @@ export class ConnectorRoutes {
     const session = this.sessions.get(JSON.stringify([identity.namespaceId, identity.userId]));
     return session ? (await session).prepSources() : [];
   }
+  async joinDiagnostics(identity: Identity, raw: unknown, step: string, options: PrepPreviewOptions) {
+    const owner = JSON.stringify([identity.namespaceId, identity.userId]), session = this.sessions.get(owner);
+    if (!session) prepFail('PREP_SOURCE_NOT_FOUND', '$.input', 'Connected source is unavailable');
+    return this.queued(owner, async () => (await session).joinDiagnostics(raw, step, options));
+  }
   async previewPrep(identity: Identity, raw: unknown, options: PrepPreviewOptions, tables: readonly PrepMemoryTable[] = []): Promise<PrepPreview> {
     const owner = JSON.stringify([identity.namespaceId, identity.userId]), session = this.sessions.get(owner);
     if (!session) return withPrepMemory(tables, c => previewPrepDuckDb(c, raw, tables.map(t => t.source), options));

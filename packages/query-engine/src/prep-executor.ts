@@ -1,3 +1,5 @@
+import { PrepJoinBudget, prepJoinDiagnostics, type PrepJoinDiagnostics } from './prep-join-diagnostics.js';
+import { compilePrepJoinSample, type PrepJoinSamplePlan } from './prep.js';
 import type { DuckDBConnection } from '@duckdb/node-api';
 import { Client } from 'pg';
 import { PrepError, prepFail, type PrepColumn } from '@opensight/bundle-parser/prep';
@@ -60,5 +62,50 @@ export async function previewPrepPostgres(raw: unknown, sources: readonly PrepSo
   } catch (e) {
     if (e instanceof PrepError) throw e;
     return prepFail('PREP_EXECUTION_FAILED', '$.preview', 'Postgres preparation failed or exceeded the 10-second execution limit');
+  }
+}
+
+/** Decode the compiler's side/probe records, then use the shared count semantics. */
+export function prepJoinSampleResult(plan: PrepJoinSamplePlan, rawRows: readonly Record<string, unknown>[], budget = new PrepJoinBudget()): PrepJoinDiagnostics {
+  const rows = rawRows.map((row, i) => { if (i % 128 === 0) budget.check(); return Object.fromEntries(plan.columns.map(c => [c.name, normalizePrepScalar(row[c.name], c)])); });
+  if (rows.some(r => ![0, 1, 2, 3].includes(Number(r.__side)))) prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Invalid sample side');
+  const keys = plan.columns.slice(1).map(c => ({ left: c.name, right: c.name }));
+  return prepJoinDiagnostics(rows.filter(r => r.__side === 0), rows.filter(r => r.__side === 1), keys,
+    { leftTruncated: rows.some(r => r.__side === 2), rightTruncated: rows.some(r => r.__side === 3) }, () => budget.check());
+}
+export async function diagnosePrepJoinDuckDb(connection: DuckDBConnection, raw: unknown, sources: readonly PrepSource[], step: string,
+  options: PrepPreviewOptions = {}, budget = new PrepJoinBudget()): Promise<PrepJoinDiagnostics> {
+  const plan = compilePrepJoinSample(raw, sources, step, { ...options, dialect: 'duckdb' });
+  const timer = setTimeout(() => connection.interrupt(), budget.remaining());
+  try {
+    await connection.run("SET TimeZone = 'UTC'"); budget.check();
+    const rows = (await connection.runAndReadAll(plan.sql, plan.parameters)).getRowObjects();
+    return prepJoinSampleResult(plan, rows, budget);
+  } catch (error) {
+    if (error instanceof PrepError) throw error;
+    return prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'DuckDB join diagnostics failed or exceeded the shared 10-second execution limit');
+  } finally { clearTimeout(timer); }
+}
+export async function diagnosePrepJoinPostgres(raw: unknown, sources: readonly PrepSource[], config: unknown, step: string,
+  options: PrepPreviewOptions = {}, budget = new PrepJoinBudget()): Promise<PrepJoinDiagnostics> {
+  const plan = compilePrepJoinSample(raw, sources, step, { ...options, dialect: 'postgres' });
+  const validated = validateConnectorConfig('postgresql', config), connectionString = process.env[validated.connectionEnv!];
+  if (!connectionString) prepFail('PREP_SOURCE_NOT_FOUND', '$.source', 'Postgres connection environment variable is not configured');
+  try {
+    const client = new Client({ connectionString, connectionTimeoutMillis: Math.min(5000, budget.remaining()), query_timeout: budget.remaining() });
+    client.on('error', () => {});
+    const timer = setTimeout(() => { void client.end().catch(() => {}); }, budget.remaining());
+    try {
+      await client.connect(); budget.check();
+      await client.query('BEGIN READ ONLY'); budget.check();
+      await client.query("SET LOCAL TIME ZONE 'UTC'");
+      await client.query(`SET LOCAL statement_timeout = '${budget.remaining()}ms'`);
+      const result = await client.query<Record<string, unknown>>({ text: plan.sql, values: plan.parameters, types: { getTypeParser: () => (v: string) => v } });
+      const diagnostics = prepJoinSampleResult(plan, result.rows, budget);
+      await client.query('COMMIT'); budget.check(); return diagnostics;
+    } finally { clearTimeout(timer); await client.end(); }
+  } catch (error) {
+    if (error instanceof PrepError) throw error;
+    return prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Postgres join diagnostics failed or exceeded the shared 10-second execution limit');
   }
 }

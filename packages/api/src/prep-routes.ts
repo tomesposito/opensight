@@ -1,3 +1,4 @@
+import { compilePrepJoinSample, diagnosePrepJoinPostgres } from '@opensight/query-engine';
 import { tableDownload, tableDownloadFormat, sendTableDownload } from './table-download.js';
 import type { HostedUsage } from './hosted-usage.js';
 import { StoredTableFiles, storedMaterialization, storedFailure, storedStatus, storedCapacity, checkStoredQuota, type StoredMaterialization } from './stored-tables.js';
@@ -411,6 +412,32 @@ export class PrepRoutes {
       if (path === '/api/prep-datasets') {
         method(request, response, ['GET']);
         send(response, 200, { datasets: this.store.read().datasets.filter(e => this.owned(identity, e)).map(e => e.resource), persistence: this.persistent ? 'file' : 'ephemeral' }); return;
+      }
+      const diagnostics = /^\/api\/datasets\/([A-Za-z0-9_-]{1,128})\/prep\/join-diagnostics$/.exec(path);
+      if (diagnostics) {
+        method(request, response, ['POST']);
+        const id = diagnostics[1]!, body = prepObject(await readBody(request), ['pipeline', 'through'], '$');
+        const pipeline = validatePrepPipeline(Object.hasOwn(body, 'pipeline') ? body.pipeline : this.find(identity, id).resource.opensightPrep);
+        const step = prepName(body.through, '$.through');
+        this.graph(identity, id, pipeline);
+        const datasets = this.datasets(identity), context = await this.context(identity, pipeline.input, datasets);
+        const options = { datasets, datasetId: id };
+        const plan = compilePrepJoinSample(pipeline, context.sources, step, { ...options, dialect: context.dialect });
+        // Cached recipes and governed in-memory tables have no bounded staging reader.
+        // Reject before resolve() can materialize or read an entire cache artifact.
+        const visited = new Set<string>();
+        const check = (p: PrepPipeline): void => {
+          for (const ref of this.references(p)) if (typeof ref !== 'string' && !visited.has(ref.dataset)) {
+            visited.add(ref.dataset); const entry = this.find(identity, ref.dataset);
+            if (entry.execution?.mode === 'STORED' || this.blaze.status(this.key(identity, ref.dataset)).mode === 'BLAZE') prepFail('UNSUPPORTED_PREP_STEP', '$.joinDiagnostics', 'Bounded diagnostics are unavailable for cached prepared inputs');
+            check(entry.resource.opensightPrep!);
+          }
+        };
+        check(pipeline);
+        if (plan.sampleSources.some(s => s.id.startsWith('input-table-'))) prepFail('UNSUPPORTED_PREP_STEP', '$.joinDiagnostics', 'Bounded diagnostics are unavailable for governed input tables');
+        const result = context.binding ? await diagnosePrepJoinPostgres(pipeline, context.sources, context.binding.config, step, options)
+          : await this.connectors.joinDiagnostics(identity, pipeline, step, options);
+        send(response, 200, result); return;
       }
       const match = /^\/api\/datasets\/([A-Za-z0-9_-]{1,128})\/prep(?:\/(preview))?$/.exec(path);
       if (!match) throw new RequestError(404, 'Prep resource not found');

@@ -38,3 +38,27 @@ test('Postgres prep validates authorization and environment config before connec
   await assert.rejects(previewPrepPostgres(pipeline, [source], config), e => e.code === 'PREP_SOURCE_NOT_FOUND');
   assert.equal(connect.mock.callCount(), 0);
 });
+
+import { diagnosePrepJoinPostgres, diagnosePrepJoinDuckDb, PrepJoinBudget, withPrepMemory } from '../dist/index.js';
+const joinPipeline = { ...pipeline, steps: [{ id: 'join', kind: 'join', config: { source: 'source', joinType: 'inner', keys: [{ left: 'amount', right: 'amount' }], prefix: 'r_' } }] };
+test('Postgres join diagnostics share one deadline across connection, bounded query and counts', async t => {
+  setup(t); let clock = 0; const calls = [];
+  t.mock.method(Client.prototype, 'query', async arg => {
+    calls.push(arg); clock += 1000;
+    return { rows: typeof arg === 'string' ? [] : [{ __side: '0', key_0: '1' }, { __side: '1', key_0: '1' }, { __side: '1', key_0: '1' }] };
+  });
+  const result = await diagnosePrepJoinPostgres(joinPipeline, [source], config, 'join', {}, new PrepJoinBudget(() => clock));
+  assert.equal(result.matchedRows, 2); assert.equal(result.maxRightMultiplicity, 2);
+  assert.equal(calls[2], "SET LOCAL statement_timeout = '8000ms'"); assert.match(calls[3].text, /AS MATERIALIZED.*LIMIT 10001/);
+  clock = 0; Client.prototype.query.mock.mockImplementation(async () => { clock += 4000; return { rows: [] }; });
+  await assert.rejects(diagnosePrepJoinPostgres(joinPipeline, [source], config, 'join', {}, new PrepJoinBudget(() => clock)), { code: 'PREP_EXECUTION_FAILED' });
+});
+test('DuckDB join diagnostics execute samples through the shared core and reject expired budgets', async () => {
+  const s = { ...source, schema: undefined, connectorId: 'file' };
+  await withPrepMemory([{ source: s, rowCount: 3, value: r => r < 2 ? 1 : null }], async c => {
+    const result = await diagnosePrepJoinDuckDb(c, joinPipeline, [s], 'join');
+    assert.equal(result.matchedRows, 4); assert.equal(result.unmatchedLeft, 1); assert.equal(result.unmatchedRight, 1);
+    let time = 0; const budget = new PrepJoinBudget(() => time); time = 10000;
+    await assert.rejects(diagnosePrepJoinDuckDb(c, joinPipeline, [s], 'join', {}, budget), { code: 'PREP_EXECUTION_FAILED' });
+  });
+});
