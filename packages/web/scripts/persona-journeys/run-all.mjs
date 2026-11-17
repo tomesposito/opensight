@@ -14,6 +14,8 @@ const journeys = [
   ['j1-discover', 'Evaluator'], ['j2-first-login', 'Workspace Admin'], ['j3-first-dashboard', 'Author'], ['j4-reader-daily', 'Reader AI'],
   ['j5-migration', 'Admin + Author'], ['j6-self-host', 'Self-Hoster'], ['j7-operator', 'Operator'], ['j8-embedding', 'Embedder (future)'],
   ['j9-ideas', 'Member + Operator'],
+  ['j10-ai-agent-mcp', 'AI Agent'], // MCP-level; not browser-driven, zero screenshots.
+  ['j11-notebooks', 'Author'],
 ];
 const results = [];
 for (const [journey, persona] of journeys) {
@@ -49,7 +51,7 @@ const counts = results.reduce((total, r) => ({ pass: total.pass + r.counts.pass,
 const summary = { journeys: results.length, ...counts, failedJourneys: results.filter(r => r.counts.fail).length };
 await writeFile(resolve(output, 'results.json'), JSON.stringify({ summary, journeys: results }, null, 2) + '\n');
 const describe = value => typeof value === 'string' ? value : JSON.stringify(value, null, 2);
-const lines = ['# Persona journey browser report', '',
+const lines = ['# Persona journey report', '',
   `${summary.journeys} journeys; ${counts.pass} assertions/observations passed, ${counts.fail} failed, ${counts.gap} gaps.`, '',
   'Passes cover the behavior actually asserted. A journey with gaps is not a completed product experience. Gaps record expected versus actual behavior and do not fail the run. Browser errors, external requests and assertion failures do.', '',
   '| Journey | Persona | Pass | Fail | Gap |', '| --- | --- | ---: | ---: | ---: |',
