@@ -178,3 +178,11 @@ test('window validation rejects unknown keys, mixed modes, malformed lists and f
   }
   for (const config of invalidConfigs) assert.throws(() => validatePrepPipeline(windowPipeline(config)), e => e instanceof PrepError && e.code === 'INVALID_PREP_PIPELINE', JSON.stringify(config));
 });
+
+test('append duplicates is opt-in, strictly validated and absent on legacy pipelines', () => {
+  const p = config => ({ version: 1, input: 'source', steps: [{ id: 'a', kind: 'append', config }] });
+  for (const config of [{ source: 'other' }, { source: 'other', duplicates: 'keep' }, { source: 'other', duplicates: 'dedupe' }]) {
+    assert.deepEqual(validatePrepPipeline(p(config)), p(config));
+  }
+  for (const duplicates of ['distinct', true, 0, null, undefined]) assert.throws(() => validatePrepPipeline(p({ source: 'other', duplicates })), e => e.code === 'INVALID_PREP_PIPELINE');
+});

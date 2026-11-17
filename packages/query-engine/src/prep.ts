@@ -175,7 +175,7 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
           const right = prepSource(step.config.source, sources, dialect);
           if (right.columns.length !== columns.length || columns.some(c => !right.columns.some(r => r.name === c.name && r.type === c.type))) prepFail('PREP_SCHEMA_MISMATCH', path, 'Append requires identical names and types; column order is matched by name');
           const projection = columns.map(c => q(c.name)).join(', ');
-          sql = `SELECT ${projection} FROM ${from} UNION ALL SELECT ${projection} FROM ${relation(right)}`; break;
+          sql = `SELECT ${projection} FROM ${from} UNION${step.config.duplicates === 'dedupe' ? '' : ' ALL'} SELECT ${projection} FROM ${relation(right)}`; break;
         }
         case 'pivot': {
           const c = step.config, key = column(c.column), groups = c.groupBy.map(name => column(name)), result = measure(c.value, c.aggregation);

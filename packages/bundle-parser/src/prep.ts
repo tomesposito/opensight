@@ -26,7 +26,7 @@ export type PrepStep = { id: string; name?: string; from?: string } & (
   { kind: 'window'; config: PrepWindowConfig } |
   { kind: 'aggregate'; config: { groupBy: string[]; measures: PrepMeasure[] } } |
   { kind: 'join'; config: { source: PrepJoinInput; joinType: 'inner' | 'left' | 'right' | 'full'; keys: { left: string; right: string }[] } & PrepJoinOutputs } |
-  { kind: 'append'; config: { source: string } } |
+  { kind: 'append'; config: { source: string; duplicates?: 'keep' | 'dedupe' } } |
   { kind: 'pivot'; config: { groupBy: string[]; column: string; value: string; aggregation: PrepAggregation; values: { value: string | number; name: string }[] } } |
   { kind: 'unpivot'; config: { columns: string[]; nameColumn: string; valueColumn: string } }
 );
@@ -159,7 +159,11 @@ export function validatePrepPipeline(raw: unknown, path = '$.opensightPrep'): Pr
         else for (const col of list(c.columns, `${cp}.columns`)) { const v = prepObject(col, ['column', 'name'], cp); prepName(v.column, cp); prepName(v.name, cp); }
         break;
       }
-      case 'append': { const c = prepObject(s.config, ['source'], cp); prepName(c.source, cp); break; }
+      case 'append': {
+        const c = prepObject(s.config, ['source', 'duplicates'], cp); prepName(c.source, cp);
+        if (Object.hasOwn(c, 'duplicates')) choice(c.duplicates, ['keep', 'dedupe'], `${cp}.duplicates`);
+        break;
+      }
       case 'pivot': {
         const c = prepObject(s.config, ['groupBy', 'column', 'value', 'aggregation', 'values'], cp); names(c.groupBy, cp, true); prepName(c.column, cp); prepName(c.value, cp); choice(c.aggregation, aggregations, cp);
         for (const v of list(c.values, cp)) { const entry = prepObject(v, ['value', 'name'], cp); scalar(entry.value, cp); prepName(entry.name, cp); }
