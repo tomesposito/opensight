@@ -263,7 +263,11 @@ buckets through structured controls or a bounded advanced expression. A
 Append can optionally remove full-row duplicates. See the
 [configuration and ordering rules](docs/data-prep.md#window-configuration-278).
 
-![Window recipe on the data preparation canvas with local or hosted preview requirements](docs/images/data-prep.png)
+Prep joins suggest matching column names and types for explicit confirmation.
+The four join types use a labeled Venn picker, and each step exposes read-only
+compiler SQL or its named error. See [join suggestions and step SQL](docs/data-prep.md#join-suggestions-and-step-sql-279).
+
+![Join configuration and per-step SQL on the data preparation canvas](docs/images/data-prep.png)
 
 Saved prep recipes can be proposed as **shared templates**. Owners/admins review
 and publish them; editors start new datasets by binding their own inputs. The
