@@ -431,8 +431,8 @@ test('multiple dangling branches can be repaired in order while the entire draft
 test('Steps stays grouped while Configure and Preview switch without losing edits', async t => {
   const ui = await mount(t);
   const sidebar = ui.renderer.root.findByProps({ 'aria-label': 'Steps' });
-  assert.deepEqual(sidebar.findAllByType('h3').map(n => n.props.children), ['Input', 'Column transformations', 'Combine transformations', 'Other']);
-  assert.deepEqual(prepCatalog.map(c => c.label), ['Add calculated columns', 'Change data type', 'Rename columns', 'Select columns', 'Append', 'Join', 'Aggregate', 'Filter', 'Pivot', 'Unpivot']);
+  assert.deepEqual(sidebar.findAllByType('h3').map(n => n.props.children), ['Input', 'Column transformations', 'Combine transformations', 'Other', 'Recipes']);
+  assert.deepEqual(prepCatalog.map(c => c.label), ['Add calculated columns', 'Window (rank, running totals)', 'Change data type', 'Rename columns', 'Select columns', 'Append', 'Join', 'Aggregate', 'Filter', 'Pivot', 'Unpivot']);
   await ui.click('＋ Rename columns');
   await field(ui.renderer, 'New name', 'territory');
   await ui.click('Preview');

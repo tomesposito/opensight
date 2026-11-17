@@ -1,4 +1,4 @@
-import { validatePrepPipeline, type PrepStep, type PrepColumn, type PrepPipeline, type PrepInput, type PrepJoinInput } from '@opensight/bundle-parser/prep';
+import { validatePrepPipeline, type PrepStep, type PrepColumn, type PrepPipeline, type PrepInput, type PrepJoinInput, type PrepWindowFunction, type PrepWindowStructured } from '@opensight/bundle-parser/prep';
 import type { BundleDataSet, QsBundle } from '@opensight/bundle-parser/browser';
 import { compilePrep, type PrepSource } from '@opensight/query-engine/browser';
 export interface PrepSourceSummary { execution?: import('./api-client.js').ExecutionStatus; id: string; ref?: PrepJoinInput; name?: string; connectorId: string; columns: PrepColumn[]; available: boolean; errorCode?: string }
@@ -58,6 +58,7 @@ export function prepStepSourceInstance(pipeline: PrepPipeline, step: PrepStep): 
 }
 export const prepCatalog: { kind: PrepStep['kind']; label: string; group: string }[] = [
   { kind: 'calculate', label: 'Add calculated columns', group: 'Column transformations' },
+  { kind: 'window', label: 'Window (rank, running totals)', group: 'Column transformations' },
   { kind: 'changeType', label: 'Change data type', group: 'Column transformations' },
   { kind: 'rename', label: 'Rename columns', group: 'Column transformations' },
   { kind: 'select', label: 'Select columns', group: 'Column transformations' },
@@ -100,12 +101,59 @@ export function newPrepStep(kind: PrepStep['kind'], columns: readonly PrepColumn
     case 'select': return { id, kind, config: { columns: columns.map(c => c.name) } };
     case 'filter': return { id, kind, config: { filters: [{ columnName: col, values: [] }] } };
     case 'calculate': return { id, kind, config: { name: 'calculated_column', expression: `{${numeric}}` } };
+    case 'window': return { id, kind, config: prepWindowDefaults('rowNumber', columns) };
     case 'aggregate': return { id, kind, config: { groupBy: [], measures: [{ column: numeric, name: 'total', aggregation: 'SUM' }] } };
     case 'join': return { id, kind, config: { source, joinType: 'left', keys: [{ left: col, right: right?.columns.find(c => c.name === col && c.type === columns[0]?.type)?.name ?? right?.columns.find(c => c.type === columns[0]?.type)?.name ?? right?.columns[0]?.name ?? '' }], prefix: 'joined_' } };
     case 'append': return { id, kind, config: { source: available.find(s => !s.ref && s.id !== input)?.id ?? (typeof input === 'string' ? input : '') } };
     case 'pivot': return { id, kind, config: { groupBy: [], column: col, value: numeric, aggregation: 'SUM', values: [{ value: 'value', name: 'pivot_value' }] } };
     case 'unpivot': return { id, kind, config: { columns: [numeric], nameColumn: 'column_name', valueColumn: 'column_value' } };
   }
+}
+function unusedColumnName(base: string, columns: readonly PrepColumn[]): string {
+  let name = base, suffix = 1;
+  while (columns.some(c => c.name.toLowerCase() === name.toLowerCase())) name = `${base}_${suffix++}`;
+  return name;
+}
+export const prepWindowLabels: Record<PrepWindowFunction, string> = {
+  rowNumber: 'Row number', rank: 'Rank', denseRank: 'Dense rank', runningTotal: 'Running total', runningAverage: 'Running average',
+  lag: 'Lag', lead: 'Lead', movingAverage: 'Moving average', movingSum: 'Moving sum', ntile: 'Bucket (ntile)',
+};
+/** Changing function removes settings that no longer apply, preserving explicit grouping/order. */
+export function prepWindowDefaults(fn: PrepWindowFunction, columns: readonly PrepColumn[], previous?: PrepWindowStructured): PrepWindowStructured {
+  const config: PrepWindowStructured = {
+    name: previous?.name ?? unusedColumnName('row_number', columns), function: fn,
+    partitionBy: previous?.partitionBy ?? [], orderBy: previous?.orderBy ?? (columns[0] ? [{ column: columns[0].name, direction: 'asc' }] : []),
+  };
+  const numeric = columns.filter(c => c.type === 'INTEGER' || c.type === 'DECIMAL');
+  if (['runningTotal', 'runningAverage', 'movingAverage', 'movingSum', 'lag', 'lead'].includes(fn)) {
+    const choices = fn === 'lag' || fn === 'lead' ? columns : numeric;
+    config.valueColumn = choices.find(c => c.name === previous?.valueColumn)?.name ?? numeric[0]?.name ?? choices[0]?.name ?? '';
+  }
+  if (fn === 'movingAverage' || fn === 'movingSum') { config.frameBefore = previous?.frameBefore ?? 1; config.frameAfter = previous?.frameAfter ?? 0; }
+  if (fn === 'lag' || fn === 'lead') config.offset = previous?.offset ?? 1;
+  if (fn === 'ntile') config.buckets = previous?.buckets ?? 4;
+  return config;
+}
+/** This recipe deliberately requires the author to choose the group's first/latest ordering. */
+export function prepKeepFirstRecipe(columns: readonly PrepColumn[]): [Extract<PrepStep, { kind: 'window' }>, Extract<PrepStep, { kind: 'filter' }>] {
+  const name = unusedColumnName('__keep_row_number', columns), id = `step-${globalThis.crypto.randomUUID()}`;
+  return [
+    { id, kind: 'window', config: { name, function: 'rowNumber', partitionBy: [], orderBy: [] } },
+    { id: `step-${globalThis.crypto.randomUUID()}`, from: id, kind: 'filter', config: { filters: [{ columnName: name, operator: 'EQUALS', value: 1 }] } },
+  ];
+}
+/** Render only the bounded advanced grammar, without dialect casts or compiler-only SQL. */
+export function prepWindowExpression(c: PrepWindowStructured): string {
+  const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
+  const functions: Record<PrepWindowFunction, string> = { rowNumber: 'ROW_NUMBER', rank: 'RANK', denseRank: 'DENSE_RANK', ntile: 'NTILE', runningTotal: 'SUM', movingSum: 'SUM', runningAverage: 'AVG', movingAverage: 'AVG', lag: 'LAG', lead: 'LEAD' };
+  const argument = c.function === 'ntile' ? String(c.buckets) : c.valueColumn === undefined ? '' : `${quote(c.valueColumn)}${c.function === 'lag' || c.function === 'lead' ? `, ${c.offset ?? 1}` : ''}`;
+  const clauses = [
+    ...(c.partitionBy.length ? [`PARTITION BY ${c.partitionBy.map(quote).join(', ')}`] : []),
+    ...(c.orderBy.length ? [`ORDER BY ${c.orderBy.map(o => `${quote(o.column)} ${o.direction.toUpperCase()}`).join(', ')}`] : []),
+    ...(['runningTotal', 'runningAverage'].includes(c.function) ? ['ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW'] : []),
+    ...(['movingSum', 'movingAverage'].includes(c.function) ? [`ROWS BETWEEN ${c.frameBefore ?? 0} PRECEDING AND ${c.frameAfter ?? 0} FOLLOWING`] : []),
+  ];
+  return `${functions[c.function]}(${argument}) OVER (${clauses.join(' ')})`;
 }
 /** Preserve every other member/property of a supplied bundle during prep editing. */
 export function prepBundle(resource: BundleDataSet, pipeline: PrepPipeline, original?: QsBundle): QsBundle {

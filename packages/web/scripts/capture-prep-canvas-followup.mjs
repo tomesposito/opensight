@@ -37,7 +37,7 @@ try {
   await navigate(page, 'data-prep');
   await button('New').click();
   await page.getByLabel('Dataset name', { exact: true }).fill('Regional sales preparation');
-  assert.deepEqual(await page.locator('.prep-sidebar h3').allTextContents(), ['Input', 'Column transformations', 'Combine transformations', 'Other']);
+  assert.deepEqual(await page.locator('.prep-sidebar h3').allTextContents(), ['Input', 'Column transformations', 'Combine transformations', 'Other', 'Recipes']);
   const search = page.getByRole('searchbox', { name: 'Search steps', exact: true });
   await search.fill('  JoIn ');
   assert.deepEqual(await page.locator('.prep-sidebar h3').allTextContents(), ['Combine transformations']);

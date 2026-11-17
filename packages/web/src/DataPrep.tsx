@@ -8,7 +8,7 @@ import { assembleQsBundle, parseBundleJson, parseQsBundle, type BundleDataSet, t
 import { validatePrepPipeline, type PrepColumn, type PrepPipeline, type PrepStep, type PrepInput, type PrepJoinInput } from '@opensight/bundle-parser/prep';
 import type { PrepPreview } from '@opensight/query-engine';
 import type { createApiClient } from './api-client.js';
-import { prepCatalog, prepStepLabel, prepSchema, prepPlan, prepRefKey, prepRefLabel, prepSourceRef, prepInputNodes, prepInstanceLabel, prepStepSourceInstance, prepStepIssue, prepMessage, newPrepStep, prepBundle, prepPrefix, prepLeftInput, removePrepStep, type PrepSourceSummary } from './data-prep.js';
+import { prepCatalog, prepStepLabel, prepSchema, prepPlan, prepRefKey, prepRefLabel, prepSourceRef, prepInputNodes, prepInstanceLabel, prepStepSourceInstance, prepStepIssue, prepMessage, newPrepStep, prepKeepFirstRecipe, prepBundle, prepPrefix, prepLeftInput, removePrepStep, type PrepSourceSummary } from './data-prep.js';
 import { PrepStepEditor, PrepSourcePicker } from './PrepStepEditor.js';
 import { PrepPreviewTable } from './PrepPreviewTable.js';
 import { loadDataCatalog } from './data-section.js';
@@ -122,6 +122,14 @@ export function DataPrep({ client, initialSource, initialDatasetId, onSources, o
       setEditing(step); setSelected(null); setStaging(false); setTab('configure');
     } catch (e) { setError(prepMessage(e)); }
   };
+  const addKeepFirst = () => {
+    try {
+      const cols = prepSchema(pipeline, sources, pipeline.steps.at(-1)?.id ?? null, schemaContext);
+      const steps = prepKeepFirstRecipe(cols);
+      change({ ...pipeline, steps: [...pipeline.steps, ...steps] });
+      setEditing(steps[0]); setSelected(steps[0].id); setStaging(false); setTab('configure');
+    } catch (e) { setError(prepMessage(e)); }
+  };
   const gridDisabled = !!problem || !pipeline.input || selected !== (pipeline.steps.at(-1)?.id ?? null);
   const addFromGrid = (kind: 'calculate' | 'filter' | 'rename', column?: string) => {
     if (gridDisabled) return;
@@ -233,7 +241,8 @@ export function DataPrep({ client, initialSource, initialDatasetId, onSources, o
       {matchesStep('Add data') && <div className="prep-catalog-group"><h3>Input</h3>
 
       <button className="prep-add-data" onClick={() => { const first = editorSources()[0]; setPending(staged ?? (first ? prepSourceRef(first) : null)); setStaging(true); setSelected(null); setEditing(undefined); setTab('configure'); }}>＋ Add data</button></div>}{['Column transformations','Combine transformations','Other'].filter(group => matchingSteps.some(c => c.group === group)).map(group => <div className="prep-catalog-group" key={group}><h3>{group}</h3>{matchingSteps.filter(c => c.group === group).map(c => <button key={c.kind} disabled={!pipeline.input || !!problem} title={(c.kind === 'join' || c.kind === 'append') && staged ? `Uses the staged input (${prepRefLabel(staged)})` : undefined} aria-label={`＋ ${c.label}`} onClick={() => add(c.kind)}><PrepStepIcon kind={c.kind} /> {c.label}</button>)}</div>)}
-      {!matchesStep('Add data') && matchingSteps.length === 0 && <p role="status">No matching steps. Try another name.</p>}
+      {matchesStep('Keep first/latest row per group') && <div className="prep-catalog-group"><h3>Recipes</h3><button disabled={!pipeline.input || !!problem} onClick={addKeepFirst}>Keep first/latest row per group</button></div>}
+      {!matchesStep('Add data') && !matchesStep('Keep first/latest row per group') && matchingSteps.length === 0 && <p role="status">No matching steps. Try another name.</p>}
     </aside><div className="prep-main"><div className="prep-canvas-heading"><h2>Pipeline canvas</h2><span>{pipeline.steps.length} steps · left to right</span></div><div className="prep-canvas" aria-label="Transformation DAG">{staged && <div className="prep-input-rail" aria-label="Staged input sources">{stagedNode()}</div>}<PrepGraph pipeline={pipeline} selected={selected} issues={stepIssues} disabled={!!problem}
       select={id => { setSelected(id); setEditing(undefined); setStaging(false); setTab('configure'); }} branch={branch} setOutput={output => change({ ...pipeline, output })}
       input={<button className={`prep-node input-node${selected === null ? ' selected' : ''}`} aria-pressed={selected === null} onClick={() => { setSelected(null); setEditing(undefined); setStaging(false); setTab('configure'); }}><span className="prep-node-icon">▤</span><strong>Input · Source 1</strong><span>{prepRefLabel(pipeline.input) || 'Add data'}</span>{executionFor(pipeline.input) && <ExecutionBadge status={executionFor(pipeline.input)} />}</button>}
