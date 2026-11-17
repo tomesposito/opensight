@@ -1,4 +1,4 @@
-# Dataset preparation (issues #9, #11, #14, #17, #18, #58, and #278)
+# Dataset preparation (issues #9, #11, #14, #17, #18, #58, #278, and #279)
 
 The Preview tab also offers [spreadsheet-style column actions](familiar-surface.md)
 for formula columns, filters, and renames (#156), all using the operations below.
@@ -17,7 +17,7 @@ be reordered or removed. Switching tabs retains an unapplied configuration.
 Downstream schema errors remain visible.
 
 Join configuration shows left/right table column lists with type icons and
-column search, a keyboard-operable left/inner/right/full join selector, and
+column search, a keyboard-operable Venn picker labeled left/inner/right/full, and
 paired key selectors. Click a column or choose a dashed “Add a column from
 left/right table” placeholder to add a key. A partially filled key blocks Apply;
 remove the pair or choose both columns to continue. Right output columns expands
@@ -29,13 +29,42 @@ available in the expandable section above the Steps workspace.
 Adding data is a distinct action: **＋ Add data** stages a source (dataset,
 connector table, uploaded file, or an earlier step's result) as an input node on
 the canvas, visibly flagged until a Join or Append step is configured against it.
-Adding the Combine step while an input is staged presets the step's source and a
-default key; applying the step consumes the staged input. Join/append steps whose
+Adding the Combine step while an input is staged presets the step's source.
+New joins start with no keys; applying a configured step consumes the staged input. Join/append steps whose
 own configuration is incomplete — or that an upstream edit broke — carry a red
 unconfigured flag on the node with the validation message, so the fail-closed
 validation is visible on the canvas, not only in the editor at apply time. Staged
 inputs are a UI draft: they are not part of the saved pipeline or the exported
 bundle.
+
+## Join suggestions and step SQL (#279)
+
+**Suggested keys** lists whole column-name matches (case-insensitive) whose
+prep types match exactly. Similar names, INTEGER/DECIMAL coercions and ambiguous
+names are excluded. Each **Use suggested key** button adds only that pair after
+confirmation. Existing keys are preserved and already-configured pairs are not
+suggested again. These are metadata hints, not evidence of a data relationship.
+Keys are never populated automatically, including when a staged source is used.
+
+Every selected transformation and its configuration editor offers **SQL through
+this step**. This read-only disclosure shows the exact shared `compilePrep` SQL
+for the pipeline prefix ending at that step, including CTEs, quoting, whitespace,
+parameter placeholders and the compiler's preview output limit. Bound parameter
+values appear separately in order. Unapplied edits update the view; later invalid
+draft steps do not hide SQL for an earlier valid prefix. Compiler failures replace
+SQL with the compiler's named error. Branch inputs, prepared dataset definitions,
+and cached-input schema bindings use the existing canvas compiler context.
+
+The view compiles metadata locally and executes no queries. Canvas source IDs
+are compiler table bindings; the API resolves physical table names when executing.
+The displayed dialect is the prep compiler's dialect (including DuckDB staging
+for supported hosted connectors), not necessarily the upstream connector's SQL.
+
+Join match diagnostics are **not available** in this slice. The existing preview
+limits returned output, not source scans or both join inputs. Item 3 was stopped
+under the run brief's explicit architecture constraint; see the
+[bounded-preview blocker](issue-279-gap-notes.md#item-3--blocked-by-the-preview-architecture).
+No matched/unmatched counts or fan-out warning are inferred from a joined sample.
 
 ## Dataset and bundle model
 

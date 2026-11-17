@@ -2242,6 +2242,12 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-join-type legend, .prep-join-keys legend { margin-bottom: 4px; }
 .prep-join-type [role="radiogroup"] { display: flex; }
 .prep-join-type button { border-radius: 0; padding: 4px 12px; display: grid; place-items: center; }
+.prep-join-type button span { white-space: nowrap; }
+.prep-sql-view { margin: 12px 0; min-width: 0; }
+.prep-sql-view summary { cursor: pointer; font-weight: bold; }
+.prep-sql-view summary:hover { background: #e8eefb; }
+.prep-sql-view pre { max-width: 100%; overflow: auto; padding: 12px; border: 1px solid #c9d3dc; background: #f6f8fb; color: #172b4d; white-space: pre; }
+.prep-join-suggestions button { display: block; margin-top: 4px; text-align: left; overflow-wrap: anywhere; }
 .prep-join-type button + button { margin-left: -1px; }
 .prep-join-type button[aria-checked="true"] { color: #0284c7; background: #e5f3fa; border-color: #0284c7; z-index: 1; }
 .prep-join-key { display: grid; grid-template-columns: minmax(0, 1fr) 8px minmax(0, 1fr) 24px; align-items: center; gap: 8px; margin: 8px 0; }

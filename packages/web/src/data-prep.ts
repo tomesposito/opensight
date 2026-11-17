@@ -103,7 +103,7 @@ export function newPrepStep(kind: PrepStep['kind'], columns: readonly PrepColumn
     case 'calculate': return { id, kind, config: { name: 'calculated_column', expression: `{${numeric}}` } };
     case 'window': return { id, kind, config: prepWindowDefaults('rowNumber', columns) };
     case 'aggregate': return { id, kind, config: { groupBy: [], measures: [{ column: numeric, name: 'total', aggregation: 'SUM' }] } };
-    case 'join': return { id, kind, config: { source, joinType: 'left', keys: [{ left: col, right: right?.columns.find(c => c.name === col && c.type === columns[0]?.type)?.name ?? right?.columns.find(c => c.type === columns[0]?.type)?.name ?? right?.columns[0]?.name ?? '' }], prefix: 'joined_' } };
+    case 'join': return { id, kind, config: { source, joinType: 'left', keys: [], prefix: 'joined_' } };
     case 'append': return { id, kind, config: { source: available.find(s => !s.ref && s.id !== input)?.id ?? (typeof input === 'string' ? input : '') } };
     case 'pivot': return { id, kind, config: { groupBy: [], column: col, value: numeric, aggregation: 'SUM', values: [{ value: 'value', name: 'pivot_value' }] } };
     case 'unpivot': return { id, kind, config: { columns: [numeric], nameColumn: 'column_name', valueColumn: 'column_value' } };
@@ -169,6 +169,12 @@ export function prepBundle(resource: BundleDataSet, pipeline: PrepPipeline, orig
 export function prepPrefix(pipeline: PrepPipeline, length: number): PrepPipeline {
   const { output: _output, ...rest } = pipeline;
   return { ...rest, steps: pipeline.steps.slice(0, length) };
+}
+/** Compile the edited prefix, so an unrelated later draft cannot hide this step's SQL. */
+export function prepStepPlan(pipeline: PrepPipeline, step: PrepStep, sources: readonly PrepSourceSummary[], context: PrepSchemaContext = {}) {
+  const index = pipeline.steps.findIndex(s => s.id === step.id);
+  const prefix = prepPrefix(pipeline, index < 0 ? pipeline.steps.length : index);
+  return prepPlan({ ...prefix, steps: [...prefix.steps, step] }, sources, step.id, context);
 }
 export function prepLeftInput(pipeline: PrepPipeline, step: PrepStep): string | null {
   const index = pipeline.steps.findIndex(s => s.id === step.id);
