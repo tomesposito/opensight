@@ -28,7 +28,10 @@ rate-limit variable.
 
 Before anything is sent, each row is claimed atomically (#232): a
 conditional update stamps a claim token and a five-minute lease on an
-unnotified, unclaimed row, and only the claim's winner sends it. Concurrent
+unnotified, unclaimed row, and only the claim's winner sends it. The lease
+starts when that row is claimed, not when the batch started (#250), so a
+slow batch never claims a later row with an already-expired lease.
+Concurrent
 submissions or maintenance calls therefore never email the operator twice
 about the same request, even through a transport that does not deduplicate.
 The send keeps its stable per-request dedupe key (#224), a failed send

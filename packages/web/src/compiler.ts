@@ -1,7 +1,7 @@
 import { validOProvenance } from './o-provenance.js';
 import { formatMetric } from './governed-metrics.js';
 import { formatNumber, groupedPeriodDate, shiftDate, resultDate } from '@opensight/query-engine/browser';
-import { computeForecast, forecastConfigValid, MIN_FORECAST_POINTS, type ForecastConfig } from './forecast.js';
+import { computeForecast, forecastConfigValid, MIN_FORECAST_POINTS, prepareChronological, type ForecastConfig } from './forecast.js';
 import { convertDefinition } from './definition-converter.js';
 import { InsightError, projectInsightBody, normalizeInsight, uniqueValuesOnly, topBottomMoversOnly } from './insight-configuration.js';
 import { insightNarrative, type InsightNarrative } from './insight-narrative.js';
@@ -905,18 +905,29 @@ export function compileVisual(input: Input): CompiledVisual {
     const extras: LineSeriesOption[] = [];
     for (const panel of forecastPanels) {
       if (!panel.rows.length) continue;
-      const dates = panel.rows.map(row => groupedPeriodDate(cell(row, dimension), grain));
-      if (dates.some(d => d === null)) { anyInapplicable = true; continue; }
+      // Shared chronological preparation with Insight (issue #259): decode
+      // each row's period, sort chronologically for the fit, reject decoded
+      // duplicates, and anchor future labels to the latest period — display
+      // order must not change the fitted history or the future dates.
+      const prepared = prepareChronological(panel.rows, row => groupedPeriodDate(cell(row, dimension), grain));
+      if (!prepared.ok) {
+        if (prepared.reason === 'invalid') { anyInapplicable = true; continue; }
+        fail(input.path, 'duplicate date/time periods: two rows decode to the same period at the chart grain; expected unique aggregated periods');
+      }
+      const chrono = prepared.entries;
+      const latest = chrono.at(-1)!;
       const n = panel.rows.length;
       const axis = (Array.isArray(option.xAxis) ? option.xAxis[panel.axisIndex] : option.xAxis) as { data?: string[] } | undefined;
       const labels = axis?.data ?? panel.rows.map(row => displayCell(cell(row, dimension)));
-      const rawLast = String(cell(panel.rows.at(-1)!, dimension));
+      const rawLatest = String(cell(latest.item, dimension));
       const extended = [...labels];
-      for (let h = 1; h <= config.periodsForward; h++) extended.push(periodLabel(shiftPeriod(dates.at(-1)!, grain, h), grain, rawLast));
+      for (let h = 1; h <= config.periodsForward; h++) extended.push(periodLabel(shiftPeriod(latest.date, grain, h), grain, rawLatest));
       panel.measureSeries.forEach((seriesIndex, mi) => {
         const parent = (option.series as LineSeriesOption[])[seriesIndex]!;
         const measure = model.measures[mi]!;
-        const pts = panel.rows.map((row, idx) => ({ idx, v: number(row, measure) })).filter(p => p.v !== null) as { idx: number; v: number }[];
+        // Chronological points; idx keeps the display position so fitted and
+        // join values map back onto the rows the chart actually shows.
+        const pts = chrono.map(({ item, index }) => ({ idx: index, v: number(item, measure) })).filter(p => p.v !== null) as { idx: number; v: number }[];
         if (pts.length < MIN_FORECAST_POINTS) { anyInsufficient = true; return; }
         const result = computeForecast(pts.map(p => p.v), grain, config);
         if (!result) { anyInsufficient = true; return; }
@@ -1119,7 +1130,7 @@ function waterfallTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: 
     const name = typeof first.name === 'string' ? first.name : '';
     const index = first.data?.sourceRowIndex;
     const row = typeof index === 'number' && Number.isInteger(index) ? rows[index] : undefined;
-    if (!row) return `${name}: ${String(first.data?.delta ?? '')}`;
+    if (!row) return `${richTextEscape(name)}: ${richTextEscape(String(first.data?.delta ?? ''))}`;
     const title = detail.titleType === 'primaryValue' ? name : fieldName(model.dimensions[0] ?? measure, model.formatting);
     const lines = [richTextEscape(title)];
     for (const field of fields) {

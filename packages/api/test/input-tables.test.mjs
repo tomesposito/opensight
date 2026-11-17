@@ -2,12 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { request as httpRequest } from 'node:http';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApiServer, emptySecurityState, StubMailTransport } from '@opensight/api';
-import { appendAudit, InputTableStore, MAX_INPUT_AUDIT_ENTRIES_PER_TABLE, MAX_INPUT_AUDIT_ENTRIES_TOTAL } from '../dist/input-tables.js';
+import {
+  appendAudit, InputTableStore, MAX_INPUT_AUDIT_ENTRIES_PER_TABLE, MAX_INPUT_AUDIT_ENTRIES_TOTAL,
+  MAX_INPUT_AUDIT_BYTES_PER_TABLE, MAX_INPUT_AUDIT_BYTES_TOTAL, MAX_INPUT_COLUMNS, MAX_INPUT_TEXT_CHARS,
+} from '../dist/input-tables.js';
 import { AutomationStore } from '../dist/automation-store.js';
 const root = fileURLToPath(new URL('../../../fixtures/', import.meta.url));
 
@@ -65,6 +68,222 @@ async function createTable(call, extra = {}) {
   assert.equal(created.status, 201, JSON.stringify(created.body));
   return created.body;
 }
+
+const auditBytes = entries => entries.reduce((bytes, entry) => bytes + Buffer.byteLength(JSON.stringify(entry), 'utf8'), 0);
+const largeAuditDetail = (sequence, text = 'x'.repeat(MAX_INPUT_TEXT_CHARS)) => ({
+  sequence, rowId: 'row-1', changes: Array.from({ length: MAX_INPUT_COLUMNS }, (_, i) => ({
+    column: `text_${i}`, oldValue: text, newValue: 'y' + text.slice(1),
+  })),
+});
+const auditEntry = (tableId, sequence, detail = largeAuditDetail(sequence), namespaceId = 'default') => ({
+  id: `audit-${sequence}`, tableId, namespaceId, actorId: 'author', action: 'row_updated',
+  // Deliberately reverse timestamps: retention and pagination use append order.
+  at: new Date(Date.UTC(2026, 10, 14) - sequence * 1000).toISOString(), detail,
+});
+
+test('input tables (#245): large updates evict the oldest entries by per-table serialized bytes', () => {
+  for (const text of ['x'.repeat(MAX_INPUT_TEXT_CHARS), '界\n"'.repeat(3333)]) {
+    const draft = { version: 1, tables: [], audit: [] };
+    const table = { id: 'forecast', namespaceId: 'default' };
+    const appended = [], unrelated = [];
+    for (let i = 0; i < 35; i++) {
+      if (i % 5 === 0) {
+        appendAudit(draft, { ...table, id: 'other' }, 'author', 'table_renamed', { sequence: i });
+        unrelated.push(draft.audit.at(-1));
+      }
+      appendAudit(draft, table, 'author', 'row_updated', largeAuditDetail(i, text));
+      appended.push(draft.audit.at(-1));
+      assert.ok(auditBytes(draft.audit.filter(e => e.tableId === table.id)) <= MAX_INPUT_AUDIT_BYTES_PER_TABLE);
+    }
+    const retained = draft.audit.filter(e => e.tableId === table.id);
+    assert.ok(retained.length > 1 && retained.length < appended.length);
+    assert.ok(retained.length <= MAX_INPUT_AUDIT_ENTRIES_PER_TABLE);
+    assert.ok(draft.audit.length <= MAX_INPUT_AUDIT_ENTRIES_TOTAL);
+    assert.deepEqual(retained, appended.slice(-retained.length));
+    assert.deepEqual(draft.audit.filter(e => e.tableId === 'other'), unrelated);
+    // No unnecessary eviction: the next-oldest entry would exceed the budget.
+    assert.ok(auditBytes([appended.at(-retained.length - 1), ...retained]) > MAX_INPUT_AUDIT_BYTES_PER_TABLE);
+    assert.deepEqual(retained.at(-1).detail, largeAuditDetail(34, text));
+  }
+});
+
+test('input tables (#245): store-wide serialized bytes evict oldest first across tables and namespaces', () => {
+  const draft = { version: 1, tables: [], audit: [] };
+  const appended = [];
+  for (let i = 0; i < 115; i++) {
+    appendAudit(draft, { id: `table-${i % 5}`, namespaceId: i % 2 ? 'other' : 'default' }, 'author', 'row_updated', largeAuditDetail(i));
+    appended.push(draft.audit.at(-1));
+  }
+  assert.ok(auditBytes(draft.audit) <= MAX_INPUT_AUDIT_BYTES_TOTAL);
+  assert.ok(draft.audit.length < appended.length && draft.audit.length <= MAX_INPUT_AUDIT_ENTRIES_TOTAL);
+  assert.deepEqual(draft.audit, appended.slice(-draft.audit.length));
+  assert.ok(auditBytes([appended.at(-draft.audit.length - 1), ...draft.audit]) > MAX_INPUT_AUDIT_BYTES_TOTAL);
+  for (let i = 0; i < 5; i++) {
+    const entries = draft.audit.filter(e => e.tableId === `table-${i}`);
+    assert.ok(entries.length <= MAX_INPUT_AUDIT_ENTRIES_PER_TABLE);
+    assert.ok(auditBytes(entries) <= MAX_INPUT_AUDIT_BYTES_PER_TABLE);
+  }
+});
+
+test('input tables (#245): per-table eviction precedes store-wide eviction when both byte budgets are exceeded', () => {
+  const perTable = Math.floor(MAX_INPUT_AUDIT_BYTES_PER_TABLE / auditBytes([auditEntry('table-0', 0)]));
+  const audit = Array.from({ length: 4 * perTable }, (_, i) => auditEntry(`table-${i % 4}`, i));
+  const beforeBytes = auditBytes(audit);
+  assert.ok(beforeBytes <= MAX_INPUT_AUDIT_BYTES_TOTAL);
+  assert.ok(beforeBytes + auditBytes([auditEntry('table-3', audit.length)]) > MAX_INPUT_AUDIT_BYTES_TOTAL);
+  const draft = { version: 1, tables: [], audit: [...audit] };
+  appendAudit(draft, { id: 'table-3', namespaceId: 'default' }, 'author', 'row_updated', largeAuditDetail(audit.length));
+  // Pruning the affected table is sufficient: the oldest overall entry survives.
+  assert.deepEqual(draft.audit.slice(0, -1), audit.filter((_, i) => i !== 3));
+  assert.ok(auditBytes(draft.audit) <= MAX_INPUT_AUDIT_BYTES_TOTAL);
+  assert.ok(auditBytes(draft.audit.filter(e => e.tableId === 'table-3')) <= MAX_INPUT_AUDIT_BYTES_PER_TABLE);
+});
+
+test('input tables (#245): an oversized newest entry survives alone until a newer append evicts it', () => {
+  for (const budget of [MAX_INPUT_AUDIT_BYTES_PER_TABLE, MAX_INPUT_AUDIT_BYTES_TOTAL]) {
+    const draft = { version: 1, tables: [], audit: [] };
+    const table = { id: 'forecast', namespaceId: 'default' };
+    appendAudit(draft, { ...table, id: 'other' }, 'author', 'table_created', { name: 'Other' });
+    const unrelated = draft.audit[0];
+    appendAudit(draft, table, 'author', 'table_created', { name: 'Forecast' });
+    // Legacy/internal details need not obey the API's cell-size limits.
+    appendAudit(draft, table, 'author', 'row_updated', { payload: 'x'.repeat(budget + 1) });
+    const latest = draft.audit.at(-1);
+    assert.ok(auditBytes([latest]) > budget);
+    assert.deepEqual(draft.audit.filter(e => e.tableId === table.id), [latest]);
+    assert.deepEqual(draft.audit, budget === MAX_INPUT_AUDIT_BYTES_TOTAL ? [latest] : [unrelated, latest]);
+    appendAudit(draft, table, 'author', 'table_renamed', { newValue: 'New forecast' });
+    assert.equal(draft.audit.filter(e => e.tableId === table.id).length, 1);
+    assert.equal(draft.audit.at(-1).action, 'table_renamed');
+    assert.ok(auditBytes(draft.audit) <= MAX_INPUT_AUDIT_BYTES_PER_TABLE);
+  }
+});
+
+test('input tables (#245): oversized legacy JSON loads intact and the next append persists both byte budgets', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'opensight-input-audit-bytes-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, 'input-tables.json');
+  const table = { id: 'deleted-table', namespaceId: 'default' };
+  const audit = [];
+  for (let i = 0; i < 36; i++) {
+    audit.push(auditEntry(table.id, audit.length));
+    if (i < 22) for (let j = 0; j < 5; j++) audit.push(auditEntry(`other-${j}`, audit.length));
+  }
+  const beforeBytes = auditBytes(audit);
+  assert.ok(beforeBytes > MAX_INPUT_AUDIT_BYTES_TOTAL);
+  assert.ok(auditBytes(audit.filter(e => e.tableId === table.id)) > MAX_INPUT_AUDIT_BYTES_PER_TABLE);
+  await writeFile(path, JSON.stringify({ version: 1, tables: [], audit }));
+  const store = await InputTableStore.load(path);
+  assert.deepEqual(store.store.project(state => ({ ids: state.audit.map(e => e.id), bytes: auditBytes(state.audit) })), {
+    ids: audit.map(e => e.id), bytes: beforeBytes,
+  });
+  await store.change(draft => appendAudit(draft, table, 'author', 'table_deleted', { name: 'Forecast' }));
+  const summary = state => ({
+    ids: state.audit.map(e => e.id), totalBytes: auditBytes(state.audit),
+    tableBytes: auditBytes(state.audit.filter(e => e.tableId === table.id)), last: state.audit.at(-1),
+  });
+  const retained = store.store.project(summary);
+  assert.ok(retained.totalBytes <= MAX_INPUT_AUDIT_BYTES_TOTAL);
+  assert.ok(retained.tableBytes <= MAX_INPUT_AUDIT_BYTES_PER_TABLE);
+  assert.equal(retained.last.action, 'table_deleted');
+  assert.ok(retained.ids.length < audit.length);
+  const retainedIds = new Set(retained.ids);
+  assert.deepEqual(retained.ids.slice(0, -1), audit.filter(e => retainedIds.has(e.id)).map(e => e.id));
+  assert.deepEqual((await InputTableStore.load(path)).store.project(summary), retained);
+});
+
+const storedTable = (id = 'forecast', namespaceId = 'default') => ({
+  id, namespaceId, ownerId: 'author', name: 'Forecast', boundDatasetId: null,
+  columns: [{ name: 'region', type: 'text', required: true }], rows: [], editors: ['other-author'],
+  version: 1, createdAt: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-01T00:00:00.000Z',
+});
+
+test('input tables (#245): audit page reads clone only metadata and the requested visible page', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'opensight-input-audit-page-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, 'input-tables.json');
+  const table = storedTable();
+  table.rows = Array.from({ length: 750 }, (_, i) => ({
+    id: `row-${i}`, values: { region: `ROW_PAYLOAD_${i}:` + 'r'.repeat(9000) },
+  }));
+  const audit = Array.from({ length: 90 }, (_, i) => auditEntry(
+    i % 3 === 0 ? 'unrelated' : table.id, i,
+    { row: { id: `row-${i}`, values: { region: `AUDIT_PAYLOAD_${i}:` + 'a'.repeat(9000) } } },
+    i % 5 === 0 ? 'other' : 'default',
+  ));
+  await writeFile(path, JSON.stringify({ version: 1, tables: [table], audit }));
+  const call = await api(t, { inputTableStorePath: path });
+  const visible = audit.filter(e => e.tableId === table.id && e.namespaceId === table.namespaceId);
+  const clone = globalThis.structuredClone;
+  let clonedBytes = 0, clonedRows = false, clonedPayloads = [];
+  t.mock.method(globalThis, 'structuredClone', (value, ...args) => {
+    const json = JSON.stringify(value) ?? '';
+    clonedBytes += Buffer.byteLength(json);
+    clonedRows ||= json.includes('ROW_PAYLOAD_');
+    clonedPayloads.push(...json.matchAll(/AUDIT_PAYLOAD_\d+:/g));
+    return clone(value, ...args);
+  });
+  for (const offset of [0, 23, visible.length, Number.MAX_SAFE_INTEGER]) {
+    clonedBytes = 0; clonedRows = false; clonedPayloads = [];
+    const expected = visible.slice(offset, offset + 1);
+    assert.deepEqual(await call(`/api/input-tables/${table.id}/audit?limit=1&offset=${offset}`), {
+      status: 200, body: { entries: expected, total: visible.length, limit: 1, offset },
+    });
+    assert.equal(clonedRows, false, 'audit reads must not clone table rows');
+    assert.deepEqual(clonedPayloads.map(match => match[0]), expected.map(e => e.detail.row.values.region.match(/AUDIT_PAYLOAD_\d+:/)[0]),
+      'off-page, unrelated-table and foreign-namespace payloads must not be cloned');
+    assert.ok(clonedBytes < 32 * 1024, `page read cloned ${clonedBytes} bytes`);
+  }
+});
+
+test('input tables (#245): audit page projections isolate nested values and expose only authorization metadata', async () => {
+  const store = await InputTableStore.load();
+  const table = storedTable();
+  const entry = auditEntry(table.id, 0, { row: { id: 'row-1', values: { region: 'East' } } });
+  await store.change(draft => { draft.tables.push(table); draft.audit.push(entry); });
+  const expected = { table: { namespaceId: 'default' }, firstEntryNamespaceId: 'default', entries: [entry], total: 1 };
+  const page = store.auditPageFor(table.id, 'default', { limit: 1, offset: 0 });
+  assert.deepEqual(page, expected);
+  page.table.namespaceId = 'other';
+  page.entries[0].detail.row.values.region = 'Changed';
+  page.entries.pop();
+  assert.deepEqual(store.auditPageFor(table.id, 'default'), expected);
+  assert.deepEqual(store.auditPageFor(table.id, 'default', { limit: 1, offset: 100 }), { ...expected, entries: [] });
+  assert.deepEqual(store.auditPageFor('missing', 'default'), {
+    table: undefined, firstEntryNamespaceId: undefined, entries: [], total: 0,
+  });
+});
+
+test('input tables (#245): audit authorization and visible totals are independent of pages and foreign entries', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'opensight-input-audit-scope-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, 'input-tables.json');
+  const audit = [];
+  for (const id of ['live', 'foreign-live', 'deleted', 'foreign-deleted']) {
+    const firstNamespace = ['live', 'foreign-deleted'].includes(id) ? 'other' : 'default';
+    audit.push(auditEntry(id, audit.length, { sequence: 0 }, firstNamespace));
+    audit.push(auditEntry(id, audit.length, { sequence: 1 }, firstNamespace === 'default' ? 'other' : 'default'));
+    audit.push(auditEntry(id, audit.length, { sequence: 2 }, 'default'));
+  }
+  await writeFile(path, JSON.stringify({ version: 1, tables: [storedTable('live'), storedTable('foreign-live', 'other'), storedTable('empty')], audit }));
+  const call = await api(t, { inputTableStorePath: path });
+  for (const id of ['live', 'foreign-live', 'deleted', 'foreign-deleted', 'empty', 'missing']) {
+    for (const [user, namespaceId] of [['reader', 'default'], ['tenant-author', 'other']]) {
+      const authorized = namespaceId === 'default' ? ['live', 'deleted', 'empty'].includes(id) : ['foreign-live', 'foreign-deleted'].includes(id);
+      const visible = audit.filter(e => e.tableId === id && e.namespaceId === namespaceId);
+      for (const offset of [undefined, 0, 1, 100]) {
+        const response = await call(`/api/input-tables/${id}/audit${offset === undefined ? '' : `?limit=1&offset=${offset}`}`, 'GET', undefined, user);
+        if (authorized) assert.deepEqual(response, { status: 200, body: offset === undefined ? { entries: visible }
+          : { entries: visible.slice(offset, offset + 1), total: visible.length, limit: 1, offset } });
+        else {
+          assert.equal(response.status, 404, `${id}, ${user}, ${offset}`);
+          assert.equal(response.body.errorCode, 'INPUT_TABLE_NOT_FOUND');
+          assert.equal(response.body.entries, undefined);
+        }
+      }
+    }
+  }
+});
 
 test('input tables (#220): append retains the newest 1000 entries per table without pruning other tables', async () => {
   assert.equal(MAX_INPUT_AUDIT_ENTRIES_PER_TABLE, 1000);
@@ -296,7 +515,7 @@ test('input tables: row CRUD enforces typed validation on add and merged patch',
     const rejected = await call(rows, 'POST', { values });
     assert.equal(rejected.status, 400, JSON.stringify(rejected.body)); assert.equal(rejected.body.errorCode, code);
   }
-  const patched = await call(`${rows}/${rowId}`, 'PATCH', { values: { forecast: 12 } });
+  const patched = await call(`${rows}/${rowId}`, 'PATCH', { values: { forecast: 12 }, expectedVersion: added.body.version });
   assert.equal(patched.status, 200, JSON.stringify(patched.body)); assert.equal(patched.body.row.values.forecast, 12);
   // Merged-row validation retains precise named errors inside the mutation.
   for (const [values, code] of [
@@ -306,13 +525,15 @@ test('input tables: row CRUD enforces typed validation on add and merged patch',
     [{ active: 'yes' }, 'INPUT_TABLE_INVALID_VALUE_TYPE'],
     [{ bogus: 1 }, 'INPUT_TABLE_UNKNOWN_COLUMN'],
   ]) {
-    const rejected = await call(`${rows}/${rowId}`, 'PATCH', { values });
+    const rejected = await call(`${rows}/${rowId}`, 'PATCH', { values, expectedVersion: patched.body.version });
     assert.equal(rejected.status, 400); assert.equal(rejected.body.errorCode, code);
   }
   assert.equal((await call(`/api/input-tables/${table.id}`)).body.version, patched.body.version);
   assert.equal((await call(`/api/input-tables/${table.id}/audit`)).body.entries.filter(e => e.action === 'row_updated').length, 1);
-  // Last write wins: a second patch overwrites the first.
-  await call(`${rows}/${rowId}`, 'PATCH', { values: { forecast: 15 } });
+  // A second patch against the current version can update the same cell.
+  const second = await call(`${rows}/${rowId}`, 'PATCH', { values: { forecast: 15 }, expectedVersion: patched.body.version });
+  assert.equal(second.status, 200, JSON.stringify(second.body));
+  assert.equal(second.body.version, patched.body.version + 1);
   const after = await call(`/api/input-tables/${table.id}`);
   assert.equal(after.body.rows[0].values.forecast, 15);
   const deleted = await call(`${rows}/${rowId}`, 'DELETE');
@@ -320,19 +541,29 @@ test('input tables: row CRUD enforces typed validation on add and merged patch',
   assert.equal((await call(`/api/input-tables/${table.id}`)).body.rows.length, 0);
 });
 
-test('input tables (#219): concurrent patches to different cells preserve both writes and their audit changes', async t => {
+test('input tables (#219, #244): concurrent different-cell patches conflict, then preserve both writes after reload and retry', async t => {
   const call = await api(t);
   const table = await createTable(call, { editors: ['other-author'] });
   const path = `/api/input-tables/${table.id}`;
   const added = await call(`${path}/rows`, 'POST', { values: { region: 'East', forecast: 10 } });
   assert.equal(added.status, 201);
   const rowPath = `${path}/rows/${added.body.row.id}`;
-  const delayed = startDelayedBody(call.port, rowPath, 'PATCH', 'author', { values: { forecast: 99 } });
+  const expectedVersion = added.body.version;
+  const delayed = startDelayedBody(call.port, rowPath, 'PATCH', 'author', { values: { forecast: 99 }, expectedVersion });
   await settle();
-  const other = await call(rowPath, 'PATCH', { values: { region: 'West' } }, 'other-author');
+  const other = await call(rowPath, 'PATCH', { values: { region: 'West' }, expectedVersion }, 'other-author');
   assert.equal(other.status, 200, JSON.stringify(other.body));
-  const patched = await delayed.finish();
-  assert.equal(patched.status, 200, JSON.stringify(patched.body));
+  assert.equal(other.body.version, expectedVersion + 1);
+  const before = await call(path);
+  const auditBefore = await call(`${path}/audit`);
+  const conflict = await delayed.finish();
+  assert.equal(conflict.status, 412, JSON.stringify(conflict.body));
+  assert.equal(conflict.body.errorCode, 'INPUT_TABLE_VERSION_CONFLICT');
+  const reloaded = await call(path);
+  assert.deepEqual(reloaded, before);
+  assert.deepEqual(await call(`${path}/audit`), auditBefore);
+  const retried = await call(rowPath, 'PATCH', { values: { forecast: 99 }, expectedVersion: reloaded.body.version });
+  assert.equal(retried.status, 200, JSON.stringify(retried.body));
   const after = await call(path);
   assert.deepEqual(after.body.rows[0].values, { region: 'West', forecast: 99, starts_on: null, active: null });
   assert.equal(after.body.version, added.body.version + 2);
@@ -344,26 +575,63 @@ test('input tables (#219): concurrent patches to different cells preserve both w
   ]);
 });
 
-test('input tables (#219): concurrent same-cell patches without a version audit the latest value and remain last-write-wins', async t => {
+test('input tables (#244): a delayed unversioned same-cell patch cannot overwrite a lawful intervening write', async t => {
   const call = await api(t);
   const table = await createTable(call, { editors: ['other-author'] });
   const path = `/api/input-tables/${table.id}`;
   const added = await call(`${path}/rows`, 'POST', { values: { region: 'East', forecast: 10 } });
+  assert.equal(added.status, 201);
   const rowPath = `${path}/rows/${added.body.row.id}`;
   const delayed = startDelayedBody(call.port, rowPath, 'PATCH', 'author', { values: { forecast: 99 } });
   await settle();
-  assert.equal((await call(rowPath, 'PATCH', { values: { forecast: 20 } }, 'other-author')).status, 200);
-  const patched = await delayed.finish();
-  assert.equal(patched.status, 200, JSON.stringify(patched.body));
-  assert.equal((await call(path)).body.rows[0].values.forecast, 99);
+  const lawful = await call(rowPath, 'PATCH', { values: { forecast: 20 }, expectedVersion: added.body.version }, 'other-author');
+  assert.equal(lawful.status, 200, JSON.stringify(lawful.body));
+  assert.equal(lawful.body.version, added.body.version + 1);
+  const before = await call(path);
+  const auditBefore = await call(`${path}/audit`);
+  const rejected = await delayed.finish();
+  assert.equal(rejected.status, 400, JSON.stringify(rejected.body));
+  assert.equal(rejected.body.errorCode, 'INPUT_TABLE_VERSION_REQUIRED');
+  const after = await call(path);
+  assert.deepEqual(after, before);
+  assert.deepEqual(after.body.rows[0].values, { region: 'East', forecast: 20, starts_on: null, active: null });
   const audit = await call(`${path}/audit`);
-  assert.deepEqual(audit.body.entries.filter(e => e.action === 'row_updated').map(e => e.detail.changes), [
-    [{ column: 'forecast', oldValue: 10, newValue: 20 }],
-    [{ column: 'forecast', oldValue: 20, newValue: 99 }],
+  assert.deepEqual(audit, auditBefore);
+  assert.deepEqual(audit.body.entries.filter(e => e.action === 'row_updated').map(e => ({ actorId: e.actorId, ...e.detail })), [
+    { actorId: 'other-author', rowId: added.body.row.id, changes: [{ column: 'forecast', oldValue: 10, newValue: 20 }] },
   ]);
 });
 
-test('input tables (#219): expectedVersion rejects a stale same-cell patch without changing the table or audit', async t => {
+test('input tables (#244): missing expectedVersion rejects stale full-row values and partial patches without changing data, version or audit', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'opensight-input-version-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const storePath = join(dir, 'input-tables.json');
+  const call = await api(t, { inputTableStorePath: storePath });
+  const table = await createTable(call, { editors: ['other-author'] });
+  const path = `/api/input-tables/${table.id}`;
+  const added = await call(`${path}/rows`, 'POST', { values: { region: 'East', forecast: 10, starts_on: '2026-11-01', active: true } });
+  assert.equal(added.status, 201);
+  const loaded = await call(path);
+  const rowPath = `${path}/rows/${added.body.row.id}`;
+  const staleValues = { ...loaded.body.rows[0].values, forecast: 99 };
+  const intervening = await call(rowPath, 'PATCH', { values: { region: 'West' }, expectedVersion: loaded.body.version }, 'other-author');
+  assert.equal(intervening.status, 200, JSON.stringify(intervening.body));
+  assert.equal(intervening.body.version, loaded.body.version + 1);
+  const before = JSON.stringify(await call(path));
+  const auditBefore = JSON.stringify(await call(`${path}/audit`));
+  const persistedBefore = await readFile(storePath);
+  for (const values of [staleValues, { forecast: 99 }]) {
+    const rejected = await call(rowPath, 'PATCH', { values });
+    assert.equal(rejected.status, 400, JSON.stringify(rejected.body));
+    assert.equal(rejected.body.errorCode, 'INPUT_TABLE_VERSION_REQUIRED');
+    assert.match(rejected.body.Message, /expectedVersion is required.*Reload/);
+    assert.equal(JSON.stringify(await call(path)), before);
+    assert.equal(JSON.stringify(await call(`${path}/audit`)), auditBefore);
+    assert.deepEqual(await readFile(storePath), persistedBefore);
+  }
+});
+
+test('input tables (#219): expectedVersion rejects a stale full-row patch without changing the table or audit', async t => {
   const call = await api(t);
   const table = await createTable(call, { editors: ['other-author'] });
   const path = `/api/input-tables/${table.id}`;
@@ -371,7 +639,7 @@ test('input tables (#219): expectedVersion rejects a stale same-cell patch witho
   const expectedVersion = added.body.version;
   const rowPath = `${path}/rows/${added.body.row.id}`;
   // Both editors load the same version; the delayed editor must check it again at commit.
-  const delayed = startDelayedBody(call.port, rowPath, 'PATCH', 'other-author', { values: { forecast: 99 }, expectedVersion });
+  const delayed = startDelayedBody(call.port, rowPath, 'PATCH', 'other-author', { values: { ...added.body.row.values, forecast: 99 }, expectedVersion });
   await settle();
   const first = await call(rowPath, 'PATCH', { values: { forecast: 20 }, expectedVersion });
   const before = await call(path);
@@ -440,7 +708,7 @@ test('input tables: append-only audit records old -> new and survives table dele
   const rows = `/api/input-tables/${table.id}/rows`;
   const added = await call(rows, 'POST', { values: { region: 'East', forecast: 10 } });
   const rowId = added.body.row.id;
-  await call(`${rows}/${rowId}`, 'PATCH', { values: { forecast: 12 } });
+  assert.equal((await call(`${rows}/${rowId}`, 'PATCH', { values: { forecast: 12 }, expectedVersion: added.body.version })).status, 200);
   await call(`/api/input-tables/${table.id}/editors`, 'PUT', { editors: ['other-author'] });
   await call(`${rows}/${rowId}`, 'DELETE');
   const audit = await call(`/api/input-tables/${table.id}/audit`);
@@ -528,7 +796,8 @@ test('input tables (#218): an editor revoked while a patch or rename body is in 
   const added = await call(rows, 'POST', { values: { region: 'East', forecast: 10 } });
   const rowId = added.body.row.id;
   assert.equal((await call(`/api/input-tables/${table.id}/editors`, 'PUT', { editors: ['other-author'] })).status, 200);
-  const patch = startDelayedBody(call.port, `${rows}/${rowId}`, 'PATCH', 'other-author', { values: { forecast: 999 } });
+  const current = await call(`/api/input-tables/${table.id}`);
+  const patch = startDelayedBody(call.port, `${rows}/${rowId}`, 'PATCH', 'other-author', { values: { forecast: 999 }, expectedVersion: current.body.version });
   await settle();
   assert.equal((await call(`/api/input-tables/${table.id}/editors`, 'PUT', { editors: [] })).status, 200);
   const deniedPatch = await patch.finish();

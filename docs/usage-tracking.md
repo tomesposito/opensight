@@ -78,8 +78,13 @@ values, so later caller mutations cannot inject content. Invalid events incremen
 ## Storage and vendor payload
 
 `analytics_events` contains `event_id`, `tenant_id`, `namespace_id`, `event_name`,
-`props` (allowlisted JSON), `created_at`, and nullable `delivered_at`.
-`delivered_at` records successful vendor delivery; NULL means pending.
+`props` (allowlisted JSON), `created_at`, nullable `delivered_at`, and nullable
+`quarantine_reason`. `delivered_at` records successful vendor delivery; NULL
+means pending. A persisted row that no longer deserializes or validates (a
+restored, legacy or corrupted payload) is quarantined instead of delivered:
+its `quarantine_reason` records the named reason
+(`ANALYTICS_EVENT_PROPS_MALFORMED` or `ANALYTICS_EVENT_INVALID`), it stays
+undelivered, and it is excluded from the outbox and from tenant log reads.
 `analytics_settings` contains the per-tenant boolean override. Both have
 composite foreign keys to the tenant's namespace. The store uses a private
 metadata connection, tenant-scoped admission and tenant serialization. Only the
@@ -91,8 +96,8 @@ added. Application event scopes come only from authentication or provisioning.
 Local installations use stable, randomly generated tenant IDs in their sidecar
 store, rather than sending a local namespace label as a vendor identity.
 
-Owner migrations initialize the tables and idempotently add `delivered_at` to
-existing tables alongside the other optional-provider infrastructure, with no
+Owner migrations initialize the tables and idempotently add `delivered_at` and
+`quarantine_reason` to existing tables alongside the other optional-provider infrastructure, with no
 DDL during serverless invocations. Runtime grants,
 bootstrap inventories and registered backup/restore inventories include them.
 Older backups without analytics tables remain recognized and upgrade to empty
@@ -154,7 +159,11 @@ server/invocation shutdown, with runtime-specific completion semantics (#175):
   inactive tenants' rows stay pending without consuming batch slots, and become
   eligible again when analytics is re-enabled or the tenant returns to active.
   The operator/test `undelivered(limit)` view still includes all pending rows.
-  The drain rechecks tenant admission and the enabled switch before each send,
+  Selection deserializes and validates each row independently: a malformed row
+  is quarantined with its named reason and selection continues past it until
+  the batch holds the requested number of valid rows, so one bad row can
+  neither abort the batch nor starve other tenants, and is never transmitted
+  (#247). The drain rechecks tenant admission and the enabled switch before each send,
   and marks only successful vendor responses delivered. Failures
   increment `stats.failed` and remain pending. Later invocations that track
   events piggyback another batch; callers can also explicitly invoke

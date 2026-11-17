@@ -11,15 +11,20 @@ An administrator can request Light, Regular or Heavy from day one of a trial,
 change the pending request's tier, or withdraw it. `POST /api/billing/paid-request`
 accepts only `{ tier }`; `DELETE` withdraws. Both require a tenant administrator
 and the configured app origin. The server resolves the requester from active
-membership/identity records. The `h11_paid_requests` ledger records the request,
+membership/identity records, and the mutation rechecks the requester's current
+administrator role inside its own locking boundary (#254): a downgrade or a
+membership/identity suspension landing after the route's initial check still
+fails the create, tier change, or withdrawal. The `h11_paid_requests` ledger records the request,
 requester, tier and lifecycle. Tenant locking inside the write transaction and
 a partial unique index enforce one pending request per tenant on both database
 dialects. Tier changes preserve its ID, original date and requester.
 
 Session billing state contains `billingMode` and `paidRequest` (tier, state,
-createdAt, and requestedByEmail). The requesting address is included so the
-waiting screen names the correct recipient even when another administrator
-views it. Operator billing detail additionally supplies the durable request ID.
+createdAt, and — for administrators only — requestedByEmail). The requesting
+address is included in administrator and operator views so the waiting screen
+names the correct recipient even when another administrator views it; member
+sessions (readers, authors) receive the projection without it (#253). Operator
+billing detail additionally supplies the durable request ID.
 No client infers mode from checkout errors or configuration.
 
 A pending request holds paused retention indefinitely. Expiry still pauses
@@ -30,6 +35,17 @@ Grant applies the requested tier immediately, clears trial/pause/retention
 clocks, restores access, and marks `entitlement_source = manual`. It creates no
 payment or subscription. Existing manually granted tenants keep their plan
 when Stripe is later configured. Subscription linking remains out of scope.
+
+Trial expiry, request creation/tier changes, and request resolution share the
+same PostgreSQL lock order: lock the `h1_tenants` row before reading or changing
+that tenant's billing/request state (#256). Expiry scans candidate tenant IDs,
+then rechecks the deadline and access state under the tenant lock in a separate
+transaction per tenant. Resolution reads current billing state under that same
+lock; a paused workspace ends with either a pending request or a retention
+deadline. A grant that wins the lock clears the deadline before expiry can
+pause it. SQLite keeps its serialized write transactions without `FOR UPDATE`.
+Pause audits commit with the billing change; notification happens after commit,
+so lazy expiry from public methods or `load()` does not nest locking transactions.
 
 `GET /api/host/signups` includes the pending paid-request queue, oldest first,
 its count, and billing mode. Pending requests never enter its retention-due

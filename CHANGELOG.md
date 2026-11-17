@@ -13,11 +13,40 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Changed
 
+- Forecast grid search work is now bounded (issue #262): the seasonal state rotates through a ring buffer (O(1) per observation instead of an O(season-length) array copy), fitted values are retained only for each candidate's winning grid point, and a step budget (`MAX_FORECAST_GRID_STEPS`) steps very long series down to deterministic coarser grid tiers — the maximum-seasonality case (season 366, 732 observations) still runs the full grid, with identical results on ordinary series.
+
 - Docs pages now carry the full OG/Twitter social block with the shared og-image and each page's own title and description; docs pages link the pricing page, the migration guide links the QuickSight alternative and pricing pages, the alternatives/versus pages cross-link the QuickSight alternative page, pricing links onward to the alternatives and migration pages, and pricing serves a SoftwareApplication JSON-LD with the hosted tier offers (#239).
 
 - Marketing meta batch: the page titles and meta descriptions on the home, pricing, QuickSight/Tableau/Power BI alternatives, Metabase/Superset versus and docs pages now match the approved values exactly — no truncated titles and no auto-truncated excerpt descriptions on those pages; the docs generator carries the approved docs values as explicit meta overrides (#238).
 
 ### Added
+
+- Prep joins offer name/type key suggestions that require confirmation and labeled Venn choices; every transformation exposes read-only shared-compiler SQL and named compile errors (issue #279). Join match diagnostics remain blocked on bounded input previews.
+
+- Dataset preparation now offers structured and bounded advanced Window steps for ranking, running/moving calculations, lag/lead and buckets, a Keep first/latest row per group recipe, and optional full-row append deduplication (issue #278).
+
+- Persona Journey 11 covers notebook authoring, governed SQL totals, published run views, explicit re-runs after data changes, calibrated result byte limits and history eviction, plus the hosted availability boundary; it records the current hosted 503/error-banner regression against the designed unavailable notice (issue #277).
+
+- RDS, Aurora and Redshift auto-discovery is now implemented as a library discovery service over the RDS API (issue #274): DB instances and clusters in the configured region are classified by engine into the matching manual connector (PostgreSQL, MySQL, MariaDB, Redshift manual), returning endpoints and identifiers only — never credentials — and a discovered resource becomes a source config built from user-supplied environment variable names, validated by the manual connector's own rules. Fake SDK coverage verifies classification, pagination and the no-credentials rule; hosted provisioning and live AWS verification remain follow-on work.
+
+- S3 objects can now become hosted file sources and prepared datasets, with bounded prefix browsing, operator-allowlisted environment-name configuration, all five upload formats, and the existing file/XLSX size guards (#273). Fake SDK coverage verifies the flow; live AWS verification is Tom's follow-on.
+
+- Athena now has a library query connector with a dedicated SQL dialect, typed results, bounded polling/pagination, timeout and abort cancellation, and sanitized failures (issue #272). Fake SDK tests verify the execution flow; hosted provisioning and live-account verification remain follow-on work.
+
+- Manual Redshift sources now support registered-table discovery, dataset preparation and direct/BLAZE visual queries with tenant/RLS/CLS enforcement, credential rotation and a dedicated SQL layer over the existing pg driver (issue #271). Loopback coverage verifies wire flow and generated SQL; live-cluster verification remains pending.
+
+- MySQL and MariaDB hosted sources now support registered-table discovery, dataset preparation, direct/BLAZE visual queries, tenant/RLS/CLS enforcement and credential rotation, with matching-source selection in the app (issue #270).
+
+- Native and hosted query planning now supports Insight visuals: the secured
+  planner derives dimensions and measures from the insight computations
+  (forecast, period-to-date, unique values with a plan-only COUNT carrier,
+  and top/bottom movers over category and time), validated with the same
+  rules as bundle import, so insight dashboards plan through the hosted path
+  with row- and column-level security intact (#257).
+
+- Live-result cache statistics now report active fills and tracked fill keys,
+  with executor regressions that detect retained fill state after distinct local
+  and PostgreSQL failures (#246).
 
 - Insight top/bottom movers computations, ranking categories by percent or
   absolute change in the bound measure between the latest dated period and the
@@ -71,6 +100,156 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 - Statistical forecasting on line charts with a date dimension: a dashed forecast continuation with a shaded prediction interval (80/90/95%), fitted values for trailing periods, and Auto/None/Custom seasonality, computed with exponential smoothing (ETS/Holt-Winters, corrected-AIC model selection) in the web layer so author view, dashboards, small multiples, and PDF export agree. Edited in the Properties panel's Forecast section; QuickSight `ForecastConfigurations` import and export round-trip, with boundaries applied as clamps. Series with fewer than 4 points render actuals with a quiet note instead of a forecast (#235).
 
 ### Fixed
+
+- The generated connectors docs page is current again (#284): it now
+  describes the shipped S3, MySQL/MariaDB, Redshift and Athena connectors
+  instead of the pre-connector-batch text. The stale page also failed the
+  site check that runs in the CI test stage, taking master CI red.
+
+- Insight top/bottom movers now reject category/time bindings that resolve
+  against wells listed in the opposite order (#268): normalization resolves
+  each computation's category and time bindings and fails with
+  `INSIGHT_FIELD_UNBOUND` when they are not the category dimension first
+  and the time dimension second, instead of discarding the resolved indexes
+  and executing with the fields swapped (a date-decoding failure for a
+  categorical field, or silently wrong grouping/period semantics with two
+  date fields). Multiple movers computations with inconsistent
+  category/time roles against the same wells are rejected the same way.
+
+- Insight configurations are now validated completely before any author
+  query is issued (#267): draft admission rejects malformed native
+  configurations (unknown variants, unsupported properties, duplicate
+  computation IDs, custom narratives, mixed top/bottom-movers collections),
+  query construction applies the compiler's structural and field-binding
+  validation against the visual's own wells and fails closed with no query
+  instead of substituting an ordinary query, and bundle import now enforces
+  the same Movers-only collection rule as the compiler in both dialects.
+
+- Insight unique-values narratives are now bounded (#266): at most 20
+  categories are named in the sentence, each label is truncated at 100
+  characters, and the named text is capped at 1,000 characters in total,
+  with the omitted category count disclosed in the sentence. The complete
+  authorized result remains available through View data/export.
+
+- Insight top/bottom movers now reject duplicate decoded category/period
+  pairs (#265): two rows for the same category whose time values are
+  different spellings of the same period (for example `2024-01` and
+  `2024-01-01` under a MONTH grain) fail with `INSIGHT_VALUE_INVALID`
+  instead of one silently overwriting the other and making the ranking
+  depend on input order.
+
+- Waterfall detailed tooltips now escape rich-text markup in aggregate
+  (subtotal/Other/Total) bar labels and values (#264): a category name
+  containing markup such as `{style|text}` displays literally in the
+  aggregate fallback, matching the delta-bar detailed path, instead of
+  being interpreted as ECharts rich text.
+
+- Imported line/area forecast configurations are now validated in full before
+  any editable state is built (#263): a malformed configuration — a string
+  boundary, an unknown property, an inverted boundary pair, or any other
+  invalid shape — no longer has the offending value silently dropped and a
+  sanitized forecast executed in the preview. It stays out of the draft, the
+  original definition is preserved verbatim for export, and a blocking
+  diagnostic from the compiler normalization check stops the preview.
+
+- Forecasts over very large finite values (residuals near 1e200) no longer
+  produce infinite prediction endpoints: the fit scoring and interval width
+  are computed in a numerically stable scaled/log form, nonfinite fits are
+  rejected, and when no finite model remains the chart and Insight surfaces
+  show their unavailable state instead of invalid numbers (#261).
+
+- Notebooks on a server without notebook routes (including the hosted app
+  in v1) now show the designed "not available on this server" notice
+  instead of a red banner carrying a raw JSON parse error; the API client
+  names unreadable response bodies as API_RESPONSE_INVALID with the HTTP
+  status instead of leaking the parser's TypeError to any page (#281).
+
+- Forecast model selection now uses one common criterion for every
+  candidate: corrected AIC when every candidate's correction is defined,
+  plain AIC for all candidates when any correction is undefined (too few
+  observations for that candidate's parameter count). The old per-candidate
+  fallback let a complex candidate escape the correction entirely and beat
+  simpler candidates that paid it in full — five constant points picked
+  Holt over level-only despite identical zero residual error (#260).
+
+- Forecast dates are now canonicalized consistently across charts and
+  Insight: both surfaces share one chronological preparation that sorts by
+  decoded period, rejects two rows that decode to the same period (raw
+  aliases such as `2025-01` and `2025-01-01T00:00:00Z` at MONTH grain are
+  one period, not two observations), and anchors future dates to the
+  latest period — including a trailing null group — instead of the last
+  row in display order. Reordered or descending chart rows no longer
+  change the fitted history, and fitted values map back to the displayed
+  rows they belong to (#259).
+
+- Forecast prediction intervals are now clipped consistently: the estimate
+  and both interval endpoints share one clipping range built from the
+  imported lower/upper boundaries and the automatic zero floor for
+  non-negative histories, so a boundary outside the raw interval can no
+  longer leave a reversed range — charts no longer receive negative band
+  widths and Insight no longer displays intervals backwards (#258).
+
+- Forecast line and area charts now plan through the native/hosted query
+  planner: `ForecastConfigurations` and the line `Type` are validated against
+  the same contract as the web compiler (period bounds, prediction interval,
+  seasonality, boundaries) instead of failing with `UNSUPPORTED_FEATURE`, and
+  a forecast without a date dimension fails closed. Insight visuals remain
+  unsupported in the native planner (#257, forecast increment).
+
+- Trial expiry now serializes with paid-plan requests and their resolution, so
+  a concurrent decline or withdrawal cannot leave a paused workspace without
+  a retention deadline. Pending requests still hold retention, and grants
+  restore access (#256).
+
+- Session billing state no longer discloses the paid-plan requester's email
+  address to non-administrator workspace members: `requestedByEmail` is
+  included only in administrator and operator billing views, for pending and
+  resolved requests alike (#253).
+
+- Operator retries of dead-lettered job deliveries are now cumulatively
+  bounded: a delivery's total attempts and retry sequences are counted
+  durably and never reset, and after 2 retries or 30 total attempts a
+  further retry is refused with `DELIVERY_RETRY_BUDGET_EXHAUSTED`, so one
+  delivery can no longer be rearmed through unlimited dead-letter cycles
+  (#252).
+
+- Job mail delivery now enforces its 10-attempt limit during crash recovery,
+  pending claims and receipt failures after SMTP acceptance. Exhausted
+  deliveries dead-letter and settle their occurrences instead of sending again
+  or retrying indefinitely (#251).
+
+- Access-request notification leases now start when each row is claimed, not
+  when the batch started, so a notification batch slower than the five-minute
+  lease can no longer have a later row claimed by a competing notifier during
+  its live send and emailed twice (#250).
+
+- Hosted Ask O answer receipts now prune expired answers and abandoned
+  reservations in indexed, bounded batches across distinct keys, protect active
+  replays, and enforce configurable per-tenant entry and payload limits (#249).
+
+- Checkout reuses a URL only while its Stripe session is open and unexpired;
+  cancellation, consumption and early expiry now allow a fresh checkout, and
+  delayed timeout reconciliation no longer extends the old session's lifetime
+  (#248).
+
+- Analytics outbox selection now deserializes and validates each persisted row
+  independently: a malformed restored, legacy or corrupted row is quarantined
+  with a named reason and skipped, so valid rows from other tenants keep
+  draining and the malformed event is never transmitted (#247).
+
+- Input-table audit history now has per-table and store-wide serialized-byte
+  budgets alongside entry-count limits, bounding retained large-text changes.
+  Paginated audit reads clone only authorization metadata and the requested
+  visible page, avoiding allocations for table rows and off-page history (#245).
+
+- Input-table row edits now require the table version the editor loaded, so
+  missing or stale versions cannot silently overwrite another editor's changes.
+  Rejected saves leave data, version and audit unchanged; reload and reconcile
+  before retrying (#244).
+
+- A Stripe subscription still in its trialing state no longer converts a hosted trial: the paid tier is recorded as evidence, but the trial deadline and trial entitlement stay in force — and expiry still pauses access — until an active subscription or a paid checkout verifies payment (#243).
+
+- Stripe events for the same bound subscription created in the same second now converge on the same hosted tier, subscription status and access state regardless of delivery order. Invoice, subscription and checkout ordering are separate, while older events within each domain, duplicate replays and foreign subscriptions remain fenced (#242).
 
 - Hosted migrations against Postgres no longer fail with `relation "sqlite_master" does not exist`: the runtime and serverless migration paths now pass their dialect explicitly into the auth/job schema initializers instead of reading it off a transaction connection that does not carry one, so the #233 delivery dead-letter upgrade inspects `pg_constraint` on Postgres (#240).
 
@@ -383,6 +562,18 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Security
 
+- Operator grant/decline of a waiting-list paid request is now bound to the
+  tier the operator reviewed: both operator surfaces send the displayed tier
+  as a required precondition, and if the tenant changed the tier after the
+  operator loaded the request, the resolution is rejected with
+  `BILLING_PAID_REQUEST_TIER_CHANGED` and the request stays pending for a
+  fresh review — a stale screen can no longer grant a tier nobody reviewed
+  (#255).
+- Waiting-list paid requests now recheck the requester's current administrator
+  role, active membership, and active identity inside the mutation's locking
+  boundary, for create, tier change, and withdrawal alike: a downgrade or
+  suspension landing after the route's initial administrator check can no
+  longer complete a paid request (#254).
 - Notebook retained results are now bounded by aggregate byte budgets, not
   only per cell: a run retains at most 8 MiB of result payloads
   (`NOTEBOOK_RESULT_BUDGET_EXCEEDED` past that), each notebook at most 64 MiB

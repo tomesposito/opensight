@@ -15,6 +15,17 @@ export const deliveryRecipients = (spec: JobSpec): string[] => spec.kind === 're
  * occurrence settles, later periods are admitted again, and an operator can
  * start a new sequence for the same delivery via the retry action. */
 export const MAX_DELIVERY_ATTEMPTS = 10;
+/** Cumulative delivery budget (#252): explicit operator retries start a new
+ * sequence, but the sequences and attempts a single delivery may ever spend
+ * are bounded across all of them. The counters are durable and monotonic —
+ * a retry never resets them — so after the initial sequence plus this many
+ * operator retries, or this many total attempts, the delivery stays dead
+ * and a further retry is refused (DELIVERY_RETRY_BUDGET_EXHAUSTED). The
+ * budget binds owner and tenant administrator alike; no override path
+ * bypasses it. Later occurrences of the job carry their own deliveries
+ * and their own budgets, so they proceed unaffected. */
+export const MAX_DELIVERY_RETRY_SEQUENCES = 2;
+export const MAX_DELIVERY_TOTAL_ATTEMPTS = 30;
 /** Transient delivery outcomes that earn another attempt within a sequence. */
 export const DELIVERY_RETRYABLE_CODES = ['SMTP_SEND_FAILED', 'SMTP_NOT_CONFIGURED', 'WORKER_EXECUTION_FAILED', 'TENANT_BUDGET_EXCEEDED', 'NODE_BUDGET_EXCEEDED', 'EXECUTION_CANCELLED', 'QUEUE_WAIT_EXCEEDED'];
 export const isRetryableDeliveryError = (code: string): boolean => DELIVERY_RETRYABLE_CODES.includes(code);

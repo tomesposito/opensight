@@ -3,12 +3,18 @@ import type { Cell, Field } from './model.js';
 import type { VisualFormatting } from './formatting.js';
 import { fieldName } from './formatting.js';
 import { insightFail, normalizeInsight } from './insight-configuration.js';
-import { computeForecast, MIN_FORECAST_POINTS } from './forecast.js';
+import { computeForecast, MIN_FORECAST_POINTS, prepareChronological } from './forecast.js';
 export { InsightError } from './insight-configuration.js';
 
 export interface NarrativePart { text: string; value?: number }
 export interface NarrativeParagraph { id: string; parts: NarrativePart[] }
 export interface InsightNarrative { paragraphs: NarrativeParagraph[]; text: string }
+/** UniqueValues narrative budgets (issue #266): at most this many categories are named in the sentence. */
+export const UNIQUE_VALUES_MAX_CATEGORIES = 20;
+/** Each named category is truncated to at most this many characters. */
+export const UNIQUE_VALUES_MAX_LABEL_CHARS = 100;
+/** The named categories plus their separators occupy at most this many characters in total. */
+export const UNIQUE_VALUES_MAX_TEXT_CHARS = 1000;
 export interface InsightRow { category: Cell; time?: Cell; values: (number | null)[] }
 export interface InsightInput { category?: Field; time?: Field; measures: Field[]; computations?: unknown; formatting?: VisualFormatting }
 
@@ -30,13 +36,12 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
     if (new Set(rows.map(r => JSON.stringify([r.category, r.time]))).size !== rows.length) insightFail('INSIGHT_VALUE_INVALID', 'expected unique aggregated category/period rows');
   } else if (new Set(rows.map(r => JSON.stringify(r.category))).size !== rows.length) insightFail(duplicateCode, 'expected unique aggregated categories');
   const datedRows = () => {
-    const dated = rows.map(row => {
-      const date = groupedPeriodDate(row.category, input.category!.dateGranularity!);
-      if (!date) return insightFail('INSIGHT_TIME_REQUIRED', 'invalid date/time category for the bound grain');
-      return { row, date };
-    }).sort((a, b) => a.date.getTime() - b.date.getTime());
-    if (new Set(dated.map(r => r.date.getTime())).size !== dated.length) insightFail(duplicateCode, 'duplicate date/time periods');
-    return dated;
+    // Shared chronological preparation with the chart forecast surfaces
+    // (issue #259): sort by decoded period, reject decoded duplicates.
+    const prepared = prepareChronological(rows, row => groupedPeriodDate(row.category, input.category!.dateGranularity!));
+    if (!prepared.ok && prepared.reason === 'invalid') return insightFail('INSIGHT_TIME_REQUIRED', 'invalid date/time category for the bound grain');
+    if (!prepared.ok) return insightFail(duplicateCode, 'duplicate date/time periods');
+    return prepared.entries.map(({ item, date }) => ({ row: item, date }));
   };
   const sum = (index: number, groups = rows): number | null => {
     try { return aggregateValue('sum', groups.map(r => r.values[index]!)) as number | null; }
@@ -49,8 +54,24 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
     if (request.kind === 'uniqueValues') {
       // Distinct categories in deterministic typed order, independent of incoming row order.
       const sorted = [...rows].sort((a, b) => { const ak = JSON.stringify(a.category), bk = JSON.stringify(b.category); return ak < bk ? -1 : ak > bk ? 1 : 0; });
+      // Bound the narrative (issue #266): cap the category count, each label
+      // length, and the total named text, and disclose how many categories
+      // were omitted. The complete authorized result stays available through
+      // View data/export; only this sentence is bounded.
+      const shown: string[] = [];
+      let used = 0;
+      for (const row of sorted) {
+        if (shown.length >= UNIQUE_VALUES_MAX_CATEGORIES) break;
+        const raw = label(row.category);
+        const named = raw.length > UNIQUE_VALUES_MAX_LABEL_CHARS ? `${raw.slice(0, UNIQUE_VALUES_MAX_LABEL_CHARS - 1)}…` : raw;
+        const cost = named.length + (shown.length ? 2 : 0);
+        if (used + cost > UNIQUE_VALUES_MAX_TEXT_CHARS) break;
+        shown.push(named); used += cost;
+      }
+      const omitted = sorted.length - shown.length;
       parts = [text(`Unique ${fieldName(input.category!, input.formatting)}: `),
-        ...sorted.flatMap((row, index) => [...(index ? [text('; ')] : []), text(label(row.category))]), text('.')];
+        ...shown.flatMap((named, index) => [...(index ? [text('; ')] : []), text(named)]),
+        ...(omitted ? [text(`; and ${omitted} more`)] : []), text('.')];
     } else if (request.kind === 'totalAggregation') {
       parts = [text(`Total ${name}: `), value(total), text('.')];
     } else if (request.kind === 'maximumMinimum' || request.kind === 'topBottomRanked') {
@@ -108,6 +129,17 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
         return grain === 'YEAR' ? iso.slice(0, 4) : grain === 'MONTH' ? iso.slice(0, 7)
           : grain === 'QUARTER' ? `${iso.slice(0, 4)}-Q${Math.floor(d.getUTCMonth() / 3) + 1}` : iso.slice(0, 10);
       };
+      // Reject duplicate decoded category/period pairs before building the
+      // map (issue #265): raw spellings such as `2024-01` and `2024-01-01`
+      // decode to the same period, and a silent overwrite would make the
+      // ranking depend on input order. The category key stays typed via
+      // JSON, so a string and a number with the same text remain distinct.
+      const seenPairs = new Set<string>();
+      for (const { row, date } of dated) {
+        const pair = JSON.stringify([row.category, date.getTime()]);
+        if (seenPairs.has(pair)) return insightFail('INSIGHT_VALUE_INVALID', 'duplicate decoded category/period rows');
+        seenPairs.add(pair);
+      }
       interface Mover { category: Cell; prev: number; cur: number; diff: number; pct: number | null }
       const byCategory = new Map<string, { category: Cell; values: Map<number, number | null> }>();
       for (const { row, date } of dated) {

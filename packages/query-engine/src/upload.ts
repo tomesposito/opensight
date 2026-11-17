@@ -23,7 +23,8 @@ export class UploadError extends Error {
 }
 const invalid = (path: string, message: string): never => { throw new UploadError('INVALID_UPLOAD', path, message); };
 const mismatch = (path: string, message: string): never => { throw new UploadError('UPLOAD_SCHEMA_MISMATCH', path, message); };
-const MAX_ROWS = 100_000, MAX_COLUMNS = 256, MAX_BYTES = 8 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+const MAX_ROWS = 100_000, MAX_COLUMNS = 256, MAX_BYTES = MAX_UPLOAD_BYTES;
 /** Declared and actual uncompressed-size ceilings for XLSX (ZIP) members,
  * enforced before SheetJS parses anything — the same ceilings as
  * ZIP_LIMITS in @opensight/bundle-parser (member 16 MiB / total 64 MiB / 1000). */

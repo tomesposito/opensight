@@ -20,7 +20,14 @@ Holt-Winters seasonal variants when a season length applies — by a bounded
 deterministic search minimizing one-step-ahead error, and picks the winner
 by corrected AIC. The prediction interval comes from the one-step residual
 variance and widens with horizon through the model's state-space
-psi-weights, at the configured level. Auto seasonality proposes the period
+psi-weights, at the configured level. The search's synchronous work is
+bounded (issue #262): the seasonal state rotates through a ring buffer
+(O(1) per observation), fitted values are retained only for each
+candidate's winning grid point, and the grid carries a step budget
+(`MAX_FORECAST_GRID_STEPS`, 5,000,000 fits × observations) — series too
+long for the full grid step down to deterministic coarser grid tiers,
+down to a single-point tier, instead of multiplying unbounded work
+across measures and small-multiples panels. Auto seasonality proposes the period
 from the grain (day → 7, month → 12, quarter → 4, year → none) and admits
 seasonal models only with at least two full cycles of history. When every
 actual is non-negative the interval's lower edge clamps at 0; imported
@@ -52,6 +59,15 @@ The [Insight visual's Forecast computation](insight-visual.md) also uses
 `forecast.ts` to report the final projected value and prediction interval in a
 narrative. It requires a date dimension and shows an unavailable sentence for
 short histories or a zero forward horizon.
+
+Native and hosted planning (`planVisual` / `planPreparedVisual`) accepts a
+line or area chart's `ForecastConfigurations` after validating them against
+the same contract as the compiler above; the plan carries the underlying
+time-series aggregation and the overlay is computed at render time. The
+secured planning path stays fail-closed where rendering only warns: a
+forecast configuration on a non-line visual, a malformed configuration, or
+a forecast whose chart has no date dimension is rejected with a named
+error (#257).
 
 Out of scope: anomaly detection, Ask O forecast phrasing, and forecasts on
 other chart types.

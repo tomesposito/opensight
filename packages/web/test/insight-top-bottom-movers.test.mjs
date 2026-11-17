@@ -42,6 +42,38 @@ test('movers rejects malformed bodies, mixing, and bad dimension bindings before
   assert.throws(() => normalizeInsight(unbound, [category, time], [measure]), error('INSIGHT_FIELD_UNBOUND'));
 });
 
+test('movers rejects bindings that resolve against reordered wells instead of executing swapped (issue #268)', () => {
+  const config = configuration({ category: catField(category), time: dateField(time), value: value(measure) });
+  assert.equal(normalizeInsight(config, [category, time], [measure]).length, 1);
+  // The same valid explicit bindings against wells listed time-first pass
+  // the distinct/dated checks but would execute with the fields swapped:
+  // the categorical field would be decoded as dates. Fail closed instead.
+  assert.throws(() => normalizeInsight(config, [time, category], [measure]), error('INSIGHT_FIELD_UNBOUND'));
+  // With two date fields the swap is silent — wrong grouping/period
+  // semantics, no decoding failure — so it is rejected the same way, while
+  // the canonical two-date order stays valid.
+  const shipTime = { ...field('ship_month'), dateGranularity: 'MONTH' };
+  const twoDates = configuration({ category: dateField(shipTime), time: dateField(time), value: value(measure) });
+  assert.throws(() => normalizeInsight(twoDates, [time, shipTime], [measure]), error('INSIGHT_FIELD_UNBOUND'));
+  assert.equal(normalizeInsight(twoDates, [shipTime, time], [measure]).length, 1);
+});
+
+test('movers rejects multiple computations with inconsistent category/time roles (issue #268)', () => {
+  const shipTime = { ...field('ship_month'), dateGranularity: 'MONTH' };
+  const first = { topBottomMovers: { computationId: 'a', type: 'TOP', category: dateField(shipTime), time: dateField(time), value: value(measure) } };
+  const swapped = { topBottomMovers: { computationId: 'b', type: 'TOP', category: dateField(time), time: dateField(shipTime), value: value(measure) } };
+  assert.throws(() => normalizeInsight({ computations: [first, swapped] }, [shipTime, time], [measure]), error('INSIGHT_FIELD_UNBOUND'));
+  const consistent = { topBottomMovers: { computationId: 'b', type: 'BOTTOM', category: dateField(shipTime), time: dateField(time), value: value(measure) } };
+  assert.equal(normalizeInsight({ computations: [first, consistent] }, [shipTime, time], [measure]).length, 2);
+});
+
+test('compiler fails closed on movers wells listed in time/category order (issue #268)', () => {
+  const definition = { insightVisual: { visualId: 'movers-reordered', insightConfiguration: configuration({ category: catField(category), time: dateField(time), value: value(measure) }),
+    chartConfiguration: { fieldWells: { insightAggregatedFieldWells: { category: [dateField(time), catField(category)], values: [value(measure)] } } } } };
+  assert.throws(() => compileVisual({ source: 'bundle', path: '$', bindings: {}, rows: [], definition }),
+    e => e instanceof CompileError && /INSIGHT_FIELD_UNBOUND/.test(e.message));
+});
+
 test('movers projects category and time wells in order and rebinds each by column', () => {
   const config = configuration({ category: catField(category), time: dateField(time), value: value(measure), moverSize: 5 });
   assert.deepEqual(insightWells(config), { category: [catField(category), dateField(time)], values: [value(measure)] });
@@ -101,6 +133,44 @@ test('movers labels quarter and year periods and fails closed on duplicate pairs
   assert.throws(() => narrative([...base, base[0]]), error('INSIGHT_VALUE_INVALID'));
   assert.throws(() => narrative(rowsOf([['East', 'not-a-month', 1]])), error('INSIGHT_TIME_REQUIRED'));
   assert.throws(() => narrative(rowsOf([['East', '2024-02', Infinity]])), error('INSIGHT_VALUE_INVALID'));
+});
+
+test('movers rejects duplicate decoded category/period pairs regardless of spelling, value, or order (issue #265)', () => {
+  // Aliases of the January period under the MONTH grain all decode to the
+  // same timestamp as `2024-01`, so pairing any of them with it for the same
+  // category is a duplicate decoded pair — with conflicting values, with the
+  // same value, and in either input order.
+  for (const alias of ['2024-01-01', '2024-01-01T00:00:00Z', '2024-01-15']) {
+    const conflicting = rowsOf([['East', '2024-01', 100], ['East', alias, 999], ['East', '2024-02', 150]]);
+    assert.throws(() => narrative(conflicting), error('INSIGHT_VALUE_INVALID'), alias);
+    assert.throws(() => narrative(conflicting.toReversed()), error('INSIGHT_VALUE_INVALID'), `reversed ${alias}`);
+    const sameValue = rowsOf([['East', '2024-01', 100], ['East', alias, 100], ['East', '2024-02', 150]]);
+    assert.throws(() => narrative(sameValue), error('INSIGHT_VALUE_INVALID'), `same value ${alias}`);
+  }
+  // Nulls do not excuse a duplicate decoded pair: neither row may be kept.
+  for (const entries of [
+    [['East', '2024-01', null], ['East', '2024-01-01', 100], ['East', '2024-02', 150]],
+    [['East', '2024-01', 100], ['East', '2024-01-01', null], ['East', '2024-02', 150]],
+    [['East', '2024-01', null], ['East', '2024-01-01', null], ['East', '2024-02', 150]],
+  ]) assert.throws(() => narrative(rowsOf(entries)), error('INSIGHT_VALUE_INVALID'), JSON.stringify(entries));
+  // Quarter aliases decode together too: a mid-quarter date is the same
+  // decoded period as the quarter label for that category.
+  const quarterTime = { ...field('quarter'), dateGranularity: 'QUARTER' };
+  assert.throws(() => insightNarrative(
+    [{ category: 'East', time: '2024-Q1', values: [10] }, { category: 'East', time: '2024-02-15', values: [20] }, { category: 'East', time: '2024-Q2', values: [30] }],
+    { category, time: quarterTime, measures: [measure], computations: configuration() }), error('INSIGHT_VALUE_INVALID'));
+});
+
+test('movers decoded-duplicate check keeps distinct typed categories and distinct periods (issue #265)', () => {
+  // The same decoded period for a different category is not a duplicate,
+  // and different raw spellings for different periods of one category are
+  // the normal valid input.
+  const rows = rowsOf([['East', '2024-01', 100], ['East', '2024-02-01', 150], ['West', '2024-01-01', 200], ['West', '2024-02', 100]]);
+  assert.equal(narrative(rows).text, 'Top movers revenue (2024-02 vs 2024-01): East (100 → 150; 50, 50.00%); West (200 → 100; -100, -50.00%).');
+  // A numeric category and a string category with the same text are typed
+  // distinctly: they form separate groups, not duplicate pairs.
+  const typed = rowsOf([[1, '2024-01', 100], [1, '2024-02', 150], ['1', '2024-01', 200], ['1', '2024-02', 100]]);
+  assert.equal(narrative(typed).text, 'Top movers revenue (2024-02 vs 2024-01): 1 (100 → 150; 50, 50.00%); 1 (200 → 100; -100, -50.00%).');
 });
 
 test('compiler executes movers over two wells and keeps grouped rows unchanged', () => {

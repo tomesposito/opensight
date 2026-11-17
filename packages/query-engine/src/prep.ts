@@ -2,6 +2,7 @@ import { rowFilterSql } from './row-filter.js';
 import { validatePrepPipeline, prepFail, prepName, prepTypes, type PrepColumn, type PrepPipeline, type PrepType, type PrepJoinInput } from '@opensight/bundle-parser/prep';
 import { connectorDefinition, connectorDialect } from './connectors.js';
 import { parseExpression, expressionSql } from './expressions.js';
+import { compilePrepWindow } from './prep-window.js';
 import type { ScalarType } from './types.js';
 import { quoteIdentifier as q } from './validation.js';
 
@@ -145,6 +146,11 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
           const type: PrepType = expression.scalarType === 'number' ? 'DECIMAL' : expression.scalarType === 'datetime' ? 'DATETIME' : expression.scalarType === 'boolean' ? 'BOOLEAN' : 'STRING';
           columns = [...columns, { name: step.config.name, type }]; break;
         }
+        case 'window': {
+          const result = compilePrepWindow(step.config, columns, dialect, path);
+          sql = `SELECT *, ${result.sql} AS ${q(step.config.name)} FROM ${from}`;
+          columns = [...columns, { name: step.config.name, type: result.type }]; break;
+        }
         case 'aggregate': {
           const c = step.config, groups = c.groupBy.map(name => column(name));
           const measures = c.measures.map(m => ({ ...measure(m.column, m.aggregation), name: m.name }));
@@ -169,7 +175,7 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
           const right = prepSource(step.config.source, sources, dialect);
           if (right.columns.length !== columns.length || columns.some(c => !right.columns.some(r => r.name === c.name && r.type === c.type))) prepFail('PREP_SCHEMA_MISMATCH', path, 'Append requires identical names and types; column order is matched by name');
           const projection = columns.map(c => q(c.name)).join(', ');
-          sql = `SELECT ${projection} FROM ${from} UNION ALL SELECT ${projection} FROM ${relation(right)}`; break;
+          sql = `SELECT ${projection} FROM ${from} UNION${step.config.duplicates === 'dedupe' ? '' : ' ALL'} SELECT ${projection} FROM ${relation(right)}`; break;
         }
         case 'pivot': {
           const c = step.config, key = column(c.column), groups = c.groupBy.map(name => column(name)), result = measure(c.value, c.aggregation);

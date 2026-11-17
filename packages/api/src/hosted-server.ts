@@ -1,3 +1,4 @@
+import { hostedS3Settings } from './source-s3-config.js';
 import { HostedAIReceipts, initializeAiAnswerReceipts } from './hosted-ai-receipts.js';
 import { DigestStore } from './digest-store.js';
 import { unsubscribeRoute } from './digest-routes.js';
@@ -17,7 +18,7 @@ import { HostedSources } from './hosted-sources.js';
 import { HostedData } from './hosted-data.js';
 import { HostedDataRoutes } from './hosted-data-routes.js';
 import { sourceEndpoints } from './source-schema.js';
-import { QueryEngineError, UploadError } from '@opensight/query-engine';
+import { QueryEngineError, UploadError, ConnectorError, S3SourceError } from '@opensight/query-engine';
 import { PrepError } from '@opensight/bundle-parser/prep';
 import { BlazeError } from './blaze.js';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -183,9 +184,9 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const budgets = await loadBudgets(options.membershipDatabase, metadata);
   const invocation = options.invocation?.compose?.(metadata, budgets, options.builtinAuth, usage?.aiMeter(), analytics);
   const jobs = invocation?.jobs ?? new JobStore(options.membershipDatabase, metadata);
-  const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets, undefined, undefined, analytics), jobs);
+  const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env), Date.now, undefined, hostedS3Settings(options.env)), undefined, budgets, undefined, undefined, analytics), jobs);
   const ai = invocation?.ai ?? new HostedAI(data, config.encryptionKey.toString('base64'), options.env ?? process.env, usage?.aiMeter(), options.ai, new HostedAIReceipts(options.membershipDatabase));
-  const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets, undefined, undefined, analytics));
+  const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env), Date.now, undefined, hostedS3Settings(options.env)), undefined, budgets, undefined, undefined, analytics));
   const mail = invocation?.mail ?? options.mailTransport ?? smtpFromEnvironment(options.env);
   // Billing and waiting-list conversion compose on the single-node hosted server;
   // invocation mode keeps /api/host closed, so billing stays out of it.
@@ -373,7 +374,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         if (billingTenant) {
           if (!billingService) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
           const tenantId = identifier(billingTenant[1]), billingAction = billingTenant[2];
-          if (!billingAction) { method(request, response, ['GET']); send(response, 200, { billing: { ...await billingService.viewState(tenantId), paidRequest: await billingService.latestPaidRequest(tenantId) } }); return; }
+          if (!billingAction) { method(request, response, ['GET']); send(response, 200, { billing: { ...await billingService.viewState(tenantId, true), paidRequest: await billingService.latestPaidRequest(tenantId) } }); return; }
           method(request, response, ['POST']);
           if (billingAction === 'payment-link') {
             if (!billingCfg) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
@@ -381,10 +382,10 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
             send(response, 201, await billingService.createPaymentLink(tenantId, input.tier)); return;
           }
           if (billingAction === 'paid-request/grant' || billingAction === 'paid-request/decline') {
-            const input = await body(request, ['requestId']);
+            const input = await body(request, ['requestId', 'expectedTier']);
             if (typeof input.requestId !== 'string') throw new MetadataError('METADATA_INVALID', 400);
-            await billingService.resolvePaidRequest(tenantId, billingAction === 'paid-request/grant' ? 'granted' : 'declined', undefined, input.requestId);
-            send(response, 200, { billing: await billingService.viewState(tenantId) }); return;
+            await billingService.resolvePaidRequest(tenantId, billingAction === 'paid-request/grant' ? 'granted' : 'declined', undefined, input.requestId, undefined, input.expectedTier);
+            send(response, 200, { billing: await billingService.viewState(tenantId, true) }); return;
           }
         }
         const tenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)(?:\/(suspend|resume|invitations|users)(?:\/([A-Za-z0-9_-]+))?)?$/.exec(path);
@@ -469,7 +470,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
         if (['/api/billing', '/api/billing/paid-request', '/api/signup/checkout', '/api/workspace/export', '/api/workspace/close'].includes(path)) {
           if (!hasCapability(user.body.role as Parameters<typeof hasCapability>[0], 'admin')) throw new MetadataError('SECURITY_ADMIN_REQUIRED', 403);
-          if (path === '/api/billing') { method(request, response, ['GET']); send(response, 200, { billing: await billingService.viewState(context.tenantId), trial: billingService.trial(context.tenantId), checkoutEnabled: signupCfg.enabled && !!billingCfg }); return; }
+          if (path === '/api/billing') { method(request, response, ['GET']); send(response, 200, { billing: await billingService.viewState(context.tenantId, true), trial: billingService.trial(context.tenantId), checkoutEnabled: signupCfg.enabled && !!billingCfg }); return; }
           if (path === '/api/billing/paid-request') {
             if (request.headers.origin !== config.origin) throw new MetadataError('UNTRUSTED_ORIGIN', 403);
             method(request, response, ['POST', 'DELETE']);
@@ -479,9 +480,11 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
             } else {
               const member = (await options.membershipDatabase.transaction(c => c.query("SELECT subject FROM h2_memberships WHERE tenant_id = ? AND namespace_id = ? AND user_id = ? AND status = 'active'", [context.tenantId, context.namespaceId, context.userId])))[0];
               if (!member) throw new MetadataError('BILLING_REQUESTER_UNRESOLVED', 403);
-              await billingService.resolvePaidRequest(context.tenantId, 'withdrawn', String(member.subject));
+              // The mutation rechecks current admin authority inside its own
+              // locking boundary (#254); this read only names the audit actor.
+              await billingService.resolvePaidRequest(context.tenantId, 'withdrawn', String(member.subject), undefined, { userId: context.userId, namespaceId: context.namespaceId });
             }
-            send(response, 200, { billing: await billingService.viewState(context.tenantId) }); return;
+            send(response, 200, { billing: await billingService.viewState(context.tenantId, true) }); return;
           }
           if (path === '/api/signup/checkout') {
             if (!billingCfg) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
@@ -553,7 +556,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         const tenant = (await options.membershipDatabase.transaction(c => c.query('SELECT display_name, slug FROM h1_tenants WHERE tenant_id = ?', [context.tenantId])))[0];
         const workspaceName = workspaceLabel(tenant?.display_name, context.tenantId);
         const workspaceSlug = typeof tenant?.slug === 'string' ? tenant.slug : null;
-        send(response, 200, { id: user.id, namespaceId: context.namespaceId, tenantId: context.tenantId, workspaceName, workspaceSlug, ...user.body, trial: billingService?.trial(context.tenantId) ?? null, billingPaused: billingService?.accessPaused(context.tenantId) ?? false, ...(billingService ? { billing: await billingService.viewState(context.tenantId) } : {}), ...(invocation ? { capabilities: invocation.capabilities } : {}) }); return;
+        send(response, 200, { id: user.id, namespaceId: context.namespaceId, tenantId: context.tenantId, workspaceName, workspaceSlug, ...user.body, trial: billingService?.trial(context.tenantId) ?? null, billingPaused: billingService?.accessPaused(context.tenantId) ?? false, ...(billingService ? { billing: await billingService.viewState(context.tenantId, hasCapability(user.body.role as Parameters<typeof hasCapability>[0], 'admin')) } : {}), ...(invocation ? { capabilities: invocation.capabilities } : {}) }); return;
       }
       if (path === '/api/auth/switch' || path === '/api/auth/logout') {
         if (!options.builtinAuth) throw new MetadataError('BUILTIN_AUTH_UNAVAILABLE', 503);
@@ -641,7 +644,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       throw new MetadataError('HOSTED_CAPABILITY_UNAVAILABLE', 503);
     })().catch((error: unknown) => {
       errors++; request.resume();
-      const dataError = error instanceof QueryEngineError || error instanceof PrepError || error instanceof UploadError || error instanceof BlazeError;
+      const dataError = error instanceof ConnectorError || error instanceof S3SourceError || error instanceof QueryEngineError || error instanceof PrepError || error instanceof UploadError || error instanceof BlazeError;
       const status = dataError ? 422 : error instanceof MetadataError || error instanceof RequestError || error instanceof SecurityError ? error.status : 500;
       const errorCode = dataError ? error.code : error instanceof MetadataError || error instanceof SecurityError ? error.code : error instanceof RequestError ? 'HOSTED_REQUEST_INVALID' : 'HOSTED_INTERNAL_ERROR';
       const quotaMessage = error instanceof AIError ? error.message : publicQuotaMessage(error);

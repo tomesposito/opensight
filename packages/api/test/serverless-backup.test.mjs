@@ -215,6 +215,7 @@ test('Issue #175: pre-outbox analytics backups migrate, replay and restore with 
  const f = await fixture(t), { migrateRegistered } = await import('../dist/serverless-backup.js');
  await f.db.transaction(async c => {
   await c.query('ALTER TABLE analytics_events DROP COLUMN delivered_at');
+  await c.query('ALTER TABLE analytics_events DROP COLUMN quarantine_reason');
   await c.query("INSERT INTO analytics_events VALUES ('legacy-event','tenant-one','one','ask_o_asked','{\"count\":1}','2026-10-26T00:00:00.000Z')");
  });
  const snapshot = await snapshotServerless(f.db, 'test', randomUUID(), Date.now()+3600000, ['a'.repeat(32)], 'sqlite');
@@ -223,7 +224,7 @@ test('Issue #175: pre-outbox analytics backups migrate, replay and restore with 
  assert.equal((await migrateRegistered(f.db, f.env, snapshot, registry, operation, 'sqlite')).replayed, true);
  await restoreServerless(f.target, snapshot, { ...registry, epoch: 2 }, 'sqlite');
  for (const db of [f.db, f.target]) assert.deepEqual((await db.transaction(c => c.query('SELECT * FROM analytics_events'))).map(row => ({ ...row })),
-  snapshot.tables.analytics_events.map(row => ({ ...row, delivered_at: null })));
+  snapshot.tables.analytics_events.map(row => ({ ...row, delivered_at: null, quarantine_reason: null })));
  await f.db.transaction(c => c.query("UPDATE analytics_events SET delivered_at = '2026-11-01T00:00:00.000Z'"));
  await assert.rejects(migrateRegistered(f.db, f.env, snapshot, registry, operation, 'sqlite'), { code: 'MIGRATION_PRESERVATION_FAILED' });
 });

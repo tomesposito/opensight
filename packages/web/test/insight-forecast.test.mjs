@@ -106,6 +106,14 @@ test('forecast honors intervals, custom seasonality, boundaries, nulls and bound
   assert.deepEqual(bounded.paragraphs[0].parts.filter(p => p.value !== undefined).map(p => p.value), [expected.value, expected.lower, expected.upper]);
 });
 
+test('forecast narrative never displays a reversed range under a disjoint boundary', () => {
+  const flatRows = series.map(() => ({ category: '2024-01', values: [10] })).map((r, i) => ({ ...r, category: `2024-0${i + 1}` }));
+  const result = narrative(flatRows, { lowerBoundary: 20 });
+  const values = result.paragraphs[0].parts.filter(p => p.value !== undefined).map(p => p.value);
+  assert.deepEqual(values, [20, 20, 20]);
+  assert.match(result.text, /prediction interval 20\.00–20\.00\./);
+});
+
 test('forecast unavailable cases contain no invented computed values', () => {
   for (const [rows, properties, reason] of [
     [seriesRows.slice(0, 3), {}, /at least 4 usable data points/],
@@ -118,6 +126,24 @@ test('forecast unavailable cases contain no invented computed values', () => {
     assert.deepEqual(result.paragraphs.flatMap(p => p.parts).filter(p => p.value !== undefined), []);
   }
   assert.deepEqual(narrative([]), { paragraphs: [], text: '' }); // Common empty-result state stays intact.
+});
+
+test('forecast narrative treats mixed raw aliases of distinct periods as one canonical series', () => {
+  const mixed = seriesRows.map((r, i) => i % 2 ? { ...r, category: `${r.category}-01T00:00:00Z` } : r);
+  assert.equal(narrative(mixed).text, narrative(seriesRows).text);
+  assert.equal(narrative([...mixed].reverse()).text, narrative(seriesRows).text, 'reversed mixed-alias rows give the same chronological narrative');
+});
+
+test('forecast narrative stays finite for observations whose residual squares overflow', () => {
+  // Issue #261: finite observations near 1e200 used to make the engine return
+  // infinite endpoints, which the narrative's own validation rejected instead
+  // of producing its sentence. Now the sentence renders with finite values.
+  const hugeRows = [0, 1e200, 0, 1e200, 0, 1e200].map((n, i) => ({ category: `2024-0${i + 1}`, values: [n] }));
+  const result = narrative(hugeRows);
+  assert.match(result.text, /Statistical forecast for revenue in 3 months/);
+  const values = result.paragraphs[0].parts.filter(p => p.value !== undefined).map(p => p.value);
+  assert.equal(values.length, 3);
+  assert.ok(values.every(v => Number.isFinite(v)), `finite narrative values ${JSON.stringify(values)}`);
 });
 
 test('forecast rejects duplicate periods, invalid dates and nonfinite values before projecting', () => {

@@ -63,8 +63,10 @@ have labels; cards are keyboard-accessible buttons with selected state.</p>
 <p>The static demo uses the browser-safe registry without loading database drivers
 or the Excel parser. It shows <strong>Needs local or hosted API</strong> for files,
 <strong>Needs a hosted API and an operator-configured connection</strong> for PostgreSQL,
-<strong>Needs a hosted connector implementation</strong> for SaaS/AWS, and <strong>Not yet
-implemented</strong> for MySQL and other database connections. Its upload and
+<strong>Needs hosted API and an operator-configured S3 source</strong> for S3,
+<strong>Needs a hosted connector implementation</strong> for SaaS and the remaining AWS stubs,
+and <strong>Not yet implemented</strong> for unsupported database connections. MySQL, MariaDB,
+manual Redshift and Athena report the need for an operator-configured connection. Its upload and
 validation controls are disabled. There are no
 simulated connections, sample upload success messages, or network requests.</p>
 <p>The default fixture API enables a <a href="https://github.com/tomesposito/opensight/blob/master/docs/local-data.md">local file workspace</a>: upload
@@ -92,6 +94,14 @@ and <a href="https://github.com/tomesposito/opensight/blob/master/docs/connector
 artifact is <code>packages/web/dist/opensight-demo.html</code>, rebuilt using
 <code>npm run build:demo --workspace @opensight/web</code>. It is a local preview, not a
 deployed server.</p>
+<p>S3 now supports <a href="https://github.com/tomesposito/opensight/blob/master/docs/connector-s3.md">hosted API ingestion and prefix browsing</a>.
+The current source-creation dialog still excludes AWS connectors; S3 provisioning
+is through the documented API, not a simulated connection in the gallery.</p>
+<p>RDS, Aurora and Redshift auto-discovery are implemented as a
+<a href="https://github.com/tomesposito/opensight/blob/master/docs/connector-rds-discovery.md">library discovery service</a>: their cards report the
+need for an operator-configured discovery connection. Hosted provisioning and
+the gallery&#39;s one-click source creation from a discovery result are follow-on
+work, not a simulated flow in the gallery.</p>
     </article>
   </main>
 </div>

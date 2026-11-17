@@ -16,7 +16,6 @@ export const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../../../.
 export const webRoot = resolve(repo, 'packages/web');
 export const output = resolve(process.env.OPENSIGHT_PERSONA_OUTPUT ?? resolve(repo, '.opensight/persona-journeys'));
 export const origin = 'https://opensight.test';
-const { chromium } = createRequire(resolve(process.env.OPENSIGHT_SCREENSHOT_TOOLS ?? '/home/hatch/workspace/tools/screenshots', 'package.json'))('playwright-core');
 export const button = (page, name) => page.getByRole('button', { name, exact: true });
 export async function temporaryRoot() {
   process.env.TMPDIR ??= resolve(homedir(), 'workspace/.tmp');
@@ -50,7 +49,8 @@ export async function startLocalStack(dataRoot) {
   stack.stop = async () => { await stack.vite?.close(); await close(stack.api); };
   await stack.start(); return stack;
 }
-export async function startHostedStack({ invitationSeconds, aiStub = false, usage = false } = {}) {
+export async function startHostedStack({ invitationSeconds, aiStub = false, usage = false, entitlements = {} } = {}) {
+  usage ||= Object.keys(entitlements).length > 0;
   await temporaryRoot().then(p => rm(p, { recursive: true })); // Set SQLite's disk-backed TMPDIR before importing fixtures.
   const [{ Pool }, { PostgresMetadataDatabase }, { realEmbedFixture }, { serverEnvironment }, hosted] = await Promise.all([
     import('pg'), import('../../../api/dist/metadata-db.js'), import('../../../api/test/embed-real-fixture.mjs'),
@@ -84,19 +84,47 @@ export async function startHostedStack({ invitationSeconds, aiStub = false, usag
       security: { authenticate: stack.fixture.auth.authenticate }, env: { ...serverEnvironment(stack.fixture),
         ...(aiStub ? { NODE_ENV: 'test', OPENSIGHT_AI_MANAGED: 'stub', OPENSIGHT_AI_TEST_STUB: '1' } : {}),
         ...(aiStub || usage ? { OPENSIGHT_REFERENCE: 'single-node', OPENSIGHT_REFERENCE_LOCATION: 'persona',
-          OPENSIGHT_ENTITLEMENTS: JSON.stringify({ defaults: { apiCalls: 10000, storageBytes: 10000000, computeAttempts: 1000, aiCallsPerMonth: 10, aiSpendCapCents: 1000, aiCostCentsPerMillionTokens: 1000 }, tenants: {} }) } : {}),
+          OPENSIGHT_ENTITLEMENTS: JSON.stringify({ defaults: { apiCalls: 10000, storageBytes: 10000000, computeAttempts: 1000, aiCallsPerMonth: 10, aiSpendCapCents: 1000, aiCostCentsPerMillionTokens: 1000, ...entitlements }, tenants: {} }) } : {}),
         ...(invitationSeconds === undefined ? {} : { OPENSIGHT_INVITATION_SECONDS: String(invitationSeconds) }) }, mailTransport: stack.mail });
     stack.apiTransport = await listen(stack.api);
     stack.vite = await viteServer(); stack.transport = `http://127.0.0.1:${stack.vite.httpServer.address().port}`;
     stack.tokens = { admin: (await stack.fixture.login()).token, reader: (await stack.fixture.reader.login()).token };
-    stack.request = async (path, method = 'GET', body, authorization = `Bearer ${stack.tokens.admin}`) => {
+    stack.request = async (path, method = 'GET', body, authorization = `Bearer ${stack.tokens.admin}`, headers = {}) => {
       const response = await forward(stack.apiTransport + path, method, { host: new URL(origin).host,
         ...(!path.startsWith('/api/auth/') && authorization ? { authorization } : {}),
-        'content-type': 'application/json', 'idempotency-key': randomUUID() }, body === undefined ? undefined : JSON.stringify(body));
+        'content-type': 'application/json', 'idempotency-key': randomUUID(), ...headers }, body === undefined ? undefined : JSON.stringify(body));
       return { status: response.status, body: JSON.parse(response.body) };
     };
     return stack;
   } catch (error) { await stack.stop(); throw error; }
+}
+// The real MCP server and SDK exchange protocol messages in process; only the
+// HTTP transport is bridged, preserving the hosted Host boundary and token.
+export async function connectHostedMcp(stack, token) {
+  const [{ Client }, { InMemoryTransport }, { createMcpServer }] = await Promise.all([
+    import('@modelcontextprotocol/sdk/client/index.js'), import('@modelcontextprotocol/sdk/inMemory.js'),
+    import('../../../mcp-server/dist/index.js'),
+  ]);
+  assert.ok(token, 'MCP requires a real hosted member token');
+  const base = new URL(stack.apiTransport);
+  assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(base.hostname), 'MCP transport must stay on localhost');
+  const server = createMcpServer({ baseUrl: `${base.origin}/api/v1`,
+    credentials: { accessToken: async () => token, containsSecret: text => text.includes(token), invalidate() {} },
+    fetch: async (input, init) => {
+      const url = new URL(input);
+      assert.equal(url.origin, base.origin, 'MCP must not contact an external origin');
+      assert.ok(url.pathname.startsWith('/api/v1/'), 'MCP must use the v1 surface');
+      const headers = Object.fromEntries(new Headers(init.headers));
+      headers.host = new URL(stack.origin).host;
+      const response = await forward(stack.apiTransport + url.pathname + url.search, init.method, headers, init.body);
+      return new Response(response.body, { status: response.status, headers: response.headers });
+    } });
+  const client = new Client({ name: 'opensight-persona-journey', version: '1.0.0' });
+  const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
+  const stop = async () => { try { await client.close(); } finally { await server.close(); } };
+  try { await server.connect(serverTransport); await client.connect(clientTransport); }
+  catch (error) { await stop(); throw error; }
+  return { client, stop };
 }
 export async function startStaticSite({ embed = false } = {}) {
   const demo = resolve(webRoot, 'dist/opensight-demo.html'), preview = resolve(webRoot, 'dist/opensight-embed-preview.html');
@@ -148,6 +176,7 @@ export async function routeBridge(context, stack, journey) {
   });
 }
 export async function launchBrowser(journey) {
+  const { chromium } = createRequire(resolve(process.env.OPENSIGHT_SCREENSHOT_TOOLS ?? '/home/hatch/workspace/tools/screenshots', 'package.json'))('playwright-core');
   const browser = await chromium.launch({ executablePath: process.env.OPENSIGHT_CHROMIUM ?? '/opt/meta-chromium/chrome', args: ['--no-sandbox', '--disable-background-networking', '--disable-component-update', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   journey.cleanup(async () => {
     await browser.close();

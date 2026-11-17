@@ -151,6 +151,43 @@ test('Postgres converts wire numeric values without changing global parsers or n
   assert.equal(types.getTypeParser(types.builtins.INT8), parser);
 });
 
+for (const stage of ['connect', 'query']) {
+  test(`distinct failed Postgres ${stage} executions release all fills before a retry stores and serves from cache`, async t => {
+    let failing = true;
+    const fail = () => { throw new Error(`driver ${stage} failure`); };
+    const mocks = mockClient(t, {
+      connect: () => { if (failing && stage === 'connect') fail(); },
+      query: config => {
+        if (typeof config === 'string') return empty;
+        if (failing && stage === 'query') fail();
+        return { fields: [{ name: 'revenue', dataTypeID: types.builtins.FLOAT8 }], rows: [['500']] };
+      },
+    });
+    const requests = ['total-revenue', 'revenue-by-region', 'share-by-category', 'revenue-trend'].map(id => request(id));
+    const cache = new LiveResultCache({ now: () => 1000 }), configured = { ...options, liveCache: { cache, ttlMs: 1000 } };
+    for (const r of requests) await assert.rejects(executePostgres(r, configured), { code: 'EXECUTION_ERROR', path: '$.postgres' });
+    // Inspect before retrying any failed key, which could supersede a leaked marker.
+    assert.deepEqual(cache.stats(), { hits: 0, misses: requests.length, stores: 0, entries: 0, retainedBytes: 0, activeFills: 0, trackedFillKeys: 0 });
+    assert.equal(mocks.connectMock.mock.callCount(), requests.length);
+    assert.equal(mocks.endMock.mock.callCount(), requests.length);
+    assert.equal(mocks.queryMock.mock.callCount(), stage === 'connect' ? 0 : requests.length * 2);
+
+    failing = false;
+    const first = await executePostgres(requests[0], configured);
+    assert.deepEqual(first.provenance, { source: 'live' });
+    assert.deepEqual(first.rows, [{ revenue: 500 }]);
+    assert.equal(cache.stats().stores, 1);
+    const second = await executePostgres(requests[0], configured);
+    assert.equal(second.provenance.source, 'cache');
+    assert.deepEqual(second.rows, first.rows);
+    assert.deepEqual(cache.stats(), { hits: 1, misses: requests.length + 1, stores: 1, entries: 1,
+      retainedBytes: Buffer.byteLength(JSON.stringify(first.rows), 'utf8'), activeFills: 0, trackedFillKeys: 0 });
+    assert.equal(mocks.connectMock.mock.callCount(), requests.length + 1, 'the cache hit must not connect again');
+    assert.equal(mocks.endMock.mock.callCount(), requests.length + 1);
+    assert.equal(mocks.queryMock.mock.callCount(), stage === 'connect' ? 2 : requests.length * 2 + 2);
+  });
+}
+
 for (const stage of ['connect', 'timezone', 'query', 'end']) {
   test(`Postgres closes the client and sanitizes ${stage} failure`, async t => {
     const fail = () => { throw new Error(`driver failure: ${options.connectionString}`); };

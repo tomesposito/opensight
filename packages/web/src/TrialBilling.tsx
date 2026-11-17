@@ -4,7 +4,7 @@ import type { createApiClient } from './api-client.js';
 
 export type PaidTier = 'light' | 'regular' | 'heavy';
 export interface TrialInfo { endsAt: string; daysRemaining: number }
-export interface PaidRequestState { tier: PaidTier; state: 'pending' | 'granted' | 'declined' | 'withdrawn'; createdAt: string; requestedByEmail: string }
+export interface PaidRequestState { tier: PaidTier; state: 'pending' | 'granted' | 'declined' | 'withdrawn'; createdAt: string; requestedByEmail?: string }
 export interface BillingState { billingMode: 'checkout' | 'waitlist'; paidRequest: PaidRequestState | null; entitlementSource?: 'stripe' | 'manual' | 'trial'; tier?: string | null; accessState?: string; trialEndsAt?: string | null; pauseEffectiveAt?: string | null; retentionDueAt?: string | null; subscriptionStatus?: string | null }
 export type BillingClient = Partial<Pick<ReturnType<typeof createApiClient>, 'checkout' | 'requestPaidPlan' | 'withdrawPaidRequest' | 'exportWorkspace' | 'closeWorkspace'>>;
 const plans = [{ tier: 'light', name: 'Light', price: 29 }, { tier: 'regular', name: 'Regular', price: 99 }, { tier: 'heavy', name: 'Heavy', price: 399 }] as const;
@@ -49,7 +49,7 @@ export function BillingPanel({ session, client, paused = false }: { session: Ses
   return <section className="trial-card" aria-label={paused ? 'Workspace paused' : 'Billing'}>
     {paused && <span className={waiting ? "trial-pill" : "trial-pill ended"}>{waiting ? 'Waiting list' : expired ? 'Trial ended' : 'Access paused'}</span>}
     <h1>{waiting ? `You're on the waiting list for ${tierLabel(request.tier)}.` : expired ? `Your trial of hosted OpenSight ended on ${date(billing!.trialEndsAt!)}` : paused ? 'Your hosted workspace is paused' : trial ? `Trial — ${trial.daysRemaining} days left` : `Billing · ${tierLabel(billing?.tier)}`}</h1>
-    {waiting ? <><p>You requested it on {date(request.createdAt)}. We'll email {request.requestedByEmail} when your plan is switched on. Your workspace and everything in it stays exactly as it is while you wait.</p><p className="trial-retention">There's no countdown on your data while your request is open. If you withdraw the request, we'll keep everything for 30 days from that date.</p></> : paused ? <><p>Nothing was deleted. Your dashboards, datasets, and settings are exactly as you left them — the workspace is paused until you pick a plan.</p>
+    {waiting ? <><p>You requested it on {date(request.createdAt)}. {request.requestedByEmail ? <>We'll email {request.requestedByEmail} when your plan is switched on.</> : <>We'll email the administrator who requested it when your plan is switched on.</>} Your workspace and everything in it stays exactly as it is while you wait.</p><p className="trial-retention">There's no countdown on your data while your request is open. If you withdraw the request, we'll keep everything for 30 days from that date.</p></> : paused ? <><p>Nothing was deleted. Your dashboards, datasets, and settings are exactly as you left them — the workspace is paused until you pick a plan.</p>
       {billing?.retentionDueAt && <p className="trial-retention">We'll keep everything until <strong>{date(billing.retentionDueAt)}</strong>. After that date, the operator can erase the workspace and its data. You can export your data at any point before then, free.</p>}</>
       : <p>{trial ? `Your trial ends ${date(trial.endsAt)}. ` : ''}Every feature included. Hosted tiers differ in quotas, never in features.</p>}
     {admin ? <>

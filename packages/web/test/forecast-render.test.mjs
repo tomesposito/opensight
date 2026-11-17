@@ -44,6 +44,18 @@ test('forecast tooltip reads Forecast and shows the interval', () => {
   assert.match(text, /\(Forecast\): 221\.73 · 95% interval 215\.3–228\.16/);
 });
 
+test('disjoint lower boundary: chart band never gets a negative width', () => {
+  const rows = months(6).map(month => ({ month, revenue: 10 }));
+  const { option } = compileVisual(withForecast(rows, { PeriodsForward: 3, Seasonality: 'NONE', LowerBoundary: 20 }));
+  const found = extras(option);
+  const seg = found.find(s => s.id.startsWith('forecast-seg'));
+  const bandHi = found.find(s => s.id.startsWith('forecast-band-hi'));
+  for (let i = 6; i < 9; i++) {
+    assert.deepEqual([seg.data[i].value, seg.data[i].lower, seg.data[i].upper], [20, 20, 20]);
+    assert.equal(bandHi.data[i], 0, 'band delta is upper - lower and must not be negative');
+  }
+});
+
 test('fewer than 4 points: actuals only plus the quiet note', () => {
   const { option, forecastNote } = compileVisual(withForecast(trendRows.slice(0, 3), { PeriodsForward: 3 }));
   assert.equal(forecastNote, 'Not enough history to forecast — showing actuals. A forecast needs at least 4 data points.');
@@ -211,6 +223,46 @@ test('area forecast preserves the line insufficient-history and seasonal-skip no
     assert.deepEqual(area.option.series[0].areaStyle, { opacity: 0.3 });
     assert.match(area.forecastNote, rows.length < 4 ? /Not enough history to forecast/ : /Seasonality was skipped/);
   }
+});
+
+test('reversed rows: fit is chronological, future anchors to the latest period, fitted values map back to displayed rows', () => {
+  const config = { PeriodsForward: 3, PeriodsBackward: 2, PredictionInterval: 95, Seasonality: 'NONE' };
+  const forward = compileVisual(withForecast(trendRows, config));
+  const reversedRows = [...trendRows].reverse();
+  const reversed = compileVisual(withForecast(reversedRows, config));
+  assert.deepEqual(reversed.option.xAxis.data.slice(0, 12), reversedRows.map(r => r.month), 'axis keeps display order');
+  assert.deepEqual(reversed.option.xAxis.data.slice(-3), ['2026-01', '2026-02', '2026-03'], 'future labels step from the latest period (2025-12), not the last displayed row (2025-01)');
+  const fSeg = extras(forward.option).find(s => s.id.startsWith('forecast-seg'));
+  const rSeg = extras(reversed.option).find(s => s.id.startsWith('forecast-seg'));
+  assert.deepEqual(rSeg.data.slice(12), fSeg.data.slice(12), 'future points identical: display order does not change the fitted history');
+  assert.deepEqual(rSeg.data[0], { value: trendRows[11].revenue, forecastKind: 'join' }, 'join sits on the latest period at its displayed position');
+  assert.equal(rSeg.data[1].forecastKind, 'fit');
+  assert.equal(rSeg.data[1].value, fSeg.data[10].value, 'fitted value for 2025-11 maps back to its displayed row');
+  const areaReversed = compileVisual(areaForecast(reversedRows, config));
+  assert.deepEqual(extras(areaReversed.option), extras(reversed.option), 'area shares the same chronological preparation');
+  assert.deepEqual(areaReversed.option.xAxis.data, reversed.option.xAxis.data);
+});
+
+test('date aliases decoding to one period fail closed instead of becoming two observations', () => {
+  const rows = trendRows.map(r => ({ ...r }));
+  rows[1] = { month: '2025-01-01T00:00:00Z', revenue: 999 }; // decodes to 2025-01 at MONTH grain, the same period as rows[0]
+  assert.throws(() => compileVisual(withForecast(rows, { PeriodsForward: 3, Seasonality: 'NONE' })), /duplicate date\/time periods/);
+  assert.throws(() => compileVisual(areaForecast(rows, { PeriodsForward: 3, Seasonality: 'NONE' })), /duplicate date\/time periods/);
+});
+
+test('trailing null group: future labels anchor to the latest period row, not the last non-null point', () => {
+  const rows = trendRows.map(r => ({ ...r }));
+  rows[11] = { month: '2025-12', revenue: null };
+  const { option, forecastNote } = compileVisual(withForecast(rows, { PeriodsForward: 3, Seasonality: 'NONE' }));
+  assert.equal(forecastNote, undefined);
+  assert.deepEqual(option.xAxis.data.slice(-3), ['2026-01', '2026-02', '2026-03'], 'anchored to Dec, the latest period, though its value is null');
+  const seg = extras(option).find(s => s.id.startsWith('forecast-seg'));
+  assert.deepEqual(seg.data[10], { value: trendRows[10].revenue, forecastKind: 'join' }, 'join on the last non-null point (Nov)');
+  assert.equal(seg.data[11], null);
+  assert.equal(seg.data[12].forecastKind, 'future');
+  const plain = compileVisual(withForecast(trendRows.slice(0, 11), { PeriodsForward: 3, Seasonality: 'NONE' }));
+  const pSeg = extras(plain.option).find(s => s.id.startsWith('forecast-seg'));
+  assert.deepEqual(seg.data.slice(12), pSeg.data.slice(11), 'same future values as the series without the trailing null row');
 });
 
 test('area with unparseable date values keeps the grain warning and omits overlays', () => {

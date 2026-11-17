@@ -126,7 +126,7 @@ test('197 HTTP: expired identity still signs in; only admins can checkout/export
   const now = Date.UTC(2026, 10, 6), clock = () => now + 15 * 86400000;
   Object.assign(f.env, { OPENSIGHT_SIGNUP_ENABLED: 'true', OPENSIGHT_TRIAL_ENTITLEMENT: JSON.stringify({ apiCalls: 30000, storageBytes: 10000000000, computeAttempts: 1500 }), OPENSIGHT_STRIPE_SECRET_KEY: 'sk_test', OPENSIGHT_STRIPE_WEBHOOK_SECRET: 'whsec_test', OPENSIGHT_STRIPE_PRICE_LIGHT: 'price_l', OPENSIGHT_STRIPE_PRICE_REGULAR: 'price_r', OPENSIGHT_STRIPE_PRICE_HEAVY: 'price_h' });
   const billing = new HostedBilling(f.db, billingConfig(f.env), { clock: () => now }); await billing.startTrial('tenant-one');
-  const { request, operator } = await serveH8(t, f, { clock, signupChallengeVerifier: async () => true, stripeFetcher: async () => ({ ok: true, status: 200, json: async () => ({ id: 'cs_trial', url: 'https://checkout.stripe.com/c/pay/trial' }) }) });
+  const { request, operator } = await serveH8(t, f, { clock, signupChallengeVerifier: async () => true, stripeFetcher: async () => ({ ok: true, status: 200, json: async () => ({ id: 'cs_trial', url: 'https://checkout.stripe.com/c/pay/trial', status: 'open', expires_at: Math.floor(clock() / 1000) + 86400 }) }) });
   const headers = { authorization: 'one', origin: f.env.OPENSIGHT_PUBLIC_ORIGIN };
   const session = await request('/api/session', { headers }); assert.equal(session.status, 200); assert.equal(session.body.trial.daysRemaining, 0); assert.equal(session.body.billingPaused, true);
   assert.equal((await request('/api/users', { headers })).body.errorCode, 'TRIAL_EXPIRED');
@@ -145,7 +145,7 @@ test('216 HTTP: dark signup flag also closes the namespace-scoped checkout route
   // OPENSIGHT_SIGNUP_ENABLED is deliberately absent: signup stays dark.
   Object.assign(f.env, { OPENSIGHT_TRIAL_ENTITLEMENT: JSON.stringify({ apiCalls: 30000, storageBytes: 10000000000, computeAttempts: 1500 }), OPENSIGHT_STRIPE_SECRET_KEY: 'sk_test', OPENSIGHT_STRIPE_WEBHOOK_SECRET: 'whsec_test', OPENSIGHT_STRIPE_PRICE_LIGHT: 'price_l', OPENSIGHT_STRIPE_PRICE_REGULAR: 'price_r', OPENSIGHT_STRIPE_PRICE_HEAVY: 'price_h' });
   const billing = new HostedBilling(f.db, billingConfig(f.env), { clock }); await billing.startTrial('tenant-one');
-  const { request } = await serveH8(t, f, { clock, signupChallengeVerifier: async () => true, stripeFetcher: async () => ({ ok: true, status: 200, json: async () => ({ id: 'cs_dark', url: 'https://checkout.stripe.com/c/pay/dark' }) }) });
+  const { request } = await serveH8(t, f, { clock, signupChallengeVerifier: async () => true, stripeFetcher: async () => ({ ok: true, status: 200, json: async () => ({ id: 'cs_dark', url: 'https://checkout.stripe.com/c/pay/dark', status: 'open', expires_at: Math.floor(clock() / 1000) + 86400 }) }) });
   const headers = { authorization: 'one', origin: f.env.OPENSIGHT_PUBLIC_ORIGIN };
   for (const path of ['/api/signup/checkout', '/api/namespaces/one/signup/checkout']) {
     const res = await request(path, { method: 'POST', headers, body: { tier: 'light' } });

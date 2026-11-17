@@ -86,19 +86,19 @@ test('committed uploads and prep saves emit fixed properties; rejected mutations
   const rows = await store.read(f.metadata, await f.login());
   assert.deepEqual(rows.map(r => [r.name, r.props]), [['dataset_uploaded', { sourceType: 'file', rowCountBucket: '1-99' }], ['dataset_prep_saved', {}]]);
 });
-test('Issue #179: a committed live source connection emits data_source_connected; a rejected registration emits nothing', async t => {
+for (const connectorId of ['postgresql', 'mysql', 'mariadb', 'redshift-manual']) test(`Issue #270: a committed ${connectorId} source emits its connector type; rejected registration emits nothing`, async t => {
   const { sourceFixture, registration } = await import('./source-helpers.mjs');
   const { HostedData } = await import('../dist/hosted-data.js');
-  const f = await sourceFixture(t); await initializeAnalytics(f.db);
+  const f = await sourceFixture(t, { endpoints: [{ id: 'reference', host: 'localhost', port: 3306, database: 'opensight', tls: false, connectorId }] }); await initializeAnalytics(f.db);
   const store = new AnalyticsStore(f.db), analytics = new Analytics(store, { enabled: true, vendorKey: 'test-only', transport: async () => ({ ok: true }) });
   const data = new HostedData(f.sources, undefined, f.budgets, undefined, undefined, analytics);
   const context = await f.login(); data.begin(context);
   await assert.rejects(data.createSource(context, 'rejected', { ...registration(), endpointId: 'missing' }));
-  const source = await data.createSource(context, 'live', registration());
-  assert.equal(source.connectorId, 'postgresql');
+  const source = await data.createSource(context, 'live', { ...registration(), connectorId });
+  assert.equal(source.connectorId, connectorId);
   await analytics.close();
   const rows = await store.read(f.metadata, await f.login());
-  assert.deepEqual(rows.map(r => [r.name, r.props]), [['data_source_connected', { sourceType: 'postgresql' }]]);
+  assert.deepEqual(rows.map(r => [r.name, r.props]), [['data_source_connected', { sourceType: connectorId }]]);
 });
 test('Issue #179: first dashboard save is flagged first, a republish is an edit, and a second dashboard is not first', async t => {
   const f = await authFixture(t); await initializeAnalytics(f.db); const calls = [];

@@ -15,7 +15,7 @@ function consumer(): void {
   const postgresOptions: PostgresExecuteOptions = { connectionString: 'postgres://localhost/test' };
   const postgresResult: Promise<QueryResult> = executePostgres(request, postgresOptions);
   const cache = new LiveResultCache({ maxEntries: 10, maxBytes: 1024, maxEntryBytes: 512 });
-  const stats: { hits: number; misses: number; stores: number; entries: number; retainedBytes: number } = cache.stats();
+  const stats: { hits: number; misses: number; stores: number; entries: number; retainedBytes: number; activeFills: number; trackedFillKeys: number } = cache.stats();
   const fill: import('@opensight/query-engine').LiveCacheFillToken = cache.beginFill('key');
   cache.set('key', [], 1000, fill);
   // @ts-expect-error Cache byte budgets are numbers at the public type boundary.

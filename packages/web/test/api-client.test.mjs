@@ -5,16 +5,14 @@ import { ApiError, createApiClient } from '../build/test/api-client.js';
 const definition = { DataSetIdentifierDeclarations: [], Sheets: [] };
 const response = body => Response.json(body);
 
-test('input-table row patches optionally send expectedVersion and preserve version conflicts (#219)', async () => {
+test('input-table row patches send the required expectedVersion and preserve version conflicts (#244)', async () => {
   const calls = [];
   const client = createApiClient('/', async (url, options) => {
     calls.push({ url, method: options.method, body: JSON.parse(options.body) });
     return response({ row: { id: 'r1', values: { forecast: 99 } }, version: 4 });
   });
-  await client.updateInputTableRow('t1', 'r1', { forecast: 99 });
   await client.updateInputTableRow('t1', 'r1', { forecast: 99 }, 3);
   assert.deepEqual(calls, [
-    { url: '/api/input-tables/t1/rows/r1', method: 'PATCH', body: { values: { forecast: 99 } } },
     { url: '/api/input-tables/t1/rows/r1', method: 'PATCH', body: { values: { forecast: 99 }, expectedVersion: 3 } },
   ]);
   const stale = createApiClient('/', async () => Response.json({ errorCode: 'INPUT_TABLE_VERSION_CONFLICT', Message: 'Input table has changed. Reload the table before saving.' }, { status: 412 }));
@@ -31,6 +29,13 @@ test('session errors preserve structured reason and HTTP status without leaking 
   ]) {
     const client = createApiClient('/api', async () => reply);
     await assert.rejects(client.getSession(), error => error instanceof ApiError && error.status === reply.status && error.errorCode === code && error.message === 'Session request failed.');
+  }
+});
+
+test('resource errors with empty or non-JSON bodies reject as ApiError, never a raw TypeError', async () => {
+  for (const reply of [new Response('', { status: 403 }), new Response('<h1>proxy failure</h1>', { status: 502 }), new Response('', { status: 200 })]) {
+    const client = createApiClient('/api', async () => reply);
+    await assert.rejects(client.listNotebooks(), error => error instanceof ApiError && error.status === reply.status && error.errorCode === 'API_RESPONSE_INVALID' && !/Failed to execute 'json'/.test(error.message));
   }
 });
 

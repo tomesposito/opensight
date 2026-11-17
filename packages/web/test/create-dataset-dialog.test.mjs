@@ -56,13 +56,13 @@ test('source picker skeleton reserves the loaded table height in CSS', async t =
   assert.match(css, /\.source-picker-skeleton\s+\.skeleton-rows\s*\{[^}]*min-height:\s*206px/);
   assert.match(css, /\.source-picker-skeleton\s+\.skeleton-row\s*\{[^}]*height:\s*26px/);
 });
-test('connector grid follows live registry, exposes honest MySQL limitation, and omits AWS services', async t => {
+test('connector grid follows live registry, requires configured database sources, and omits unavailable AWS services', async t => {
   const expected = connectors.filter(item => item.category !== 'AWS' && ['upload', 'query'].includes(item.implementation));
-  assert.deepEqual(creationConnectors.filter(item => item.id !== 'mysql'), expected);
+  assert.deepEqual(creationConnectors, expected);
   const ui = await mount(t, { start: 'source' });
   assert.deepEqual(ui.root.findAllByProps({ type: 'radio' }).map(node => node.props['aria-label']), creationConnectors.map(item => item.name));
-  assert.equal(ui.root.findByProps({ 'aria-label': 'MySQL' }).props.disabled, true);
-  assert.match(ui.text(), /Not yet implemented/); assert.doesNotMatch(ui.text(), /Athena|Redshift|S3|Aurora/);
+  assert.equal(ui.root.findByProps({ 'aria-label': 'MySQL' }).props.disabled, false);
+  assert.match(ui.text(), /operator-configured connection/); assert.doesNotMatch(ui.text(), /Athena|auto-discovery|S3|Aurora/);
   assert.equal(button(ui, 'Next').props.disabled, true);
   await change(ui.root.findByProps({ type: 'search' }), 'post'); assert.equal(ui.root.findAllByProps({ type: 'radio' }).length, 1);
   await act(() => ui.root.findByProps({ 'aria-label': 'PostgreSQL' }).props.onChange()); await click(ui, 'Next');
@@ -94,15 +94,15 @@ test('upload failures retain form and never enter prep; static upload controls s
   assert.match(ui.text(), /UPLOAD_INVALID/); assert.equal(prepared, false);
   const offline = await mount(t, { start: 'file' }); assert.equal(offline.root.findByProps({ type: 'file' }).props.disabled, true);
 });
-test('PostgreSQL uses only discovered available hosted raw sources, never creates connections', async t => {
-  const prepared = [], pg = { ...raw, id: 'postgres-table', connectorId: 'postgresql' };
-  const props = { start: 'source', client: { ...client, listPrepSources: async () => [pg, { ...pg, id: 'blocked', available: false }, { ...pg, id: 'prepared', ref: { dataset: 'prepared' } }] }, onPrep: id => prepared.push(id) };
+for (const [connectorId, name] of [['postgresql', 'PostgreSQL'], ['mysql', 'MySQL'], ['mariadb', 'MariaDB'], ['redshift-manual', 'Redshift (manual)']]) test(`${name} uses only matching available hosted raw sources`, async t => {
+  const prepared = [], pg = { ...raw, id: 'postgres-table', connectorId };
+  const props = { start: 'source', client: { ...client, listPrepSources: async () => [pg, { ...pg, connectorId: 'file', id: 'different-connector' }, { ...pg, id: 'blocked', available: false }, { ...pg, id: 'prepared', ref: { dataset: 'prepared' } }] }, onPrep: id => prepared.push(id) };
   const ui = await mount(t, props, { mode: 'hosted', session: { role: 'author' } });
-  await act(() => ui.root.findByProps({ 'aria-label': 'PostgreSQL' }).props.onChange()); await click(ui, 'Next');
-  const select = ui.root.findByProps({ 'aria-label': 'Configured PostgreSQL source' }); assert.equal(select.findAllByType('option').length, 2);
+  await act(() => ui.root.findByProps({ 'aria-label': name }).props.onChange()); await click(ui, 'Next');
+  const select = ui.root.findByProps({ 'aria-label': `Configured ${name} source` }); assert.equal(select.findAllByType('option').length, 2);
   await change(select, pg.id); await click(ui, 'Select'); assert.deepEqual(prepared, [pg.id]);
-  const local = await mount(t, props); await act(() => local.root.findByProps({ 'aria-label': 'PostgreSQL' }).props.onChange()); await click(local, 'Next');
-  assert.equal(local.root.findByProps({ 'aria-label': 'Configured PostgreSQL source' }).findAllByType('option').length, 1);
+  const local = await mount(t, props); await act(() => local.root.findByProps({ 'aria-label': name }).props.onChange()); await click(local, 'Next');
+  assert.equal(local.root.findByProps({ 'aria-label': `Configured ${name} source` }).findAllByType('option').length, 1);
 });
 test('creation and source routes survive reload and malformed source URLs fail closed', () => {
   for (const route of [{ page: 'data', createDataset: true }, { page: 'data-prep', sourceId: 'upload-1' }, { page: 'data-prep', sourceId: 'table/region' }]) assert.deepEqual(parseRoute(routeHash(route)), route);

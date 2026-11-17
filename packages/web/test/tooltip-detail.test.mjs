@@ -222,6 +222,25 @@ test('waterfall breakdown detailed tooltips read the (category, breakdown) row; 
   assert.equal(format({ name: 'West', data: data[3] }), 'West: 170');
 });
 
+test('waterfall aggregate fallback escapes rich-text markup in compiled subtotal labels', () => {
+  const v = { ...selected(add('waterfall')), dimension: 'region', measures: ['revenue'], breakdowns: ['category'], tooltipType: 'detailed' };
+  const rows = [
+    { region: '{East|value}', category: 'Hardware', revenue: 100 },
+    { region: '{East|value}', category: 'Software', revenue: 50 },
+    { region: 'West', category: 'Hardware', revenue: 30 },
+  ];
+  const compiled = compileVisual(input(v, rows));
+  const data = compiled.option.series[1].data;
+  // The first category renders as a compiled subtotal bar with no source row.
+  assert.equal(data[0].name, '{East|value}');
+  assert.equal(data[0].sourceRowIndex, undefined);
+  assert.equal(data[0].delta, 150);
+  const format = compiled.option.tooltip.formatter;
+  assert.equal(format({ name: data[0].name, data: data[0] }), '｛East|value｝: 150');
+  // The fallback value is escaped through the same plain-text handling too.
+  assert.equal(format({ name: '{East|value}', data: { delta: '{60|total}' } }), '｛East|value｝: ｛60|total｝');
+});
+
 test('treemap details use hierarchy levels and the hovered node value', () => {
   const v = { ...selected(add('treemap')), rows: ['region', 'category'], measures: ['revenue'], tooltipType: 'detailed' };
   const rows = [{ region: 'East', category: 'Hardware', revenue: 10 }, { region: 'East', category: 'Software', revenue: 20 }];
