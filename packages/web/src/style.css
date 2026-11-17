@@ -2746,3 +2746,10 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .o-previewing-revision { outline: 3px solid #426fc7; outline-offset: 3px; }
 .o-revision-label { position: absolute; z-index: 2; top: -20px; left: 0; background: #233b65; color: white; padding: 2px 8px; }
 .o-revision { border-top: 1px solid var(--chrome-border, #ccd5df); margin-top: 12px; padding-top: 12px; }
+
+.prep-join-diagnostics { margin: 8px 0; padding: 8px; border: 1px solid #d1d9e3; border-radius: 4px; }
+.prep-join-diagnostics h4 { margin: 0 0 8px; font-size: 13px; }
+.prep-join-diagnostics dl { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 8px 0; }
+.prep-join-diagnostics dt { font-size: 12px; }
+.prep-join-diagnostics dd { margin: 4px 0 0; font-size: 16px; font-weight: 600; }
+.prep-join-diagnostics .prep-join-warning { padding: 8px; background: #fff3d6; color: #704900; border-radius: 4px; }

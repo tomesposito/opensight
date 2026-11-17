@@ -1,3 +1,4 @@
+import type { PrepJoinDiagnostics } from '@opensight/query-engine/browser';
 import type { Notebook, NotebookSummary, NotebookContent, NotebookRun, NotebookSnapshot, NotebookDataset } from './notebooks.js';
 import type { MetricSubscriptionInput, MetricSubscription, MetricDigestPreview } from './metric-digests.js';
 import type { Idea } from './ideas.js';
@@ -382,6 +383,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   };
   const savePrep = (id: string, name: string, pipeline: PrepPipeline, expectedVersion?: number) => resource<PrepSaveResponse>(`/api/datasets/${encodeURIComponent(id)}/prep`, 'PUT', { name, pipeline, ...(expectedVersion === undefined ? {} : { expectedVersion }) });
   const deletePrep = (id: string, expectedVersion?: number) => resource<{ deleted: true } | { removed: true }>(`/api/datasets/${encodeURIComponent(id)}/prep`, 'DELETE', expectedVersion === undefined ? undefined : { expectedVersion });
+  const joinDiagnostics = (id: string, pipeline: PrepPipeline, through: string) => resource<PrepJoinDiagnostics>(`/api/datasets/${encodeURIComponent(id)}/prep/join-diagnostics`, 'POST', { pipeline, through });
   const previewPrep = (id: string, pipeline: PrepPipeline, through: string | null, limit = 100) => resource<PrepPreview>(`/api/datasets/${encodeURIComponent(id)}/prep/preview`, 'POST', { pipeline, through, limit });
   const uploadFile = (body: { config: Readonly<Record<string, string>>; base64: string }) => resource<UploadSummary>('/api/uploads', 'POST', body);
   const validateConnector = (id: string, config: Readonly<Record<string, string>>) => resource<ConnectorState>(`/api/connectors/${encodeURIComponent(id)}/connect`, 'POST', { config });
@@ -604,7 +606,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     onDemand, connect, subscribeAvailability,
     checkout, requestPaidPlan, withdrawPaidRequest, exportWorkspace, closeWorkspace, enroll, acceptEnrollment, login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob, retryJobDelivery,
-    listPrepTemplates, proposePrepTemplate, publishPrepTemplate, createFromPrepTemplate, promoteCalculation, metricDatasets, listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, publishStoredTable, downloadStoredTable, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, planO, reviseO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
+    listPrepTemplates, proposePrepTemplate, publishPrepTemplate, createFromPrepTemplate, promoteCalculation, metricDatasets, listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, publishStoredTable, downloadStoredTable, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, joinDiagnostics, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, planO, reviseO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     listNotebooks, getNotebook, createNotebook, updateNotebook, deleteNotebook, runNotebook, notebookDatasets, notebookRuns, snapshotNotebookCell,
     listInputTables, getInputTable, createInputTable, updateInputTable, deleteInputTable, setInputTableEditors, addInputTableRow, updateInputTableRow, deleteInputTableRow, getInputTableAudit,
     queryDataset,
