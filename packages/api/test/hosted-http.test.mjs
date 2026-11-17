@@ -77,6 +77,19 @@ test('H2 no unauthenticated fallback exists on fixture, embed, source, automatio
     }
   }
 });
+test('Issue #285: hosted notebook paths answer 404 RESOURCE_NOT_FOUND so the web page shows its unavailable notice', async t => {
+  const f = await authFixture(t), { request } = await serving(t, f), session = await f.login(), headers = { authorization: `Bearer ${session.token}` };
+  for (const [path, method] of [['/api/notebooks', 'GET'], ['/api/notebooks', 'POST'], ['/api/notebooks/datasets', 'GET'], ['/api/notebooks/some-id', 'GET'], ['/api/notebooks/some-id/runs', 'GET'], ['/api/notebooks/some-id/run', 'POST']]) {
+    const result = await request(path, { method, headers, ...(method === 'POST' ? { body: {} } : {}) });
+    assert.equal(result.status, 404, `${method} ${path}`);
+    assert.equal(result.body.errorCode, 'RESOURCE_NOT_FOUND', `${method} ${path}`);
+  }
+  // Fail-closed is unchanged: unauthenticated notebook requests still 401, never the 404 notice contract.
+  assert.equal((await request('/api/notebooks')).status, 401);
+  // A merely similar prefix is not a notebook path and keeps the generic hosted fallback.
+  const sibling = await request('/api/notebooksx', { headers });
+  assert.equal(sibling.status, 503); assert.equal(sibling.body.errorCode, 'HOSTED_CAPABILITY_UNAVAILABLE');
+});
 test('H2 tenant administrators cannot provision or use operator credentials as tenant sessions', async t => {
   const f = await authFixture(t), { request, operator } = await serving(t, f), session = await f.login(), tenantHeaders = { authorization: `Bearer ${session.token}` };
   for (const [path, method] of [['/api/host/tenants', 'POST'], [`/api/host/tenants/${f.tenant.tenantId}/suspend`, 'POST'], [`/api/host/tenants/${f.tenant.tenantId}/resume`, 'POST'], [`/api/host/tenants/${f.tenant.tenantId}`, 'DELETE']]) {
