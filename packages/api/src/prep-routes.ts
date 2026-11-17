@@ -1,4 +1,4 @@
-import { StoredTableFiles, storedMaterialization, storedStatus, storedCapacity, checkStoredQuota, type StoredMaterialization } from './stored-tables.js';
+import { StoredTableFiles, storedMaterialization, storedFailure, storedStatus, storedCapacity, checkStoredQuota, type StoredMaterialization } from './stored-tables.js';
 import { metricQuery, metricDefinition, type MetricLookup } from './metric-consumption.js';
 import { disabledAnalytics } from './analytics.js';
 import { MetadataError } from './metadata-db.js';
@@ -48,10 +48,22 @@ export class PrepRoutes {
   analytics = disabledAnalytics;
   /** Same entitlement snapshot supplied to the local composition; absent means unlimited. */
   storageLimit: (identity: Identity) => number = () => Number.MAX_SAFE_INTEGER;
+  private async refreshStored(identity: Identity, id: string): Promise<void> {
+    try { await this.publishStored(identity, id); }
+    catch (error) {
+      // Preserve the named pipeline error, and the last good generation.
+      await this.store.change(draft => {
+        const entry = draft.datasets.find(e => this.owned(identity, e) && e.resource.dataSetId === id);
+        if (entry?.materialization && !(error instanceof BlazeError && error.code === 'STORED_REFRESH_IN_PROGRESS')) entry.materialization = storedFailure(entry.materialization, error);
+      });
+      throw error;
+    }
+    await this.invalidate(identity, id, false);
+  }
   private async publishStored(identity: Identity, id: string): Promise<void> {
     await this.files.exclusive(identity.namespaceId, async () => {
       const entry = this.find(identity, id), capacity = storedCapacity(this.blaze.limits);
-      const used = this.store.read().datasets.filter(e => e.namespaceId === identity.namespaceId && e !== entry)
+      const used = this.store.read().datasets.filter(e => e.namespaceId === identity.namespaceId)
         .reduce((n, e) => n + (this.key(e, e.resource.dataSetId) === this.key(identity, id) ? 0 : e.materialization?.bytes ?? 0), 0);
       checkStoredQuota(this.storageLimit(identity), used, capacity);
       const table = new BlazeTable(this.blaze.limits);
@@ -97,14 +109,22 @@ export class PrepRoutes {
   private find(identity: Identity, id: string): Stored {
     return this.store.read().datasets.find(e => this.owned(identity, e) && e.resource.dataSetId === id) ?? prepFail('PREP_NOT_FOUND', '$.dataset', 'Prepared dataset not found');
   }
-  private invalidate(identity: Identity, changed: string): void {
+  async invalidate(identity: Identity, changed: string, includeSelf = true): Promise<void> {
     const datasets = this.datasets(identity), affected = new Set([changed]);
     let added = true;
-    while (added) { added = false; for (const d of datasets) if (!affected.has(d.id) && this.references(d.pipeline).some(ref => typeof ref !== 'string' && affected.has(ref.dataset))) { affected.add(d.id); added = true; } }
+    while (added) { added = false; for (const d of datasets) if (!affected.has(d.id) && this.references(d.pipeline).some(ref => affected.has(typeof ref === 'string' ? ref : ref.dataset))) { affected.add(d.id); added = true; } }
+    if (!includeSelf) affected.delete(changed);
     for (const id of affected) this.blaze.invalidate(this.key(identity, id));
+    await this.store.change(draft => {
+      for (const entry of draft.datasets) if (this.owned(identity, entry) && affected.has(entry.resource.dataSetId) && entry.materialization) entry.materialization.state = 'stale';
+    });
+  }
+  async invalidateInputTable(namespaceId: string, tableId: string): Promise<void> {
+    const owners = new Set(this.store.read().datasets.filter(e => e.namespaceId === namespaceId).map(e => e.userId));
+    for (const userId of owners) await this.invalidate({ namespaceId, userId }, `input-table-${tableId}`);
   }
   private references(pipeline: PrepPipeline): PrepInput[] {
-    return [pipeline.input, ...pipeline.steps.flatMap(s => s.kind === 'join' && !(typeof s.config.source !== 'string' && 'step' in s.config.source) ? [s.config.source as PrepInput] : [])];
+    return [pipeline.input, ...pipeline.steps.flatMap(s => s.kind === 'append' ? [s.config.source] : s.kind === 'join' && !(typeof s.config.source !== 'string' && 'step' in s.config.source) ? [s.config.source as PrepInput] : [])];
   }
   private graph(identity: Identity, id: string, pipeline: PrepPipeline, state = this.store.read()): void {
     const datasets = this.datasets(identity, state), active = new Set<string>(), done = new Set<string>();
@@ -181,13 +201,13 @@ export class PrepRoutes {
         });
         const previous = this.blaze.status(key).mode;
         this.syncModes();
-        if (previous !== settings.mode) this.invalidate(identity, id);
+        if (previous !== settings.mode) await this.invalidate(identity, id);
       }
       send(response, 200, this.status(identity, id)); return;
     }
     if (action === 'refresh' || action === 'publish') {
       method(request, response, ['POST']); prepObject(await readBody(request), [], '$');
-      if (existing.execution?.mode === 'STORED') await this.publishStored(identity, id);
+      if (existing.execution?.mode === 'STORED') await this.refreshStored(identity, id);
       else if (action === 'publish') throw new BlazeError('STORED_MODE_REQUIRED', 'Select stored mode before publishing');
       else await this.blaze.refresh(key, table => this.materialize(identity, id, table));
       send(response, 200, this.status(identity, id)); return;
@@ -404,14 +424,14 @@ export class PrepRoutes {
         });
         this.analytics.track({ tenantId: identity.namespaceId, namespaceId: identity.namespaceId }, { name: 'dataset_prep_saved' });
         this.syncModes();
-        this.invalidate(identity, id);
+        await this.invalidate(identity, id);
         response.setHeader('ETag', `"${this.find(identity, id).version ?? 1}"`);
         send(response, created ? 201 : 200, { resource, persistence: this.persistent ? 'file' : 'ephemeral' }); return;
       }
       if (!existing) prepFail('PREP_NOT_FOUND', '$.dataset', 'Prepared dataset not found');
       if (request.method === 'GET') { response.setHeader('ETag', `"${existing.version ?? 1}"`); send(response, 200, { resource: existing.resource, persistence: this.persistent ? 'file' : 'ephemeral' }); return; }
       await this.checkMetricDelete?.(identity, id);
-      this.invalidate(identity, id); this.blaze.remove(this.key(identity, id));
+      await this.invalidate(identity, id); this.blaze.remove(this.key(identity, id));
       this.configured.delete(this.key(identity, id));
       await this.store.change(draft => { draft.datasets = draft.datasets.filter(e => !(this.owned(identity, e) && e.resource.dataSetId === id)); });
       send(response, 200, { deleted: true });

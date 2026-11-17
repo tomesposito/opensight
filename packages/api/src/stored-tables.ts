@@ -33,6 +33,10 @@ export function storedStatus(value?: StoredMaterialization): ExecutionStatus {
   return { mode: 'STORED', intervalMinutes: null, state: value?.state ?? 'empty', lastRefreshedAt: value?.lastRefreshedAt ?? null,
     rowCount: value?.rowCount ?? null, bytes: value?.bytes ?? 0, nextRefreshAt: null, error: value?.error ?? null, failedAt: value?.failedAt ?? null };
 }
+export function storedFailure(value: StoredMaterialization, cause: unknown): StoredMaterialization {
+  const code = cause instanceof Error && 'code' in cause && typeof cause.code === 'string' ? cause.code : 'PREP_EXECUTION_FAILED';
+  return { ...value, state: 'refresh-failed', failedAt: new Date().toISOString(), error: { code, message: cause instanceof Error ? cause.message : code } };
+}
 /** Reserve the bounded output capacity before executing an arbitrary pipeline.
  * Parquet's exact compressed size cannot be known before execution. The extra
  * MiB accommodates its schema/pages; oversized encodings are refused at write. */

@@ -199,6 +199,7 @@ export const emptyInputTablesState = (): InputTablesState => ({ version: 1, tabl
  * audit entries in the same update so data and audit can never diverge.
  */
 export class InputTableStore {
+  onChange?: (namespaceId: string, tableId: string) => Promise<void>;
   private constructor(readonly store: AutomationStore<InputTablesState>) {}
   static async load(path?: string): Promise<InputTableStore> {
     try {
@@ -234,7 +235,17 @@ export class InputTableStore {
     });
   }
   /** Single serialized mutation; audit entries are appended atomically with the data change. */
-  change<R>(update: (draft: InputTablesState) => R): Promise<R> { return this.store.change(update); }
+  async change<R>(update: (draft: InputTablesState) => R): Promise<R> {
+    const before = this.store.read().tables;
+    const result = await this.store.change(update);
+    if (this.onChange) {
+      const after = this.store.read().tables;
+      for (const table of [...before, ...after.filter(t => !before.some(old => old.id === t.id))]) {
+        if (before.find(t => t.id === table.id)?.version !== after.find(t => t.id === table.id)?.version) await this.onChange(table.namespaceId, table.id);
+      }
+    }
+    return result;
+  }
 }
 
 export function newId(): string { return randomUUID(); }

@@ -1,4 +1,4 @@
-import { storedMaterialization, storedStatus, storedCapacity } from './stored-tables.js';
+import { storedMaterialization, storedFailure, storedStatus, storedCapacity } from './stored-tables.js';
 import { lookupMetrics, metricQuery, metricDefinition } from './metric-consumption.js';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
 import { containedWork, wireTable, type WireTable, type TableResult, type QueryResult } from './contained-work.js';
@@ -60,6 +60,23 @@ export class HostedPrep {
     this.plan(graph, id); // Validate every stage, including branches outside the selected output.
     await this.data.finish(context, leaves, revisions); return graph;
   }
+  private async materializationStamp(context: TenantContext, id: string, version: number, graph: Graph): Promise<string> {
+    const dependencies = [];
+    for (const [childId, mode] of graph.modes) {
+      const child = await this.stored(context, childId);
+      dependencies.push([childId, mode.version, child.materialization?.generation ?? null]);
+    }
+    return JSON.stringify([id, version, dependencies, graph.leaves.map(a => [a.source.id, a.source.version])]);
+  }
+  private async storedState(context: TenantContext, id: string, stored: Awaited<ReturnType<HostedPrep['stored']>>, graph: Graph) {
+    const value = stored.materialization;
+    if (value?.state === 'current' && value.stamp !== await this.materializationStamp(context, id, stored.version, graph)) {
+      const stale = { ...value, state: 'stale' as const };
+      await this.data.sources.metadata.materialization(context, id, stored.version, { value: stale }, graph.revisions);
+      return stale;
+    }
+    return value;
+  }
   private sources(g: Graph) { return g.leaves.map((a, i) => ({ ...a.physical, connectorId: 'file', schema: undefined, table: `leaf_${i}`,
     // Reader tables enter the compiler only AFTER HostedData.table enforces RLS,
     // tenant predicates and CLS. Denied columns never enter the recipe schema.
@@ -116,7 +133,7 @@ export class HostedPrep {
   }
   async get(context: TenantContext, id: string) {
     const stored = await this.stored(context, id), graph = await this.graph(context, id, stored.resource.opensightPrep!);
-    await this.data.finish(context, graph.leaves, graph.revisions); return { ...stored, execution: stored.execution.mode === 'STORED' ? { ...storedStatus(stored.materialization), version: stored.version } : stored.execution };
+    await this.data.finish(context, graph.leaves, graph.revisions); return { ...stored, execution: stored.execution.mode === 'STORED' ? { ...storedStatus(await this.storedState(context, id, stored, graph)), version: stored.version } : stored.execution };
   }
   /** Headless v1 building block: schema columns, pipeline references and execution
    * settings without running any data. `inputs` are the direct PrepInputs
@@ -241,19 +258,22 @@ export class HostedPrep {
       return this.data.storedFiles.exclusive(key, async () => {
         const capacity = storedCapacity(this.data.limits(context));
         await this.data.sources.metadata.materialization(context, id, stored.version, { reserve: capacity }, graph.revisions);
-        let value: import('./stored-tables.js').StoredMaterialization | undefined;
+        let value: import('./stored-tables.js').StoredMaterialization | undefined, committed = false;
         try {
           return await this.data.work(context, true, graph.leaves, async () => {
             const output = new BlazeTable(this.data.limits(context)); await this.load(context, id, graph, output);
             await this.data.finish(context, graph.leaves, graph.revisions);
-            value = await this.data.storedFiles.write(key, output, stamp, capacity);
+            value = await this.data.storedFiles.write(key, output, await this.materializationStamp(context, id, stored.version, graph), capacity);
             await this.data.sources.metadata.materialization(context, id, stored.version, { value, reserve: 0 }, graph.revisions);
+            committed = true;
             await this.data.storedFiles.remove(key, stored.materialization);
             return { ...storedStatus(value), version: stored.version };
           }, graph.revisions);
         } catch (error) {
+          if (committed) throw error;
           if (value) await this.data.storedFiles.remove(key, value);
-          await this.data.sources.metadata.materialization(context, id, stored.version, { reserve: 0 });
+          try { await this.data.sources.metadata.materialization(context, id, stored.version, { reserve: 0, ...(stored.materialization ? { value: storedFailure(stored.materialization, error) } : {}) }); }
+          catch (recordError) { if (!(recordError instanceof MetadataError && ['STORED_DEFINITION_CHANGED', 'STORED_MODE_REQUIRED', 'RESOURCE_NOT_FOUND', 'AUTHORIZATION_REVISED', 'METADATA_WRITE_FORBIDDEN'].includes(recordError.code))) throw recordError; }
           throw error;
         }
       });
@@ -271,7 +291,7 @@ export class HostedPrep {
         return { mode: 'BLAZE', state: 'ready' };
       }
       if (stored.execution.mode === 'STORED') {
-        table = await this.data.storedFiles.read(key, stored.materialization, this.data.limits(context)); scope.rows(table.rowCount);
+        table = await this.data.storedFiles.read(key, await this.storedState(context, id, stored, graph), this.data.limits(context)); scope.rows(table.rowCount);
       } else if (stored.execution.mode === 'BLAZE') {
         table = await this.data.cache!.read(scope, key, stamp); scope.rows(table.rowCount);
       } else {

@@ -125,7 +125,9 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   const prepRoutes = await PrepRoutes.create(connectorRoutes, options.prepStorePath, options.prepPostgresBindings);
   prepRoutes.analytics = analytics;
   if (options.hostedUsage) prepRoutes.storageLimit = identity => options.hostedUsage!.entitlement({ tenantId: identity.namespaceId, namespaceId: identity.namespaceId }).storageBytes;
-  const inputTables = new InputTableRoutes(await InputTableStore.load(options.inputTableStorePath), {
+  const inputTableStore = await InputTableStore.load(options.inputTableStorePath);
+  inputTableStore.onChange = (namespaceId, id) => prepRoutes.invalidateInputTable(namespaceId, id);
+  const inputTables = new InputTableRoutes(inputTableStore, {
     security, localIdentity,
     workspaceUserIds: identity => security ? security.store.read().users.filter(u => u.namespaceId === identity.namespaceId).map(u => u.id) : undefined,
   });
