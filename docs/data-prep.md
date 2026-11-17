@@ -60,11 +60,73 @@ are compiler table bindings; the API resolves physical table names when executin
 The displayed dialect is the prep compiler's dialect (including DuckDB staging
 for supported hosted connectors), not necessarily the upstream connector's SQL.
 
-Join match diagnostics are **not available** in this slice. The existing preview
-limits returned output, not source scans or both join inputs. Item 3 was stopped
-under the run brief's explicit architecture constraint; see the
-[bounded-preview blocker](issue-279-gap-notes.md#item-3--blocked-by-the-preview-architecture).
-No matched/unmatched counts or fan-out warning are inferred from a joined sample.
+### Preview-based join diagnostics (#286)
+
+Configured joins show matched output rows, unmatched rows on each side, and a
+fan-out warning with maximum matched-key multiplicities. The editor updates
+these diagnostics for unapplied edits and clears stale counts immediately.
+Every result is explicitly **preview-based**, never a whole-source count.
+The static demo shows an unavailable/schema-only notice and no fabricated counts.
+
+The local and hosted APIs expose the same operation:
+`POST /api/datasets/:id/prep/join-diagnostics` with
+`{ pipeline, through: "join-step-id" }`. The pipeline may be omitted to use the
+saved definition. `through` must name a configured join. Unknown columns,
+missing keys, incompatible types and unauthorized sources keep the existing
+named compiler/admission errors. Caller-supplied limits, SQL, source bindings
+and security assertions are not accepted.
+
+Sampling uses the shared query-engine constant `PREP_JOIN_SAMPLE_LIMIT = 10000`:
+
+- Each physical input is read with SQL `LIMIT 10001`; the extra row detects
+  truncation. A materialized sample CTE is reused within the local query.
+  Hosted SQL sources are read with that same bound before staging in the
+  contained DuckDB worker. Diagnostics never call the full-table preview loader.
+- The probe is excluded before applying the pipeline prefix. Filters,
+  aggregates, windows, branches, append and nested direct recipes operate on
+  these bounded source samples. Each left/right join input is then capped at
+  10,000 rows, again with a probe. Sampling has unspecified source order; it is
+  not random or statistically representative and does not sort whole sources.
+- Both inputs, staging and the shared TypeScript count computation use **one
+  ten-second deadline**. DuckDB interrupt, the remaining PostgreSQL
+  `statement_timeout`, and hosted cancellation/worker containment enforce it.
+  A timeout returns a named execution error (`PREP_EXECUTION_FAILED` locally,
+  or `EXECUTION_CANCELLED` through hosted containment); partial counts never
+  escape. Successful results include `timedOut: false`.
+
+Count semantics are independent of the selected inner/left/right/full join:
+
+- A key is the composite of all configured key pairs. NULL in any component
+  never matches and the row counts as unmatched on its own side.
+- `matchedRows` is the matched join output cardinality from the samples:
+  the sum of **leftCount × rightCount** over matched keys. Outer-join null
+  extensions are counted separately as unmatched rows.
+- `unmatchedLeft` and `unmatchedRight` count sampled rows with no matching key
+  in the other sample, including NULL keys.
+- `fanOut` is true if any matched key appears more than once on either side.
+  `maxLeftMultiplicity` and `maxRightMultiplicity` are the maxima over matched
+  keys on each side (zero if none match). The two maxima can belong to different
+  keys; they are not another output-count estimate.
+- Every result includes `basis: "bounded-preview"`, `sampleLimit`,
+  `leftRowsSampled`, `rightRowsSampled`, `leftTruncated` and `rightTruncated`.
+  A side is truncated if its join input **or any physical leaf feeding it**
+  exceeded the bound. A selective filter can therefore produce zero sampled
+  rows while retaining `leftTruncated: true`.
+
+Supported paths are local staged uploads and trusted PostgreSQL tables, plus
+hosted admitted SQL sources (PostgreSQL, MySQL/MariaDB and manual Redshift).
+Existing prep policy denies protected sources, including tenant-predicate
+sources, before sampling. Authorization and revision checks are unchanged.
+Nested direct prepared recipes use the same bounded compiler.
+
+Inputs whose current readers require a full payload are explicitly unavailable:
+local governed input tables, local/hosted nested BLAZE or STORED prepared inputs,
+and hosted file/S3 uploads (legacy encrypted payloads or durable artifacts).
+These return `UNSUPPORTED_PREP_STEP` before reading payloads/caches. See
+[issue #286 bounded-reader evidence](issue-286-gap-notes.md). This supersedes the
+[original #279 diagnostics blocker](issue-279-gap-notes.md#item-3--blocked-by-the-preview-architecture)
+for supported inputs. Ordinary preview retains its existing 1–500 output limit
+and full-source transformation semantics; diagnostics are a separate operation.
 
 ## Dataset and bundle model
 
