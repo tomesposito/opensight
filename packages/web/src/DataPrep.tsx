@@ -126,7 +126,8 @@ export function DataPrep({ client, initialSource, initialDatasetId, onSources, o
     try {
       const cols = prepSchema(pipeline, sources, pipeline.steps.at(-1)?.id ?? null, schemaContext);
       const steps = prepKeepFirstRecipe(cols);
-      change({ ...pipeline, steps: [...pipeline.steps, ...steps] });
+      const next = validatePrepPipeline({ ...pipeline, steps: [...pipeline.steps, ...steps] });
+      change(next);
       setEditing(steps[0]); setSelected(steps[0].id); setStaging(false); setTab('configure');
     } catch (e) { setError(prepMessage(e)); }
   };

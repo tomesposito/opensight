@@ -9,7 +9,7 @@ export function PrepWindowEditor({ config, columns, change }: { config: PrepWind
   const numeric = (label: string, key: 'frameBefore' | 'frameAfter' | 'buckets' | 'offset', value: number, min: number) => <label>{label}<input aria-label={label} type="number" min={min} max={2147483647} step={1} value={Number.isNaN(value) ? '' : value} onChange={e => change({ ...config, [key]: e.target.value === '' ? NaN : Number(e.target.value) })} /></label>;
   return <>
     <label>Output name<input aria-label="Output name" value={config.name} onChange={e => change({ ...config, name: e.target.value })} /></label>
-    <label><input type="checkbox" aria-label="Advanced mode" checked={'expression' in config} onChange={e => {
+    <label className="prep-window-mode"><input type="checkbox" aria-label="Advanced mode" checked={'expression' in config} onChange={e => {
       if (e.target.checked && !('expression' in config)) { setStructured(config); change({ name: config.name, expression: advanced ?? prepWindowExpression(config) }); }
       else if ('expression' in config) { setAdvanced(config.expression); change({ ...structured, name: config.name }); }
     }} />Advanced mode</label>

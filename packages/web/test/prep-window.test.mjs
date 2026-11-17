@@ -128,3 +128,20 @@ test('one click inserts both recipe nodes, opens the window editor and can repai
   assert.doesNotMatch(JSON.stringify(ui.toJSON()), /PREP_WINDOW_ORDER_REQUIRED/);
   assert.match(JSON.stringify(ui.toJSON()), /__keep_row_number/);
 });
+
+test('recipe insertion rejects the two-step workflow overflow without changing the saved draft', async t => {
+  const steps = Array.from({ length: 49 }, (_, i) => ({ id: `s${i}`, kind: 'select', config: { columns: ['team', 'id', 'value'] } }));
+  const resource = { resourceType: 'dataset', dataSetId: 'many-steps', name: 'Many steps', physicalTableMap: {}, importMode: 'DIRECT_QUERY', opensightPrep: pipeline(steps) };
+  const client = {
+    async listPrepSources() { return [source]; },
+    async listPrepDatasets() { return { datasets: [resource], persistence: 'file' }; },
+    async previewPrep() { return { columns, rows: [], totalRows: 0, truncated: false }; },
+  };
+  const ui = await mount(t, DataPrep, { client, initialDatasetId: 'many-steps' });
+  const button = ui.root.findAllByType('button').find(b => b.props.children === 'Keep first/latest row per group');
+  assert.equal(button.props.disabled, false);
+  await act(async () => button.props.onClick());
+  assert.match(JSON.stringify(ui.toJSON()), /At most 50 steps/);
+  assert.equal(ui.root.findAllByProps({ className: 'prep-node-wrap' }).length, 51); // input/output + original 49
+  assert.equal(ui.root.findAllByType(PrepStepEditor).length, 0);
+});

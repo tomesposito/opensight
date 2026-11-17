@@ -1834,6 +1834,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-sidebar p { font-size: 12px; line-height: 1.6; color: #566a79; }
 .prep-step-editor > label, .prep-step-editor fieldset > label { margin-bottom: 10px; }
 .prep-step-editor textarea { width: 100%; resize: vertical; }
+.prep-step-editor > .prep-window-mode { flex-direction: row; align-items: center; gap: 6px; }
 .prep-step-editor fieldset { min-width: 0; border: 1px solid #c9d3dc; padding: 10px; margin: 12px 0; }
 .prep-step-editor legend { font-size: 12px; }
 .prep-columns { max-height: 220px; overflow: auto; }
