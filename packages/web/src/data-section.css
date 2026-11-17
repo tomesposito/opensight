@@ -309,3 +309,13 @@ details[open] .data-menu-items { animation: menu-open 150ms ease-out; }
 .metric-digest-members > label { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0; overflow-wrap: anywhere; }
 .metric-digest-members input[type="checkbox"] { flex: 0 0 auto; margin: 2px 0 0; }
 .metric-digest-members span { min-width: 0; }
+
+/* Issue #280: the table header stays in the normal Data layout. */
+.computed-table { margin-block: 8px; padding: 12px; border: 1px solid var(--border, #d6dce5); border-radius: 4px; }
+.computed-table h2 { margin: 0 0 4px; font-size: 13px; }
+.computed-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.computed-state { font-size: 12px; }
+.computed-state.current { color: var(--success, #237046); }
+.computed-state.stale { color: var(--warning, #805900); }
+.computed-state.refresh-failed { color: var(--danger, #b83737); }
+.computed-table .data-note { margin-block: 8px; }

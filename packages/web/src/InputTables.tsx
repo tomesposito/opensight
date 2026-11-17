@@ -19,7 +19,7 @@ const draftsOf = (table: InputTableFull): Record<string, Record<string, string>>
 
 /** Governed input tables (issue #161): OpenSight-owned tables a workspace edits in place.
  * Source systems are never mutated; editing needs an editor grant plus an author-class role. */
-export function InputTablesPanel({ client }: { client?: InputTableClient }) {
+export function InputTablesPanel({ client, initialTableId }: { client?: InputTableClient; initialTableId?: string }) {
   const available = !!(client?.listInputTables && client.getInputTable && client.createInputTable && client.addInputTableRow && client.updateInputTableRow && client.deleteInputTableRow);
   const [tables, setTables] = useState<InputTableSummary[]>(), [table, setTable] = useState<InputTableFull>();
   const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>({}), [newRow, setNewRow] = useState<Record<string, string>>({});
@@ -41,6 +41,12 @@ export function InputTablesPanel({ client }: { client?: InputTableClient }) {
     const full = await client!.getInputTable!(id);
     setTable(full); setDrafts(draftsOf(full)); setNewRow({}); setAudit(undefined);
   });
+  useEffect(() => {
+    if (!initialTableId || !available) return;
+    let active = true;
+    void client!.getInputTable!(initialTableId).then(full => { if (active) { setTable(full); setDrafts(draftsOf(full)); setNewRow({}); } }).catch(e => { if (active) setError(message(e)); });
+    return () => { active = false; };
+  }, [client, initialTableId, available]);
   const reloadTable = async (id: string) => { const full = await client!.getInputTable!(id); setTable(full); setDrafts(draftsOf(full)); };
   if (!available) return <section className="data-card"><h2>Input tables</h2><p>Needs a local or hosted API. Input tables are governed, editable tables owned by OpenSight; this static demo has no input-table store.</p></section>;
   return <section className="input-tables" aria-label="Input tables">

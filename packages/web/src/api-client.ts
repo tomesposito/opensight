@@ -34,11 +34,12 @@ export interface QueryResponse {
   execution?: ExecutionProvenance;
   provenance?: QueryResult['provenance'];
 }
-export interface ExecutionSettings { mode: 'DIRECT_QUERY' | 'BLAZE'; intervalMinutes: number | null }
+export interface ExecutionSettings { mode: 'DIRECT_QUERY' | 'BLAZE' | 'STORED'; intervalMinutes: number | null }
 export interface ExecutionStatus extends ExecutionSettings {
   version?: number;
   materializationReason?: string | null;
-  state: 'direct' | 'empty' | 'running' | 'ready' | 'error' | 'evicted' | 'invalidated' | 'unknown';
+  state: 'direct' | 'empty' | 'running' | 'ready' | 'error' | 'evicted' | 'invalidated' | 'unknown' | 'current' | 'stale' | 'refresh-failed';
+  failedAt?: string | null; downloadsEnabled?: boolean;
   lastRefreshedAt: string | null; rowCount: number | null; bytes: number | null; nextRefreshAt: string | null;
   error: { code: string; message: string; causeCode?: string } | null;
 }
@@ -312,6 +313,18 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     // Hosted refresh acknowledges completion, but supplies neither configuration
     // nor cache telemetry. Do not present its partial body as a local status.
     return 'intervalMinutes' in result ? result : getDatasetExecution(id);
+  };
+  const publishStoredTable = (id: string) => resource<ExecutionStatus>(`/api/datasets/${encodeURIComponent(id)}/publish`, 'POST', {});
+  const downloadStoredTable = async (id: string, format: 'csv' | 'xlsx'): Promise<Blob> => {
+    const expected = generation;
+    const response = await authenticatedFetch(`${base}/api/datasets/${encodeURIComponent(id)}/download`, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: controlBody({ format }),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({})) as { errorCode?: string; Message?: string };
+      throw new ApiError(body.Message ?? body.errorCode ?? 'Table download failed', response.status, body.errorCode);
+    }
+    const blob = await response.blob(); currentSession(expected); return blob;
   };
   const listPrepTemplates = async (signal?: AbortSignal): Promise<PrepTemplate[]> => {
     const items: PrepTemplate[] = []; let cursor: string | null = null;
@@ -591,7 +604,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     onDemand, connect, subscribeAvailability,
     checkout, requestPaidPlan, withdrawPaidRequest, exportWorkspace, closeWorkspace, enroll, acceptEnrollment, login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob, retryJobDelivery,
-    listPrepTemplates, proposePrepTemplate, publishPrepTemplate, createFromPrepTemplate, promoteCalculation, metricDatasets, listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, planO, reviseO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
+    listPrepTemplates, proposePrepTemplate, publishPrepTemplate, createFromPrepTemplate, promoteCalculation, metricDatasets, listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, publishStoredTable, downloadStoredTable, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, planO, reviseO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     listNotebooks, getNotebook, createNotebook, updateNotebook, deleteNotebook, runNotebook, notebookDatasets, notebookRuns, snapshotNotebookCell,
     listInputTables, getInputTable, createInputTable, updateInputTable, deleteInputTable, setInputTableEditors, addInputTableRow, updateInputTableRow, deleteInputTableRow, getInputTableAudit,
     queryDataset,

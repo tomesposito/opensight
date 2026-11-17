@@ -4,7 +4,7 @@ import type { createApiClient } from './api-client.js';
 import { prepMessage, type PrepSourceSummary } from './data-prep.js';
 import { prepResources, prepSources } from './prep-contracts.js';
 
-export type DataCatalogClient = Pick<ReturnType<typeof createApiClient>, 'listPrepDatasets' | 'listPrepSources'> & import('./GovernedMetrics.js').MetricClient & import('./InputTables.js').InputTableClient;
+export type DataCatalogClient = Pick<ReturnType<typeof createApiClient>, 'listPrepDatasets' | 'listPrepSources'> & import('./GovernedMetrics.js').MetricClient & import('./InputTables.js').InputTableClient & import('./ComputedTable.js').ComputedClient;
 export interface DataCatalog { datasets: BundleDataSet[]; sources: PrepSourceSummary[]; versions?: Record<string, number>; persistence?: 'file' | 'ephemeral' | 'durable' }
 export async function loadDataCatalog(client: DataCatalogClient): Promise<DataCatalog> {
   const saved = await client.listPrepDatasets();
@@ -36,6 +36,7 @@ export function objectValue(value: unknown): Record<string, unknown> | undefined
 export function datasetBadges(dataset: BundleDataSet, source?: PrepSourceSummary): string[] {
   const rls = objectValue(dataset.rowLevelPermissionDataSet);
   return [
+    ...(source?.execution?.mode === 'STORED' ? ['STORED · Computed table'] : []),
     ...(source?.execution?.mode === 'BLAZE' ? ['BLAZE · Cached'] : []),
     ...(rls && rls.status !== 'DISABLED' ? ['RLS enabled'] : []),
     ...(dataset.useAs === 'RLS_RULES' ? ['Rules dataset'] : []),
