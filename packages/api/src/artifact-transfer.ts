@@ -5,13 +5,14 @@ import { join } from 'node:path';
 import { Readable, Transform, type Stream } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { GetObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
-import { artifactColumns, artifactScalar, type PrepScalar } from '@opensight/query-engine';
+import { artifactColumns, artifactScalar, decodeArtifactSample, type PrepScalar } from '@opensight/query-engine';
 import { BlazeTable } from './blaze.js';
 import type { WorkScope } from './budgets.js';
 import { containedWork, type ParquetWriteResult, type TableResult } from './contained-work.js';
 import { InvocationScope } from './runtime-scope.js';
+import { prepFail } from '@opensight/bundle-parser/prep';
 import type { InvocationAws } from './runtime-aws.js';
-import { artifactDescriptor, artifactError, artifactFailure, artifactIdentity, artifactLimits, artifactProvenance, exactObject,
+import { artifactDescriptor, artifactReference, artifactError, artifactFailure, artifactIdentity, artifactLimits, artifactProvenance, exactObject,
   type ArtifactDescriptor, type ArtifactIdentity, type ArtifactLimits, type ArtifactReference } from './artifact-schema.js';
 
 export interface LocalArtifact { readonly descriptor: Readonly<ArtifactDescriptor>; close(): Promise<void> }
@@ -26,6 +27,7 @@ const versionId = (raw: unknown): string => {
 function freezeDescriptor(descriptor: ArtifactDescriptor): ArtifactDescriptor {
   for (const c of descriptor.columns) Object.freeze(c); Object.freeze(descriptor.columns);
   for (const c of descriptor.cachedInputs) Object.freeze(c); Object.freeze(descriptor.cachedInputs);
+  if (descriptor.sample) Object.freeze(descriptor.sample);
   return Object.freeze(descriptor);
 }
 
@@ -97,7 +99,7 @@ export class ArtifactTransfer {
       if (result.rowCount !== checked.rowCount || result.decodedBytes !== checked.bytes) artifactError();
       await chmod(file.path, 0o600);
       const descriptor = artifactDescriptor({ format: 'opensight-parquet-v1', columns, rowCount: result.rowCount, decodedBytes: result.decodedBytes,
-        ...await this.digest(scope, file.path, limits.encodedBytes), cachedInputs }, limits);
+        ...await this.digest(scope, file.path, limits.encodedBytes), cachedInputs, sample: result.sample }, limits);
       this.check(scope); return this.mint(file, descriptor);
     } catch (error) { if (file) await rm(file.directory, { recursive: true, force: true }); return artifactFailure(error); }
   }
@@ -202,5 +204,37 @@ export class ArtifactTransfer {
       });
       this.check(scope); return this.mint(file, descriptor);
     } catch (error) { if (file) await rm(file.directory, { recursive: true, force: true }); this.check(scope); return artifactFailure(error); }
+  }
+  /** Fetch only the persisted preview frame, never the complete object or Parquet decoder. */
+  async boundedSample(scope: WorkScope, rawIdentity: ArtifactIdentity, rawReference: ArtifactReference, rawLimits: ArtifactLimits): Promise<BlazeTable> {
+    const aws = this.transport(scope), expected = this.identity(scope, rawIdentity), limits = artifactLimits(scope, rawLimits);
+    const reference = artifactReference(rawReference, limits), actual = this.identity(scope, reference.identity), { descriptor } = reference;
+    if (actual.prefix !== expected.prefix || !reference.key.startsWith(expected.prefix)) artifactError();
+    const sample = descriptor.sample;
+    if (!sample) prepFail('UNSUPPORTED_PREP_STEP', '$.joinDiagnostics', 'Artifact has no bounded snapshot sample; explicitly refresh or upload it again');
+    try {
+      scope.memory(sample.bytes * 3);
+      const head = await aws.call(signal => aws.s3.send(new HeadObjectCommand({ Bucket: this.bucket, Key: reference.key, VersionId: reference.version, ChecksumMode: 'ENABLED' }), { abortSignal: AbortSignal.any([signal, scope.signal]) }));
+      this.headers(head, descriptor, reference.version);
+      const bytes = await aws.call(async signal => {
+        const response = await aws.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: reference.key, VersionId: reference.version,
+          Range: `bytes=${sample.offset}-${sample.offset + sample.bytes - 1}` }), { abortSignal: AbortSignal.any([signal, scope.signal]) });
+        if (!(response.Body instanceof Readable)) artifactError();
+        const body = response.Body, close = this.ownStream(body), abort = () => body.destroy();
+        scope.signal.addEventListener('abort', abort, { once: true });
+        try {
+          if (response.VersionId !== reference.version || response.ContentLength !== sample.bytes || response.ContentType !== contentType || response.DeleteMarker === true
+            || response.ContentRange !== `bytes ${sample.offset}-${sample.offset + sample.bytes - 1}/${descriptor.encodedBytes}`) artifactError();
+          const chunks: Buffer[] = []; let count = 0;
+          for await (const chunk of body) {
+            this.check(scope); count += (chunk as Buffer).length; if (count > sample.bytes) artifactError(); chunks.push(chunk as Buffer);
+          }
+          if (count !== sample.bytes) artifactError(); return Buffer.concat(chunks, count);
+        } finally { scope.signal.removeEventListener('abort', abort); await close(); }
+      });
+      const table = new BlazeTable(frameLimits(limits)); table.start(descriptor.columns); table.setCachedInputs(descriptor.cachedInputs);
+      for (const row of decodeArtifactSample(bytes, sample, descriptor.columns, descriptor.rowCount)) { this.check(scope); table.row(row); }
+      scope.memory(table.bytes); this.check(scope); return table;
+    } catch (error) { this.check(scope); return artifactFailure(error); }
   }
 }

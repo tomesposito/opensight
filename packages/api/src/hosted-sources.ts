@@ -1,3 +1,5 @@
+import { PREP_JOIN_SAMPLE_LIMIT } from '@opensight/query-engine';
+import { prepFail } from '@opensight/bundle-parser/prep';
 import { randomUUID } from 'node:crypto';
 import { hasCapability, isRole, parseUpload, readS3Upload, listS3Objects, type UploadColumn, type UploadRequest } from '@opensight/query-engine';
 import { TenantMetadata, type TenantContext } from './metadata.js';
@@ -8,7 +10,9 @@ import { hostedS3Settings, permittedS3Config, type HostedS3Settings } from './so
 import type { JsonObject } from './mapping.js';
 
 export interface HostedSource extends SourceBody { id: string; version: number }
-export type SourceArtifactReader = (context: TenantContext, source: MetadataResource, verify: () => Promise<void>) => Promise<unknown>;
+export type SourceArtifactReader = ((context: TenantContext, source: MetadataResource, verify: () => Promise<void>) => Promise<unknown>) & {
+  boundedSample?: (context: TenantContext, source: MetadataResource, verify: () => Promise<void>) => Promise<unknown>;
+};
 export type UploadParser = (request: UploadRequest) => ReturnType<typeof parseUpload> | Promise<ReturnType<typeof parseUpload>>;
 const json = (value: unknown): JsonObject => object(value);
 /** Tenant/owner-scoped records and encrypted payloads share H1's atomic durable store. */
@@ -50,6 +54,12 @@ export class HostedSources {
     return encryptMetadataSecret(JSON.stringify(payload), this.encryptionKey, context, this.key(context, 'secret', secretId));
   }
   async payload(context: TenantContext, source: HostedSource): Promise<unknown> {
+    return this.readPayload(context, source);
+  }
+  async boundedSample(context: TenantContext, source: HostedSource): Promise<unknown> {
+    return this.readPayload(context, source, true);
+  }
+  private async readPayload(context: TenantContext, source: HostedSource, bounded = false): Promise<unknown> {
     this.active(source);
     if (source.binding.version === 4) {
       if (!this.artifacts) sourceError('SOURCE_ARTIFACT_READER_REQUIRED', 503);
@@ -61,10 +71,27 @@ export class HostedSources {
         if (actual.version !== source.version || body.binding.objectId !== source.binding.objectId) sourceError('METADATA_REVISED', 403);
         this.active({ ...body, id: source.id, version: actual.version });
       };
-      await verify(); const result = await this.artifacts(context, current, verify); await verify(); return result;
+      const reader = bounded ? this.artifacts.boundedSample : this.artifacts;
+      if (!reader) prepFail('UNSUPPORTED_PREP_STEP', '$.joinDiagnostics', 'Source artifact adapter has no bounded reader');
+      await verify(); const result = await reader(context, current, verify); await verify(); return result;
     }
     if (!source.secretId) sourceError('SOURCE_SECRET_REQUIRED', 403);
-    const key = this.key(context, 'secret', source.secretId), r = await this.metadata.get(context, key);
+    const key = this.key(context, 'secret', source.secretId + (bounded ? '_sample' : ''));
+    let r: MetadataResource;
+    try { r = await this.metadata.get(context, key); }
+    catch (error) {
+      if (bounded && error instanceof Error && 'code' in error && error.code === 'RESOURCE_NOT_FOUND') prepFail('UNSUPPORTED_PREP_STEP', '$.joinDiagnostics', 'Upload has no bounded sample; upload it again');
+      throw error;
+    }
+    if (bounded) {
+      let sample: Record<string, unknown>;
+      try { sample = object(JSON.parse(decryptMetadataSecret(String(r.body.ciphertext), this.encryptionKey, context, key))); }
+      catch { return sourceError('SOURCE_SECRET_UNAVAILABLE', 503); }
+      if (sample.sourceId !== source.id || sample.secretId !== source.secretId || sample.rowCount !== source.binding.rowCount
+        || JSON.stringify(sample.columns) !== JSON.stringify(source.binding.columns) || !Array.isArray(sample.rows)
+        || sample.rows.length !== Math.min(source.binding.rowCount!, PREP_JOIN_SAMPLE_LIMIT + 1)) sourceError('SOURCE_SECRET_UNAVAILABLE', 503);
+      return { rows: sample.rows };
+    }
     try { return JSON.parse(decryptMetadataSecret(String(r.body.ciphertext), this.encryptionKey, context, key)) as unknown; }
     catch { return sourceError('SOURCE_SECRET_UNAVAILABLE', 503); }
   }
@@ -104,6 +131,7 @@ export class HostedSources {
     if (signal?.aborted) sourceError('EXECUTION_CANCELLED', 409);
     await this.metadata.batch(context, [
       { key: this.key(context, 'secret', secretId), body: this.seal(context, secretId, { rows: parsed.rows }), expectedVersion: 0 },
+      { key: this.key(context, 'secret', secretId + '_sample'), body: this.seal(context, secretId + '_sample', { sourceId: id, secretId, columns: parsed.columns, rowCount: parsed.rows.length, rows: parsed.rows.slice(0, PREP_JOIN_SAMPLE_LIMIT + 1) }), expectedVersion: 0 },
       { key: this.key(context, 'source', id), body: json(body), expectedVersion: 0 },
     ]);
     return this.summary({ ...body, id, version: 1 });
@@ -118,6 +146,7 @@ export class HostedSources {
     const body = sourceBody({ binding: { version: 3, connectorId: 'file', state: 'active', columns: parsed.columns, rowCount: parsed.rows.length, expiresAt: r.expiresAt }, secretId, policy: r.policy });
     await this.metadata.batch(context, [
       { key: this.key(context, 'secret', secretId), body: this.seal(context, secretId, { rows: parsed.rows }), expectedVersion: 0 },
+      { key: this.key(context, 'secret', secretId + '_sample'), body: this.seal(context, secretId + '_sample', { sourceId: id, secretId, columns: parsed.columns, rowCount: parsed.rows.length, rows: parsed.rows.slice(0, PREP_JOIN_SAMPLE_LIMIT + 1) }), expectedVersion: 0 },
       { key: this.key(context, 'source', id), body: json(body), expectedVersion: 0 },
     ]);
     return this.summary({ ...body, id, version: 1 });
@@ -149,6 +178,11 @@ export class HostedSources {
     const source = await this.stored(context, id), edits = [{ key: this.key(context, 'source', id), expectedVersion,
       body: json({ binding: { ...source.binding, state: 'retired' }, policy: source.policy }) }];
     const secret: MetadataResource | undefined = source.secretId ? await this.metadata.get(context, this.key(context, 'secret', source.secretId)) : undefined;
-    await this.metadata.batch(context, [...edits, ...(secret ? [{ key: this.key(context, 'secret', secret.id), expectedVersion: secret.version, body: null }] : [])]);
+    let sample: MetadataResource | undefined;
+    if (source.secretId && !isQueryConnectorId(source.binding.connectorId)) {
+      try { sample = await this.metadata.get(context, this.key(context, 'secret', source.secretId + '_sample')); }
+      catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'RESOURCE_NOT_FOUND')) throw error; }
+    }
+    await this.metadata.batch(context, [...edits, ...(sample ? [{ key: this.key(context, 'secret', sample.id), expectedVersion: sample.version, body: null }] : []), ...(secret ? [{ key: this.key(context, 'secret', secret.id), expectedVersion: secret.version, body: null }] : [])]);
   }
 }

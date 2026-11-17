@@ -14,7 +14,10 @@ import { TenantBudgets } from './budgets.js';
 export class SourceArtifacts {
   constructor(private readonly coordinator: DurableCoordinator, private readonly attempt: (context: TenantContext) => AttemptHandle,
     private readonly transfer: ArtifactTransfer, private readonly budgets: TenantBudgets, private readonly dialect: CoordinationDialect = 'postgres') {}
-  readonly read: SourceArtifactReader = async (context: TenantContext, source: MetadataResource, verify: () => Promise<void>) => {
+  readonly read: SourceArtifactReader = Object.assign(
+    (context: TenantContext, source: MetadataResource, verify: () => Promise<void>) => this.load(context, source, verify, false),
+    { boundedSample: (context: TenantContext, source: MetadataResource, verify: () => Promise<void>) => this.load(context, source, verify, true) });
+  private async load(context: TenantContext, source: MetadataResource, verify: () => Promise<void>, bounded: boolean) {
     const handle = this.attempt(context), details = this.coordinator.describe(handle), limits = manifestArtifactLimits(details), scope = this.budgets.current(context);
     if (details.context !== context || source.kind !== 'source' || !source.ownerId) throw new MetadataError('SOURCE_ACCESS_DENIED', 403);
     const original = sourceBody(source.body);
@@ -39,8 +42,8 @@ export class SourceArtifacts {
     };
     const reference = await current(); let local: LocalArtifact | undefined;
     try {
-      local = await this.transfer.download(scope, identity, reference, limits);
-      const table = await this.transfer.decode(scope, local, limits);
+      if (!bounded) local = await this.transfer.download(scope, identity, reference, limits);
+      const table = bounded ? await this.transfer.boundedSample(scope, identity, reference, limits) : await this.transfer.decode(scope, local!, limits);
       if (JSON.stringify(await current()) !== JSON.stringify(reference)) throw new MetadataError('METADATA_REVISED', 403);
       scope.memory(table.bytes); const rows = [];
       for (let r = 0; r < table.rowCount; r++) { scope.check(); rows.push(table.columns.map((_, c) => table.value(r, c))); }

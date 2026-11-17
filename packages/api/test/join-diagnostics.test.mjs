@@ -52,16 +52,21 @@ test('hosted diagnostics deny foreign, protected and invalid joins before source
   await assert.rejects(f.prep.joinDiagnostics(f.context, 'draft', { pipeline: bad, through: 'join' }), { code: 'INVALID_PREP_PIPELINE' });
   assert.equal(f.calls.length, 0);
 });
-test('hosted uploads and cached prepared inputs stop before full payload/cache reads', async t => {
-  const f = await fixture(t, { left: [1], right: [1] });
-  const file = await f.sources.upload(f.context, { ...upload(), base64: Buffer.from('id\n1\n2\n').toString('base64') });
+test('hosted file samples preserve fan-out and probes without opening the full payload', async t => {
+  const f = await fixture(t, { left: [1], right: [1,1,1,3] });
+  const file = await f.sources.upload(f.context, { ...upload(), base64: Buffer.from('id\n' + [1,1,...Array(10028).fill(2)].join('\n') + '\n').toString('base64') });
+  const right = await f.sources.upload(f.context, { ...upload(), base64: Buffer.from('id\n1\n1\n1\n3\n').toString('base64') });
   const payload = t.mock.method(f.sources, 'payload', async () => { throw Error('Must not read full payload'); });
-  await assert.rejects(f.prep.joinDiagnostics(f.context, 'draft', { pipeline: { ...pipeline, input: file.id }, through: 'join' }), { code: 'UNSUPPORTED_PREP_STEP' });
+  const p = structuredClone(pipeline); p.input = file.id; p.steps[0].config.source = right.id;
+  const result = await f.prep.joinDiagnostics(f.context, 'draft', { pipeline: p, through: 'join' });
+  assert.equal(result.matchedRows, 6); assert.equal(result.fanOut, true);
+  assert.equal(result.leftRowsSampled, 10000); assert.equal(result.leftTruncated, true); assert.equal(result.rightTruncated, false);
   assert.equal(payload.mock.callCount(), 0);
-  await f.prep.save(f.context, 'cached', { name: 'Cached', pipeline: { version: 1, input: 'left', steps: [] }, expectedVersion: 0 });
-  await f.prep.configure(f.context, 'cached', { mode: 'BLAZE', intervalMinutes: null, expectedVersion: 1 });
-  await assert.rejects(f.prep.joinDiagnostics(f.context, 'draft', { pipeline: { ...pipeline, input: { dataset: 'cached' } }, through: 'join' }), { code: 'UNSUPPORTED_PREP_STEP' });
-  assert.equal(payload.mock.callCount(), 0); assert.equal(f.calls.length, 0);
+  const source = await f.sources.get(f.context, file.id), key = f.sources.key(f.context, 'secret', source.secretId + '_sample');
+  const sample = await f.metadata.get(f.context, key);
+  await f.metadata.put(f.context, key, { ...sample.body, ciphertext: (sample.body.ciphertext[0] === 'A' ? 'B' : 'A') + sample.body.ciphertext.slice(1) }, sample.version);
+  await assert.rejects(f.prep.joinDiagnostics(f.context, 'draft', { pipeline: p, through: 'join' }), { code: 'SOURCE_SECRET_UNAVAILABLE' });
+  assert.equal(payload.mock.callCount(), 0);
 });
 test('hosted bounded reader refuses a source that exceeds its contract; no partial counts escape', async t => {
   const f = await sourceFixture(t), context = await f.login();
@@ -109,4 +114,20 @@ test('runtime ingress and serverless allowlists admit only the POST diagnostics 
     assert.throws(() => adaptGatewayRequest(event(`/api${path}`, 'GET'), runtimeEnv()), { code: 'HOSTED_REQUEST_INVALID' });
     assert.equal(serverlessDataPath(`${path}/unexpected`), false);
   }
+});
+
+import { fixture as s3Fixture, registration as s3Registration } from './source-s3-helpers.mjs';
+import { S3Client } from '@aws-sdk/client-s3';
+import { Readable as Stream } from 'node:stream';
+test('hosted S3 uploads use their persisted bounded sample, with fan-out and no later S3/full payload read', async t => {
+  const f = await s3Fixture(t), context = await f.login();
+  const sdk = t.mock.method(S3Client.prototype, 'send', async () => ({ Body: Stream.from([Buffer.from('id\n1\n1\n2\n')]) }));
+  await f.sources.create(context, 's3-left', s3Registration());
+  await f.sources.create(context, 's3-right', s3Registration());
+  const before = sdk.mock.callCount();
+  t.mock.method(f.sources, 'payload', async () => { throw Error('Full payload forbidden'); });
+  const p = structuredClone(pipeline); p.input = 's3-left'; p.steps[0].config.source = 's3-right';
+  const result = await new HostedPrep(new HostedData(f.sources, undefined, f.budgets)).joinDiagnostics(context, 'draft', { pipeline: p, through: 'join' });
+  assert.equal(result.matchedRows, 5); assert.equal(result.fanOut, true); assert.equal(result.leftRowsSampled, 3); assert.equal(result.leftTruncated, false);
+  assert.equal(sdk.mock.callCount(), before);
 });

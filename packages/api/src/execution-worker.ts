@@ -21,8 +21,8 @@ process.once('message', (request: WorkerRequest) => {
     } else if (task.kind === 'parquet-write') {
       output.start(task.columns); output.setCachedInputs(task.cachedInputs);
       for (const row of task.rows) output.row(row.map((value, i) => artifactScalar(value, task.columns[i]!)));
-      await writeArtifactParquet(task.path, output.columns, task.rows, memoryMb);
-      result = { rowCount: output.rowCount, decodedBytes: output.bytes };
+      const sample = await writeArtifactParquet(task.path, output.columns, task.rows, memoryMb);
+      result = { rowCount: output.rowCount, decodedBytes: output.bytes, sample };
     } else if (task.kind === 'parquet-read') {
       await readArtifactParquet(task.path, task.columns, task.rowCount, limits.cellChars, output, memoryMb);
       output.setCachedInputs(task.cachedInputs);

@@ -10,11 +10,12 @@ import { TenantBudgets } from '../dist/budgets.js';
 import { MetadataError } from '../dist/metadata-db.js';
 import { SourceArtifacts } from '../dist/source-artifacts.js';
 import { HostedSources } from '../dist/hosted-sources.js';
+import { HostedPrep } from '../dist/hosted-prep.js';
 import { HostedData } from '../dist/hosted-data.js';
 
 const recheck = async () => {};
-async function fixture(t) {
-  const f = await uploadFixture(t), bytes = Buffer.from('name,value\none,1\n');
+async function fixture(t, text = 'name,value\none,1\n') {
+  const f = await uploadFixture(t), bytes = Buffer.from(text);
   const reserved = await f.uploads.reserve(f.contexts[0], directRequest(), randomUUID(), recheck);
   const op = await f.uploads.complete(f.contexts[0], reserved.id, { versionId: 'raw-version' }, randomUUID(), recheck);
   const envelope = f.events.find(e => e[0] === 'dispatch' && e[2].kind === 'ingest')[1], objects = new Map(), calls = [];
@@ -32,6 +33,7 @@ async function fixture(t) {
       const stored = objects.get(p.Key);
       if (!stored) { const error = Error('absent'); error.name = 'NotFound'; error.$metadata = { httpStatusCode: 404 }; throw error; }
       if (p.VersionId !== undefined) assert.equal(p.VersionId, stored.VersionId);
+      if (p.Range) { const [, start, end] = /^bytes=(\d+)-(\d+)$/.exec(p.Range); const bytes = stored.bytes.subarray(Number(start), Number(end) + 1); return { ...stored, ContentLength: bytes.length, ContentRange: `bytes ${start}-${end}/${stored.bytes.length}`, Body: Readable.from([bytes]) }; }
       return { ...stored, ...(command.constructor.name === 'GetObjectCommand' ? { Body: Readable.from([stored.bytes]) } : {}) };
     } } });
   const run = () => new InvocationScope(Date.now() + 60000).run(async scope => {
@@ -41,13 +43,20 @@ async function fixture(t) {
       new ArtifactTransfer(aws, { bucket: 'synthetic-artifacts', prefix: 'artifacts/v1' }), budgets, async () => { closed++; }, 'sqlite');
     try { await worker.run(envelope, 55000); } finally { await budgets.shutdown(); }
   });
-  const query = sourceId => new InvocationScope(Date.now() + 60000).run(async scope => {
+  const query = (sourceId, diagnostic = false) => new InvocationScope(Date.now() + 60000).run(async scope => {
     const context = f.contexts[0], attempt = await f.coordinator.admit(context, { attemptId: randomUUID(), class: 'query', revisions: await f.metadata.revisions(context), platformRemainingMs: 55000 });
     const budgets = new TenantBudgets(f.budgets, c => f.metadata.assertContext(c)), transfer = new ArtifactTransfer(awsFor(scope), { bucket: 'synthetic-artifacts', prefix: 'artifacts/v1' });
     const reader = new SourceArtifacts(f.coordinator, () => attempt, transfer, budgets, 'sqlite');
     const sources = new HostedSources(f.metadata, Buffer.alloc(32, 1).toString('base64'), [], Date.now, reader.read), data = new HostedData(sources, undefined, budgets);
     data.begin(context, scope.signal, async () => f.coordinator.publish(attempt, async () => {}));
-    try { return await data.execute(context, sourceId, 'query', { query: { dimensions: [], measures: [{ fieldId: 'total', columnName: 'value', aggregation: 'SUM' }], filters: [] } }); }
+    try {
+      if (diagnostic) {
+        t.mock.method(sources, 'payload', () => { throw Error('Full payload forbidden'); });
+        t.mock.method(transfer, 'download', () => { throw Error('Full download forbidden'); });
+        t.mock.method(transfer, 'decode', () => { throw Error('Full decode forbidden'); });
+        return await new HostedPrep(data).joinDiagnostics(context, 'draft', { pipeline: { version: 1, input: sourceId, steps: [{ id: 'join', kind: 'join', config: { source: sourceId, joinType: 'inner', prefix: 'r_', keys: [{ left: 'value', right: 'value' }] } }] }, through: 'join' });
+      }
+      return await data.execute(context, sourceId, 'query', { query: { dimensions: [], measures: [{ fieldId: 'total', columnName: 'value', aggregation: 'SUM' }], filters: [] } }); }
     finally { await budgets.shutdown(); await f.coordinator.release(attempt); }
   });
   return { ...f, reserved, op, envelope, objects, calls, hooks, run, query, closed: () => closed };
@@ -103,4 +112,14 @@ test('SR2d invalid raw bytes terminate with a named error and preserve storage c
   await f.run(); const state = await f.uploads.status(f.contexts[0], f.op.id, recheck);
   assert.equal(state.state, 'failed'); assert.equal(state.errorCode, 'UPLOAD_OBJECT_INVALID'); assert.equal(f.objects.size, 0);
   assert.equal((await f.rows('sr_outbox')).filter(r => r.kind === 'object-cleanup').length, 2);
+});
+
+test('Issue #288 durable file diagnostics read only the authenticated sample and preserve fan-out', async t => {
+  const f = await fixture(t, 'name,value\none,1\ntwo,1\nthree,2\n'); await f.run();
+  const state = await f.uploads.status(f.contexts[0], f.op.id, recheck), before = f.calls.length;
+  const result = await f.query(state.sourceId, true);
+  assert.equal(result.matchedRows, 5); assert.equal(result.fanOut, true); assert.equal(result.leftRowsSampled, 3);
+  assert.equal(result.leftTruncated, false); assert.equal(result.rightTruncated, false);
+  const reads = f.calls.slice(before).filter(c => c.constructor.name === 'GetObjectCommand');
+  assert.equal(reads.length, 1); assert.match(reads[0].input.Range, /^bytes=\d+-\d+$/);
 });

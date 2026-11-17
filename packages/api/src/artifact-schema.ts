@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { artifactColumns } from '@opensight/query-engine';
+import { artifactColumns, artifactSample, type ArtifactSample } from '@opensight/query-engine';
 import type { PrepColumn } from '@opensight/bundle-parser/prep';
 import type { WorkScope } from './budgets.js';
 import type { CachedInput } from './blaze.js';
@@ -9,6 +9,7 @@ export interface ArtifactLimits { encodedBytes: number; decodedBytes: number; ro
 export interface ArtifactDescriptor {
   format: 'opensight-parquet-v1'; columns: PrepColumn[]; rowCount: number; decodedBytes: number;
   encodedBytes: number; sha256: string; cachedInputs: CachedInput[];
+  sample?: ArtifactSample;
 }
 export interface ArtifactIdentity { tenant: string; namespace: string; owner: string; kind: 'source' | 'prepared-dataset'; resource: string }
 export interface ArtifactReference { identity: ArtifactIdentity; key: string; version: string; descriptor: ArtifactDescriptor }
@@ -39,11 +40,12 @@ export function artifactProvenance(raw: unknown): CachedInput[] {
   });
 }
 export function artifactDescriptor(raw: unknown, limits: ArtifactLimits): ArtifactDescriptor {
-  const value = exactObject(structuredClone(raw), ['format', 'columns', 'rowCount', 'decodedBytes', 'encodedBytes', 'sha256', 'cachedInputs']);
+  const value = exactObject(structuredClone(raw), ['format', 'columns', 'rowCount', 'decodedBytes', 'encodedBytes', 'sha256', 'cachedInputs', ...(raw && typeof raw === 'object' && 'sample' in raw ? ['sample'] : [])]);
   const columns = artifactColumns(value.columns), rowCount = positive(value.rowCount, true), decodedBytes = positive(value.decodedBytes), encodedBytes = positive(value.encodedBytes);
   if (value.format !== 'opensight-parquet-v1' || columns.length > limits.columns || rowCount > limits.rows || decodedBytes > limits.decodedBytes
     || encodedBytes > limits.encodedBytes || typeof value.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(value.sha256)) artifactError();
-  return { format: 'opensight-parquet-v1', columns, rowCount, decodedBytes, encodedBytes, sha256: value.sha256, cachedInputs: artifactProvenance(value.cachedInputs) };
+  return { format: 'opensight-parquet-v1', columns, rowCount, decodedBytes, encodedBytes, sha256: value.sha256, cachedInputs: artifactProvenance(value.cachedInputs),
+    ...(value.sample === undefined ? {} : { sample: artifactSample(value.sample, encodedBytes) }) };
 }
 export function artifactIdentity(raw: unknown): ArtifactIdentity {
   const value = exactObject(structuredClone(raw), ['tenant', 'namespace', 'owner', 'kind', 'resource']);
