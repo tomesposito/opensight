@@ -21,6 +21,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- RDS, Aurora and Redshift auto-discovery is now implemented as a library discovery service over the RDS API (issue #274): DB instances and clusters in the configured region are classified by engine into the matching manual connector (PostgreSQL, MySQL, MariaDB, Redshift manual), returning endpoints and identifiers only — never credentials — and a discovered resource becomes a source config built from user-supplied environment variable names, validated by the manual connector's own rules. Fake SDK coverage verifies classification, pagination and the no-credentials rule; hosted provisioning and live AWS verification remain follow-on work.
+
 - S3 objects can now become hosted file sources and prepared datasets, with bounded prefix browsing, operator-allowlisted environment-name configuration, all five upload formats, and the existing file/XLSX size guards (#273). Fake SDK coverage verifies the flow; live AWS verification is Tom's follow-on.
 
 - Athena now has a library query connector with a dedicated SQL dialect, typed results, bounded polling/pagination, timeout and abort cancellation, and sanitized failures (issue #272). Fake SDK tests verify the execution flow; hosted provisioning and live-account verification remain follow-on work.
