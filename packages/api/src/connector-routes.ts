@@ -1,3 +1,4 @@
+import { PrepJoinBudget, diagnosePrepJoinDuckDb } from '@opensight/query-engine';
 import { disabledAnalytics, rowCountBucket } from './analytics.js';
 import { streamPrepDuckDb, previewPrepDuckDb, withPrepMemory, type PrepSink, type PrepReadLimits, type PrepMemoryTable } from '@opensight/query-engine';
 import { prepFail } from '@opensight/bundle-parser/prep';
@@ -87,10 +88,10 @@ export class ConnectorRoutes {
     const session = this.sessions.get(JSON.stringify([identity.namespaceId, identity.userId]));
     return session ? (await session).prepSources() : [];
   }
-  async joinDiagnostics(identity: Identity, raw: unknown, step: string, options: PrepPreviewOptions) {
+  async joinDiagnostics(identity: Identity, raw: unknown, step: string, options: PrepPreviewOptions, tables: readonly PrepMemoryTable[] = [], budget = new PrepJoinBudget()) {
     const owner = JSON.stringify([identity.namespaceId, identity.userId]), session = this.sessions.get(owner);
-    if (!session) prepFail('PREP_SOURCE_NOT_FOUND', '$.input', 'Connected source is unavailable');
-    return this.queued(owner, async () => (await session).joinDiagnostics(raw, step, options));
+    if (!session) return withPrepMemory(tables, c => diagnosePrepJoinDuckDb(c, raw, tables.map(t => t.source), step, options, budget), { executionMs: budget.remaining(), check: () => budget.check() });
+    return this.queued(owner, async () => { budget.check(); return (await session).joinDiagnostics(raw, step, options, tables, budget); });
   }
   async previewPrep(identity: Identity, raw: unknown, options: PrepPreviewOptions, tables: readonly PrepMemoryTable[] = []): Promise<PrepPreview> {
     const owner = JSON.stringify([identity.namespaceId, identity.userId]), session = this.sessions.get(owner);

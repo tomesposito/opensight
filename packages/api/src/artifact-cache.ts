@@ -55,6 +55,13 @@ export class ArtifactCache implements HostedCacheAdapter {
       this.consumed.push(read); return table;
     } finally { await local?.close(); }
   }
+  async boundedSample(scope: WorkScope, key: string, stamp: string): Promise<BlazeTable> {
+    this.scope(scope); const target = this.target(key, stamp), details = this.manifests.coordinator.describe(this.attempt);
+    const read = await this.manifests.read(this.attempt, target); scope.memory(read.metadataBytes);
+    const table = await this.transfer.boundedSample(scope, this.manifests.identity(details, target), read.reference, manifestArtifactLimits(details));
+    await this.manifests.verify(this.attempt, [read]); this.scope(scope);
+    this.consumed.push(read); return table;
+  }
   private provenance(table: BlazeTable): CachedInput[] {
     const inputs = [...artifactProvenance(table.cachedInputs), ...this.consumed.flatMap(read => [
       ...read.reference.descriptor.cachedInputs, { datasetId: read.reference.identity.resource, refreshedAt: read.refreshedAt },

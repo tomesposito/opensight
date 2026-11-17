@@ -12,34 +12,39 @@ export interface PrepSink {
   row(values: PrepScalar[]): void;
   oversized(): never;
 }
-export interface ExecutionControl { signal?: AbortSignal; memoryMb?: number; executionMs?: number }
+export interface ExecutionControl { signal?: AbortSignal; memoryMb?: number; executionMs?: number; check?: () => void }
 export class ExecutionCancelledError extends Error { readonly code = 'EXECUTION_CANCELLED'; constructor() { super('EXECUTION_CANCELLED'); } }
-function check(control?: ExecutionControl): void { if (control?.signal?.aborted) throw new ExecutionCancelledError(); }
+function check(control?: ExecutionControl): void { control?.check?.(); if (control?.signal?.aborted) throw new ExecutionCancelledError(); }
 export interface PrepReadLimits { maxRows: number; cellChars: number }
 export interface PrepMemoryTable { source: PrepSource; rowCount: number; value(row: number, column: number): PrepScalar }
 const types: Record<PrepType, string> = { INTEGER: 'BIGINT', DECIMAL: 'DOUBLE', STRING: 'VARCHAR', DATETIME: 'TIMESTAMP', BOOLEAN: 'BOOLEAN' };
 
 /** Cache relations are host-owned and scoped to one serialized operation. */
-export async function withPrepTables<T>(connection: DuckDBConnection, tables: readonly PrepMemoryTable[], run: () => Promise<T>): Promise<T> {
+export async function withPrepTables<T>(connection: DuckDBConnection, tables: readonly PrepMemoryTable[], run: () => Promise<T>, check: () => void = () => {}): Promise<T> {
   const created: string[] = [];
   try {
     for (const table of tables) {
+      check();
       const name = q(table.source.table);
       await connection.run(`CREATE TEMP TABLE ${name} (${table.source.columns.map(c => `${q(c.name)} ${types[c.type]}`).join(', ')})`);
       created.push(name);
       for (let offset = 0; offset < table.rowCount; offset += 32) {
+        check();
         const count = Math.min(32, table.rowCount - offset), values: PrepScalar[] = [];
         const rows = Array.from({ length: count }, (_, r) => `(${table.source.columns.map((_, c) => { values.push(table.value(offset + r, c)); return '?'; }).join(',')})`);
         await connection.run(`INSERT INTO ${name} VALUES ${rows.join(',')}`, values);
       }
     }
-    return await run();
+    check(); return await run();
   } finally { for (const name of created.reverse()) await connection.run(`DROP TABLE IF EXISTS ${name}`); }
 }
 export async function withPrepMemory<T>(tables: readonly PrepMemoryTable[], run: (connection: DuckDBConnection) => Promise<T>, control?: ExecutionControl): Promise<T> {
   check(control);
   const instance = await DuckDBInstance.create(':memory:', { enable_external_access: 'false', autoinstall_known_extensions: 'false', autoload_known_extensions: 'false', threads: '1', memory_limit: `${control?.memoryMb ?? 256}MB`, max_temp_directory_size: '0B' });
-  try { const connection = await instance.connect(); try { return await withPrepTables(connection, tables, () => run(connection)); } finally { connection.closeSync(); } } finally { instance.closeSync(); }
+  try { const connection = await instance.connect(), timer = control?.executionMs === undefined ? undefined : setTimeout(() => connection.interrupt(), control.executionMs);
+    try { return await withPrepTables(connection, tables, () => run(connection), () => check(control)); }
+    finally { clearTimeout(timer); connection.closeSync(); }
+  } finally { instance.closeSync(); }
 }
 /** A per-row guard bounds driver allocation even for unexpectedly large source text. */
 export function boundedPrepSql(plan: Pick<PrepPlan, 'columns' | 'sql' | 'parameters'>, limits: PrepReadLimits, dialect: 'duckdb' | 'postgres' | 'mysql' | 'redshift' = 'duckdb'): string {

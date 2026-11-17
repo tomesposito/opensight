@@ -407,10 +407,11 @@ export class UploadStaging {
   prepSources(): PrepSource[] {
     return [...this.uploads.values()].filter(upload => !this.expired(upload)).map(upload => ({ id: upload.id, connectorId: 'file', table: upload.id, columns: structuredClone(upload.columns), security: 'unrestricted' }));
   }
-  async joinDiagnostics(raw: unknown, step: string, options: PrepPreviewOptions = {}) {
-    const budget = new PrepJoinBudget();
+  async joinDiagnostics(raw: unknown, step: string, options: PrepPreviewOptions = {}, tables: readonly PrepMemoryTable[] = [], budget = new PrepJoinBudget()) {
     await this.expire(); budget.check();
-    return diagnosePrepJoinDuckDb(this.connection, raw, this.prepSources(), step, options, budget);
+    const timer = setTimeout(() => this.connection.interrupt(), budget.remaining());
+    try { return await withPrepTables(this.connection, tables, () => diagnosePrepJoinDuckDb(this.connection, raw, [...this.prepSources(), ...tables.map(t => t.source)], step, options, budget), () => budget.check()); }
+    finally { clearTimeout(timer); }
   }
   async previewPrep(raw: unknown, options: PrepPreviewOptions = {}, tables: readonly PrepMemoryTable[] = []): Promise<PrepPreview> {
     await this.expire();

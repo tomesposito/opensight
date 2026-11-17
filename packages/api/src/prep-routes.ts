@@ -1,4 +1,4 @@
-import { compilePrepJoinSample, diagnosePrepJoinPostgres } from '@opensight/query-engine';
+import { compilePrepJoinSample, diagnosePrepJoinPostgres, PrepJoinBudget, PREP_JOIN_SAMPLE_LIMIT } from '@opensight/query-engine';
 import { tableDownload, tableDownloadFormat, sendTableDownload } from './table-download.js';
 import type { HostedUsage } from './hosted-usage.js';
 import { StoredTableFiles, storedMaterialization, storedFailure, storedStatus, storedCapacity, checkStoredQuota, type StoredMaterialization } from './stored-tables.js';
@@ -145,7 +145,7 @@ export class PrepRoutes {
     };
     visit(id, 0);
   }
-  private async resolve(identity: Identity, pipeline: PrepPipeline, id: string) {
+  private async resolve(identity: Identity, pipeline: PrepPipeline, id: string, budget?: PrepJoinBudget) {
     this.graph(identity, id, pipeline);
     const datasets = this.datasets(identity), tables: PrepMemoryTable[] = [], cachedInputs = new Map<string, CachedInput>(), visited = new Set<string>();
     const visit = async (ref: PrepInput): Promise<void> => {
@@ -157,8 +157,8 @@ export class PrepRoutes {
       const stored = this.find(identity, d.id);
       if (stored.execution?.mode === 'STORED' || this.blaze.status(key).mode === 'BLAZE') {
         const { table, refreshedAt } = stored.execution?.mode === 'STORED'
-          ? { table: await this.files.read(key, stored.materialization, this.blaze.limits), refreshedAt: stored.materialization!.lastRefreshedAt }
-          : this.blaze.read(key);
+          ? { table: budget ? await this.files.boundedSample(key, async () => this.find(identity, d.id).materialization, this.blaze.limits, () => budget.check()) : await this.files.read(key, stored.materialization, this.blaze.limits), refreshedAt: stored.materialization!.lastRefreshedAt }
+          : budget ? this.blaze.boundedSample(key, () => budget.check()) : this.blaze.read(key);
         const source: PrepSource = { id: `blaze_${randomUUID().replaceAll('-', '')}`, table: `blaze_${randomUUID().replaceAll('-', '')}`, connectorId: 'file', columns: table.columns, security: 'unrestricted' };
         d.materialized = source; tables.push({ source, rowCount: table.rowCount, value: table.value });
         const add = (input: CachedInput) => {
@@ -175,7 +175,7 @@ export class PrepRoutes {
     // so a foreign reference stays unresolved and context() fails closed below.
     const referenced = new Set(this.references(pipeline).filter((r): r is string => typeof r === 'string'));
     for (const dataset of datasets.filter(d => visited.has(d.id) && !d.materialized)) for (const ref of this.references(dataset.pipeline)) if (typeof ref === 'string') referenced.add(ref);
-    for (const table of this.inputTableTables?.(identity) ?? []) if (referenced.has(table.source.id) && !tables.some(t => t.source.id === table.source.id)) tables.push(table);
+    for (const table of (budget ? [] : this.inputTableTables?.(identity)) ?? []) if (referenced.has(table.source.id) && !tables.some(t => t.source.id === table.source.id)) tables.push(table);
     return { ...await this.context(identity, pipeline.input, datasets), datasets, tables, cachedInputs: [...cachedInputs.values()] };
   }
   private async materialize(identity: Identity, id: string, table: BlazeTable): Promise<void> {
@@ -419,24 +419,16 @@ export class PrepRoutes {
         const id = diagnostics[1]!, body = prepObject(await readBody(request), ['pipeline', 'through'], '$');
         const pipeline = validatePrepPipeline(Object.hasOwn(body, 'pipeline') ? body.pipeline : this.find(identity, id).resource.opensightPrep);
         const step = prepName(body.through, '$.through');
-        this.graph(identity, id, pipeline);
-        const datasets = this.datasets(identity), context = await this.context(identity, pipeline.input, datasets);
-        const options = { datasets, datasetId: id };
+        const budget = new PrepJoinBudget();
+        const context = await this.resolve(identity, pipeline, id, budget), options = { datasets: context.datasets, datasetId: id };
         const plan = compilePrepJoinSample(pipeline, context.sources, step, { ...options, dialect: context.dialect });
-        // Cached recipes and governed in-memory tables have no bounded staging reader.
-        // Reject before resolve() can materialize or read an entire cache artifact.
-        const visited = new Set<string>();
-        const check = (p: PrepPipeline): void => {
-          for (const ref of this.references(p)) if (typeof ref !== 'string' && !visited.has(ref.dataset)) {
-            visited.add(ref.dataset); const entry = this.find(identity, ref.dataset);
-            if (entry.execution?.mode === 'STORED' || this.blaze.status(this.key(identity, ref.dataset)).mode === 'BLAZE') prepFail('UNSUPPORTED_PREP_STEP', '$.joinDiagnostics', 'Bounded diagnostics are unavailable for cached prepared inputs');
-            check(entry.resource.opensightPrep!);
-          }
-        };
-        check(pipeline);
         if (plan.sampleSources.some(s => s.id.startsWith('input-table-'))) prepFail('UNSUPPORTED_PREP_STEP', '$.joinDiagnostics', 'Bounded diagnostics are unavailable for governed input tables');
-        const result = context.binding ? await diagnosePrepJoinPostgres(pipeline, context.sources, context.binding.config, step, options)
-          : await this.connectors.joinDiagnostics(identity, pipeline, step, options);
+        const tables = context.tables.filter(t => plan.sampleSources.some(s => s.id === t.source.id));
+        if (tables.some(t => t.rowCount > PREP_JOIN_SAMPLE_LIMIT + 1)) prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Reader exceeded the bounded sample contract');
+        budget.check();
+        const result = context.binding ? await diagnosePrepJoinPostgres(pipeline, context.sources, context.binding.config, step, options, budget)
+          : await this.connectors.joinDiagnostics(identity, pipeline, step, options, tables, budget);
+        budget.check();
         send(response, 200, result); return;
       }
       const match = /^\/api\/datasets\/([A-Za-z0-9_-]{1,128})\/prep(?:\/(preview))?$/.exec(path);

@@ -47,7 +47,11 @@ export function objectStorage() {
         return { VersionId: version, ChecksumSHA256: p.ChecksumSHA256 };
       }
       const value = objects.get(p.Key); assert.ok(value); assert.equal(p.VersionId, value.VersionId);
-      if (command.constructor.name === 'GetObjectCommand') { await storage.beforeGet?.(); return { ...value, Body: Readable.from([value.bytes]) }; }
+      if (command.constructor.name === 'GetObjectCommand') {
+        await storage.beforeGet?.();
+        if (p.Range) { const [, start, end] = /^bytes=(\d+)-(\d+)$/.exec(p.Range); const bytes = value.bytes.subarray(Number(start), Number(end) + 1); return { ...value, ContentLength: bytes.length, ContentRange: `bytes ${start}-${end}/${value.bytes.length}`, Body: Readable.from([bytes]) }; }
+        return { ...value, Body: Readable.from([value.bytes]) };
+      }
       return { ...value };
     } },
   }, { bucket: 'synthetic-artifacts', prefix: 'artifacts/v1' });

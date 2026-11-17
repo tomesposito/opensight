@@ -131,3 +131,43 @@ test('hosted S3 uploads use their persisted bounded sample, with fan-out and no 
   assert.equal(result.matchedRows, 5); assert.equal(result.fanOut, true); assert.equal(result.leftRowsSampled, 3); assert.equal(result.leftTruncated, false);
   assert.equal(sdk.mock.callCount(), before);
 });
+
+import { mkdtemp, rm, open } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
+import { StoredTableFiles } from '../dist/stored-tables.js';
+import { BlazeTable, blazeLimits } from '../dist/blaze.js';
+for (const mode of ['BLAZE', 'STORED']) test(`Issue #288 hosted nested ${mode} keeps snapshot semantics, probes and fan-out`, async t => {
+  const f = await sourceFixture(t), context = await f.login(), dir = await mkdtemp(join(tmpdir(), 'bounded-hosted-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await f.sources.create(context, 'left', { ...registration(), columns });
+  let current = [1,1,...Array(10028).fill(2)], reads = 0;
+  const data = new HostedData(f.sources, async (_r, _c, _l, sink) => { reads++; sink.start(columns); for (const id of current) sink.row([id]); }, f.budgets);
+  data.storedFiles = new StoredTableFiles(dir); const prep = new HostedPrep(data);
+  await prep.save(context, 'snapshot', { name: 'Snapshot', pipeline: { version: 1, input: 'left', steps: [] }, expectedVersion: 0 });
+  await prep.configure(context, 'snapshot', { mode, intervalMinutes: null, expectedVersion: 1 });
+  await prep.save(context, 'wrapper', { name: 'Wrapper', pipeline: { version: 1, input: { dataset: 'snapshot' }, steps: [] }, expectedVersion: 0 });
+  await prep.execute(context, 'snapshot', mode === 'STORED' ? 'publish' : 'refresh');
+  current = [9]; const before = reads;
+  t.mock.method(data, 'raw', () => { throw Error('Recipe recomputation forbidden'); });
+  t.mock.method(data, 'table', () => { throw Error('Recipe recomputation forbidden'); });
+  t.mock.method(data.cache, 'read', () => { throw Error('Full cache read forbidden'); });
+  t.mock.method(data.storedFiles, 'read', () => { throw Error('Full stored read forbidden'); });
+  const p = structuredClone(pipeline); p.input = { dataset: 'wrapper' }; p.steps[0].config.source = { dataset: 'wrapper' };
+  const result = await prep.joinDiagnostics(context, 'draft', { pipeline: p, through: 'join' });
+  assert.equal(result.matchedRows, 4 + 9998 ** 2); assert.equal(result.fanOut, true);
+  assert.equal(result.leftRowsSampled, 10000); assert.equal(result.leftTruncated, true); assert.equal(result.rightTruncated, true); assert.equal(reads, before);
+});
+test('Issue #288 stored sample corruption, generation replacement and legacy artifacts fail closed', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'bounded-stored-')); t.after(() => rm(dir, { recursive: true, force: true }));
+  const files = new StoredTableFiles(dir), limits = blazeLimits(), table = new BlazeTable(limits); table.start(columns); table.row([1]); table.row([1]);
+  const value = await files.write('snapshot', table, 'stamp', limits.datasetBytes), legacy = { ...value }; delete legacy.sample;
+  t.mock.method(files, 'read', () => { throw Error('Full read forbidden'); });
+  await assert.rejects(files.boundedSample('snapshot', async () => legacy, limits, () => {}), { code: 'UNSUPPORTED_PREP_STEP' });
+  let calls = 0;
+  await assert.rejects(files.boundedSample('snapshot', async () => ++calls === 1 ? value : { ...value, stamp: 'changed' }, limits, () => {}), { code: 'STORED_DEFINITION_CHANGED' });
+  const path = join(dir, createHash('sha256').update('snapshot').digest('hex'), `${value.generation}.parquet`), file = await open(path, 'r+');
+  try { await file.write(Buffer.from('!'), 0, 1, value.sample.offset); } finally { await file.close(); }
+  await assert.rejects(files.boundedSample('snapshot', async () => value, limits, () => {}), { code: 'STORED_ARTIFACT_INVALID' });
+});
