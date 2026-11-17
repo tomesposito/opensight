@@ -2,6 +2,7 @@ import { rowFilterSql } from './row-filter.js';
 import { validatePrepPipeline, prepFail, prepName, prepTypes, type PrepColumn, type PrepPipeline, type PrepType, type PrepJoinInput } from '@opensight/bundle-parser/prep';
 import { connectorDefinition, connectorDialect } from './connectors.js';
 import { parseExpression, expressionSql } from './expressions.js';
+import { compilePrepWindow } from './prep-window.js';
 import type { ScalarType } from './types.js';
 import { quoteIdentifier as q } from './validation.js';
 
@@ -144,6 +145,11 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
           sql = `SELECT *, ${expressionSql(expression, dialect, bind)} AS ${q(step.config.name)} FROM ${from}`;
           const type: PrepType = expression.scalarType === 'number' ? 'DECIMAL' : expression.scalarType === 'datetime' ? 'DATETIME' : expression.scalarType === 'boolean' ? 'BOOLEAN' : 'STRING';
           columns = [...columns, { name: step.config.name, type }]; break;
+        }
+        case 'window': {
+          const result = compilePrepWindow(step.config, columns, dialect, path);
+          sql = `SELECT *, ${result.sql} AS ${q(step.config.name)} FROM ${from}`;
+          columns = [...columns, { name: step.config.name, type: result.type }]; break;
         }
         case 'aggregate': {
           const c = step.config, groups = c.groupBy.map(name => column(name));
