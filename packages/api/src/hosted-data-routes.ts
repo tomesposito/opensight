@@ -20,7 +20,7 @@ export class HostedDataRoutes {
   async route(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, recheck: () => Promise<void>): Promise<boolean> {
     this.data.begin(context, undefined, recheck);
     const revisions = await this.data.sources.metadata.revisions(context);
-    const read = request.method === 'GET' || /\/(query|preview|rows|output|refresh|schema|browse|download)$/.test(path);
+    const read = request.method === 'GET' || /\/(query|preview|join-diagnostics|rows|output|refresh|schema|browse|download)$/.test(path);
     const input = async () => {
       const body = await readBody(request);
       // A durable write invalidates revision-bound sessions, including this one.

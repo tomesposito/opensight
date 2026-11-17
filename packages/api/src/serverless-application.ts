@@ -63,7 +63,7 @@ export function serverlessDataPath(raw: string): boolean {
     || /^\/api\/sources\/[A-Za-z0-9_-]+(?:\/(?:bind|rotate|preview|rows|output|query|refresh|policy))?$/.test(path)
     || /^\/api\/(?:ai\/sources(?:\/[A-Za-z0-9_-]+\/schema)?|prep-datasets\/import)$/.test(path)
     || /^\/api\/(?:uploads\/reservations(?:\/[A-Za-z0-9_-]+(?:\/complete)?)?|operations\/[A-Za-z0-9_-]+(?:\/result\/(?:0|[1-9]\d{0,5}))?)$/.test(path)
-    || /^\/api\/datasets\/[A-Za-z0-9_-]+\/(?:prep(?:\/preview)?|execution|refresh|rows|query|share|permissions|embed)$/.test(path)
+    || /^\/api\/datasets\/[A-Za-z0-9_-]+\/(?:prep(?:\/(?:preview|join-diagnostics))?|execution|refresh|rows|query|share|permissions|embed)$/.test(path)
     || /^\/api\/embedding\/(?:config|sessions(?:\/[A-Za-z0-9_-]+(?:\/renew)?)?|GenerateEmbedUrlForRegisteredUser|GenerateEmbedUrlForAnonymousUser)$/.test(path)
     || /^\/api\/embed\/sessions\/[A-Za-z0-9_-]+\/(?:redeem|status|content|question|analysis|save)$/.test(path)
     || /^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(path);

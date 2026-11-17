@@ -79,3 +79,34 @@ test('hosted diagnostics recheck revisions after sampling and withhold counts af
   });
   await assert.rejects(f.prep.joinDiagnostics(f.context, 'draft', { pipeline, through: 'join' }), { code: 'METADATA_REVISED' });
 });
+
+import { Readable } from 'node:stream';
+import { HostedDataRoutes } from '../dist/hosted-data-routes.js';
+import { adaptGatewayRequest } from '../dist/runtime-ingress.js';
+import { serverlessDataPath } from '../dist/serverless-application.js';
+import { runtimeEnv, event } from './runtime-helpers.mjs';
+test('hosted join diagnostics route rechecks before publication and uses the read result adapter', async t => {
+  for (const revoke of [false, true]) {
+    const f = await fixture(t, { left: [1], right: [1] });
+    let finished = false, published = false, adapted = 0;
+    const routes = new HostedDataRoutes(f.data, undefined, async (_request, _context, status, body) => { adapted++; return { status, body }; });
+    const original = routes.prep.joinDiagnostics.bind(routes.prep);
+    t.mock.method(routes.prep, 'joinDiagnostics', async (...args) => { const result = await original(...args); finished = true; return result; });
+    const request = Object.assign(Readable.from([Buffer.from(JSON.stringify({ pipeline, through: 'join' }))]), { method: 'POST', headers: { 'content-type': 'application/json' } });
+    const response = { writeHead() { published = true; }, end() {} };
+    const run = routes.route(request, response, '/api/datasets/draft/prep/join-diagnostics', f.context, async () => {
+      if (revoke && finished) await f.sources.rotate(f.context, 'left', { expectedVersion: 1, credentials: registration().credentials });
+    });
+    if (revoke) { await assert.rejects(run, { code: 'METADATA_REVISED' }); assert.equal(published, false); assert.equal(adapted, 0); }
+    else { assert.equal(await run, true); assert.equal(published, true); assert.equal(adapted, 1); }
+  }
+});
+test('runtime ingress and serverless allowlists admit only the POST diagnostics operation', () => {
+  for (const scope of ['', 'namespaces/one/']) {
+    const path = `/api/${scope}datasets/draft/prep/join-diagnostics`;
+    assert.equal(serverlessDataPath(path), true);
+    assert.equal(adaptGatewayRequest(event(`/api${path}`, 'POST'), runtimeEnv()).path, path);
+    assert.throws(() => adaptGatewayRequest(event(`/api${path}`, 'GET'), runtimeEnv()), { code: 'HOSTED_REQUEST_INVALID' });
+    assert.equal(serverlessDataPath(`${path}/unexpected`), false);
+  }
+});
