@@ -1,3 +1,4 @@
+import { StoredTableFiles } from './stored-tables.js';
 import { hostedS3Settings } from './source-s3-config.js';
 import { HostedAIReceipts, initializeAiAnswerReceipts } from './hosted-ai-receipts.js';
 import { DigestStore } from './digest-store.js';
@@ -185,6 +186,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const invocation = options.invocation?.compose?.(metadata, budgets, options.builtinAuth, usage?.aiMeter(), analytics);
   const jobs = invocation?.jobs ?? new JobStore(options.membershipDatabase, metadata);
   const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env), Date.now, undefined, hostedS3Settings(options.env)), undefined, budgets, undefined, undefined, analytics), jobs);
+  if (!invocation) data.data.storedFiles = new StoredTableFiles((options.env ?? process.env).OPENSIGHT_STORED_TABLES_PATH);
   const ai = invocation?.ai ?? new HostedAI(data, config.encryptionKey.toString('base64'), options.env ?? process.env, usage?.aiMeter(), options.ai, new HostedAIReceipts(options.membershipDatabase));
   const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env), Date.now, undefined, hostedS3Settings(options.env)), undefined, budgets, undefined, undefined, analytics));
   const mail = invocation?.mail ?? options.mailTransport ?? smtpFromEnvironment(options.env);
@@ -650,7 +652,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       const quotaMessage = error instanceof AIError ? error.message : publicQuotaMessage(error);
       const field = error instanceof MetadataError && error.code === 'METADATA_INVALID' && error.detail && typeof error.detail === 'object' && 'field' in error.detail
         && typeof error.detail.field === 'string' && ['name', 'displayName', 'slug', 'administrator.name', 'administrator.email'].includes(error.detail.field) ? error.detail.field : undefined;
-      send(response, status, { errorCode, ...(field ? { field } : {}), ...(quotaMessage === undefined ? {} : { Message: quotaMessage }) });
+      send(response, status, { errorCode, ...(field ? { field } : {}), ...(quotaMessage === undefined ? {} : { Message: quotaMessage, ...(error instanceof MetadataError ? { detail: error.detail } : {}) }) });
     }).finally(async () => {
       try { await egressSettle?.(); } finally { active.delete(work); }
     });

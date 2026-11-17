@@ -1,3 +1,4 @@
+import { StoredTableFiles } from './stored-tables.js';
 import { disabledAnalytics, rowCountBucket } from './analytics.js';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
 import { TenantBudgets, type WorkScope } from './budgets.js';
@@ -26,6 +27,7 @@ export interface HostedWorkAdapter {
 /** Every hosted data path enters here, before payload/connector/cache I/O. */
 export class HostedData {
   readonly cache?: HostedCacheAdapter;
+  storedFiles = new StoredTableFiles();
   readonly prepaidCompute = new WeakSet<TenantContext>();
   private readonly verifiers = new WeakMap<TenantContext, () => Promise<void>>();
   private readonly publicationChecks = new WeakMap<TenantContext, () => Promise<void>>();

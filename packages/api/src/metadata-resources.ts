@@ -1,3 +1,4 @@
+import { storedMaterialization } from './stored-tables.js';
 import { validateTemplateRecord } from './prep-template-model.js';
 import { validateMetricRecord } from './metric-model.js';
 import { validateDashboardRecord } from './dashboard-model.js';
@@ -101,10 +102,12 @@ export function resourceLinks(key: ResourceKey, raw: JsonObject): ResourceKey[] 
       break;
     }
     case 'prepared-dataset': {
-      object(body, ['resource', 'execution', 'updatedAt']);
+      object(body, ['resource', 'execution', 'updatedAt', 'materialization', 'storedReservationBytes']);
       const r = parseBundleResource(body.resource);
       if (r.resourceType !== 'dataset' || r.dataSetId !== key.id || !r.opensightPrep) invalidMetadata();
       if (body.execution !== undefined) executionSettings(body.execution);
+      if (body.materialization !== undefined) storedMaterialization(body.materialization);
+      if (body.storedReservationBytes !== undefined && (!Number.isSafeInteger(body.storedReservationBytes) || Number(body.storedReservationBytes) < 0)) invalidMetadata();
       const p = r.opensightPrep;
       for (const input of [p.input, ...p.steps.flatMap(s => s.kind === 'append' ? [s.config.source] : s.kind === 'join' && !(typeof s.config.source !== 'string' && 'step' in s.config.source) ? [s.config.source] : [])]) {
         if (typeof input === 'string') add('source', input, key.ownerId);

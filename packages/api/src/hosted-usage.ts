@@ -99,8 +99,13 @@ export async function initializeUsage(db: Database): Promise<void> {
   });
 }
 export async function resourceBytes(c: SqlConnection, scope: Scope): Promise<number> {
-  const rows = await c.query('SELECT body FROM h1_resources WHERE tenant_id = ? AND namespace_id = ?', [scope.tenantId, scope.namespaceId]);
-  return rows.reduce((n, r) => n + Buffer.byteLength(String(r.body), 'utf8'), 0);
+  const rows = await c.query('SELECT kind, body FROM h1_resources WHERE tenant_id = ? AND namespace_id = ?', [scope.tenantId, scope.namespaceId]);
+  return rows.reduce((n, r) => {
+    const body = JSON.parse(String(r.body)) as { materialization?: { bytes: number }; storedReservationBytes?: number };
+    const artifact = r.kind === 'prepared-dataset' ? Math.max(body.materialization?.bytes ?? 0, body.storedReservationBytes ?? 0) : 0;
+    if (!Number.isSafeInteger(artifact) || artifact < 0) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+    return n + Buffer.byteLength(String(r.body), 'utf8') + artifact;
+  }, 0);
 }
 /** Limits are an immutable operator snapshot. Counters survive process restarts.
  * Storage uses the caller's H1 tenant transaction; no private SQL grants are needed. */

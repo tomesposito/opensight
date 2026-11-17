@@ -1,3 +1,4 @@
+import { checkStoredQuota, type StoredMaterialization } from './stored-tables.js';
 import { AssetCatalog, assetKey } from './asset-model.js';
 import { MetricCatalog, metricRecord } from './metric-model.js';
 import { changeDashboard, changeDashboardGrants, describeDashboard, dashboardVersion, type DashboardRecord, type DashboardChange } from './dashboard-model.js';
@@ -72,6 +73,33 @@ export class TenantMetadata {
       const rows = await c.query(`SELECT * FROM h1_resources WHERE ${predicates}`, keyValues(context, this.key(context, key)));
       return rows[0] ? resource(rows[0]) : missing();
     });
+  }
+  /** Owner materialization pointer/status update, serialized with quota and definition
+   * edits. It does not change the recipe version or authorization revisions. */
+  async materialization(context: TenantContext, id: string, version: number,
+    update: { value?: StoredMaterialization; reserve?: number }, expected?: Revisions): Promise<void> {
+    await this.checked(context, async (c, revisions, user) => {
+      if (!hasCapability(user.role as Parameters<typeof hasCapability>[0], 'build')) throw new MetadataError('METADATA_WRITE_FORBIDDEN', 403);
+      if (expected && JSON.stringify(revisions) !== JSON.stringify(expected)) throw new MetadataError('METADATA_REVISED', 403);
+      const key = this.key(context, { kind: 'prepared-dataset', id, ownerId: context.userId });
+      const row = (await c.query(`SELECT * FROM h1_resources WHERE ${predicates}`, keyValues(context, key)))[0];
+      if (!row) missing();
+      const current = resource(row);
+      if (current.version !== version) throw new MetadataError('STORED_DEFINITION_CHANGED', 409);
+      const body = { ...current.body };
+      if (object(body.execution).mode !== 'STORED') throw new MetadataError('STORED_MODE_REQUIRED', 409);
+      if (update.reserve !== undefined) {
+        if (!Number.isSafeInteger(update.reserve) || update.reserve < 0) throw new MetadataError('METADATA_INVALID', 400);
+        const previous = Math.max(Number(object(body.materialization ?? {}).bytes ?? 0), Number(body.storedReservationBytes ?? 0));
+        const used = this.usage ? await this.usage.storageBytes(c, context) : 0;
+        checkStoredQuota(this.usage?.entitlement(context).storageBytes ?? Number.MAX_SAFE_INTEGER, Math.max(0, used - previous), update.reserve);
+        body.storedReservationBytes = update.reserve;
+      }
+      if (update.value) body.materialization = JSON.parse(JSON.stringify(update.value)) as JsonObject;
+      resourceLinks(key, body);
+      await c.query(`UPDATE h1_resources SET body = ? WHERE ${predicates}`, [JSON.stringify(body), ...keyValues(context, key)]);
+      await appendMetadataEvent(c, context, 'prepared.materialization.changed');
+    }, true);
   }
   /** Trusted published-dashboard executor only: read recipe metadata in the reader's
    * tenant, pinned to the publisher. This grants neither source nor secret access;

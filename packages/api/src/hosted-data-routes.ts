@@ -72,7 +72,7 @@ export class HostedDataRoutes {
     if (ai) { method(request, response, ['GET']); await publish(200, await this.data.schema(context, ai[1]!, 'ai')); return true; }
     if (path === '/api/prep-datasets') { method(request, response, ['GET']); await publish(200, { ...(await this.prep.list(context)), persistence: 'durable' }); return true; }
     if (path === '/api/prep-datasets/import') { method(request, response, ['POST']); await publish(201, await this.prep.import(context, await input())); return true; }
-    const prep = /^\/api\/datasets\/([A-Za-z0-9_-]{1,128})\/(prep(?:\/preview)?|execution|refresh|rows|query|share|permissions|embed)$/.exec(path);
+    const prep = /^\/api\/datasets\/([A-Za-z0-9_-]{1,128})\/(prep(?:\/preview)?|execution|refresh|publish|rows|query|share|permissions|embed)$/.exec(path);
     if (prep) {
       const id = prep[1]!, action = prep[2]!;
       if (['share', 'permissions', 'embed'].includes(action)) { await this.prep.get(context, id); sourceError(action === 'embed' ? 'PREP_EMBED_REFUSED' : 'PREP_SHARING_REFUSED', 403); }
@@ -88,7 +88,7 @@ export class HostedDataRoutes {
         await publish(200, request.method === 'GET' ? (await this.prep.get(context, id)).execution : await this.prep.configure(context, id, await input()));
       } else {
         method(request, response, action === 'rows' ? ['GET'] : ['POST']);
-        await publish(200, await this.prep.execute(context, id, action as 'rows' | 'query' | 'refresh', action === 'rows' ? {} : await input()));
+        await publish(200, await this.prep.execute(context, id, action as 'rows' | 'query' | 'refresh' | 'publish', action === 'rows' ? {} : await input()));
       }
       return true;
     }

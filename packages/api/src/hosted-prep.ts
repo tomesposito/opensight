@@ -1,3 +1,4 @@
+import { storedMaterialization, storedStatus, storedCapacity } from './stored-tables.js';
 import { lookupMetrics, metricQuery, metricDefinition } from './metric-consumption.js';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
 import { containedWork, wireTable, type WireTable, type TableResult, type QueryResult } from './contained-work.js';
@@ -27,7 +28,7 @@ export class HostedPrep {
       : await this.data.sources.metadata.dashboardRecipe(context, recipeOwner, id);
     const resource = parseBundleResource(r.body.resource);
     if (resource.resourceType !== 'dataset' || !resource.opensightPrep) sourceError('INVALID_PREP_PIPELINE');
-    return { resource, version: r.version, execution: r.body.execution === undefined ? directSettings : executionSettings(r.body.execution) };
+    return { resource, materialization: r.body.materialization === undefined ? undefined : storedMaterialization(r.body.materialization), version: r.version, execution: r.body.execution === undefined ? directSettings : executionSettings(r.body.execution) };
   }
   private async graph(context: TenantContext, id: string, pipeline: PrepPipeline, recipeOwner?: string): Promise<Graph> {
     const revisions = await this.data.sources.metadata.revisions(context);
@@ -100,8 +101,9 @@ export class HostedPrep {
     if (typeof raw.name !== 'string' || !raw.name.trim() || raw.name.length > 512) sourceError('INVALID_PREP_PIPELINE');
     const pipeline = validatePrepPipeline(raw.pipeline), graph = await this.graph(context, id, pipeline);
     const resource: BundleDataSet = { resourceType: 'dataset', dataSetId: identifier(id), name: raw.name, physicalTableMap: {}, importMode: 'DIRECT_QUERY', opensightPrep: pipeline };
-    const execution: ExecutionSettings = graph.reason ? { mode: 'BLAZE', intervalMinutes: null } : directSettings;
-    await this.data.sources.metadata.batch(context, [{ key: this.key(context, id), body: { resource, execution, updatedAt: new Date().toISOString() }, expectedVersion: raw.expectedVersion as number }], graph.revisions);
+    const previous = Number(raw.expectedVersion) > 0 ? await this.stored(context, id) : undefined;
+    const execution: ExecutionSettings = previous?.execution.mode === 'STORED' ? previous.execution : graph.reason ? { mode: 'BLAZE', intervalMinutes: null } : directSettings;
+    await this.data.sources.metadata.batch(context, [{ key: this.key(context, id), body: { resource, execution, ...(previous?.materialization ? { materialization: JSON.parse(JSON.stringify(previous.materialization)) } : {}), updatedAt: new Date().toISOString() }, expectedVersion: raw.expectedVersion as number }], graph.revisions);
     this.data.analytics.track(context, { name: 'dataset_prep_saved' });
     await this.data.cache?.invalidate(this.cacheKey(context, id)); return { resource, version: Number(raw.expectedVersion) + 1, execution };
   }
@@ -114,7 +116,7 @@ export class HostedPrep {
   }
   async get(context: TenantContext, id: string) {
     const stored = await this.stored(context, id), graph = await this.graph(context, id, stored.resource.opensightPrep!);
-    await this.data.finish(context, graph.leaves, graph.revisions); return stored;
+    await this.data.finish(context, graph.leaves, graph.revisions); return { ...stored, execution: stored.execution.mode === 'STORED' ? { ...storedStatus(stored.materialization), version: stored.version } : stored.execution };
   }
   /** Headless v1 building block: schema columns, pipeline references and execution
    * settings without running any data. `inputs` are the direct PrepInputs
@@ -188,7 +190,7 @@ export class HostedPrep {
     const stored = await this.stored(context, id), graph = await this.graph(context, id, stored.resource.opensightPrep!);
     if (settings.mode === 'DIRECT_QUERY' && graph.reason) sourceError('BLAZE_MATERIALIZATION_REQUIRED', 409);
     if (this.jobs) await this.jobs.configurePrepared(context, id, settings, raw.expectedVersion as number, graph.revisions);
-    else await this.data.sources.metadata.batch(context, [{ key: this.key(context, id), body: { resource: stored.resource, execution: settings }, expectedVersion: raw.expectedVersion as number }], graph.revisions);
+    else await this.data.sources.metadata.batch(context, [{ key: this.key(context, id), body: { resource: stored.resource, execution: settings, ...(stored.materialization ? { materialization: JSON.parse(JSON.stringify(stored.materialization)) } : {}) }, expectedVersion: raw.expectedVersion as number }], graph.revisions);
     await this.data.cache?.invalidate(this.cacheKey(context, id)); return settings;
   }
   async dashboardVisual(context: TenantContext, id: string, analysis: unknown, visualId: string, dataSetArn: string) {
@@ -226,7 +228,7 @@ export class HostedPrep {
       throw error;
     }
   }
-  async execute(context: TenantContext, id: string, path: 'rows' | 'query' | 'refresh', input: unknown = {}, visual?: { analysis: unknown; visualId: string; dataSetArn: string }) {
+  async execute(context: TenantContext, id: string, path: 'rows' | 'query' | 'refresh' | 'publish', input: unknown = {}, visual?: { analysis: unknown; visualId: string; dataSetArn: string }) {
     const stored = await this.stored(context, id), graph = await this.graph(context, id, stored.resource.opensightPrep!), key = this.cacheKey(context, id);
     let metrics: readonly import('@opensight/query-engine').PublishedMetric[] | undefined;
     const query = path === 'query' ? await metricQuery(validateQuery(input), { kind: 'prepared-dataset', id, ownerId: context.userId }, lookupMetrics({ scope: context, transaction: (write, work) => this.data.sources.metadata.assetTransaction(context, write, work), metricExecution: ref => this.data.sources.metadata.metricExecution(context, ref) }), value => { metrics = value; }) : undefined;
@@ -235,6 +237,28 @@ export class HostedPrep {
     if (query) planPreparedQuery(columns, query); // Query semantics are checked before loading data.
     if (visual) planPreparedVisual(columns, visual.analysis, visual.visualId, visual.dataSetArn);
     const stamp = JSON.stringify([stored.version, graph.revisions]);
+    if (stored.execution.mode === 'STORED' && (path === 'refresh' || path === 'publish')) {
+      return this.data.storedFiles.exclusive(key, async () => {
+        const capacity = storedCapacity(this.data.limits(context));
+        await this.data.sources.metadata.materialization(context, id, stored.version, { reserve: capacity }, graph.revisions);
+        let value: import('./stored-tables.js').StoredMaterialization | undefined;
+        try {
+          return await this.data.work(context, true, graph.leaves, async () => {
+            const output = new BlazeTable(this.data.limits(context)); await this.load(context, id, graph, output);
+            await this.data.finish(context, graph.leaves, graph.revisions);
+            value = await this.data.storedFiles.write(key, output, stamp, capacity);
+            await this.data.sources.metadata.materialization(context, id, stored.version, { value, reserve: 0 }, graph.revisions);
+            await this.data.storedFiles.remove(key, stored.materialization);
+            return { ...storedStatus(value), version: stored.version };
+          }, graph.revisions);
+        } catch (error) {
+          if (value) await this.data.storedFiles.remove(key, value);
+          await this.data.sources.metadata.materialization(context, id, stored.version, { reserve: 0 });
+          throw error;
+        }
+      });
+    }
+    if (path === 'publish') throw new MetadataError('STORED_MODE_REQUIRED', 409);
     return this.data.work(context, path === 'refresh', graph.leaves, async () => {
       const scope = this.data.scope(context);
       let table: BlazeTable;
@@ -246,7 +270,9 @@ export class HostedPrep {
         });
         return { mode: 'BLAZE', state: 'ready' };
       }
-      if (stored.execution.mode === 'BLAZE') {
+      if (stored.execution.mode === 'STORED') {
+        table = await this.data.storedFiles.read(key, stored.materialization, this.data.limits(context)); scope.rows(table.rowCount);
+      } else if (stored.execution.mode === 'BLAZE') {
         table = await this.data.cache!.read(scope, key, stamp); scope.rows(table.rowCount);
       } else {
         if (graph.reason) sourceError('BLAZE_MATERIALIZATION_REQUIRED', 409);

@@ -1,9 +1,10 @@
+import { StoredTableFiles, storedMaterialization, storedStatus, storedCapacity, checkStoredQuota, type StoredMaterialization } from './stored-tables.js';
 import { metricQuery, metricDefinition, type MetricLookup } from './metric-consumption.js';
 import { disabledAnalytics } from './analytics.js';
 import { MetadataError } from './metadata-db.js';
 import { randomUUID } from 'node:crypto';
 import { materializationReason } from './blaze-policy.js';
-import { BlazeStore, BlazeError, directSettings, executionSettings, type BlazeTable, type ExecutionSettings, type CachedInput } from './blaze.js';
+import { BlazeStore, BlazeError, directSettings, executionSettings, BlazeTable, type ExecutionSettings, type CachedInput } from './blaze.js';
 import { streamPrepPostgres, queryPrepared, planPreparedVisual, queryPreparedVisual, type PrepMemoryTable } from '@opensight/query-engine';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { parseBundleResource, type BundleDataSet } from '@opensight/bundle-parser';
@@ -20,7 +21,7 @@ import { RESOURCE_ID } from './store.js';
 export interface PrepPostgresBinding {
   namespaceId: string; userId: string; source: PrepSource; config: { connectionEnv: string };
 }
-export interface StoredPrep { namespaceId: string; userId: string; resource: BundleDataSet; execution?: ExecutionSettings; version?: number; updatedAt?: string }
+export interface StoredPrep { namespaceId: string; userId: string; resource: BundleDataSet; execution?: ExecutionSettings; materialization?: StoredMaterialization; version?: number; updatedAt?: string }
 type Stored = StoredPrep;
 export interface PrepState { version: 1; datasets: Stored[] }
 type State = PrepState;
@@ -29,9 +30,10 @@ export function validatePrepState(raw: unknown): State {
   if (s.version !== 1 || !Array.isArray(s.datasets) || s.datasets.length > 1000) prepFail('INVALID_PREP_PIPELINE', '$', 'Invalid prep store');
   const seen = new Set<string>();
   for (const entry of s.datasets) {
-    const v = prepObject(entry, ['namespaceId', 'userId', 'resource', 'execution', 'version', 'updatedAt'], '$.datasets');
+    const v = prepObject(entry, ['namespaceId', 'userId', 'resource', 'execution', 'materialization', 'version', 'updatedAt'], '$.datasets');
     prepName(v.namespaceId, '$.namespaceId'); prepName(v.userId, '$.userId');
     if (v.execution !== undefined) executionSettings(v.execution);
+    if (v.materialization !== undefined) storedMaterialization(v.materialization);
     const r = parseBundleResource(v.resource);
     if (r.resourceType !== 'dataset' || !RESOURCE_ID.test(r.dataSetId) || !r.opensightPrep) prepFail('INVALID_PREP_PIPELINE', '$.resource', 'Expected a prepared dataset');
     const key = JSON.stringify([v.namespaceId, v.userId, r.dataSetId]);
@@ -44,6 +46,27 @@ function send(response: ServerResponse, status: number, body: unknown): void {
 }
 export class PrepRoutes {
   analytics = disabledAnalytics;
+  /** Same entitlement snapshot supplied to the local composition; absent means unlimited. */
+  storageLimit: (identity: Identity) => number = () => Number.MAX_SAFE_INTEGER;
+  private async publishStored(identity: Identity, id: string): Promise<void> {
+    await this.files.exclusive(identity.namespaceId, async () => {
+      const entry = this.find(identity, id), capacity = storedCapacity(this.blaze.limits);
+      const used = this.store.read().datasets.filter(e => e.namespaceId === identity.namespaceId && e !== entry)
+        .reduce((n, e) => n + (this.key(e, e.resource.dataSetId) === this.key(identity, id) ? 0 : e.materialization?.bytes ?? 0), 0);
+      checkStoredQuota(this.storageLimit(identity), used, capacity);
+      const table = new BlazeTable(this.blaze.limits);
+      await this.materialize(identity, id, table);
+      const value = await this.files.write(this.key(identity, id), table, String(entry.version ?? 1), capacity);
+      try {
+        await this.store.change(draft => {
+          const current = draft.datasets.find(e => this.owned(identity, e) && e.resource.dataSetId === id);
+          if (!current || (current.version ?? 1) !== (entry.version ?? 1) || current.execution?.mode !== 'STORED') throw new BlazeError('STORED_DEFINITION_CHANGED', 'Dataset changed during publish; retry with the saved definition');
+          current.materialization = value;
+        });
+      } catch (error) { await this.files.remove(this.key(identity, id), value); throw error; }
+      await this.files.remove(this.key(identity, id), entry.materialization);
+    });
+  }
   metricLookup?: (identity: Identity) => MetricLookup;
   checkMetricDelete?: (identity: Identity, id: string) => Promise<void>;
   /** Issue #161: governed input tables exposed as prep sources (reference form `input-table-<id>`). */
@@ -55,7 +78,7 @@ export class PrepRoutes {
     return materializationReason(id, state.datasets.filter(e => this.owned(identity, e)).map(e => ({ id: e.resource.dataSetId, pipeline: e.resource.opensightPrep!, mode: e.execution?.mode ?? 'DIRECT_QUERY' })));
   }
   private enforceModes(state: State): void {
-    for (const entry of state.datasets) if (entry.execution?.mode !== 'BLAZE' && this.requirement(entry, entry.resource.dataSetId, state)) entry.execution = { mode: 'BLAZE', intervalMinutes: null };
+    for (const entry of state.datasets) if ((!entry.execution || entry.execution.mode === 'DIRECT_QUERY') && this.requirement(entry, entry.resource.dataSetId, state)) entry.execution = { mode: 'BLAZE', intervalMinutes: null };
   }
   private syncModes(): void {
     for (const entry of this.store.read().datasets) {
@@ -64,7 +87,7 @@ export class PrepRoutes {
     }
   }
   private status(identity: Identity, id: string) {
-    return { ...this.blaze.status(this.key(identity, id)), materializationReason: this.requirement(identity, id) };
+    return { ...(this.find(identity, id).execution?.mode === 'STORED' ? storedStatus(this.find(identity, id).materialization) : this.blaze.status(this.key(identity, id))), materializationReason: this.requirement(identity, id) };
   }
   private requireDirect(identity: Identity, id: string, state = this.store.read()): void {
     const reason = this.requirement(identity, id, state);
@@ -162,9 +185,11 @@ export class PrepRoutes {
       }
       send(response, 200, this.status(identity, id)); return;
     }
-    if (action === 'refresh') {
+    if (action === 'refresh' || action === 'publish') {
       method(request, response, ['POST']); prepObject(await readBody(request), [], '$');
-      await this.blaze.refresh(key, table => this.materialize(identity, id, table));
+      if (existing.execution?.mode === 'STORED') await this.publishStored(identity, id);
+      else if (action === 'publish') throw new BlazeError('STORED_MODE_REQUIRED', 'Select stored mode before publishing');
+      else await this.blaze.refresh(key, table => this.materialize(identity, id, table));
       send(response, 200, this.status(identity, id)); return;
     }
     method(request, response, action === 'query' ? ['POST'] : ['GET']);
@@ -174,9 +199,11 @@ export class PrepRoutes {
     const use = (table: BlazeTable, refreshedAt: string | null) => ({
       ...(body ? queryPrepared(table.columns, table.rowCount, table.value, body) : { columns: table.columns, rows: table.rows(100), rowCount: table.rowCount, truncated: table.rowCount > 100 }),
       ...(metrics ? { metrics } : {}),
-      execution: { mode: refreshedAt ? 'BLAZE' : 'DIRECT_QUERY', cached: !!refreshedAt, refreshedAt, cachedInputs: table.cachedInputs },
+      execution: { mode: refreshedAt ? existing.execution?.mode ?? 'BLAZE' : 'DIRECT_QUERY', cached: !!refreshedAt, refreshedAt, cachedInputs: table.cachedInputs },
     });
-    if (this.blaze.status(key).mode === 'BLAZE') {
+    if (existing.execution?.mode === 'STORED') {
+      const table = await this.files.read(key, existing.materialization, this.blaze.limits); send(response, 200, use(table, existing.materialization!.lastRefreshedAt));
+    } else if (this.blaze.status(key).mode === 'BLAZE') {
       const { table, refreshedAt } = this.blaze.read(key); send(response, 200, use(table, refreshedAt));
     } else {
       this.requireDirect(identity, id);
@@ -201,7 +228,7 @@ export class PrepRoutes {
     return this.blaze.transient(table => this.materialize(identity, id, table), run);
   }
 
-  private constructor(private readonly store: AutomationStore<State>, private readonly connectors: ConnectorRoutes, private readonly bindings: readonly PrepPostgresBinding[], private readonly persistent: boolean) {}
+  private constructor(private readonly store: AutomationStore<State>, private readonly connectors: ConnectorRoutes, private readonly bindings: readonly PrepPostgresBinding[], private readonly persistent: boolean, private readonly files: StoredTableFiles) {}
   static async create(connectors: ConnectorRoutes, path?: string, bindings: readonly PrepPostgresBinding[] = []): Promise<PrepRoutes> {
     const seen = new Set<string>();
     for (const b of bindings) {
@@ -212,9 +239,9 @@ export class PrepRoutes {
       const key = JSON.stringify([b.namespaceId, b.userId, b.source.id]);
       if (seen.has(key)) prepFail('INVALID_PREP_PIPELINE', '$.source', 'Duplicate source binding'); seen.add(key);
     }
-    const routes = new PrepRoutes(await AutomationStore.load<State>({ version: 1, datasets: [] }, path, validatePrepState), connectors, structuredClone(bindings), !!path);
+    const routes = new PrepRoutes(await AutomationStore.load<State>({ version: 1, datasets: [] }, path, validatePrepState), connectors, structuredClone(bindings), !!path, new StoredTableFiles(path ? `${path}.tables` : undefined));
     const current = routes.store.read();
-    if (current.datasets.some(e => e.execution?.mode !== 'BLAZE' && routes.requirement(e, e.resource.dataSetId, current))) await routes.store.change(draft => routes.enforceModes(draft));
+    if (current.datasets.some(e => (!e.execution || e.execution.mode === 'DIRECT_QUERY') && routes.requirement(e, e.resource.dataSetId, current))) await routes.store.change(draft => routes.enforceModes(draft));
     routes.syncModes();
     return routes;
   }
@@ -311,7 +338,7 @@ export class PrepRoutes {
   async route(request: IncomingMessage, response: ServerResponse, path: string, query: string, identity: Identity): Promise<void> {
     try {
       if (query) throw new RequestError(400, 'Query parameters are not supported');
-      const execution = /^\/api\/datasets\/([A-Za-z0-9_-]{1,128})\/(execution|refresh|rows|query)$/.exec(path);
+      const execution = /^\/api\/datasets\/([A-Za-z0-9_-]{1,128})\/(execution|refresh|publish|rows|query)$/.exec(path);
       if (execution) { await this.executionRoute(request, response, execution[1]!, execution[2]!, identity); return; }
       if (path === '/api/prep-sources') {
         method(request, response, ['GET']);
@@ -321,6 +348,7 @@ export class PrepRoutes {
           const execution = this.status(identity, r.dataSetId);
           const summary = { id: r.dataSetId, ref: { dataset: r.dataSetId }, name: r.name, execution };
           try {
+            if (execution.mode === 'STORED') return { ...summary, connectorId: 'file', columns: this.find(identity, r.dataSetId).materialization?.columns ?? [], available: execution.rowCount !== null };
             if (execution.mode === 'BLAZE') {
               const { table } = this.blaze.read(this.key(identity, r.dataSetId));
               return { ...summary, connectorId: 'file', columns: table.columns, available: true };

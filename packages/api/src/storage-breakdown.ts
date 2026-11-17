@@ -95,7 +95,7 @@ const publicQuotaErrors = new WeakMap<MetadataError, string>();
 export function storageQuotaError(breakdown: StorageBreakdown, requestedBytes: number): MetadataError {
   const summary = quotaExceededSummary(breakdown, requestedBytes);
   const error = new MetadataError('USAGE_LIMIT_EXCEEDED', 429, { summary,
-    requestedBytes, breakdown: { limitBytes: breakdown.limitBytes, metadataBytes: breakdown.metadataBytes,
+    requestedBytes, overageBytes: Math.max(0, breakdown.totalBytes + requestedBytes - breakdown.limitBytes), limitBytes: breakdown.limitBytes, usedBytes: breakdown.totalBytes, breakdown: { limitBytes: breakdown.limitBytes, metadataBytes: breakdown.metadataBytes,
       liveBytes: breakdown.liveBytes, reservedBytes: breakdown.reservedBytes,
       pendingCleanupBytes: breakdown.pendingCleanupBytes, pendingCleanupCount: breakdown.pendingCleanup.length,
       overdueCount: breakdown.overdueCount, nextReclamationAt: breakdown.nextReclamationAt === null ? null : new Date(breakdown.nextReclamationAt).toISOString() } });

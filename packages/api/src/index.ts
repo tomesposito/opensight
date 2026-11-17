@@ -124,6 +124,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   const connectorRoutes = new ConnectorRoutes(!!localIdentity, analytics);
   const prepRoutes = await PrepRoutes.create(connectorRoutes, options.prepStorePath, options.prepPostgresBindings);
   prepRoutes.analytics = analytics;
+  if (options.hostedUsage) prepRoutes.storageLimit = identity => options.hostedUsage!.entitlement({ tenantId: identity.namespaceId, namespaceId: identity.namespaceId }).storageBytes;
   const inputTables = new InputTableRoutes(await InputTableStore.load(options.inputTableStorePath), {
     security, localIdentity,
     workspaceUserIds: identity => security ? security.store.read().users.filter(u => u.namespaceId === identity.namespaceId).map(u => u.id) : undefined,
@@ -229,7 +230,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
         if (await inputTables.route(request, response, path, query, localIdentity ?? identity)) return;
       }
       const preparedResource = /^\/api\/(prep-sources|prep-datasets)(?:\/|$)/.test(path)
-        || /^\/api\/datasets\/[^/]+\/(prep(?:\/|$)|execution$|rows$)/.test(path)
+        || /^\/api\/datasets\/[^/]+\/(prep(?:\/|$)|execution$|rows$|publish$)/.test(path)
         || /^\/api\/datasets\/(?!sales\/)[A-Za-z0-9_-]{1,128}\/refresh$/.test(path);
       // Preserve the unauthenticated fixture API's existing ID/method/404 validation.
       const preparedQuery = (!!security || !!localIdentity) && /^\/api\/datasets\/(?!sales\/)[A-Za-z0-9_-]{1,128}\/query$/.test(path);
