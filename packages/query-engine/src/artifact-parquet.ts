@@ -82,7 +82,10 @@ export async function withArtifactFile<T>(path: string, memoryMb: number, run: (
 
 export async function writeArtifactParquet(path: string, columns: PrepColumn[], rows: readonly PrepScalar[][], memoryMb: number): Promise<ArtifactSample> {
   const checked = artifactColumns(columns), fields = physical(checked);
-  const sample = Buffer.from(serialize({ columns: checked, rowCount: rows.length, rows: rows.slice(0, PREP_JOIN_SAMPLE_LIMIT + 1) }).toString('base64'));
+  // DuckDB VARCHAR uses UTF-8: lone UTF-16 surrogates become U+FFFD at the
+  // binding boundary. Persist the same scalars that the Parquet snapshot stores.
+  const sampled = rows.slice(0, PREP_JOIN_SAMPLE_LIMIT + 1).map(row => row.map(value => typeof value === 'string' ? Buffer.from(value, 'utf8').toString('utf8') : value));
+  const sample = Buffer.from(serialize({ columns: checked, rowCount: rows.length, rows: sampled }).toString('base64'));
   await withArtifactFile(path, memoryMb, async c => {
     await c.run(`CREATE TABLE materialized (${fields.map(f => `${f.name} ${f.type}`).join(',')})`);
     for (let offset = 0; offset < rows.length; offset += 32) {

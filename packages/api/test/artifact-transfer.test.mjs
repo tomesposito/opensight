@@ -235,3 +235,13 @@ test('Issue #288 large durable samples retain exactly 10000 rows plus the probe'
     assert.equal(sample.rowCount, 10001); assert.equal(sample.value(10000, 0), 10000); assert.equal(reference.descriptor.rowCount, 10030);
   });
 });
+
+test('Issue #288 bounded artifact strings match Parquet UTF-8 normalization exactly', async () => {
+  await runtime(async (scope, invocation) => {
+    const input = table([['\ud800'], ['\udc00'], ['ok 🛰\u0000']], [{ name: 'text', type: 'STRING' }]);
+    const { transfer } = fakeAws(invocation), local = await transfer.encode(scope, input, limits), reference = await transfer.upload(scope, identity, local);
+    const full = await transfer.decode(scope, local, limits), sample = await transfer.boundedSample(scope, identity, reference, limits);
+    assert.deepEqual(sample.rows(), full.rows());
+    assert.deepEqual(sample.rows(), [{ text: '�' }, { text: '�' }, { text: 'ok 🛰\u0000' }]);
+  });
+});
