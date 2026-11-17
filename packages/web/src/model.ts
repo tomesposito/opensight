@@ -60,11 +60,18 @@ export interface VisualModel {
   tooltipExtraFields?: { id: string; label?: string; aggregation: 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COUNT' }[];
   legend: boolean;
   referenceLines?: { value: number; label: string; color: string }[];
+  /** Statistical forecast overlay (line/area charts with a date dimension;
+   *  issue #235). A non-date category retains the config with a warning. */
+  forecast?: import('./forecast.js').ForecastConfig;
   sort?: { fieldId: string; direction: 'ASC' | 'DESC' };
   /** Pie slice limit (QuickSight CategoryItemsLimit): show the top N categories,
    *  rolling the rest into an "Other" bucket when includeOther. Applied per facet
    *  group for faceted pies. Absent means no limit: all result rows are shown. */
   sliceLimit?: { count: number; includeOther: boolean };
+  /** SmallMultiplesLimitConfiguration: retain the first N facet groups, then
+   *  optionally merge the remaining groups into one "Other" panel. Applied
+   *  before layout caps; absent means every supplied facet is retained. */
+  facetLimit?: { count: number; includeOther: boolean };
   /** Waterfall breakdown limit (QuickSight BreakdownItemsLimit): show the top N
    *  breakdown values in first-appearance order, rolling the rest into a per-category
    *  "Other" delta bar when includeOther. Waterfall with a Breakdowns field only.

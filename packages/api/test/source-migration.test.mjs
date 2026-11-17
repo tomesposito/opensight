@@ -105,3 +105,15 @@ test('H3 migration rollback restores replaced encrypted secrets without leaving 
   assert.deepEqual(await f.sources.payload(current, restored), initial.credentials);
   assert.equal((await f.metadata.list(current, 'secret')).length, 1);
 });
+
+for (const connectorId of ['mysql', 'mariadb', 'redshift-manual']) test(`H3 ${connectorId} migration uses credentials and checks the endpoint protocol`, async t => {
+  const f = await migrationFixture(t); f.config.sources[0].binding = { ...binding, connectorId };
+  await f.freeze();
+  await assert.rejects(f.migrate().migrate(f.config, f.env), { code: 'MIGRATION_UNRESOLVED_SOURCE' });
+  f.endpoints = [{ ...f.endpoints[0], connectorId }];
+  assert.deepEqual((await f.migrate().migrate(f.config, f.env)).counts, { sources: 1, secrets: 1 });
+  await f.migrate().seal(f.config); await f.resume(); await f.restart();
+  const context = await f.login(), stored = await f.sources.get(context, 'legacy');
+  assert.equal(stored.binding.connectorId, connectorId);
+  assert.deepEqual(await f.sources.payload(context, stored), f.secret);
+});

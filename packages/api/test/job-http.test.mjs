@@ -23,3 +23,24 @@ test('H7 hosted HTTP derives owners, rejects foreign recipients and requires rev
   assert.equal((await call(path, 'DELETE', { jobs: { action: 'stop', preview: preview.body.preview } }, operator, { origin: f.hostedConfig.origin })).status, 200);
   assert.equal((await call('/api/jobs/report/runs', 'GET', undefined, auth)).status, 401);
 });
+test('H7 delivery retry route restarts a dead delivery in place and refuses a second retry', async t => {
+  const f = await sessionFixture(t), reader = await readerMember(f), data = await seedEmbedContent(f, reader); t.after(() => data.budgets.close());
+  const { call } = await httpStack(t, f), auth = `Bearer ${(await f.login()).token}`;
+  const spec = { kind: 'report', dashboardId: 'dashboard', recipients: [reader.identity.userId], enabled: true, schedule };
+  assert.equal((await call('/api/jobs/report', 'PUT', { expectedVersion: 0, spec }, auth)).status, 200);
+  const now = new Date().toISOString(), scope = [f.tenant.tenantId, f.identity.namespaceId];
+  await f.db.transaction(async c => {
+    await c.query(`INSERT INTO h7_occurrences VALUES (?,?,?,?,?,?,?,?,?,?,'failed','JOB_DELIVERY_EXHAUSTED',?,?)`,
+      [...scope, 'retry-occ', 'report', f.identity.userId, f.identity.userId, 1, now, JSON.stringify(spec), JSON.stringify({ authorization: 1, policy: 1, configuration: 1 }), now, now]);
+    await c.query(`INSERT INTO h7_deliveries (tenant_id, namespace_id, delivery_id, job_id, occurrence_id, recipient_id, state, attempts, next_attempt, error_code) VALUES (?,?, 'retry-delivery', 'report', 'retry-occ', ?, 'dead', 10, ?, 'SMTP_SEND_FAILED')`,
+      [...scope, reader.identity.userId, now]);
+  });
+  const retried = await call('/api/jobs/report/deliveries/retry-delivery/retry', 'POST', {}, auth);
+  assert.equal(retried.status, 200); assert.equal(retried.body.state, 'pending'); assert.equal(retried.body.attempts, 0); assert.equal(retried.body.delivery_id, 'retry-delivery');
+  const again = await call('/api/jobs/report/deliveries/retry-delivery/retry', 'POST', {}, auth);
+  assert.equal(again.status, 409); assert.equal(again.body.errorCode, 'DELIVERY_NOT_DEAD');
+  const deliveries = await call('/api/jobs/report/deliveries', 'GET', undefined, auth);
+  assert.equal(deliveries.body[0].state, 'pending');
+  const runs = await call('/api/jobs/report/runs', 'GET', undefined, auth);
+  assert.equal(runs.body[0].state, 'delivering');
+});

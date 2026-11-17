@@ -71,7 +71,7 @@ test('Steps search filters names live, preserves only matching groups, and Escap
   assert.deepEqual(groups(), []); assert.match(JSON.stringify(ui.toJSON()), /No matching steps/);
   await act(async () => input().props.onKeyDown({ key: 'Escape', preventDefault() {}, stopPropagation() {} }));
   assert.equal(input().props.value, ''); assert.equal(focused, 1);
-  assert.deepEqual(groups(), ['Input', 'Column transformations', 'Combine transformations', 'Other']);
+  assert.deepEqual(groups(), ['Input', 'Column transformations', 'Combine transformations', 'Other', 'Recipes']);
   await act(async () => input().props.onChange({ target: { value: 'join' } }));
   await click(ui, '＋ Join');
   assert.ok(ui.root.findByProps({ className: 'prep-join-editor' }), 'filtered transformation remains usable');

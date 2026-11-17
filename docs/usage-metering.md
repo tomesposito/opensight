@@ -4,7 +4,27 @@
 by `(tenant_id, namespace_id, period)`. `initializeUsage` creates the table
 idempotently with a foreign key to `h1_namespaces`. This is the record shape
 for the future Stripe integration (D-81); this slice does not invoice or charge.
-Existing #91 entitlement checks and daily quota enforcement are unchanged.
+API-call and query quotas are enforced per UTC calendar month (#225), using
+the daily ledger directly; admission does not depend on a billing rollup.
+
+## Monthly admission (#225)
+
+`HostedUsage.consume()` sums admitted `apiCalls` or `computeAttempts` across
+the tenant/namespace's daily rows from `YYYY-MM-01` through `YYYY-MM-31`.
+Within the existing transaction, the active-tenant lock and authorization
+revision check run before reading these counters. A total at or above the
+entitlement denies the call with `USAGE_LIMIT_EXCEEDED` (429); zero denies
+everything. Allowance resets at the next UTC month, with no overage.
+
+Admissions and denials still increment today's row and append one event with
+the call's timestamp. Every daily admitted/denied counter and the admitted sum
+must be non-negative safe integers. Corrupt rows or an unsafe sum fail with
+`ENTITLEMENT_UNRESOLVED` (503) and roll back all writes.
+
+The operator overview reads the same live monthly API/query totals and labels
+them with `period` (`YYYY-MM`). Its `day` field remains available, storage stays
+a live gauge, and NLQ stays monthly. Prometheus gauges retain daily periods.
+AI spend caps remain per UTC day; monthly AI credits and egress are unchanged.
 
 ## Dimensions and periods
 
@@ -118,7 +138,8 @@ and removed with tenant erasure by single-node maintenance. Older backups
 without the table remain accepted and restore without billing snapshots.
 No time-based monthly pruning or automatic monthly scheduler is added.
 
-Operators must roll up months before pruning any of their daily source rows,
+Operators must retain the current month's API/query ledger rows for admission,
+roll up completed months before pruning any of their daily source rows,
 and keep daily rows through any required recomputation window. Recomputing
 after daily retention only sees remaining rows and cannot reconstruct deleted
 history. Reading an existing monthly record preserves its stored totals after

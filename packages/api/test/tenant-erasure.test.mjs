@@ -289,3 +289,18 @@ test('178 tenant deletion inventories and erases only that tenant’s private id
   await f.maintenance.deleteTenant('erase-one', 'none', execute);
   assert.deepEqual((await f.db.transaction(c => c.query('SELECT id FROM h8_ideas'))).map(row => row.id), ['idea-two']);
 });
+
+test('#229 tenant erasure removes optional answer receipts and in-flight reservations only for that tenant', async t => {
+  const { HostedAIReceipts, initializeAiAnswerReceipts, aiReceiptTables } = await import('../dist/hosted-ai-receipts.js');
+  const f = await fixture(t); await initializeAiAnswerReceipts(f.db);
+  for (const ns of ['one', 'two']) {
+    await new HostedAIReceipts(f.db).run({ tenantId: `tenant-${ns}`, namespaceId: ns, userId: 'admin' }, '/api/o/generate', 'answer', 'hash', async a => {
+      await a.pending({ question: 'sum revenue' }, 1, true, { authorization: 1, policy: 1, configuration: 1 }); await a.committed();
+    });
+    await f.db.transaction(c => c.query('INSERT INTO ai_answer_receipt_reservations VALUES (?,?,?,?,?,?,?)', [`tenant-${ns}`, ns, 'admin', '/api/o/generate', 'active', 'owner', '2099-01-01T00:00:00.000Z']));
+  }
+  const plan = await f.maintenance.deleteTenant('erase-one');
+  for (const table of aiReceiptTables) assert.equal(count(plan, table), 1);
+  await f.maintenance.deleteTenant('erase-one', 'none', execute);
+  for (const table of aiReceiptTables) assert.deepEqual((await f.db.transaction(c => c.query(`SELECT tenant_id FROM ${table}`))).map(r => r.tenant_id), ['tenant-two']);
+});

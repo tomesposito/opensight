@@ -34,6 +34,13 @@ export const MAX_INPUT_COLUMNS = 32;
 export const MAX_INPUT_ROWS = 10_000;
 export const MAX_INPUT_NAME_CHARS = 120;
 export const MAX_INPUT_TEXT_CHARS = 10_000;
+export const MAX_INPUT_AUDIT_ENTRIES_PER_TABLE = 1000;
+export const MAX_INPUT_AUDIT_ENTRIES_TOTAL = 10_000;
+// Sum the UTF-8 bytes of JSON.stringify(entry), including metadata and escaping.
+// 16 MiB allows roughly 26 maximal ASCII row updates (~640 KB each), while
+// 64 MiB bounds all tables together. Ordinary small entries still hit count caps.
+export const MAX_INPUT_AUDIT_BYTES_PER_TABLE = 16 * 1024 * 1024;
+export const MAX_INPUT_AUDIT_BYTES_TOTAL = 64 * 1024 * 1024;
 
 export class InputTableError extends Error {
   constructor(readonly code: string, readonly status: number, message: string) { super(message); this.name = 'InputTableError'; }
@@ -170,6 +177,7 @@ export function validateInputTablesState(raw: unknown): InputTablesState {
     if (typeof t.createdAt !== 'string' || !Number.isFinite(Date.parse(t.createdAt)) || typeof t.updatedAt !== 'string' || !Number.isFinite(Date.parse(t.updatedAt))) return bad(`tables[${i}] timestamps are invalid`);
     return { id: t.id, namespaceId: t.namespaceId, ownerId: t.ownerId, name: t.name, boundDatasetId: t.boundDatasetId, columns, rows, editors: [...new Set(t.editors as string[])], version: Number(t.version), createdAt: t.createdAt, updatedAt: t.updatedAt };
   });
+  // Legacy stores may exceed the retention caps; enforce caps on append, not on load.
   const audit: InputAuditEntry[] = s.audit.map((entry, i) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return bad(`audit[${i}] is not an object`);
     const a = entry as Record<string, unknown>;
@@ -205,6 +213,26 @@ export class InputTableStore {
     }
   }
   read(): InputTablesState { return this.store.read(); }
+  tableById(id: string): InputTable | undefined { return this.store.project(state => state.tables.find(table => table.id === id)); }
+  auditFor(tableId: string): InputAuditEntry[] { return this.store.project(state => state.audit.filter(entry => entry.tableId === tableId)); }
+  /** Project authorization metadata and namespace-visible pagination before cloning. */
+  auditPageFor(tableId: string, namespaceId: string, pagination?: { limit: number; offset: number }) {
+    return this.store.project(state => {
+      const table = state.tables.find(table => table.id === tableId);
+      let firstEntryNamespaceId: string | undefined;
+      const entries: InputAuditEntry[] = [];
+      let total = 0;
+      for (const entry of state.audit) {
+        if (entry.tableId !== tableId) continue;
+        // Deleted-table authorization uses the first entry, regardless of the page.
+        firstEntryNamespaceId ??= entry.namespaceId;
+        if (entry.namespaceId !== namespaceId) continue;
+        if (!pagination || (total >= pagination.offset && entries.length < pagination.limit)) entries.push(entry);
+        total++;
+      }
+      return { table: table ? { namespaceId: table.namespaceId } : undefined, firstEntryNamespaceId, entries, total };
+    });
+  }
   /** Single serialized mutation; audit entries are appended atomically with the data change. */
   change<R>(update: (draft: InputTablesState) => R): Promise<R> { return this.store.change(update); }
 }
@@ -213,4 +241,29 @@ export function newId(): string { return randomUUID(); }
 export function nowIso(): string { return new Date().toISOString(); }
 export function appendAudit(draft: InputTablesState, table: Pick<InputTable, 'id' | 'namespaceId'>, actorId: string, action: InputAuditAction, detail: Record<string, unknown>): void {
   draft.audit.push({ id: randomUUID(), tableId: table.id, namespaceId: table.namespaceId, actorId, action, at: nowIso(), detail });
+  let tableCount = 0, tableBytes = 0, totalBytes = 0;
+  const sized = draft.audit.map(entry => {
+    const bytes = Buffer.byteLength(JSON.stringify(entry), 'utf8');
+    totalBytes += bytes;
+    if (entry.tableId === table.id) { tableCount++; tableBytes += bytes; }
+    return { entry, bytes };
+  });
+  // Enforce both caps on write, including legacy state that loaded above them.
+  // Discard this table's oldest entries before considering the overall budgets.
+  const retained = sized.filter(({ entry, bytes }) => {
+    if (entry.tableId === table.id && tableCount > 1
+      && (tableCount > MAX_INPUT_AUDIT_ENTRIES_PER_TABLE || tableBytes > MAX_INPUT_AUDIT_BYTES_PER_TABLE)) {
+      tableCount--; tableBytes -= bytes; totalBytes -= bytes;
+      return false;
+    }
+    return true;
+  });
+  let start = 0;
+  // Always keep the just-appended entry, even if it alone exceeds a byte budget.
+  // Such an entry evicts all older entries for its table (or overall if needed).
+  while (start < retained.length - 1
+    && (retained.length - start > MAX_INPUT_AUDIT_ENTRIES_TOTAL || totalBytes > MAX_INPUT_AUDIT_BYTES_TOTAL)) {
+    totalBytes -= retained[start++]!.bytes;
+  }
+  draft.audit = retained.slice(start).map(({ entry }) => entry);
 }

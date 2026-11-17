@@ -126,7 +126,7 @@ test('197 HTTP: expired identity still signs in; only admins can checkout/export
   const now = Date.UTC(2026, 10, 6), clock = () => now + 15 * 86400000;
   Object.assign(f.env, { OPENSIGHT_SIGNUP_ENABLED: 'true', OPENSIGHT_TRIAL_ENTITLEMENT: JSON.stringify({ apiCalls: 30000, storageBytes: 10000000000, computeAttempts: 1500 }), OPENSIGHT_STRIPE_SECRET_KEY: 'sk_test', OPENSIGHT_STRIPE_WEBHOOK_SECRET: 'whsec_test', OPENSIGHT_STRIPE_PRICE_LIGHT: 'price_l', OPENSIGHT_STRIPE_PRICE_REGULAR: 'price_r', OPENSIGHT_STRIPE_PRICE_HEAVY: 'price_h' });
   const billing = new HostedBilling(f.db, billingConfig(f.env), { clock: () => now }); await billing.startTrial('tenant-one');
-  const { request, operator } = await serveH8(t, f, { clock, signupChallengeVerifier: async () => true, stripeFetcher: async () => ({ ok: true, status: 200, json: async () => ({ id: 'cs_trial', url: 'https://checkout.stripe.com/c/pay/trial' }) }) });
+  const { request, operator } = await serveH8(t, f, { clock, signupChallengeVerifier: async () => true, stripeFetcher: async () => ({ ok: true, status: 200, json: async () => ({ id: 'cs_trial', url: 'https://checkout.stripe.com/c/pay/trial', status: 'open', expires_at: Math.floor(clock() / 1000) + 86400 }) }) });
   const headers = { authorization: 'one', origin: f.env.OPENSIGHT_PUBLIC_ORIGIN };
   const session = await request('/api/session', { headers }); assert.equal(session.status, 200); assert.equal(session.body.trial.daysRemaining, 0); assert.equal(session.body.billingPaused, true);
   assert.equal((await request('/api/users', { headers })).body.errorCode, 'TRIAL_EXPIRED');
@@ -135,6 +135,27 @@ test('197 HTTP: expired identity still signs in; only admins can checkout/export
   assert.equal((await request('/api/host/signups', { method: 'PATCH', headers: { ...operator, origin: f.env.OPENSIGHT_PUBLIC_ORIGIN }, body: { paused: true } })).body.paused, true);
   await f.db.transaction(c => c.query(`UPDATE h1_resources SET body = ? WHERE tenant_id = 'tenant-one' AND resource_id = 'admin' AND kind = 'user'`, [JSON.stringify({ name: 'Reader', role: 'reader' })]));
   for (const [path, method, body] of [['/api/signup/checkout', 'POST', { tier: 'light' }], ['/api/workspace/export', 'GET', undefined], ['/api/workspace/close', 'POST', { confirmTenantId: 'tenant-one' }]]) assert.equal((await request(path, { headers, method, body })).body.errorCode, 'SECURITY_ADMIN_REQUIRED');
+});
+
+test('216 HTTP: dark signup flag also closes the namespace-scoped checkout route', async t => {
+  const { billingConfig } = await import('../dist/hosted-billing.js');
+  const f = await h8Fixture(t); await initializeBilling(f.db);
+  const now = Date.UTC(2026, 10, 6), clock = () => now;
+  // Billing is configured (a checkout session could be created), but
+  // OPENSIGHT_SIGNUP_ENABLED is deliberately absent: signup stays dark.
+  Object.assign(f.env, { OPENSIGHT_TRIAL_ENTITLEMENT: JSON.stringify({ apiCalls: 30000, storageBytes: 10000000000, computeAttempts: 1500 }), OPENSIGHT_STRIPE_SECRET_KEY: 'sk_test', OPENSIGHT_STRIPE_WEBHOOK_SECRET: 'whsec_test', OPENSIGHT_STRIPE_PRICE_LIGHT: 'price_l', OPENSIGHT_STRIPE_PRICE_REGULAR: 'price_r', OPENSIGHT_STRIPE_PRICE_HEAVY: 'price_h' });
+  const billing = new HostedBilling(f.db, billingConfig(f.env), { clock }); await billing.startTrial('tenant-one');
+  const { request } = await serveH8(t, f, { clock, signupChallengeVerifier: async () => true, stripeFetcher: async () => ({ ok: true, status: 200, json: async () => ({ id: 'cs_dark', url: 'https://checkout.stripe.com/c/pay/dark', status: 'open', expires_at: Math.floor(clock() / 1000) + 86400 }) }) });
+  const headers = { authorization: 'one', origin: f.env.OPENSIGHT_PUBLIC_ORIGIN };
+  for (const path of ['/api/signup/checkout', '/api/namespaces/one/signup/checkout']) {
+    const res = await request(path, { method: 'POST', headers, body: { tier: 'light' } });
+    assert.equal(res.status, 404, path); assert.equal(res.body.errorCode, 'RESOURCE_NOT_FOUND', path);
+  }
+  // Billing state stays readable on both routes while dark; only checkout closes.
+  for (const path of ['/api/billing', '/api/namespaces/one/billing']) {
+    const res = await request(path, { headers });
+    assert.equal(res.status, 200, path); assert.equal(res.body.checkoutEnabled, false, path);
+  }
 });
 
 test('197 durability: encrypted reference backup preserves trial, queue settings and lifetime signup identity', async t => {
@@ -160,7 +181,7 @@ test('197 operator: daily expired count survives same-day conversion', async t =
   await f.signup.request(input(), 'ip'); const result = await f.signup.verify(token(f.mail));
   f.advance(14 * 86400000); now += 14 * 86400000;
   assert.equal((await ops.status()).expiredToday, 1);
-  await f.billing.handleEvent({ id: 'evt_funnel', type: 'customer.subscription.updated', object: { id: 'sub_funnel', status: 'active', metadata: { tenant_id: result.tenantId }, items: { data: [{ price: { id: 'pl' } }] } } });
+  await f.billing.handleEvent({ id: 'evt_funnel', created: 1, type: 'checkout.session.completed', object: { subscription: 'sub_funnel', customer: 'cus_fixture', metadata: { tenant_id: result.tenantId, tier: 'light' }, payment_status: 'paid' } });
   const status = await ops.status(); assert.equal(status.expiredToday, 1); assert.equal(status.convertedToday, 1);
 });
 

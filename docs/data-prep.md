@@ -1,4 +1,4 @@
-# Dataset preparation (issues #9, #11, #14, #17, #18, and #58)
+# Dataset preparation (issues #9, #11, #14, #17, #18, #58, #278, and #279)
 
 The Preview tab also offers [spreadsheet-style column actions](familiar-surface.md)
 for formula columns, filters, and renames (#156), all using the operations below.
@@ -7,7 +7,7 @@ The Data preparation view builds a branching transformation pipeline over source
 from the connector registry. Open it from Data sources → Prepare data, the mode
 picker, or the analysis editor's Data → Prepare data menu. The persistent left
 **Steps** panel groups Input, Column transformations, Combine transformations
-and Other. The canvas shows resolved left-input paths and one
+Other, and Recipes. The canvas shows resolved left-input paths and one
 node per connected or prepared input, with LEFT/RIGHT labels on join connections.
 Secondary source nodes sit above their consuming step; earlier-step right inputs
 remain selectable links to their existing result. Repeated joins show distinct
@@ -17,7 +17,7 @@ be reordered or removed. Switching tabs retains an unapplied configuration.
 Downstream schema errors remain visible.
 
 Join configuration shows left/right table column lists with type icons and
-column search, a keyboard-operable left/inner/right/full join selector, and
+column search, a keyboard-operable Venn picker labeled left/inner/right/full, and
 paired key selectors. Click a column or choose a dashed “Add a column from
 left/right table” placeholder to add a key. A partially filled key blocks Apply;
 remove the pair or choose both columns to continue. Right output columns expands
@@ -29,13 +29,42 @@ available in the expandable section above the Steps workspace.
 Adding data is a distinct action: **＋ Add data** stages a source (dataset,
 connector table, uploaded file, or an earlier step's result) as an input node on
 the canvas, visibly flagged until a Join or Append step is configured against it.
-Adding the Combine step while an input is staged presets the step's source and a
-default key; applying the step consumes the staged input. Join/append steps whose
+Adding the Combine step while an input is staged presets the step's source.
+New joins start with no keys; applying a configured step consumes the staged input. Join/append steps whose
 own configuration is incomplete — or that an upstream edit broke — carry a red
 unconfigured flag on the node with the validation message, so the fail-closed
 validation is visible on the canvas, not only in the editor at apply time. Staged
 inputs are a UI draft: they are not part of the saved pipeline or the exported
 bundle.
+
+## Join suggestions and step SQL (#279)
+
+**Suggested keys** lists whole column-name matches (case-insensitive) whose
+prep types match exactly. Similar names, INTEGER/DECIMAL coercions and ambiguous
+names are excluded. Each **Use suggested key** button adds only that pair after
+confirmation. Existing keys are preserved and already-configured pairs are not
+suggested again. These are metadata hints, not evidence of a data relationship.
+Keys are never populated automatically, including when a staged source is used.
+
+Every selected transformation and its configuration editor offers **SQL through
+this step**. This read-only disclosure shows the exact shared `compilePrep` SQL
+for the pipeline prefix ending at that step, including CTEs, quoting, whitespace,
+parameter placeholders and the compiler's preview output limit. Bound parameter
+values appear separately in order. Unapplied edits update the view; later invalid
+draft steps do not hide SQL for an earlier valid prefix. Compiler failures replace
+SQL with the compiler's named error. Branch inputs, prepared dataset definitions,
+and cached-input schema bindings use the existing canvas compiler context.
+
+The view compiles metadata locally and executes no queries. Canvas source IDs
+are compiler table bindings; the API resolves physical table names when executing.
+The displayed dialect is the prep compiler's dialect (including DuckDB staging
+for supported hosted connectors), not necessarily the upstream connector's SQL.
+
+Join match diagnostics are **not available** in this slice. The existing preview
+limits returned output, not source scans or both join inputs. Item 3 was stopped
+under the run brief's explicit architecture constraint; see the
+[bounded-preview blocker](issue-279-gap-notes.md#item-3--blocked-by-the-preview-architecture).
+No matched/unmatched counts or fan-out warning are inferred from a joined sample.
 
 ## Dataset and bundle model
 
@@ -57,7 +86,8 @@ Primary `input` and a join's `config.source` may also be
 to reuse an earlier result in the same pipeline, including a joined result. Their
 left side defaults to the preceding stage and can use an explicit `from` reference. Moving/removing a referenced step leaves
 an explicit validation error. Existing string references and version-1 bundles
-remain valid. Append configuration is unchanged.
+remain valid. Append still accepts `{source}`; optional `duplicates` selects `keep`
+(the default) or `dedupe` without changing existing pipelines.
 
 Source IDs are references, never SQL, credentials, URLs, or filesystem paths.
 The host resolves them to existing connector bindings. An imported bundle cannot
@@ -170,11 +200,93 @@ expressions use the Phase 2c parser, type system, and per-dialect function libra
 | `select` | `columns` | Keep a nonempty ordered column list. Missing/duplicate names fail. |
 | `filter` | `filters` | AND of `{columnName, value, operator?}` or `{columnName, values}`. EQUALS, GREATER_THAN_OR_EQUAL_TO, LESS_THAN_OR_EQUAL_TO; lists support equality only. Values must match the type. Empty lists match nothing; null never matches. Boolean predicates are unsupported. Dates use ISO dates or UTC timestamps. |
 | `calculate` | `name`, `expression` | Add a typed row expression. Visual aggregation, level-aware and table calculations are rejected here; their existing visual post-processing is unchanged. |
+| `window` | Structured `{name, function, valueColumn?, partitionBy, orderBy, frameBefore?, frameAfter?, buckets?, offset?}` or advanced `{name, expression}` | Adds one typed window column, retaining all input columns. Explicit step-local ordering is required; see below. |
 | `aggregate` | `groupBy`, `measures` | Measures are `{column, name, aggregation}`; SUM, AVG, COUNT, MIN, MAX. Empty group list aggregates the full input. COUNT counts nonnull column values. SUM/AVG require numeric input. Empty/all-null input follows SQL aggregate semantics. |
 | `join` | `source`, `joinType`, `keys`, exactly one of `columns` or `prefix` | inner/left/right/full equijoin. Keys are `{left,right}`, combined with AND and requiring identical types. All left columns are retained; outer joins extend unmatched sides with nulls. Null keys do not match; duplicate keys multiply rows. Right keys are not coalesced into left keys. |
-| `append` | `source` | UNION ALL; identical names and types required, order aligned by name. Duplicate rows are retained. |
+| `append` | `source`, optional `duplicates: "keep" \| "dedupe"` | Absent/keep uses UNION ALL; dedupe uses UNION over all output columns, including nulls. Identical names and types are required in both modes, aligned by name. |
 | `pivot` | `groupBy`, `column`, `value`, `aggregation`, `values` | Values are explicit `{value,name}` output definitions with unique typed keys. Conditional aggregation produces a stable schema. Unlisted/null keys contribute no measure; their groups can still appear. No data-dependent column discovery. |
 | `unpivot` | `columns`, `nameColumn`, `valueColumn` | Selected columns must share a type. Each input row produces one row per selected column. Names become values, null cells are kept, and unselected columns repeat. |
+
+### Window configuration (#278)
+
+**Window (rank, running totals)** adds a column without collapsing its input.
+The structured editor has a function, output name, value column when applicable,
+**Partition by (restart for each)** and an ordered, reorderable **Order by** list
+with per-column `asc`/`desc` direction. Partitions and ordering come exclusively
+from the step; preview sorting and upstream grouping never supply either.
+Both DuckDB and Postgres compile native window SQL. Window alone does not require
+Blaze; upstream materialization requirements still apply.
+
+```json
+{
+  "id": "running-sales", "kind": "window",
+  "config": {
+    "name": "running_sales", "function": "runningTotal", "valueColumn": "sales",
+    "partitionBy": ["region"],
+    "orderBy": [{"column": "date", "direction": "asc"}, {"column": "id", "direction": "asc"}]
+  }
+}
+```
+
+| Function | Value and settings | Result |
+| --- | --- | --- |
+| `rowNumber`, `rank`, `denseRank` | No value column | INTEGER; rank preserves peer ties, dense rank has no gaps |
+| `ntile` | Required positive `buckets`; no value column | INTEGER bucket |
+| `runningTotal`, `runningAverage` | Numeric `valueColumn`; ROWS from unbounded preceding through current row | DECIMAL, matching aggregate SUM/AVG casts |
+| `movingSum`, `movingAverage` | Numeric `valueColumn`; nonnegative `frameBefore`/`frameAfter`, each defaulting to 0 | DECIMAL; ROWS includes the current row, clipped at partition boundaries |
+| `lag`, `lead` | Any typed `valueColumn`; positive `offset`, default 1 | Preserves the input type; missing neighbors yield null |
+
+Numeric inputs are INTEGER or DECIMAL. Counts are integers at most 2,147,483,647,
+matching the common dialect argument range. Inapplicable settings are forbidden,
+including value columns for ranking/buckets, frames for non-moving functions,
+offsets outside lag/lead, and buckets outside ntile. Missing columns, invalid
+numeric types, duplicate output names and outputs exceeding 256 columns fail
+with named prep errors. SQL aggregate null behavior applies to running/moving
+functions. Both dialects use `NULLS LAST` for either direction.
+
+**Ordering rule:** every function requires at least one explicit Order by column.
+An empty list (or advanced OVER without ORDER BY) fails before SQL execution with
+`PREP_WINDOW_ORDER_REQUIRED` at the config's `orderBy`/`expression` path, including
+when previewing an earlier step. For stable row numbers and row-relative results,
+authors must include unique tie-breaker columns within each partition. This is
+the brief's nonempty-order validation rule: source metadata has no unique-key
+contract, so compilation cannot verify uniqueness of actual data. Tied row-number
+orders are not proven deterministic; the UI makes the tie-breaker requirement
+explicit. Rank/dense rank deliberately retain their configured peer groups.
+
+**Advanced mode** uses exactly `{name, expression}`. The expression carries its
+entire OVER clause; no structured fields may accompany it. A dedicated bounded,
+non-recursive parser accepts one of:
+
+- `ROW_NUMBER()`, `RANK()`, `DENSE_RANK()`, `NTILE(positive_integer)`.
+- `LAG(column[, positive_integer])`, `LEAD(column[, positive_integer])`.
+- `SUM(column)`, `AVG(column)` with an explicit supported ROWS frame.
+
+Each call is followed by `OVER ([PARTITION BY column, ...] ORDER BY column
+[ASC|DESC], ... [ROWS BETWEEN ...])`. Keywords are case-insensitive, omitted
+directions mean ASC, and column references are exact schema names: either bare
+ASCII identifiers (`[A-Za-z_][A-Za-z_0-9]*`) or SQL double-quoted identifiers with
+embedded quotes doubled. SUM/AVG require either `ROWS BETWEEN UNBOUNDED PRECEDING
+AND CURRENT ROW` for a running calculation, or `ROWS BETWEEN n PRECEDING AND m
+FOLLOWING` for a moving calculation; CURRENT ROW is also accepted for either
+zero bound. Other functions forbid frames. Expressions are limited to 10,000
+characters / 4,096 tokens and the same 256-entry lists as structured configs.
+
+For example: `SUM("sales") OVER (PARTITION BY "region" ORDER BY "date", "id"
+ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)`. Multiple calls, nesting, arithmetic,
+comments, arbitrary SQL, RANGE frames and non-window expressions fail closed
+with `UNSUPPORTED_PREP_STEP`; malformed structured settings use
+`INVALID_PREP_PIPELINE`, and missing columns/type mismatches use
+`PREP_SCHEMA_MISMATCH`. No raw expression text is interpolated into SQL. The
+ordinary Calculate expression language is unchanged. Switching editor modes
+retains each mode's independent draft.
+
+**Keep first/latest row per group** inserts two steps: rowNumber followed by an
+EQUALS 1 filter. Its generated `__keep_row_number` column gains a suffix if needed
+to avoid a case-insensitive collision. Configure the window's partition columns
+and order (ascending for first, descending for latest, with tie-breakers); the
+recipe intentionally starts without order and displays the named error until
+configured. The number column remains in the output; a Select step can remove it.
 
 **Deliberate difference from QuickSight — append schema leniency (#19).**
 QuickSight's Append aligns columns by name and tolerates differing column

@@ -24,8 +24,14 @@ infrastructure.
 
 `robots.txt` allows all crawlers, explicitly allows `meta-webindexer`, and
 points at `https://getopensight.org/sitemap.xml`. The sitemap lists the
-marketing page, `/demo/`, `https://app.getopensight.org/`, and the six generated
-[documentation pages](documentation-site.md) under `/docs/` (#185). Open Graph and
+marketing page and the generated
+[documentation pages](documentation-site.md) under `/docs/` (#185). It no
+longer lists `/demo/` or the cross-host `https://app.getopensight.org/`:
+both are app shells, not placement pages (#237). The demo artifact itself
+serves `<meta name="robots" content="noindex, follow">`, injected by the
+demo build (`packages/web/scripts/build-demo.mjs`) into the built file
+only — the shared app shell source is unchanged, and the pages that link
+to `/demo/` keep working as CTAs. Open Graph and
 Twitter large-image cards reuse the page title and existing meta description
 and name the absolute URL of `assets/og-image.jpg`. The head also carries a
 canonical link to the homepage, the share image's true dimensions
@@ -39,6 +45,14 @@ Run `node site/check.mjs` separately from root `npm test`: CI invokes the
 checker, but the root suite does not. Checks are offline; external URL
 inspection cannot establish live availability. The demo entry point remains
 a deploy-time artifact. Publishing and hosted routing remain operator work.
+
+Page titles and meta descriptions on the audited pages are the exact values
+approved in #238, guarded verbatim by `check.mjs`. On the competitor pages
+the title tag is search copy and no longer mirrors the H1. The generated
+docs pages take theirs from `metaTitle` / `metaDescription` overrides in
+`build-docs.mjs` where approved values exist, so their descriptions are
+complete sentences rather than auto-truncated first-paragraph excerpts;
+pages without an override still derive theirs from the source document.
 
 ## Positioning (Tom's direction, 2026-10-12, from issue #93)
 

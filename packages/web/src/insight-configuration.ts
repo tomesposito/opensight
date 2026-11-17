@@ -1,4 +1,5 @@
 import type { Field } from './model.js';
+import { forecastConfigValid, type ForecastConfig } from './forecast.js';
 
 export class InsightError extends Error {
   constructor(readonly code: string, message: string) { super(`${code}: ${message}`); this.name = 'InsightError'; }
@@ -12,9 +13,49 @@ export function insightObject(value: unknown): Obj {
 const allowed = (value: Obj, names: string[]) => {
   for (const name of Object.keys(value)) if (!names.includes(name)) insightFail('INSIGHT_CONFIGURATION_UNSUPPORTED', `unsupported property ${name}`);
 };
-const variants = ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison'] as const;
+const variants = ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison', 'forecast', 'periodToDate', 'uniqueValues', 'topBottomMovers'] as const;
 type Kind = typeof variants[number];
-export interface InsightRequest { kind: Kind; id: string; measure: number; target?: number; type?: string; size?: number }
+export type InsightRequest = { id: string; measure: number } & (
+  { kind: Exclude<Kind, 'forecast' | 'periodToDate' | 'uniqueValues' | 'topBottomMovers'>; target?: number; type?: string; size?: number }
+  | { kind: 'forecast'; forecast: ForecastConfig }
+  | { kind: 'periodToDate'; periodTimeGranularity: NonNullable<Field['dateGranularity']> }
+  | { kind: 'uniqueValues' }
+  | { kind: 'topBottomMovers'; type: 'TOP' | 'BOTTOM'; size: number; sortOrder: 'PERCENT_DIFFERENCE' | 'ABSOLUTE_DIFFERENCE' }
+);
+
+function periodTimeGranularity(value: unknown): NonNullable<Field['dateGranularity']> | undefined {
+  if (value === undefined) return;
+  if (value === 'DAY' || value === 'MONTH' || value === 'QUARTER' || value === 'YEAR') return value;
+  return insightFail('INSIGHT_COMPUTATION_INVALID', 'periodTimeGranularity must be DAY, MONTH, QUARTER or YEAR');
+}
+
+/** Native ForecastProperties follows the chart forecast configuration contract. */
+function forecastProperties(value: unknown): ForecastConfig {
+  if (value !== undefined && (!value || typeof value !== 'object' || Array.isArray(value))) insightFail('INSIGHT_COMPUTATION_INVALID', 'forecastProperties must be an object');
+  const raw = (value ?? {}) as Obj;
+  allowed(raw, ['periodsForward', 'periodsBackward', 'predictionInterval', 'seasonality', 'customSeasonalityValue', 'lowerBoundary', 'upperBoundary']);
+  const seasonality = raw.seasonality === undefined ? 'AUTOMATIC' : raw.seasonality;
+  if (!['AUTOMATIC', 'NONE', 'CUSTOM'].includes(seasonality as string)) insightFail('INSIGHT_COMPUTATION_INVALID', 'invalid forecast seasonality');
+  const custom = raw.customSeasonalityValue;
+  if (seasonality === 'CUSTOM' && (typeof custom !== 'number' || !Number.isInteger(custom) || custom < 2 || custom > 366)) insightFail('INSIGHT_COMPUTATION_INVALID', 'a custom seasonality period between 2 and 366 is required');
+  const candidate = {
+    enabled: true,
+    periodsForward: raw.periodsForward === undefined ? 3 : raw.periodsForward,
+    periodsBackward: raw.periodsBackward === undefined ? 0 : raw.periodsBackward,
+    predictionInterval: raw.predictionInterval === undefined ? 95 : raw.predictionInterval,
+    seasonality: seasonality === 'AUTOMATIC' ? 'auto' : seasonality === 'NONE' ? 'none' : custom,
+    ...(raw.lowerBoundary !== undefined ? { lowerBoundary: raw.lowerBoundary } : {}),
+    ...(raw.upperBoundary !== undefined ? { upperBoundary: raw.upperBoundary } : {}),
+  };
+  if (!forecastConfigValid(candidate)) return insightFail('INSIGHT_COMPUTATION_INVALID', 'invalid forecast properties');
+  return candidate;
+}
+
+function moversProperties(body: Obj): void {
+  if (body.type !== 'TOP' && body.type !== 'BOTTOM') insightFail('INSIGHT_COMPUTATION_INVALID', 'type must be TOP or BOTTOM');
+  if (body.moverSize !== undefined && (!Number.isInteger(body.moverSize) || Number(body.moverSize) < 1 || Number(body.moverSize) > 20)) insightFail('INSIGHT_COMPUTATION_INVALID', 'MoverSize must be 1–20');
+  if (body.sortOrder !== undefined && body.sortOrder !== 'PERCENT_DIFFERENCE' && body.sortOrder !== 'ABSOLUTE_DIFFERENCE') insightFail('INSIGHT_COMPUTATION_INVALID', 'sortOrder must be PERCENT_DIFFERENCE or ABSOLUTE_DIFFERENCE');
+}
 
 function computations(config: unknown): [Kind, Obj][] | undefined {
   const c = insightObject(config);
@@ -26,16 +67,24 @@ function computations(config: unknown): [Kind, Obj][] | undefined {
     const entries = Object.entries(insightObject(raw));
     if (entries.length !== 1) return insightFail('INSIGHT_COMPUTATION_INVALID', 'expected exactly one computation variant');
     const [kind, value] = entries[0]!;
-    if (/^forecast(?:Computation)?$/i.test(kind)) insightFail('INSIGHT_FORECAST_UNSUPPORTED', 'forecast computations are not supported');
     if (/anomaly/i.test(kind)) insightFail('INSIGHT_ANOMALY_UNSUPPORTED', 'anomaly computations are not supported');
     if (!variants.includes(kind as Kind)) insightFail('INSIGHT_COMPUTATION_UNSUPPORTED', `unsupported computation ${kind}`);
+    if (kind === 'forecast' && (!value || typeof value !== 'object' || Array.isArray(value))) insightFail('INSIGHT_COMPUTATION_INVALID', 'forecast must be an object');
+    if (kind === 'periodToDate' && (!value || typeof value !== 'object' || Array.isArray(value))) insightFail('INSIGHT_COMPUTATION_INVALID', 'periodToDate must be an object');
+    if (kind === 'uniqueValues' && (!value || typeof value !== 'object' || Array.isArray(value))) insightFail('INSIGHT_COMPUTATION_INVALID', 'uniqueValues must be an object');
+    if (kind === 'topBottomMovers' && (!value || typeof value !== 'object' || Array.isArray(value))) insightFail('INSIGHT_COMPUTATION_INVALID', 'topBottomMovers must be an object');
     const body = insightObject(value);
     if (typeof body.computationId !== 'string' || !/^[\w-]{1,512}$/.test(body.computationId)) insightFail('INSIGHT_COMPUTATION_INVALID', 'a computationId is required');
     if (body.name !== undefined && typeof body.name !== 'string') insightFail('INSIGHT_COMPUTATION_INVALID', 'name must be a string');
     const specific = kind === 'totalAggregation' ? ['value'] : kind === 'maximumMinimum' ? ['time', 'value', 'type']
       : kind === 'topBottomRanked' ? ['category', 'value', 'type', 'resultSize'] : kind === 'metricComparison' ? ['time', 'fromValue', 'targetValue']
-      : kind === 'growthRate' ? ['time', 'value', 'periodSize'] : ['time', 'value'];
+      : kind === 'growthRate' ? ['time', 'value', 'periodSize'] : kind === 'forecast' ? ['time', 'value', 'forecastProperties']
+      : kind === 'periodToDate' ? ['time', 'value', 'periodTimeGranularity'] : kind === 'uniqueValues' ? ['category']
+      : kind === 'topBottomMovers' ? ['time', 'category', 'value', 'type', 'moverSize', 'sortOrder'] : ['time', 'value'];
     allowed(body, ['computationId', 'name', ...specific]);
+    if (kind === 'forecast') forecastProperties(body.forecastProperties);
+    if (kind === 'periodToDate') periodTimeGranularity(body.periodTimeGranularity);
+    if (kind === 'topBottomMovers') moversProperties(body);
     return [kind as Kind, body];
   });
 }
@@ -55,10 +104,55 @@ export function projectInsightBody(body: Obj): Obj {
   return { ...body, chartConfiguration: { fieldWells: { insightAggregatedFieldWells: insightWells(body.insightConfiguration ?? {}) } } };
 }
 
-export function normalizeInsight(config: unknown, dimensions: Field[], measures: Field[]): InsightRequest[] {
+/**
+ * Complete structural validation of an insight configuration, shared by draft
+ * admission, author query construction and the compiler (via normalizeInsight):
+ * every computation is a known, well-formed variant with only supported
+ * properties, computation IDs are unique, and topBottomMovers computations
+ * never mix with other computations. Field-binding and dimension/measure
+ * requirements are normalizeInsight's layer, enforced before querying and at
+ * compile time — not here, so an in-progress draft stays saveable.
+ */
+export function validateInsightConfiguration(config: unknown): void {
   const entries = computations(config);
-  if (dimensions.length !== 1) insightFail('INSIGHT_CATEGORY_REQUIRED', 'expected exactly one Category dimension');
-  if (measures.length < 1 || measures.length > 2) insightFail('INSIGHT_VALUES_REQUIRED', 'expected one Values measure, or two for comparison');
+  if (!entries) return;
+  const ids = new Set<string>();
+  for (const [, body] of entries) {
+    const id = body.computationId as string;
+    if (ids.has(id)) insightFail('INSIGHT_COMPUTATION_INVALID', 'duplicate computation IDs');
+    ids.add(id);
+  }
+  if (entries.some(([kind]) => kind === 'topBottomMovers') && !entries.every(([kind]) => kind === 'topBottomMovers'))
+    insightFail('INSIGHT_COMPUTATION_INVALID', 'topBottomMovers computations cannot be combined with other computations');
+}
+
+/** True when every configured computation is uniqueValues — the only variant that binds no measure. */
+export function uniqueValuesOnly(config: unknown): boolean {
+  const entries = computations(config);
+  return !!entries?.length && entries.every(([kind]) => kind === 'uniqueValues');
+}
+
+/** True when every configured computation is topBottomMovers — the only variant that binds two dimensions (category + time). */
+export function topBottomMoversOnly(config: unknown): boolean {
+  const entries = computations(config);
+  return !!entries?.length && entries.every(([kind]) => kind === 'topBottomMovers');
+}
+
+/** Column name of the movers time field, when a topBottomMovers computation binds one. */
+export function topBottomMoversTimeColumn(config: unknown): string | undefined {
+  const entry = computations(config)?.find(([kind]) => kind === 'topBottomMovers');
+  if (!entry || entry[1].time === undefined) return undefined;
+  const field = insightObject(Object.values(insightObject(entry[1].time))[0]);
+  const column = insightObject(field.column);
+  return typeof column.columnName === 'string' ? column.columnName : undefined;
+}
+
+export function normalizeInsight(config: unknown, dimensions: Field[], measures: Field[]): InsightRequest[] {
+  validateInsightConfiguration(config);
+  const entries = computations(config);
+  const moversOnly = !!entries?.length && entries.every(([kind]) => kind === 'topBottomMovers');
+  if (moversOnly ? dimensions.length !== 2 : dimensions.length !== 1) insightFail('INSIGHT_CATEGORY_REQUIRED', moversOnly ? 'expected a Category dimension and a Time dimension' : 'expected exactly one Category dimension');
+  if (measures.length > 2 || (measures.length < 1 && !(entries?.length && entries.every(([kind]) => kind === 'uniqueValues')))) insightFail('INSIGHT_VALUES_REQUIRED', 'expected one Values measure, or two for comparison');
   if (!entries) return [
     { kind: 'totalAggregation', id: 'total', measure: 0 },
     { kind: 'maximumMinimum', id: 'maximum', type: 'MAXIMUM', measure: 0 },
@@ -66,7 +160,6 @@ export function normalizeInsight(config: unknown, dimensions: Field[], measures:
     ...(dimensions[0]!.dateGranularity ? [{ kind: 'periodOverPeriod' as const, id: 'period', measure: 0 }] : []),
     ...(measures.length === 2 ? [{ kind: 'metricComparison' as const, id: 'comparison', measure: 0, target: 1 }] : []),
   ];
-  const ids = new Set<string>();
   const binding = (raw: unknown, fields: Field[], fallback: number): number => {
     if (raw === undefined) return fallback;
     const wrapper = insightObject(raw), pairs = Object.entries(wrapper);
@@ -88,9 +181,34 @@ export function normalizeInsight(config: unknown, dimensions: Field[], measures:
   };
   return entries.map(([kind, c]) => {
     const id = c.computationId as string;
-    if (ids.has(id)) insightFail('INSIGHT_COMPUTATION_INVALID', 'duplicate computation IDs'); ids.add(id);
     binding(c.category ?? c.time, dimensions, 0);
+    if (kind === 'uniqueValues') return { kind, id, measure: 0 };
     const measure = binding(kind === 'metricComparison' ? c.fromValue : c.value, measures, 0);
+    if (kind === 'topBottomMovers') {
+      const categoryIndex = binding(c.category, dimensions, 0);
+      const timeIndex = binding(c.time, dimensions, 1);
+      if (categoryIndex === timeIndex) insightFail('INSIGHT_FIELD_UNBOUND', 'movers category and time must bind distinct fields');
+      // Execution honors the wells in category/time order by construction —
+      // the compiler reads dimension 0 as category and dimension 1 as time,
+      // and the narrative receives its fields in that same order — so a
+      // computation whose resolved bindings point at the wells in the
+      // opposite order must fail closed here instead of executing with the
+      // fields swapped (issue #268). Checking every computation also rejects
+      // multiple movers computations that bind inconsistent category/time
+      // roles against the same two wells.
+      if (categoryIndex !== 0 || timeIndex !== 1) insightFail('INSIGHT_FIELD_UNBOUND', 'movers category and time must bind the category dimension first and the time dimension second, in wells order');
+      if (!dimensions[timeIndex]!.dateGranularity) insightFail('INSIGHT_TIME_REQUIRED', 'movers computations require a date/time dimension');
+      return { kind, id, measure, type: c.type as 'TOP' | 'BOTTOM', size: Number(c.moverSize ?? 3), sortOrder: (c.sortOrder as 'PERCENT_DIFFERENCE' | 'ABSOLUTE_DIFFERENCE' | undefined) ?? 'PERCENT_DIFFERENCE' };
+    }
+    if (kind === 'forecast') {
+      if (!dimensions[0]!.dateGranularity) insightFail('INSIGHT_TIME_REQUIRED', 'forecast computations require a date/time dimension');
+      return { kind, id, measure, forecast: forecastProperties(c.forecastProperties) };
+    }
+    if (kind === 'periodToDate') {
+      const grain = dimensions[0]!.dateGranularity;
+      if (!grain) return insightFail('INSIGHT_TIME_REQUIRED', 'period computations require a date/time dimension');
+      return { kind, id, measure, periodTimeGranularity: periodTimeGranularity(c.periodTimeGranularity) ?? grain };
+    }
     if (kind === 'growthRate' || kind === 'periodOverPeriod') {
       if (!dimensions[0]!.dateGranularity) insightFail('INSIGHT_TIME_REQUIRED', 'period computations require a date/time dimension');
       if (c.periodSize !== undefined && c.periodSize !== 2) insightFail('INSIGHT_PERIOD_UNSUPPORTED', 'only the latest period versus previous period is supported (PeriodSize 2)');
@@ -110,7 +228,13 @@ export function rebindInsight(config: Obj, category: unknown[], values: unknown[
   const name = (raw: unknown) => Object.values(insightObject(raw))[0];
   const column = (raw: unknown) => insightObject(insightObject(name(raw)).column).columnName;
   return { ...config, ...(Array.isArray(config.computations) ? { computations: config.computations.map(raw => Object.fromEntries(Object.entries(insightObject(raw)).map(([kind, body]) => [kind, Object.fromEntries(Object.entries(insightObject(body)).map(([k, v]) => {
-    if (k === 'time' || k === 'category') return [k, category[0] ?? v];
+    if (k === 'category') return [k, category[0] ?? v];
+    if (k === 'time') {
+      // Movers bind a distinct time field inside the same wells list: keep it
+      // matched by column (like values below), never collapsed to category[0].
+      const idx = original.category.findIndex(f => column(f) === column(v));
+      return [k, (idx > 0 ? category[idx] : category[0]) ?? v];
+    }
     if (['value', 'fromValue', 'targetValue'].includes(k)) return [k, values[original.values.findIndex(f => column(f) === column(v))] ?? v];
     return [k, v];
   }))]))) } : {}) };

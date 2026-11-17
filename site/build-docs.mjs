@@ -5,14 +5,17 @@ import { dirname, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+// A manifest entry may carry metaTitle / metaDescription: the exact approved
+// page title / meta description (issue #238), used verbatim instead of the
+// H1-derived title and the auto-truncated first-paragraph excerpt.
 export const manifest = [
   { source: 'docs/first-run.md', slug: 'getting-started', title: 'Getting started' },
   { source: 'docs/connector-gallery.md', slug: 'connectors', title: 'Data sources and connectors' },
   { source: 'docs/embedding-config.md', slug: 'embedding', title: 'Embedding configuration' },
   { source: 'docs/embed-sessions.md', slug: 'embedding-sessions', title: 'Embedded sessions' },
-  { source: 'docs/permissions.md', slug: 'permissions', title: 'Permissions and row-level security' },
-  { source: 'docs/open-economics.md', slug: 'open-economics', title: 'Open economics: never paywalled' },
-  { source: 'docs/migrating-from-quicksight.md', slug: 'migrating-from-quicksight', title: 'Moving from QuickSight to OpenSight' },
+  { source: 'docs/permissions.md', slug: 'permissions', title: 'Permissions and row-level security', metaDescription: 'Access to an OpenSight analysis or dashboard and access to its data are separate permissions. Sharing a definition lets someone open the asset, not the data.' },
+  { source: 'docs/open-economics.md', slug: 'open-economics', title: 'Open economics: never paywalled', metaTitle: 'Open economics: features never paywalled', metaDescription: 'OpenSight is Apache-2.0. The hosted service charges for running it, not unlocking it: SSO, row-level security and core governance are never paywalled.' },
+  { source: 'docs/migrating-from-quicksight.md', slug: 'migrating-from-quicksight', title: 'Moving from QuickSight to OpenSight', metaDescription: 'A QuickSight bundle carries four kinds of thing: analyses, dashboards, datasets and data sources. OpenSight imports the bundle file directly. Here is the move.' },
 ];
 export const docsPath = slug => `/docs/${slug ? `${slug}/` : ''}`;
 export const canonicalUrl = slug => `https://getopensight.org${docsPath(slug)}`;
@@ -31,6 +34,10 @@ export function rewriteLink(href, source) {
     throw new Error(`Unsupported documentation link in ${source}: ${href}`);
   }
   const [, path, suffix] = href.match(/^([^?#]*)(.*)$/);
+  // Root-absolute site routes (/pricing/, /alternatives/quicksight/) name
+  // published pages, not repository files: keep them as-is (issue #239).
+  // File-like absolute paths (/docs/first-run.md) keep the mapping below.
+  if (path.startsWith('/') && !/\.[a-z0-9]+$/i.test(path)) return `${path}${suffix}`;
   const target = path.startsWith('/')
     ? posix.normalize(path.slice(1))
     : posix.normalize(posix.join(posix.dirname(source), path));
@@ -248,14 +255,32 @@ export function description(summary) {
   return `${clipped.slice(0, boundary > 100 ? boundary : 157).replace(/[,;:]$/, '')}…`;
 }
 
-function pageHtml({ title, summary, slug = '', article, footer, brand }) {
+function pageHtml({ title, summary, slug = '', article, footer, brand, metaTitle, metaDescription }) {
+  const pageTitle = `${metaTitle ?? title} — OpenSight docs`;
+  const pageDescription = metaDescription ?? description(summary);
+  // The same OG/Twitter block the other site pages carry (issue #239):
+  // og:title / og:description mirror this page's own title and description,
+  // and every docs page shares the one og-image.
+  const shareImage = 'https://getopensight.org/assets/og-image.jpg';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(title)} — OpenSight docs</title>
-<meta name="description" content="${escapeHtml(description(summary))}">
+<title>${escapeHtml(pageTitle)}</title>
+<meta name="description" content="${escapeHtml(pageDescription)}">
+<meta property="og:title" content="${escapeHtml(pageTitle)}">
+<meta property="og:description" content="${escapeHtml(pageDescription)}">
+<meta property="og:type" content="website">
+<meta property="og:url" content="${canonicalUrl(slug)}">
+<meta property="og:image" content="${shareImage}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${escapeHtml(pageTitle)}">
+<meta name="twitter:description" content="${escapeHtml(pageDescription)}">
+<meta name="twitter:image" content="${shareImage}">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta property="og:image:alt" content="${escapeHtml(pageTitle)}">
 <link rel="canonical" href="${canonicalUrl(slug)}">
 <link rel="stylesheet" href="${slug ? '../' : ''}docs.css">
 </head>
@@ -267,6 +292,7 @@ function pageHtml({ title, summary, slug = '', article, footer, brand }) {
     <nav class="nav-links" aria-label="Main">
       <a href="/">Home</a>
       <a href="/docs/" aria-current="${slug ? 'true' : 'page'}">Docs</a>
+      <a href="/pricing/">Pricing</a>
       <a href="${github}">GitHub</a>
     </nav>
   </div>
@@ -307,8 +333,8 @@ export function renderDocs(root = repoRoot) {
     ...page, article: page.html, footer, brand,
   })]));
   output.set('site/docs/index.html', pageHtml({
-    title: 'Documentation', summary: 'Install and run OpenSight, connect data, configure embedding, and understand permissions and row-level security.',
-    article: `<h1 id="documentation">Documentation</h1>\n<ul class="docs-index">\n${pages.map(page => `  <li><h2><a href="${docsPath(page.slug)}">${escapeHtml(page.title)}</a></h2><p>${escapeHtml(page.summary)}</p></li>`).join('\n')}\n</ul>`,
+    title: 'Documentation', summary: 'Install and run OpenSight, connect data, configure embedding, and understand permissions and row-level security. Plus getting started and migration guides.',
+    article: `<h1 id="documentation">Documentation</h1>\n<ul class="docs-index">\n${pages.map(page => `  <li><h2><a href="${docsPath(page.slug)}">${escapeHtml(page.title)}</a></h2><p>${escapeHtml(page.summary)}</p></li>`).join('\n')}\n</ul>\n<p>Running OpenSight yourself is free. If you would rather we ran it, the hosted tiers are on the <a href="/pricing/">pricing page</a>.</p>`,
     footer, brand,
   }));
   return output;

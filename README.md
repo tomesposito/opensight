@@ -10,7 +10,7 @@ bidirectional asset compatibility — connect data, prepare datasets, build
 analyses and dashboards, and ask questions in natural language. Self-hosted;
 no AWS required.
 
-![OpenSight tour: dashboard, Ask O, analysis editor, and data tools](docs/images/opensight-tour.gif)
+![OpenSight tour: dashboard, Ask O, data preparation, and data sources](docs/images/opensight-tour.gif)
 
 *Above: the offline demo — a dashboard, Ask O answering "sum sales by region",
 the analysis editor, data tools, and the Metrics tab's API requirement.*
@@ -160,9 +160,10 @@ the content and clear the notice.
 Field wells stay visible before a visual is selected. Fresh bar and pie visuals
 show **GROUP/COLOR**, **VALUE**, and **SMALL MULTIPLES**. Drag fields, use the
 pickers, or select a well and click a Data field. Empty VALUE wells show
-“Add a measure”; assigned pills show their field types. Small multiples fields
-save in drafts, with an explicit preview/export limitation until faceted rendering
-is supported. See [field wells](docs/field-wells.md).
+“Add a measure”; assigned pills show their field types. Small multiples render
+on bar, percentage bar, line, area, combo and pie visuals. Multiples Options can
+limit displayed panels and group remaining facets as Other; the limit and field
+round-trip through editable exports. See [field wells](docs/field-wells.md).
 
 ![Empty Author visual with GROUP/COLOR, VALUE and SMALL MULTIPLES field wells](docs/images/author-empty.png)
 
@@ -199,8 +200,10 @@ See [Waterfall semantics and limits](docs/waterfall-chart.md).
 ![Waterfall preview with synthetic positive and negative revenue adjustments](docs/images/waterfall.png)
 
 Insight writes rule-based narratives from your aggregated data: totals, contributor
-shares, ranked categories, date-period changes and optional measure comparisons.
-Forecasts, anomalies and custom narrative templates fail with named errors.
+shares, ranked categories, date-period changes, statistical forecasts and optional
+measure comparisons. Forecasts require a date dimension and report a projected
+value with a prediction interval; short histories show an unavailable message.
+Anomalies and custom narrative templates fail with named errors.
 See [Insight semantics and limits](docs/insight-visual.md).
 
 ![Insight narrative showing revenue totals and category contributors](docs/images/insight.png)
@@ -254,7 +257,17 @@ original calculation remains unchanged, and provenance records its source.
 
 ![Calculation promotion into the governed metric form using a real local API and synthetic team sales](docs/images/governed-metric-form.png)
 
-![Data preparation canvas with hosted preview requirements](docs/images/data-prep.png)
+Prep **Window** steps add ranks, running/moving calculations, lag/lead and
+buckets through structured controls or a bounded advanced expression. A
+**Keep first/latest row per group** recipe adds row numbering and its filter;
+Append can optionally remove full-row duplicates. See the
+[configuration and ordering rules](docs/data-prep.md#window-configuration-278).
+
+Prep joins suggest matching column names and types for explicit confirmation.
+The four join types use a labeled Venn picker, and each step exposes read-only
+compiler SQL or its named error. See [join suggestions and step SQL](docs/data-prep.md#join-suggestions-and-step-sql-279).
+
+![Join configuration and per-step SQL on the data preparation canvas](docs/images/data-prep.png)
 
 Saved prep recipes can be proposed as **shared templates**. Owners/admins review
 and publish them; editors start new datasets by binding their own inputs. The
@@ -291,9 +304,12 @@ See [Blaze configuration and limits](docs/blaze.md).
 
 Start with CSV/TSV/JSON/Excel file uploads into DuckDB staging, then prepare
 your data and build a chart. The **Create data source** dialog lists only
-connectors OpenSight can actually use — no AWS-only services. PostgreSQL uses
-operator-provisioned hosted sources; MySQL is shown honestly as not yet
-implemented. The static demo shows the connector tiles with uploads disabled.
+connectors OpenSight can actually use. PostgreSQL, MySQL, MariaDB and manual
+Redshift use operator-provisioned hosted sources. Database selection requires
+an available source of the matching connector. See the
+[MySQL and MariaDB configuration and verification limits](docs/connector-mysql.md)
+and [manual Redshift configuration and verification limits](docs/connector-redshift.md).
+The static demo shows the connector tiles with uploads disabled.
 
 ![Create data source dialog with the connector tile grid](docs/images/data-sources.png)
 

@@ -1,3 +1,5 @@
+import { hostedS3Settings } from './source-s3-config.js';
+import { HostedAIReceipts, initializeAiAnswerReceipts } from './hosted-ai-receipts.js';
 import { DigestStore } from './digest-store.js';
 import { unsubscribeRoute } from './digest-routes.js';
 import { initializeIdeas, limitIdeas, listIdeas, myIdeas, submitIdea, transitionIdea } from './ideas.js';
@@ -16,7 +18,7 @@ import { HostedSources } from './hosted-sources.js';
 import { HostedData } from './hosted-data.js';
 import { HostedDataRoutes } from './hosted-data-routes.js';
 import { sourceEndpoints } from './source-schema.js';
-import { QueryEngineError, UploadError } from '@opensight/query-engine';
+import { QueryEngineError, UploadError, ConnectorError, S3SourceError } from '@opensight/query-engine';
 import { PrepError } from '@opensight/bundle-parser/prep';
 import { BlazeError } from './blaze.js';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -45,7 +47,7 @@ import { jobRoute } from './job-routes.js';
 import { Scheduler } from './schedule.js';
 import { hostedReadiness } from './hosted-health.js';
 import { HostedUsage, usageMonth, initializeUsage, entitlementConfig } from './hosted-usage.js';
-import { billingConfig, HostedBilling, httpStripeClient, initializeBilling, parseStripeEvent, readRawBody, verifyStripeSignature, type StripeFetcher } from './hosted-billing.js';
+import { billingConfig, waitlistBillingConfig, HostedBilling, httpStripeClient, initializeBilling, parseStripeEvent, readRawBody, verifyStripeSignature, type StripeFetcher } from './hosted-billing.js';
 import { initializeTenantMail, TenantMailTransport } from './hosted-mail.js';
 import { SignupOperator } from './hosted-signup-operator.js';
 import { exportWorkspace } from './workspace-export.js';
@@ -143,6 +145,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const clock = options.clock ?? Date.now;
   const signupCfg = signupConfig(options.env ?? process.env, config.origin, config.encryptionKey);
   const billingCfg = billingConfig(options.env ?? process.env);
+  const billingEntitlements = billingCfg ?? waitlistBillingConfig(options.env ?? process.env);
   const accessRate = accessRequestRate(options.env ?? process.env);
   const accessNotifyTo = accessRequestNotifyTo(options.env ?? process.env);
   if (options.membershipDatabase?.durable !== true || options.tenantDatabase?.durable !== true) throw new MetadataError('DURABLE_MEMBERSHIP_STORE_REQUIRED', 503);
@@ -150,25 +153,26 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const authenticate = options.security.authenticate;
   const reference = referenceConfig(options.env ?? process.env);
   if (options.invocation && reference) throw new MetadataError('SERVERLESS_REFERENCE_FORBIDDEN', 503);
-  // Enabling signup always composes quota enforcement, even outside reference
-  // mode. Existing unmetered operator tenants keep their prior unrestricted
-  // defaults; every trial/paid billing override still resolves fail-closed.
-  const signupUsage = !reference && signupCfg.enabled && !options.invocation;
-  if (signupUsage) await initializeUsage(options.membershipDatabase);
-  const signupDefaults = (options.env ?? process.env).OPENSIGHT_ENTITLEMENTS;
-  const usage = reference ? new HostedUsage(options.membershipDatabase, reference.entitlements, clock) : signupUsage
-    ? new HostedUsage(options.membershipDatabase, signupDefaults ? entitlementConfig(signupDefaults) : { defaults: { apiCalls: Number.MAX_SAFE_INTEGER, storageBytes: Number.MAX_SAFE_INTEGER, computeAttempts: Number.MAX_SAFE_INTEGER }, tenants: {} }, clock)
+  // Every single-node hosted deployment composes billing, including waitlist
+  // mode. Keep quota overrides active when Stripe or signup is switched off.
+  // Without explicit entitlements, operator defaults remain unrestricted;
+  // every trial/paid billing override still resolves fail-closed.
+  const configuredEntitlements = (options.env ?? process.env).OPENSIGHT_ENTITLEMENTS;
+  const hostedUsage = !reference && !options.invocation;
+  if (hostedUsage) await initializeUsage(options.membershipDatabase);
+  const usage = reference ? new HostedUsage(options.membershipDatabase, reference.entitlements, clock) : hostedUsage
+    ? new HostedUsage(options.membershipDatabase, configuredEntitlements !== undefined ? entitlementConfig(configuredEntitlements) : { defaults: { apiCalls: Number.MAX_SAFE_INTEGER, storageBytes: Number.MAX_SAFE_INTEGER, computeAttempts: Number.MAX_SAFE_INTEGER }, tenants: {} }, clock)
     : options.invocation?.usage;
   if (reference) await options.membershipDatabase.transaction(async c => {
-    for (const table of ['h8_usage', 'h8_monthly_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
+    for (const table of ['h8_usage', 'h8_egress_reservations', 'h8_monthly_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
     const r = (await c.query('SELECT version FROM h8_schema WHERE id = 1'))[0];
     if (Number(r?.version) !== 1) throw new MetadataError('MIGRATIONS_REQUIRED', 503);
     await appendOperatorAudit(c, { action: 'reference.started' });
   });
   if (!options.invocation) await initializeAnalytics(options.membershipDatabase);
   if (!options.invocation) await initializeAccessRequests(options.membershipDatabase);
-  if (!options.invocation && billingCfg) await initializeBilling(options.membershipDatabase);
-  if (!options.invocation) await initializeIdeas(options.membershipDatabase);
+  if (!options.invocation) await initializeBilling(options.membershipDatabase);
+  if (!options.invocation) { await initializeIdeas(options.membershipDatabase); await initializeAiAnswerReceipts(options.membershipDatabase); }
   const analytics = options.analytics ?? new Analytics(new AnalyticsStore(options.membershipDatabase), {
     ...analyticsFromEnvironment(options.env), deliveryMode: options.invocation ? 'deferred' : 'inline',
   });
@@ -180,14 +184,14 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const budgets = await loadBudgets(options.membershipDatabase, metadata);
   const invocation = options.invocation?.compose?.(metadata, budgets, options.builtinAuth, usage?.aiMeter(), analytics);
   const jobs = invocation?.jobs ?? new JobStore(options.membershipDatabase, metadata);
-  const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets, undefined, undefined, analytics), jobs);
-  const ai = invocation?.ai ?? new HostedAI(data, config.encryptionKey.toString('base64'), options.env ?? process.env, usage?.aiMeter(), options.ai);
-  const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env)), undefined, budgets, undefined, undefined, analytics));
+  const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env), Date.now, undefined, hostedS3Settings(options.env)), undefined, budgets, undefined, undefined, analytics), jobs);
+  const ai = invocation?.ai ?? new HostedAI(data, config.encryptionKey.toString('base64'), options.env ?? process.env, usage?.aiMeter(), options.ai, new HostedAIReceipts(options.membershipDatabase));
+  const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env), Date.now, undefined, hostedS3Settings(options.env)), undefined, budgets, undefined, undefined, analytics));
   const mail = invocation?.mail ?? options.mailTransport ?? smtpFromEnvironment(options.env);
-  // Stripe billing (issue #194) composes on the single-node hosted server;
+  // Billing and waiting-list conversion compose on the single-node hosted server;
   // invocation mode keeps /api/host closed, so billing stays out of it.
-  const billingService = !options.invocation && billingCfg ? new HostedBilling(options.membershipDatabase, billingCfg,
-    { mail, clock, origin: config.origin, notifyTo: accessNotifyTo, stripe: httpStripeClient(billingCfg.apiKey, options.stripeFetcher) }) : undefined;
+  const billingService = !options.invocation ? new HostedBilling(options.membershipDatabase, billingEntitlements,
+    { mail, clock, origin: config.origin, notifyTo: accessNotifyTo, stripe: billingCfg ? httpStripeClient(billingCfg.apiKey, options.stripeFetcher) : undefined }) : undefined;
   if (billingService) { await billingService.load(); if (usage) usage.tierEntitlement = tenantId => billingService.tierEntitlement(tenantId); }
   if (billingService) await initializeTenantMail(options.membershipDatabase);
   const tenantMail = billingService ? new TenantMailTransport(options.membershipDatabase, billingService, mail) : mail;
@@ -195,14 +199,15 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const unmigrated = await options.membershipDatabase.transaction(c => c.query(`SELECT j.resource_id FROM h1_resources j WHERE j.kind = 'job'
     AND NOT EXISTS (SELECT 1 FROM h7_migrations m WHERE m.tenant_id = j.tenant_id AND m.namespace_id = j.namespace_id)`));
   if (unmigrated.length) throw new MetadataError('JOB_MIGRATION_REQUIRED', 503);
-  const renderer = new JobRenderer(data.data, embedContent, config.origin), runner = new JobRunner(jobs, renderer, tenantMail);
+  const renderer = new JobRenderer(data.data, embedContent, config.origin), runner = new JobRunner(jobs, renderer, tenantMail,
+    billingService ? async tenantId => { await billingService.expireTrials(); billingService.assertAccess(tenantId); } : undefined);
   const digests = new DigestStore(jobs, renderer);
   const v1 = new V1Routes(data, options.env ?? process.env, { invocation: !!options.invocation, analytics, durable: invocation?.v1, digests });
   const ownership = new JobOwnership(jobs, renderer), scheduler = new Scheduler(() => runner.tick());
   const sessions = new EmbedSessions(options.membershipDatabase, metadata, policy, embedSessionKey(options.env ?? process.env), async (context, grant) => { await billingService?.expireTrials(); billingService?.assertAccess(context.tenantId); await embedContent.authorize(context, grant); });
   await sessions.initialize(!options.invocation);
   const provisioning = new HostedProvisioning(options.membershipDatabase, config, tenantMail, clock, ownership, analytics, invocation?.invitations);
-  if (signupCfg.enabled && (!billingService || !billingCfg?.trialEntitlement || !mail.configured)) throw new MetadataError('SIGNUP_CONFIG_INVALID', 503);
+  if (signupCfg.enabled && (!billingService || !billingService.trialConfigured || !mail.configured)) throw new MetadataError('SIGNUP_CONFIG_INVALID', 503);
   if (billingService) await initializeSignups(options.membershipDatabase);
   const signup = billingService ? new HostedSignup(options.membershipDatabase, provisioning, billingService, mail, signupCfg, options.signupChallengeVerifier, clock) : undefined;
   const signupOperator = signup && billingService ? new SignupOperator(options.membershipDatabase, signup, billingService, clock) : undefined;
@@ -253,7 +258,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         if (draining) throw new MetadataError('SERVER_DRAINING', 503);
         await hostedReadiness(options.membershipDatabase, options.tenantDatabase);
         if (reference) await options.membershipDatabase.transaction(async c => {
-          for (const table of ['h8_usage', 'h8_monthly_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
+          for (const table of ['h8_usage', 'h8_egress_reservations', 'h8_monthly_usage', 'h8_usage_events', 'h8_audit', 'h8_recovery']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
           const row = (await c.query('SELECT version FROM h8_schema WHERE id = 1'))[0];
           if (Number(row?.version) !== 1) throw new MetadataError('MIGRATIONS_REQUIRED', 503);
         }).catch(() => { throw new MetadataError('MIGRATIONS_REQUIRED', 503); });
@@ -313,7 +318,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         const browserMembership = /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/users(?:\/[A-Za-z0-9_-]+)?$/.test(path);
         const browserProvisioning = path === '/api/host/signups' && ['GET', 'PATCH'].includes(request.method ?? '') || (path === '/api/host/tenants' && ['GET', 'POST'].includes(request.method ?? ''))
           || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+$/.test(path) && ['GET', 'DELETE'].includes(request.method ?? '')
-          || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/(?:invitations|suspend|resume|billing\/(?:payment-link))$/.test(path) && request.method === 'POST'
+          || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/(?:invitations|suspend|resume|billing\/(?:payment-link|paid-request\/(?:grant|decline)))$/.test(path) && request.method === 'POST'
           || /^\/api\/host\/tenants\/[A-Za-z0-9_-]+\/billing$/.test(path) && request.method === 'GET'
           || /^\/api\/host\/usage\/[0-9]{4}-(?:0[1-9]|1[0-2])\/tenants\/[A-Za-z0-9_-]+$/.test(path) && request.method === 'GET';
         if (request.headers.origin !== undefined && !browserMembership && !browserIdeas && !browserProvisioning || !authorization?.startsWith('Operator ') || !equal(authorization.slice(9), config.operatorKey.toString('base64url'))) throw new MetadataError('OPERATOR_REQUIRED', 403);
@@ -365,17 +370,23 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
           const records = request.method === 'POST' ? await usage.rollupMonthlyUsageForPeriod(period, tenantId) : await usage.monthlyUsageForPeriod(period, tenantId);
           send(response, 200, { period, records, ...(tenantId && request.method === 'GET' ? { overview: await usage.operatorOverview(tenantId, period) } : {}) }); return;
         }
-        const billingTenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)\/billing(?:\/(payment-link))?$/.exec(path);
+        const billingTenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)\/billing(?:\/(payment-link|paid-request\/(?:grant|decline)))?$/.exec(path);
         if (billingTenant) {
           if (!billingService) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
           const tenantId = identifier(billingTenant[1]), billingAction = billingTenant[2];
-          if (!billingAction) { method(request, response, ['GET']); send(response, 200, { billing: await billingService.state(tenantId) }); return; }
+          if (!billingAction) { method(request, response, ['GET']); send(response, 200, { billing: { ...await billingService.viewState(tenantId, true), paidRequest: await billingService.latestPaidRequest(tenantId) } }); return; }
           method(request, response, ['POST']);
           if (billingAction === 'payment-link') {
+            if (!billingCfg) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
             const input = await body(request, ['tier']);
             send(response, 201, await billingService.createPaymentLink(tenantId, input.tier)); return;
           }
-
+          if (billingAction === 'paid-request/grant' || billingAction === 'paid-request/decline') {
+            const input = await body(request, ['requestId', 'expectedTier']);
+            if (typeof input.requestId !== 'string') throw new MetadataError('METADATA_INVALID', 400);
+            await billingService.resolvePaidRequest(tenantId, billingAction === 'paid-request/grant' ? 'granted' : 'declined', undefined, input.requestId, undefined, input.expectedTier);
+            send(response, 200, { billing: await billingService.viewState(tenantId, true) }); return;
+          }
         }
         const tenant = /^\/api\/host\/tenants\/([A-Za-z0-9_-]+)(?:\/(suspend|resume|invitations|users)(?:\/([A-Za-z0-9_-]+))?)?$/.exec(path);
         if (tenant) {
@@ -442,17 +453,41 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       };
       const context = await metadata.authenticate(request, verified);
       path = scopePath(path, context);
+      // The pre-auth dark-flag check above only sees the literal path, so a
+      // namespace-scoped checkout reaches here already normalized (#216):
+      // recheck the flag on the normalized path before any checkout handling.
+      if (path === '/api/signup/checkout' && (!signup || !signupCfg.enabled)) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
       // Billing past-due gate (issue #194): a tenant paused for non-payment
       // gets no hosted access until an admin resolution reopens it. The
       // tenant's data is untouched; only access pauses.
       await billingService?.expireTrials();
-      const resolutionPath = !!billingService && ['/api/session', '/api/auth/logout', '/api/auth/switch', '/api/billing', '/api/signup/checkout', '/api/workspace/export', '/api/workspace/close'].includes(path);
+      // Waitlist composition must not exempt legacy operator tenants without
+      // billing from their existing API/egress limits. Preserve Stripe's
+      // established resolution boundary and exempt actual trial/paid records.
+      const resolutionPath = !!billingService && (!!billingCfg || billingService.hasRecord(context.tenantId))
+        && ['/api/session', '/api/auth/logout', '/api/auth/switch', '/api/billing', '/api/billing/paid-request', '/api/signup/checkout', '/api/workspace/export', '/api/workspace/close'].includes(path);
       if (billingService && resolutionPath) {
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
-        if (['/api/billing', '/api/signup/checkout', '/api/workspace/export', '/api/workspace/close'].includes(path)) {
+        if (['/api/billing', '/api/billing/paid-request', '/api/signup/checkout', '/api/workspace/export', '/api/workspace/close'].includes(path)) {
           if (!hasCapability(user.body.role as Parameters<typeof hasCapability>[0], 'admin')) throw new MetadataError('SECURITY_ADMIN_REQUIRED', 403);
-          if (path === '/api/billing') { method(request, response, ['GET']); send(response, 200, { billing: await billingService.state(context.tenantId), trial: billingService.trial(context.tenantId), checkoutEnabled: signupCfg.enabled }); return; }
+          if (path === '/api/billing') { method(request, response, ['GET']); send(response, 200, { billing: await billingService.viewState(context.tenantId, true), trial: billingService.trial(context.tenantId), checkoutEnabled: signupCfg.enabled && !!billingCfg }); return; }
+          if (path === '/api/billing/paid-request') {
+            if (request.headers.origin !== config.origin) throw new MetadataError('UNTRUSTED_ORIGIN', 403);
+            method(request, response, ['POST', 'DELETE']);
+            if (request.method === 'POST') {
+              const input = await body(request, ['tier']);
+              await billingService.requestPaidPlan(context.tenantId, input.tier, context.userId, context.namespaceId);
+            } else {
+              const member = (await options.membershipDatabase.transaction(c => c.query("SELECT subject FROM h2_memberships WHERE tenant_id = ? AND namespace_id = ? AND user_id = ? AND status = 'active'", [context.tenantId, context.namespaceId, context.userId])))[0];
+              if (!member) throw new MetadataError('BILLING_REQUESTER_UNRESOLVED', 403);
+              // The mutation rechecks current admin authority inside its own
+              // locking boundary (#254); this read only names the audit actor.
+              await billingService.resolvePaidRequest(context.tenantId, 'withdrawn', String(member.subject), undefined, { userId: context.userId, namespaceId: context.namespaceId });
+            }
+            send(response, 200, { billing: await billingService.viewState(context.tenantId, true) }); return;
+          }
           if (path === '/api/signup/checkout') {
+            if (!billingCfg) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
             if (request.headers.origin !== config.origin) throw new MetadataError('UNTRUSTED_ORIGIN', 403);
             method(request, response, ['POST']); const input = await body(request, ['tier']); send(response, 201, await billingService.createCheckoutSession(context.tenantId, input.tier)); return;
           }
@@ -468,23 +503,24 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         }
       }
       if (!resolutionPath) billingService?.assertAccess(context.tenantId);
-      // Egress gate before routing (and before the apiCalls charge): a denied
+      // Egress reservation before routing (and before the apiCalls charge): a denied
       // request is not routed, consumes no admitted egress, and its 429 body
       // is not counted. Embed routes above run before this boundary and are
       // not counted in this slice; operator/health/pre-auth routes have no
       // tenant context and are not counted either.
-      if (usage && !resolutionPath) await usage.checkEgress(context);
-      if (!resolutionPath) await usage?.consume(metadata, context, 'apiCalls');
       if (usage && !resolutionPath) {
-        const scope = { tenantId: context.tenantId, namespaceId: context.namespaceId };
-        let bytes = 0, recording: Promise<void> | undefined;
+        const reservation = await usage.reserveEgress(context);
+        let bytes = 0, counted = false, recording: Promise<void> | undefined;
         const startRecording = (): void => {
-          // The response is already sent when this settles, so a recording
-          // failure cannot crash, double-send, or corrupt it. It is surfaced
-          // as EGRESS_RECORD_FAILED rather than silently pretending success;
-          // the gate then reads only durably recorded bytes.
-          recording ??= usage.recordEgressBytes(scope, bytes).catch(() => { console.error('EGRESS_RECORD_FAILED'); });
+          // A failed settlement retains the durable claim: later admissions
+          // stay denied. Never release it or retry with plain recording.
+          recording ??= (counted ? usage.settleEgress(reservation, bytes) : usage.releaseEgress(reservation))
+            .catch(() => { console.error('EGRESS_RECORD_FAILED'); });
         };
+        // Install cleanup before consume: its denial publishes no counted
+        // response, so finally must release the reservation without usage.
+        egressSettle = async () => { startRecording(); await recording; };
+        await usage.consume(metadata, context, 'apiCalls');
         const originalWrite = typeof response.write === 'function' ? response.write.bind(response) : undefined;
         const originalEnd = response.end.bind(response);
         if (originalWrite) response.write = ((chunk: unknown, ...args: unknown[]) => {
@@ -497,7 +533,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
           startRecording();
           return (originalEnd as (chunk?: unknown, ...rest: unknown[]) => ServerResponse)(chunk, ...args);
         }) as typeof response.end;
-        egressSettle = async () => { startRecording(); await recording; };
+        counted = true;
       }
       if (await analyticsSettingsRoute(request, response, path, '', analytics, context, async () => {
         const user = await metadata.get(context, { kind: 'user', id: context.userId });
@@ -520,7 +556,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         const tenant = (await options.membershipDatabase.transaction(c => c.query('SELECT display_name, slug FROM h1_tenants WHERE tenant_id = ?', [context.tenantId])))[0];
         const workspaceName = workspaceLabel(tenant?.display_name, context.tenantId);
         const workspaceSlug = typeof tenant?.slug === 'string' ? tenant.slug : null;
-        send(response, 200, { id: user.id, namespaceId: context.namespaceId, tenantId: context.tenantId, workspaceName, workspaceSlug, ...user.body, trial: billingService?.trial(context.tenantId) ?? null, billingPaused: billingService?.accessPaused(context.tenantId) ?? false, ...(billingService ? { billing: await billingService.state(context.tenantId) } : {}), ...(invocation ? { capabilities: invocation.capabilities } : {}) }); return;
+        send(response, 200, { id: user.id, namespaceId: context.namespaceId, tenantId: context.tenantId, workspaceName, workspaceSlug, ...user.body, trial: billingService?.trial(context.tenantId) ?? null, billingPaused: billingService?.accessPaused(context.tenantId) ?? false, ...(billingService ? { billing: await billingService.viewState(context.tenantId, hasCapability(user.body.role as Parameters<typeof hasCapability>[0], 'admin')) } : {}), ...(invocation ? { capabilities: invocation.capabilities } : {}) }); return;
       }
       if (path === '/api/auth/switch' || path === '/api/auth/logout') {
         if (!options.builtinAuth) throw new MetadataError('BUILTIN_AUTH_UNAVAILABLE', 503);
@@ -608,14 +644,16 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       throw new MetadataError('HOSTED_CAPABILITY_UNAVAILABLE', 503);
     })().catch((error: unknown) => {
       errors++; request.resume();
-      const dataError = error instanceof QueryEngineError || error instanceof PrepError || error instanceof UploadError || error instanceof BlazeError;
+      const dataError = error instanceof ConnectorError || error instanceof S3SourceError || error instanceof QueryEngineError || error instanceof PrepError || error instanceof UploadError || error instanceof BlazeError;
       const status = dataError ? 422 : error instanceof MetadataError || error instanceof RequestError || error instanceof SecurityError ? error.status : 500;
       const errorCode = dataError ? error.code : error instanceof MetadataError || error instanceof SecurityError ? error.code : error instanceof RequestError ? 'HOSTED_REQUEST_INVALID' : 'HOSTED_INTERNAL_ERROR';
       const quotaMessage = error instanceof AIError ? error.message : publicQuotaMessage(error);
       const field = error instanceof MetadataError && error.code === 'METADATA_INVALID' && error.detail && typeof error.detail === 'object' && 'field' in error.detail
         && typeof error.detail.field === 'string' && ['name', 'displayName', 'slug', 'administrator.name', 'administrator.email'].includes(error.detail.field) ? error.detail.field : undefined;
       send(response, status, { errorCode, ...(field ? { field } : {}), ...(quotaMessage === undefined ? {} : { Message: quotaMessage }) });
-    }).finally(async () => { active.delete(work); await egressSettle?.(); });
+    }).finally(async () => {
+      try { await egressSettle?.(); } finally { active.delete(work); }
+    });
     active.add(work);
     return work;
   };

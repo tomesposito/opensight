@@ -127,7 +127,7 @@ The old reservation remains counted. An existing attempt ID always returns
 operation layer, never by executing the same attempt twice.
 
 Preserve H8 usage units: queries do not become new compute charges in this slice;
-each admitted refresh consumes exactly one daily `computeAttempts` unit in the
+each admitted refresh records exactly one `computeAttempts` unit in the daily ledger in the
 same transaction as its admission/claim. Read the migration-frozen entitlement
 snapshot, fail unresolved tenants closed, and use the existing H8 counters/events.
 Quota denial commits a denied usage event but creates no admission or claim.

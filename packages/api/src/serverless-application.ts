@@ -1,3 +1,5 @@
+import { hostedS3Settings } from './source-s3-config.js';
+import { HostedAIReceipts } from './hosted-ai-receipts.js';
 import { HostedAI } from './hosted-ai.js';
 import type { AiMeter } from './ai-settings.js';
 import { unsubscribePath } from './digest-routes.js';
@@ -76,8 +78,8 @@ export function serverlessAdapters(database: Database, metadata: TenantMetadata,
   const jobs = new JobStore(database, metadata, () => new Date(), dispatch);
   const work = new ServerlessWork(coordinator, manifests, dispatch, ledger, transfer, budgets, aws.scope, () => aws.close());
   const sourceArtifacts = new SourceArtifacts(coordinator, context => work.attempt(context), transfer, budgets);
-  const sources = new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(env), Date.now, sourceArtifacts.read);
-  const embedSources = new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(env), Date.now, sourceArtifacts.read);
+  const sources = new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(env), Date.now, sourceArtifacts.read, hostedS3Settings(env));
+  const embedSources = new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(env), Date.now, sourceArtifacts.read, hostedS3Settings(env));
   const results = new DurableResults(database, metadata, dispatch, ledger, new ResultObjects(aws, bucket), work, budgets);
   const authority = (request: Parameters<HostedAuth['resultSession']>[0]) => {
     if (!auth) throw new MetadataError('RESULT_SESSION_REQUIRED', 503); return auth.resultSession(request);
@@ -88,7 +90,7 @@ export function serverlessAdapters(database: Database, metadata: TenantMetadata,
   });
   const embedContent = new EmbedContent(new HostedData(embedSources, undefined, budgets, work.cache, work, analytics));
   const uploadService = new DurableUploads(metadata, dispatch, ledger, new UploadObjects(aws, bucket)), uploads = new DurableUploadRoutes(uploadService);
-  const ai = new HostedAI(data, config.encryptionKey.toString('base64'), env, aiMeter);
+  const ai = new HostedAI(data, config.encryptionKey.toString('base64'), env, aiMeter, undefined, new HostedAIReceipts(database));
   return { data, ai, embedContent, jobs, mail: serverlessMail(aws, env), allows: serverlessDataPath, capabilities: { directUploads: { version: 1, maxBytes: 8 * 1024 * 1024 }, resultChunks: { version: 1, maxBytes: 1024 * 1024, maxResultBytes: budgets.config.node.resultBytes }, controlJsonBytes: 1024 * 1024 },
     v1: context => new DurableV1(database, metadata, context, deployment, env, database.dialect ?? 'postgres'),
     invitations: new DurableInvitations(dispatch, metadata, config, serverlessMail(aws, env)),

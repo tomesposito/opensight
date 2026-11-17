@@ -54,6 +54,8 @@ test('docs links rewrite manifest and repository targets while preserving anchor
     ['security-namespaces.md#row-policies', 'https://github.com/tomesposito/opensight/blob/master/docs/security-namespaces.md#row-policies'],
     ['../packages/api/src/server.ts', 'https://github.com/tomesposito/opensight/blob/master/packages/api/src/server.ts'],
     ['/docs/first-run.md', '/docs/getting-started/'],
+    ['/pricing/', '/pricing/'],
+    ['/alternatives/quicksight/', '/alternatives/quicksight/'],
     ['#configuration', '#configuration'],
     ['https://example.com/a_(b)?x=1&y=2#part', 'https://example.com/a_(b)?x=1&y=2#part'],
     ['http://127.0.0.1:5173', 'http://127.0.0.1:5173'],
@@ -84,6 +86,62 @@ test('docs descriptions use plain first paragraphs and truncate at a word bounda
   assert.ok(long.startsWith(shortened.slice(0, -1) + ' '));
 });
 
+test('docs meta overrides carry the exact approved titles and descriptions (issue #238)', () => {
+  const pages = renderDocs();
+  const metaOf = path => {
+    const page = pages.get(path);
+    return {
+      title: page.match(/<title>([^<]+)<\/title>/)?.[1],
+      description: page.match(/<meta name="description" content="([^"]*)">/)?.[1],
+    };
+  };
+  assert.deepEqual(metaOf('site/docs/index.html'), {
+    title: 'Documentation — OpenSight docs',
+    description: 'Install and run OpenSight, connect data, configure embedding, and understand permissions and row-level security. Plus getting started and migration guides.',
+  });
+  assert.deepEqual(metaOf('site/docs/open-economics/index.html'), {
+    title: 'Open economics: features never paywalled — OpenSight docs',
+    description: 'OpenSight is Apache-2.0. The hosted service charges for running it, not unlocking it: SSO, row-level security and core governance are never paywalled.',
+  });
+  assert.deepEqual(metaOf('site/docs/permissions/index.html'), {
+    title: 'Permissions and row-level security — OpenSight docs',
+    description: 'Access to an OpenSight analysis or dashboard and access to its data are separate permissions. Sharing a definition lets someone open the asset, not the data.',
+  });
+  assert.deepEqual(metaOf('site/docs/migrating-from-quicksight/index.html'), {
+    title: 'Moving from QuickSight to OpenSight — OpenSight docs',
+    description: 'A QuickSight bundle carries four kinds of thing: analyses, dashboards, datasets and data sources. OpenSight imports the bundle file directly. Here is the move.',
+  });
+  // The #238 pages no longer carry an auto-truncated excerpt description.
+  for (const path of ['site/docs/index.html', 'site/docs/open-economics/index.html',
+    'site/docs/permissions/index.html', 'site/docs/migrating-from-quicksight/index.html']) {
+    assert.ok(!metaOf(path).description?.endsWith('…'), `${path}: description must not end mid-sentence`);
+  }
+});
+
+test('docs pages carry the full OG/Twitter social block with the shared image (issue #239)', () => {
+  const pages = renderDocs();
+  const shareImage = 'https://getopensight.org/assets/og-image.jpg';
+  for (const [path, page] of pages) {
+    const slug = path === 'site/docs/index.html' ? '' : path.split('/').at(-2);
+    const title = page.match(/<title>([^<]+)<\/title>/)?.[1];
+    const description = page.match(/<meta name="description" content="([^"]*)">/)?.[1];
+    for (const tag of [
+      `<meta property="og:title" content="${title}">`,
+      `<meta property="og:description" content="${description}">`,
+      '<meta property="og:type" content="website">',
+      `<meta property="og:url" content="${canonicalUrl(slug)}">`,
+      `<meta property="og:image" content="${shareImage}">`,
+      '<meta name="twitter:card" content="summary_large_image">',
+      `<meta name="twitter:title" content="${title}">`,
+      `<meta name="twitter:description" content="${description}">`,
+      `<meta name="twitter:image" content="${shareImage}">`,
+      '<meta property="og:image:width" content="2400">',
+      '<meta property="og:image:height" content="1260">',
+      `<meta property="og:image:alt" content="${title}">`,
+    ]) assert.ok(page.includes(tag), `${path}: missing social tag: ${tag}`);
+  }
+});
+
 test('docs current sources render complete HTML5 pages and an index with all titles and summaries', () => {
   const pages = renderDocs();
   assert.equal(pages.size, manifest.length + 1);
@@ -99,7 +157,7 @@ test('docs current sources render complete HTML5 pages and an index with all tit
     assert.ok(!/<script\b|<meta[^>]*noindex/i.test(page));
     assert.ok(index.includes(escapeHtml(doc.summary)));
     assert.ok(index.includes(`<h2><a href="/docs/${entry.slug}/">${escapeHtml(doc.title)}</a></h2>`));
-    assert.ok(page.includes(`<title>${escapeHtml(doc.title)} — OpenSight docs</title>`));
+    assert.ok(page.includes(`<title>${escapeHtml(entry.metaTitle ?? doc.title)} — OpenSight docs</title>`));
     for (const other of manifest) assert.ok(page.includes(`href="/docs/${other.slug}/"`));
   }
   assert.match(index, /href="docs.css"/);
@@ -148,6 +206,13 @@ test('site integrity checks catch missing docs, sitemap/canonical drift and exte
   cpSync(resolve(repoRoot, 'site/pricing'), join(root, 'site/pricing'), { recursive: true });
   cpSync(resolve(repoRoot, 'site/alternatives'), join(root, 'site/alternatives'), { recursive: true });
   cpSync(resolve(repoRoot, 'site/vs'), join(root, 'site/vs'), { recursive: true });
+  cpSync(resolve(repoRoot, 'site/signup'), join(root, 'site/signup'), { recursive: true });
+  cpSync(resolve(repoRoot, 'site/legal'), join(root, 'site/legal'), { recursive: true });
+  // Issue #237: check.mjs also verifies the demo builder's noindex injection,
+  // which lives outside site/, so the temp tree needs that one file too.
+  mkdirSync(join(root, 'packages/web/scripts'), { recursive: true });
+  cpSync(resolve(repoRoot, 'packages/web/scripts/build-demo.mjs'),
+    join(root, 'packages/web/scripts/build-demo.mjs'));
   // The existing homepage check only checks asset existence: no media copies needed.
   mkdirSync(join(root, 'site/assets'));
   const home = readFileSync(join(root, 'site/index.html'), 'utf8');
@@ -169,8 +234,12 @@ test('site integrity checks catch missing docs, sitemap/canonical drift and exte
     ['docs/permissions/index.html', text => text.replace('Access to an OpenSight', 'Obsolete text about OpenSight'), /stale generated docs/],
     ['pricing/index.html', text => text.replace('$99 a month, $1,188 a year', '$99 a month'), /missing or altered approved copy/],
     ['alternatives/quicksight/index.html', text => text.replace('no licence saving fixes it', 'no license saving fixes it'), /missing or altered approved copy/],
-    ['vs/metabase/index.html', text => text.replace('both free to self-host', 'both free'), /incorrect page title/],
+    ['vs/metabase/index.html', text => text.replace('QuickSight-compatible, Apache-2.0', 'QuickSight-compatible'), /incorrect page title/],
     ['alternatives/tableau/index.html', text => text.replace('costs $0, whether one person uses it', 'costs nothing, whether one person uses it'), /missing or altered approved copy/],
+    ['docs/permissions/index.html', text => text.replace('<meta property="og:image"', '<meta property="og:removed"'), /incorrect og:image content/],
+    ['docs/permissions/index.html', text => text.replace('<a href="/pricing/">Pricing</a>', '<a href="/docs/">Pricing</a>'), /docs pages must link the pricing page/],
+    ['pricing/index.html', text => text.replace('"price": "29"', '"price": "30"'), /offers must be the hosted tiers/],
+    ['pricing/index.html', text => text.replace('<a href="/alternatives/quicksight/">QuickSight alternative</a>', '<a href="/alternatives/tableau/">QuickSight alternative</a>'), /pricing: missing onward link/],
   ];
   for (const [name, change, expected] of cases) {
     const path = join(root, 'site', name), before = readFileSync(path, 'utf8');
@@ -184,7 +253,7 @@ test('site integrity checks catch missing docs, sitemap/canonical drift and exte
   }
 });
 
-test('open economics rule stays published and no published page paywalls core governance (issue #165)', () => {
+test('open economics rule stays published and no published page paywalls core governance (issues #165, #215)', () => {
   const entry = manifest.find(page => page.slug === 'open-economics');
   assert.ok(entry, 'the open-economics rule must stay in the published docs manifest');
   const rule = readFileSync(resolve(repoRoot, entry.source), 'utf8').toLowerCase();
@@ -193,13 +262,18 @@ test('open economics rule stays published and no published page paywalls core go
   }
   assert.ok(rule.includes('never paywalled'), 'the open-economics rule must say never paywalled');
 
-  // Published surfaces only: the marketing homepage plus every manifest doc
-  // source. Decision records under docs/idd/ are history, not published copy.
+  // Published surfaces: every committed site page (homepage, pricing,
+  // alternatives, vs, signup, legal and the generated docs pages) plus every
+  // manifest doc source (issue #215: pricing and the other commercial pages
+  // were previously outside the scanned set). Decision records under
+  // docs/idd/ are history, not published copy.
   const features = 'single sign-on|\\bsso\\b|\\bsaml\\b|row-level security|audit log|embedding';
   const paywall = 'paid tier|paid plan|paid tiers|enterprise tier|enterprise plan|premium tier';
   const gated = new RegExp(`(${features})[^.\\n]{0,80}(${paywall})|(${paywall})[^.\\n]{0,80}(${features})`, 'i');
-  const published = [resolve(repoRoot, 'site/index.html'),
-    ...manifest.map(page => resolve(repoRoot, page.source))];
+  const sitePages = readdirSync(resolve(repoRoot, 'site'), { recursive: true })
+    .filter(path => path.endsWith('.html')).map(path => resolve(repoRoot, 'site', path));
+  const published = [...new Set([resolve(repoRoot, 'site/index.html'), ...sitePages,
+    ...manifest.map(page => resolve(repoRoot, page.source))])];
   for (const path of published) {
     assert.ok(!gated.test(readFileSync(path, 'utf8')),
       `${path} must not describe a core governance feature as a paid or enterprise tier feature`);

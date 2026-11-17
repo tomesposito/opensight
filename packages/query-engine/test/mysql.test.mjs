@@ -16,7 +16,7 @@ for (const connector of connectors) test(`${connector.name}: query dialect eithe
   if (!connector.dialect) { assert.throws(() => connectorDialect(connector.id), { code: 'CONNECTOR_NOT_IMPLEMENTED' }); return; }
   const plan = planVisual(request('revenue-trend'), { dialect: connectorDialect(connector.id) });
   assert.equal(plan.dialect, connector.dialect);
-  assert.match(plan.sql, connector.dialect === 'mysql' ? /DATE_FORMAT\(`order_date`, '%Y-%m'\)/ : connector.dialect === 'postgres' ? /to_char\(date_trunc/ : /strftime\(date_trunc/);
+  assert.match(plan.sql, connector.dialect === 'athena' ? /date_format\(date_trunc/ : connector.dialect === 'mysql' ? /DATE_FORMAT\(`order_date`, '%Y-%m'\)/ : ['postgres', 'redshift'].includes(connector.dialect) ? /to_char\(date_trunc/i : /strftime\(date_trunc/);
   assert.deepEqual(plan.parameters, ['East']);
 });
 test('MySQL escapes identifiers and never puts filter contents into SQL', () => {
@@ -59,7 +59,7 @@ test('MySQL config, missing environment, policy bypass and unimplemented connect
   await assert.rejects(executeMySql(mysqlRequest(), { config, environment: env, allowInsecureLoopback: true }), { code: 'INVALID_CONNECTOR_CONFIG' });
   const r = mysqlRequest(); r.localData.security.dataset = 'protected';
   await assert.rejects(executeMySql(r, { config, environment: env }), { code: 'SECURITY_REJECTED' });
-  await assert.rejects(executeConnector('mariadb', config, mysqlRequest(), env), { code: 'CONNECTOR_NOT_IMPLEMENTED' });
+  await assert.rejects(executeConnector('mariadb', config, mysqlRequest(), {}), { code: 'CONNECTOR_NOT_CONFIGURED' });
 });
 test('MySQL TCP connection failure is bounded, sanitized, and closes sockets without a live server', async t => {
   let accepted = 0;
@@ -68,5 +68,14 @@ test('MySQL TCP connection failure is bounded, sanitized, and closes sockets wit
   t.after(() => server.close());
   const env = { DB_HOST: '127.0.0.1', DB_PORT: String(server.address().port), DB_NAME: 'public', DB_USER: 'synthetic', DB_PASSWORD: 'do-not-echo-test-secret' };
   await assert.rejects(executeMySql(mysqlRequest(), { config, environment: env, allowInsecureLoopback: true }), error => error.code === 'EXECUTION_ERROR' && error.path === '$.mysql' && !error.message.includes(env.DB_PASSWORD));
-  assert.equal(accepted, 1);
+  await assert.rejects(executeConnector('mariadb', config, mysqlRequest(), env), error => error.code === 'EXECUTION_ERROR' && !error.message.includes(env.DB_PASSWORD));
+  assert.equal(accepted, 2);
+});
+
+test('MySQL and MariaDB expose query implementations and variant sessions', async () => {
+  const { mysqlSessionSql, mysqlVariantSql } = await import('../dist/mysql-session.js');
+  for (const id of ['mysql', 'mariadb']) assert.equal(connectors.find(c => c.id === id).implementation, 'query');
+  assert.match(mysqlSessionSql('mysql'), /utf8mb4_0900_bin.*max_execution_time = 10000/);
+  assert.match(mysqlSessionSql('mariadb'), /utf8mb4_bin.*max_statement_time = 10/);
+  assert.equal(mysqlVariantSql("`COLLATE utf8mb4_0900_bin` COLLATE utf8mb4_0900_bin = 'COLLATE utf8mb4_0900_bin'", 'mariadb'), "`COLLATE utf8mb4_0900_bin` COLLATE utf8mb4_bin = 'COLLATE utf8mb4_0900_bin'");
 });

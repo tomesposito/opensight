@@ -10,7 +10,7 @@ export interface ConnectorDefinition {
   readonly category: 'File' | 'Database' | 'AWS' | 'SaaS';
   readonly schema: Readonly<Record<string, ConnectorField>>;
   readonly dialect?: SqlDialect;
-  readonly implementation: 'upload' | 'query' | 'hosted' | 'unimplemented';
+  readonly implementation: 'upload' | 'query' | 'hosted' | 'discovery' | 'unimplemented';
 }
 const env = (label: string, required = true): ConnectorField => ({ kind: 'environment', label, required });
 const sql = { hostEnv: env('Host environment variable'), portEnv: env('Port environment variable'), databaseEnv: env('Database environment variable'), userEnv: env('User environment variable'), passwordEnv: env('Password environment variable'), caEnv: env('TLS CA environment variable', false) };
@@ -24,12 +24,24 @@ export const connectors: readonly ConnectorDefinition[] = [
     delimiter: { kind: 'choice', label: 'Delimiter', values: [',', '\t', ';', '|'] },
     sheet: { kind: 'string', label: 'Worksheet' },
   } },
-  { id: 'mysql', name: 'MySQL', category: 'Database', schema: sql, dialect: 'mysql', implementation: 'unimplemented' },
+  { id: 'mysql', name: 'MySQL', category: 'Database', schema: sql, dialect: 'mysql', implementation: 'query' },
   { id: 'postgresql', name: 'PostgreSQL', category: 'Database', schema: { connectionEnv: env('Connection URL environment variable') }, dialect: 'postgres', implementation: 'query' },
-  { id: 'mariadb', name: 'MariaDB', category: 'Database', schema: sql, dialect: 'mysql', implementation: 'unimplemented' },
+  { id: 'mariadb', name: 'MariaDB', category: 'Database', schema: sql, dialect: 'mysql', implementation: 'query' },
+  { id: 'redshift-manual', name: 'Redshift (manual)', category: 'Database', schema: sql, dialect: 'redshift', implementation: 'query' },
   ...[['sql-server', 'SQL Server'], ['presto', 'Presto'], ['trino', 'Trino'], ['spark', 'Spark'], ['teradata', 'Teradata'], ['snowflake', 'Snowflake']].map(([id, name]): ConnectorDefinition => ({ id: id!, name: name!, category: 'Database', schema: sql, implementation: 'unimplemented' })),
   ...[['salesforce', 'Salesforce'], ['github', 'GitHub'], ['twitter', 'Twitter'], ['jira', 'Jira'], ['servicenow', 'ServiceNow']].map(([id, name]): ConnectorDefinition => ({ id: id!, name: name!, category: 'SaaS', schema: saas, implementation: 'hosted' })),
-  ...[['s3-analytics', 'S3 Analytics'], ['s3', 'S3'], ['athena', 'Athena'], ['rds', 'RDS (auto-discovery)'], ['aurora', 'Aurora'], ['redshift', 'Redshift (auto-discovery)'], ['redshift-manual', 'Redshift (manual)'], ['iot-analytics', 'AWS IoT Analytics']].map(([id, name]): ConnectorDefinition => ({ id: id!, name: name!, category: 'AWS', schema: aws, implementation: 'hosted' })),
+  { id: 'athena', name: 'Athena', category: 'AWS', implementation: 'query', dialect: 'athena', schema: {
+    regionEnv: env('AWS region environment variable'), databaseEnv: env('Database environment variable'),
+    workGroupEnv: env('Workgroup environment variable', false), outputLocationEnv: env('Output location environment variable'),
+  } },
+  { id: 's3', name: 'S3', category: 'AWS', implementation: 'upload', dialect: 'duckdb', schema: {
+    regionEnv: env('AWS region environment variable'), accessKeyIdEnv: env('Access key ID environment variable'),
+    secretAccessKeyEnv: env('Secret access key environment variable'), sessionTokenEnv: env('Session token environment variable', false),
+    bucket: { kind: 'string', label: 'Bucket', required: true }, key: { kind: 'string', label: 'Object key', required: true },
+    prefix: { kind: 'string', label: 'Browse prefix' },
+  } },
+  ...[['rds', 'RDS (auto-discovery)'], ['aurora', 'Aurora'], ['redshift', 'Redshift (auto-discovery)']].map(([id, name]): ConnectorDefinition => ({ id: id!, name: name!, category: 'AWS', schema: { regionEnv: env('AWS region environment variable') }, implementation: 'discovery' })),
+  ...[['s3-analytics', 'S3 Analytics'], ['iot-analytics', 'AWS IoT Analytics']].map(([id, name]): ConnectorDefinition => ({ id: id!, name: name!, category: 'AWS', schema: aws, implementation: 'hosted' })),
 ];
 // Registry metadata is shared by API and browser. Callers cannot change validation rules.
 for (const connector of connectors) {
@@ -57,11 +69,20 @@ export function validateConnectorConfig(id: string, raw: unknown): ConnectorConf
   for (const [key, field] of Object.entries(schema)) {
     if (!Object.hasOwn(input, key)) { if (field.required) invalid(`$.config.${key}`, 'Required field'); continue; }
     const value = input[key];
-    if (typeof value !== 'string' || !value.length || value.includes('\0') || value.length > 256) invalid(`$.config.${key}`, 'Expected a nonempty string of at most 256 characters');
+    const maxLength = id === 's3' && (key === 'key' || key === 'prefix') ? 1024 : 256;
+    if (typeof value !== 'string' || !value.length || value.includes('\0') || value.length > maxLength) invalid(`$.config.${key}`, `Expected a nonempty string of at most ${maxLength} characters`);
     const text = value as string;
     if (field.kind === 'environment' && !/^[A-Z_][A-Z0-9_]*$/.test(text)) invalid(`$.config.${key}`, 'Expected an environment variable name, not a credential or address');
     if (field.kind === 'choice' && !field.values.includes(text)) invalid(`$.config.${key}`, 'Unsupported choice');
     result[key] = text;
+  }
+  if (id === 's3') {
+    if (!/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(result.bucket!) || /\.\.|\.-|-\./.test(result.bucket!) || /^\d+\.\d+\.\d+\.\d+$/.test(result.bucket!)) invalid('$.config.bucket', 'Expected a bucket name');
+    for (const key of ['key', 'prefix']) if (result[key] !== undefined) {
+      const text = result[key]!;
+      if (!text.trim() || new TextEncoder().encode(text).length > 1024 || /[\x00-\x1f\x7f]|:\/\//.test(text)) invalid(`$.config.${key}`, 'Expected an object key or prefix of at most 1024 UTF-8 bytes');
+    }
+    if (result.prefix && !result.key!.startsWith(result.prefix)) invalid('$.config.key', 'Object key must be under the browse prefix');
   }
   if (id === 'file') {
     if (result.delimiter && !['csv', 'tsv'].includes(result.format!)) invalid('$.config.delimiter', 'Delimiter is only valid for CSV/TSV');
@@ -74,9 +95,15 @@ export interface ConnectorState { state: 'needs_hosted_api' | 'not_configured' |
 export function connectorState(id: string, apiAvailable = false): ConnectorState {
   const c = connectorDefinition(id);
   if (c.implementation === 'unimplemented') return { state: 'not_implemented', message: 'Not yet implemented' };
+  if (id === 's3') return apiAvailable
+    ? { state: 'not_configured', message: 'Needs an operator-configured S3 source; objects use file staging' }
+    : { state: 'needs_hosted_api', message: 'Needs hosted API and an operator-configured S3 source' };
   if (c.implementation === 'upload') return apiAvailable
     ? { state: 'ready', message: 'Ready for file upload to DuckDB staging' }
     : { state: 'needs_hosted_api', message: 'Needs local or hosted API · Uploads are unavailable in the static demo.' };
+  if (c.implementation === 'discovery') return apiAvailable
+    ? { state: 'not_configured', message: 'Needs an operator-configured discovery connection' }
+    : { state: 'needs_hosted_api', message: 'Needs a hosted API and an operator-configured discovery connection' };
   if (c.implementation === 'hosted') return { state: apiAvailable ? 'not_configured' : 'needs_hosted_api', message: 'Needs a hosted connector implementation' };
   return apiAvailable
     ? { state: 'not_configured', message: 'Needs an operator-configured connection' }

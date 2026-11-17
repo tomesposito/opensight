@@ -9,7 +9,7 @@ import { StartupError } from './workspace-startup.js';
 import { InvitationEnrollment, type EnrollmentCredentials } from './InvitationEnrollment.js';
 import { AcceptInvitation } from './UserManagement.js';
 
-type Client = Pick<ReturnType<typeof createApiClient>, 'getSession'> & Partial<Pick<ReturnType<typeof createApiClient>, 'checkout' | 'exportWorkspace' | 'closeWorkspace' | 'getLocalData' | 'enroll' | 'acceptEnrollment' | 'acceptInvitation' | 'login' | 'selectWorkspace' | 'logout' | 'clearSession' | 'onDemand' | 'connect' | 'subscribeAvailability'>> & Access['aiClient'];
+type Client = Pick<ReturnType<typeof createApiClient>, 'getSession'> & Partial<Pick<ReturnType<typeof createApiClient>, 'checkout' | 'requestPaidPlan' | 'withdrawPaidRequest' | 'exportWorkspace' | 'closeWorkspace' | 'getLocalData' | 'enroll' | 'acceptEnrollment' | 'acceptInvitation' | 'login' | 'selectWorkspace' | 'logout' | 'clearSession' | 'onDemand' | 'connect' | 'subscribeAvailability'>> & Access['aiClient'];
 export const SESSION_TIMEOUT_MS = 10_000;
 
 function startupIssue(error: unknown): StartupIssue {

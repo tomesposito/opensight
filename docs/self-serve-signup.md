@@ -10,10 +10,11 @@ validation as a tier entitlement; use Light quotas. Paid tiers take precedence.
 An expired trial denies entitlement fallback and returns `TRIAL_EXPIRED` (403).
 Expiry is persisted on startup and request/state inspection with the effective
 pause at the original deadline, even when observed later. The retention date
-is 30 days from that deadline. Pauses and starts are operator-audited.
+is 30 days from that deadline, unless a pending paid request holds the clock
+under [waiting-list conversion](waiting-list-conversion.md) (#241). Pauses and starts are operator-audited.
 
 There is no drop-to-Free route or operator action. Paused workspaces resolve
-through payment, data export or closure; erasure follows the existing D-84
+through payment or a manual paid-request grant, data export or closure; erasure follows the existing D-84
 operator maintenance flow. Stored `free` values remain compatible.
 
 Tenant mail uses one transport wrapper and durable counters/receipt keys.
@@ -89,9 +90,16 @@ scrubs signup PII. The normalized email is stored only as a digest; the lifetime
 one-trial ledger and audit facts survive erasure. Encrypted reference backups
 include the new stores and restore them with the existing held-access policy.
 
-Signup always composes the existing quota service, including outside reference
-mode. Existing operator-created unmetered tenants retain their previous default
-behavior; trial and paid billing records override that default fail-closed.
+Outside reference and serverless invocation modes, the hosted server composes
+the existing quota service whenever `OPENSIGHT_ENTITLEMENTS` is present, billing
+is configured, or signup is enabled (#213). Turning signup off keeps existing
+tenant quotas enforced. Present entitlements are validated; when absent, the
+deployment defaults remain unrestricted for operator-created tenants without
+billing. Trial and paid billing records override those defaults fail-closed.
+Reference and invocation composition are unchanged. The signup flag controls
+signup routes, queue draining and the trial/mail startup requirements.
+With #241, single-node billing and its quota overrides also stay active without
+Stripe configuration; quota settings remain independently validated.
 Embed authorization and tenant mail also check billing expiry. The session's
 `billingPaused` flag, like trial days remaining, is computed using the server
 clock so browser clock skew cannot decide whether the pause screen appears.

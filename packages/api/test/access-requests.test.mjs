@@ -1,13 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { Duplex } from 'node:stream';
 import { request as httpRequest } from 'node:http';
 import { h8Fixture, serveH8 } from './h8-helpers.mjs';
-import { StubMailTransport } from '../dist/mail.js';
+import { StubMailTransport, smtpFromEnvironment } from '../dist/mail.js';
 import { createHostedApiServer } from '../dist/hosted-server.js';
 import { createRuntime } from '../dist/runtime.js';
 import { adaptGatewayRequest, authorizeIngress, validateViewerRequest } from '../dist/runtime-ingress.js';
 import { runtimeEnv, event, context, payload } from './runtime-helpers.mjs';
-import { accessRequestNotifyTo, accessRequestRate, initializeAccessRequests, limitAccessRequests, listAccessRequests, notifyAccessRequests, storeAccessRequest } from '../dist/access-requests.js';
+import { ACCESS_REQUEST_NOTIFY_CLAIM_MS, accessRequestNotifyTo, accessRequestRate, initializeAccessRequests, limitAccessRequests, listAccessRequests, notifyAccessRequests, storeAccessRequest } from '../dist/access-requests.js';
 
 const path = '/api/access-requests';
 const valid = { name: ' Synthetic Applicant ', email: ' Applicant@EXAMPLE.COM ', organization: ' Example Organization ', note: ' Example use case ' };
@@ -211,7 +213,9 @@ test('notification is emailed after a stored submission and stamps notifiedAt', 
   assert.match(message.subject, /Synthetic Applicant/);
   assert.match(message.html, /applicant@example\.com/);
   assert.match(message.html, /Example Organization/);
-  assert.match(message.dedupeKey, /^access-request:/);
+  assert.match(message.dedupeKey, /^[a-f0-9]{64}$/);
+  const [storedRequest] = await listAccessRequests(f.db);
+  assert.equal(message.dedupeKey, createHash('sha256').update(`access-request:${storedRequest.id}`).digest('hex'));
   const list = await f.request('/api/host/access-requests', { method: 'GET', body: null, headers: f.operator });
   assert.equal(new Date(list.body.requests[0].notifiedAt).toISOString(), list.body.requests[0].notifiedAt);
 });
@@ -235,12 +239,41 @@ test('pending notifications retry on a later call, oldest first, and stop at the
   assert.deepEqual((await listAccessRequests(f.db)).map(r => r.notifiedAt), [null, null]);
   const mail = new StubMailTransport();
   assert.equal(await notifyAccessRequests(f.db, mail, 'ops@example.com', Date.now()), 2);
-  assert.equal(mail.messages[0].dedupeKey, `access-request:${first.id}`);
-  assert.equal(mail.messages[1].dedupeKey, `access-request:${second.id}`);
+  assert.equal(mail.messages[0].dedupeKey, createHash('sha256').update(`access-request:${first.id}`).digest('hex'));
+  assert.equal(mail.messages[1].dedupeKey, createHash('sha256').update(`access-request:${second.id}`).digest('hex'));
   assert.ok((await listAccessRequests(f.db)).every(r => r.notifiedAt !== null));
   assert.equal(await notifyAccessRequests(f.db, mail, 'ops@example.com', Date.now()), 0);
   assert.equal(await notifyAccessRequests(f.db, mail, null, Date.now()), 0);
   assert.equal(await notifyAccessRequests(f.db, { configured: false, async send() { throw new Error('must not be called'); } }, 'ops@example.com', Date.now()), 0);
+});
+
+test('pending notifications deliver through the real SMTP protocol transport (issue #224)', async t => {
+  const f = await h8Fixture(t);
+  await initializeAccessRequests(f.db);
+  const first = await storeAccessRequest(f.db, { name: 'First', email: 'first@example.com', now: Date.UTC(2026, 9, 30) });
+  // Same fake-socket SMTP boundary as serverless-mail.test.mjs: the real
+  // smtpFromEnvironment transport speaks the protocol and validates the
+  // dedupe key itself — the stub transport accepted the old invalid key.
+  const written = [];
+  let body = false;
+  const socket = new Duplex({ read() {}, write(chunk, _encoding, done) {
+    const line = chunk.toString(); written.push(line);
+    if (line.startsWith('QUIT')) { done(); this.destroy(); return; }
+    if (body) { body = false; this.push('250 accepted\r\n'); }
+    else if (line.startsWith('DATA')) { body = true; this.push('354 proceed\r\n'); }
+    else this.push('250 ok\r\n');
+    done();
+  } });
+  socket.setTimeout = () => socket;
+  const connect = () => { queueMicrotask(() => socket.push('220 synthetic\r\n')); return socket; };
+  const transport = smtpFromEnvironment(
+    { OPENSIGHT_SMTP_HOST: 'smtp.example.test', OPENSIGHT_SMTP_FROM: 'ops@example.test' },
+    { timeoutMs: 1000, connect });
+  assert.equal(await notifyAccessRequests(f.db, transport, 'ops@example.com', Date.now()), 1);
+  const expectedKey = createHash('sha256').update(`access-request:${first.id}`).digest('hex');
+  assert.ok(written.some(s => s.includes(`Message-ID: <${expectedKey}@opensight.local>`)));
+  const [stored] = await listAccessRequests(f.db);
+  assert.notEqual(stored.notifiedAt, null);
 });
 
 test('initializer adds notified_at to a pre-notification table without losing rows', async t => {
@@ -253,4 +286,95 @@ test('initializer adds notified_at to a pre-notification table without losing ro
   await initializeAccessRequests(f.db); await initializeAccessRequests(f.db);
   const [row] = await listAccessRequests(f.db);
   assert.equal(row.id, 'legacy-1'); assert.equal(row.notifiedAt, null);
+});
+
+test('concurrent notification calls claim first: each pending row is sent exactly once through a non-deduping transport (issue #232)', async t => {
+  const f = await h8Fixture(t);
+  await initializeAccessRequests(f.db);
+  await storeAccessRequest(f.db, { name: 'First', email: 'first@example.com', now: Date.UTC(2026, 9, 30) });
+  await storeAccessRequest(f.db, { name: 'Second', email: 'second@example.com', now: Date.UTC(2026, 9, 31) });
+  // The transport records every call and never deduplicates: any duplicate
+  // delivery would show up as an extra call with a repeated dedupe key.
+  const calls = [];
+  const transport = { configured: true, async send(message) { calls.push(message); await new Promise(resolve => setTimeout(resolve, 25)); } };
+  const now = Date.now();
+  const results = await Promise.all([
+    notifyAccessRequests(f.db, transport, 'ops@example.com', now),
+    notifyAccessRequests(f.db, transport, 'ops@example.com', now),
+    notifyAccessRequests(f.db, transport, 'ops@example.com', now),
+  ]);
+  assert.equal(calls.length, 2);
+  assert.equal(new Set(calls.map(m => m.dedupeKey)).size, 2);
+  assert.equal(results.reduce((sum, n) => sum + n, 0), 2);
+  assert.ok((await listAccessRequests(f.db)).every(r => r.notifiedAt !== null));
+});
+
+test('an unexpired claim blocks other senders; an expired claim is recovered and delivered (issue #232)', async t => {
+  const f = await h8Fixture(t);
+  await initializeAccessRequests(f.db);
+  const request = await storeAccessRequest(f.db, { name: 'Claimed', email: 'claimed@example.com', now: Date.UTC(2026, 10, 8) });
+  const now = Date.UTC(2026, 10, 9, 12);
+  // Another sender holds a live claim (e.g. it is mid-send right now).
+  await f.db.transaction(c => c.query(
+    'UPDATE h8_access_requests SET notify_claim_token = ?, notify_claim_expires_at = ? WHERE id = ?',
+    ['other-sender', new Date(now + ACCESS_REQUEST_NOTIFY_CLAIM_MS).toISOString(), request.id]));
+  const mail = new StubMailTransport();
+  assert.equal(await notifyAccessRequests(f.db, mail, 'ops@example.com', now), 0);
+  assert.deepEqual(mail.messages, []);
+  assert.equal((await listAccessRequests(f.db))[0].notifiedAt, null);
+  // The lease lapses with no stamp — the earlier sender died mid-send — so
+  // the next call takes the row over, delivers it, and clears the claim.
+  assert.equal(await notifyAccessRequests(f.db, mail, 'ops@example.com', now + ACCESS_REQUEST_NOTIFY_CLAIM_MS), 1);
+  assert.equal(mail.messages.length, 1);
+  const [stored] = await listAccessRequests(f.db);
+  assert.notEqual(stored.notifiedAt, null);
+  const [raw] = await f.db.transaction(c => c.query('SELECT notify_claim_token, notify_claim_expires_at FROM h8_access_requests WHERE id = ?', [request.id]));
+  assert.equal(raw.notify_claim_token, null); assert.equal(raw.notify_claim_expires_at, null);
+});
+
+test('each lease starts at its row claim: a batch slower than five minutes is not stolen mid-send (issue #250)', async t => {
+  const f = await h8Fixture(t);
+  await initializeAccessRequests(f.db);
+  const stored = [];
+  for (const [name, day] of [['First', 28], ['Second', 29], ['Third', 30]]) {
+    stored.push(await storeAccessRequest(f.db, { name, email: `${name.toLowerCase()}@example.com`, now: Date.UTC(2026, 9, day) }));
+  }
+  t.mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 10, 9, 12) });
+  // Every send takes four fake minutes, so the batch spans twelve minutes —
+  // past one five-minute lease measured from the batch start. A competing
+  // notifier runs during the second row's live send: it may take the still
+  // unclaimed third row, but it must not steal the in-flight second row,
+  // whose lease started when that row was claimed (four minutes in).
+  const calls = [], competingCalls = [];
+  let competingResult = null;
+  const competing = { configured: true, async send(message) { competingCalls.push(message); calls.push(message); } };
+  const transport = { configured: true, async send(message) {
+    calls.push(message);
+    t.mock.timers.tick(4 * 60_000);
+    if (calls.length === 2 && competingResult === null) {
+      competingResult = await notifyAccessRequests(f.db, competing, 'ops@example.com', Date.now());
+    }
+  } };
+  const sent = await notifyAccessRequests(f.db, transport, 'ops@example.com', Date.now());
+  assert.equal(calls.length, 3);
+  assert.equal(new Set(calls.map(m => m.dedupeKey)).size, 3);
+  assert.equal(sent + (competingResult ?? 0), 3);
+  assert.equal(competingCalls.length, 1);
+  assert.equal(competingCalls[0].dedupeKey,
+    createHash('sha256').update(`access-request:${stored[2].id}`).digest('hex'));
+  assert.ok((await listAccessRequests(f.db)).every(r => r.notifiedAt !== null));
+});
+
+test('initializer adds the claim columns to a pre-claim table without losing rows (issue #232)', async t => {
+  const f = await h8Fixture(t);
+  await f.db.transaction(c => c.query(`CREATE TABLE h8_access_requests (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL, organization TEXT, note TEXT,
+    created_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', notified_at TEXT)`));
+  await f.db.transaction(c => c.query(`INSERT INTO h8_access_requests (id, name, email, organization, note, created_at, status)
+    VALUES ('legacy-2', 'Legacy Two', 'legacy2@example.com', NULL, NULL, '2026-10-30T00:00:00.000Z', 'pending')`));
+  await initializeAccessRequests(f.db); await initializeAccessRequests(f.db);
+  const mail = new StubMailTransport();
+  assert.equal(await notifyAccessRequests(f.db, mail, 'ops@example.com', Date.now()), 1);
+  const [row] = await listAccessRequests(f.db);
+  assert.equal(row.id, 'legacy-2'); assert.notEqual(row.notifiedAt, null);
 });

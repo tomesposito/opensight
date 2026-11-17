@@ -23,7 +23,7 @@ function columns(raw: unknown, path: string): BoundColumn[] {
 }
 
 export function bindMetadata(dataSet: unknown, dataSource: unknown, localData: unknown, hasSecurity = false): {
-  columns: BoundColumn[]; tableName: string; tableSchema: string; localData: LocalDataBinding;
+  columns: BoundColumn[]; tableName: string; tableSchema: string; tableDatabase: string; localData: LocalDataBinding;
 } {
   const response = object(dataSet, '$.dataSet');
   keys(response, ['DataSet', 'RequestId', 'Status'], '$.dataSet');
@@ -74,15 +74,22 @@ export function bindMetadata(dataSet: unknown, dataSource: unknown, localData: u
   if (src.Arn !== sourceArn) fail('UNRESOLVED_BINDING', `${sp}.Arn`, 'data source does not match physical table');
   string(src.DataSourceId, `${sp}.DataSourceId`);
   string(src.Name, `${sp}.Name`);
-  if (src.Type !== 'POSTGRESQL' && src.Type !== 'MYSQL') fail('UNSUPPORTED_FEATURE', `${sp}.Type`, 'expected POSTGRESQL or MYSQL');
+  if (src.Type !== 'POSTGRESQL' && src.Type !== 'MYSQL' && src.Type !== 'REDSHIFT' && src.Type !== 'ATHENA') fail('UNSUPPORTED_FEATURE', `${sp}.Type`, 'expected POSTGRESQL, MYSQL, REDSHIFT or ATHENA');
   equals(src.Status, 'CREATION_SUCCESSFUL', `${sp}.Status`);
   const [parameterKind, parameters] = variant(src.DataSourceParameters, `${sp}.DataSourceParameters`);
-  equals(parameterKind, src.Type === 'MYSQL' ? 'MySqlParameters' : 'PostgreSqlParameters', `${sp}.DataSourceParameters`);
-  keys(parameters, ['Host', 'Port', 'Database'], `${sp}.DataSourceParameters.${parameterKind}`);
-  string(parameters.Host, `${sp}.DataSourceParameters.${parameterKind}.Host`);
-  string(parameters.Database, `${sp}.DataSourceParameters.${parameterKind}.Database`);
-  if (!Number.isInteger(parameters.Port) || Number(parameters.Port) < 1 || Number(parameters.Port) > 65535) {
-    fail('INVALID_INPUT', `${sp}.DataSourceParameters.${parameterKind}.Port`, 'expected a valid port');
+  equals(parameterKind, src.Type === 'ATHENA' ? 'AthenaParameters' : src.Type === 'REDSHIFT' ? 'RedshiftParameters' : src.Type === 'MYSQL' ? 'MySqlParameters' : 'PostgreSqlParameters', `${sp}.DataSourceParameters`);
+  let tableDatabase = tableSchema;
+  if (src.Type === 'ATHENA') {
+    // Imported metadata is descriptive; connection settings come only from trusted config.
+    keys(parameters, ['WorkGroup'], `${sp}.DataSourceParameters.AthenaParameters`);
+    if (parameters.WorkGroup !== undefined) string(parameters.WorkGroup, `${sp}.DataSourceParameters.AthenaParameters.WorkGroup`);
+  } else {
+    keys(parameters, ['Host', 'Port', 'Database'], `${sp}.DataSourceParameters.${parameterKind}`);
+    string(parameters.Host, `${sp}.DataSourceParameters.${parameterKind}.Host`);
+    tableDatabase = string(parameters.Database, `${sp}.DataSourceParameters.${parameterKind}.Database`);
+    if (!Number.isInteger(parameters.Port) || Number(parameters.Port) < 1 || Number(parameters.Port) > 65535) {
+      fail('INVALID_INPUT', `${sp}.DataSourceParameters.${parameterKind}.Port`, 'expected a valid port');
+    }
   }
 
   const bp = '$.localData';
@@ -107,6 +114,6 @@ export function bindMetadata(dataSet: unknown, dataSource: unknown, localData: u
   }
   equals(binding.nullEncoding, 'empty cell', `${bp}.nullEncoding`);
   equals(binding.timezone, 'UTC', `${bp}.timezone`);
-  return { columns: outputColumns, tableName, tableSchema, localData: { provenance, dataSetArn: arn, physicalTableId: physicalId,
+  return { columns: outputColumns, tableName, tableSchema, tableDatabase, localData: { provenance, dataSetArn: arn, physicalTableId: physicalId,
     csv, nullEncoding: 'empty cell', timezone: 'UTC', security: { dataset: policy.dataset as 'unrestricted' | 'protected', source: 'unrestricted' } } };
 }

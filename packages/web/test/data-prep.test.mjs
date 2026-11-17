@@ -5,7 +5,7 @@ import { create } from 'react-test-renderer';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { DataPrep } from '../build/test/DataPrep.js';
 import { PrepStepEditor } from '../build/test/PrepStepEditor.js';
-import { prepBundle, prepCatalog, newPrepStep, prepSchema, prepStepIssue, prepStepLabel } from '../build/test/data-prep.js';
+import { prepPlan, prepBundle, prepCatalog, newPrepStep, prepSchema, prepStepIssue, prepStepLabel } from '../build/test/data-prep.js';
 import { createApiClient } from '../build/test/api-client.js';
 import { assembleQsBundle, parseQsBundle } from '@opensight/bundle-parser/browser';
 const source = { id: 'upload-source', connectorId: 'file', columns: [{ name: 'region', type: 'STRING' }, { name: 'amount', type: 'DECIMAL' }], available: true };
@@ -145,7 +145,7 @@ test('step editor blocks invalid names and clearing a name omits it without chan
 test('renamed join renders on the canvas and input connections, and clearing restores the kind label', async t => {
   const ui = await mount(t);
   const node = () => ui.renderer.root.findAll(n => n.type === 'button' && n.props.className?.split(' ').includes('prep-node') && !n.props.className.includes('input-node'))[0];
-  await ui.click('＋ Join');
+  await ui.click('＋ Join'); await ui.click('Use suggested key: region = region');
   const id = ui.renderer.root.findByType(PrepStepEditor).props.step.id;
   await field(ui.renderer, 'Step name', 'Product Join');
   await submitStep(ui.renderer);
@@ -167,7 +167,7 @@ test('renamed join renders on the canvas and input connections, and clearing res
 });
 test('join editor shows types, blocks mismatched keys and collisions, and renders one node per source instance', async t => {
   const ui = await mount(t);
-  await ui.click('＋ Join');
+  await ui.click('＋ Join'); await ui.click('Use suggested key: region = region');
   assert.ok(ui.renderer.root.findAllByType('option').some(o => Array.isArray(o.props.children) && o.props.children.join('') === 'region · STRING'));
   await field(ui.renderer, 'Left column', 'revenue');
   assert.match(JSON.stringify(ui.renderer.toJSON()), /PREP_SCHEMA_MISMATCH.*DECIMAL.*STRING/);
@@ -181,7 +181,7 @@ test('join editor shows types, blocks mismatched keys and collisions, and render
   await field(ui.renderer, 'Output name', 'lookup_region');
   await submitStep(ui.renderer);
   assert.equal(ui.renderer.root.findAll(n => n.type === 'button' && n.props.className?.includes('input-node')).length, 2);
-  await ui.click('＋ Join');
+  await ui.click('＋ Join'); await ui.click('Use suggested key: region = region');
   const stepOption = ui.renderer.root.findAllByType('option').find(n => typeof n.props.value === 'string' && n.props.value.startsWith('{"step":'));
   assert.ok(stepOption);
   await field(ui.renderer, 'Right table', stepOption.props.value);
@@ -196,11 +196,11 @@ test('join editor shows types, blocks mismatched keys and collisions, and render
 });
 test('self-join instances render distinct canvas nodes with (2), (3) counters', async t => {
   const ui = await mount(t);
-  await ui.click('\uFF0B Join');
+  await ui.click('\uFF0B Join'); await ui.click('Use suggested key: region = region');
   await field(ui.renderer, 'Right table', JSON.stringify('demo-sales'));
   assert.match(JSON.stringify(ui.renderer.toJSON()), /Right table \u00B7 demo-sales \(2\)/);
   await submitStep(ui.renderer);
-  await ui.click('\uFF0B Join');
+  await ui.click('\uFF0B Join'); await ui.click('Use suggested key: region = region');
   await field(ui.renderer, 'Right table', JSON.stringify('demo-sales'));
   await field(ui.renderer, 'Right column prefix', 'again_');
   await submitStep(ui.renderer);
@@ -218,7 +218,7 @@ test('hosted prepared joins preview before save and preserve refs and aliases in
     async savePrep(id, name, p) { saves.push(p); return { resource: { ...resource, dataSetId: id, name, opensightPrep: p }, persistence: 'file' }; },
   };
   const ui = await mount(t, client);
-  await ui.click('＋ Join');
+  await ui.click('＋ Join'); await ui.click('Use suggested key: region = region');
   assert.match(JSON.stringify(ui.renderer.toJSON()), /Prepared dataset · Lookup/);
   await act(async () => ui.renderer.root.findByProps({ role: 'radio', 'aria-label': 'Full join' }).props.onClick());
   await submitStep(ui.renderer);
@@ -279,7 +279,7 @@ test('Add data stages an input node and Join consumes it', async t => {
   await ui.click('Stage input');
   const staged = JSON.stringify(ui.renderer.toJSON());
   assert.match(staged, /Source 2 · Staged/); assert.match(staged, /demo-regions/); assert.match(staged, /Not joined yet/);
-  await ui.click('＋ Join');
+  await ui.click('＋ Join'); await ui.click('Use suggested key: region = region');
   assert.equal(ui.renderer.root.findByType(PrepStepEditor).props.step.config.source, 'demo-regions');
   await submitStep(ui.renderer);
   const applied = JSON.stringify(ui.renderer.toJSON());
@@ -288,7 +288,7 @@ test('Add data stages an input node and Join consumes it', async t => {
 });
 test('join nodes flag stale keys on the canvas', async t => {
   const ui = await mount(t);
-  await ui.click('＋ Join');
+  await ui.click('＋ Join'); await ui.click('Use suggested key: region = region');
   await submitStep(ui.renderer);
   assert.doesNotMatch(JSON.stringify(ui.renderer.toJSON()), /unconfigured/);
   await ui.click('＋ Rename columns');
@@ -431,8 +431,8 @@ test('multiple dangling branches can be repaired in order while the entire draft
 test('Steps stays grouped while Configure and Preview switch without losing edits', async t => {
   const ui = await mount(t);
   const sidebar = ui.renderer.root.findByProps({ 'aria-label': 'Steps' });
-  assert.deepEqual(sidebar.findAllByType('h3').map(n => n.props.children), ['Input', 'Column transformations', 'Combine transformations', 'Other']);
-  assert.deepEqual(prepCatalog.map(c => c.label), ['Add calculated columns', 'Change data type', 'Rename columns', 'Select columns', 'Append', 'Join', 'Aggregate', 'Filter', 'Pivot', 'Unpivot']);
+  assert.deepEqual(sidebar.findAllByType('h3').map(n => n.props.children), ['Input', 'Column transformations', 'Combine transformations', 'Other', 'Recipes']);
+  assert.deepEqual(prepCatalog.map(c => c.label), ['Add calculated columns', 'Window (rank, running totals)', 'Change data type', 'Rename columns', 'Select columns', 'Append', 'Join', 'Aggregate', 'Filter', 'Pivot', 'Unpivot']);
   await ui.click('＋ Rename columns');
   await field(ui.renderer, 'New name', 'territory');
   await ui.click('Preview');
@@ -448,7 +448,7 @@ test('Steps stays grouped while Configure and Preview switch without losing edit
 
 test('join icons, searchable typed columns and dashed key placeholders edit real join configuration', async t => {
   const ui = await mount(t);
-  await ui.click('＋ Join');
+  await ui.click('＋ Join'); await ui.click('Use suggested key: region = region');
   const radios = () => ui.renderer.root.findAllByProps({ role: 'radio' });
   assert.deepEqual(radios().map(n => n.props['aria-label']), ['Left join', 'Inner join', 'Right join', 'Full join']);
   for (const label of ['Full join', 'Right join', 'Inner join', 'Left join']) {
@@ -488,7 +488,7 @@ test('add data → change type → join executes the same prepared dataset as th
   const ui = await mount(t, client);
   await ui.click('＋ Add data'); await field(ui.renderer, 'Stage a source', JSON.stringify(regions.id)); await ui.click('Stage input');
   await ui.click('＋ Change data type'); await field(ui.renderer, 'Column', 'amount'); await field(ui.renderer, 'New type', 'INTEGER'); await submitStep(ui.renderer);
-  await ui.click('＋ Join'); await submitStep(ui.renderer);
+  await ui.click('＋ Join'); await ui.click('Use suggested key: region = region'); await submitStep(ui.renderer);
   const p = graphPipeline(ui);
   assert.equal(p.input, sales.id);
   const contract = { version: 1, input: sales.id, steps: [
@@ -573,4 +573,14 @@ test('grid formula validation blocks unknown columns, new functions, aggregates 
   await ui.click('Preview'); await ui.click('Filter revenue'); await field(ui.renderer, 'Value', 'invalid');
   assert.equal(ui.button('Apply step').props.disabled, true); await submitStep(ui.renderer);
   assert.equal(graphPipeline(ui).steps.length, 0);
+});
+
+for (const connectorId of ['mysql', 'mariadb', 'redshift-manual']) test(`${connectorId} prep validates staged DuckDB transformations and retains source dialect`, () => {
+  const database = { ...source, connectorId };
+  const transformed = { ...pipeline, steps: [{ id: 'rename', kind: 'rename', config: { column: 'region', name: 'area' } }, { id: 'filter', kind: 'filter', config: { filters: [{ columnName: 'area', operator: 'EQUALS', value: 'east' }] } }] };
+  const plan = prepPlan(transformed, [database]);
+  assert.equal(plan.sourceDialect, connectorId === 'redshift-manual' ? 'redshift' : 'mysql'); assert.equal(plan.sourceConnectorId, connectorId);
+  assert.equal(plan.dialect, 'duckdb'); assert.deepEqual(plan.parameters, ['east']);
+  assert.deepEqual(plan.columns, [{ name: 'area', type: 'STRING' }, { name: 'amount', type: 'DECIMAL' }]);
+  assert.throws(() => prepPlan(transformed, [{ ...database, available: false }]), { code: 'PREP_SECURITY_REJECTED' });
 });

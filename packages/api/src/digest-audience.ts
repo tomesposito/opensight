@@ -1,7 +1,6 @@
 import { planPreparedQuery, resolveSecurity, type InteractiveQuery, type MetricDataset } from '@opensight/query-engine';
 import { MetadataError } from './metadata-db.js';
 import type { TenantContext, TenantMetadata } from './metadata.js';
-import { MetricCatalog, metricRecord } from './metric-model.js';
 import type { DigestSpec } from './digest-model.js';
 import type { Admission, HostedData } from './hosted-data.js';
 import type { JobStore } from './job-store.js';
@@ -10,14 +9,8 @@ import { boundColumns } from './source-schema.js';
 import { intersectSecurity, metricDatasetPolicies } from './digest-admission.js';
 
 export async function digestMetricAccess(metadata: TenantMetadata, context: TenantContext, spec: DigestSpec): Promise<MetricDataset> {
-  return metadata.assetTransaction(context, false, a => {
-    const catalog = new MetricCatalog(a), record = catalog.get(spec.metricId), b = metricRecord(record);
-    if (b.publishedVersion === null) throw new MetadataError('METRIC_NOT_PUBLISHED', 409);
-    const dataset = catalog.dataset(b.dataset);
-    if (dataset.body.folderId != null) a.folder(String(dataset.body.folderId));
-    if (!a.allows(record.body.grants) || !a.allows(dataset.body.grants)) throw new MetadataError('DIGEST_VIEW_FORBIDDEN', 403);
-    return b.dataset;
-  });
+  // Targeted read (#231): never the whole-catalog assetTransaction clone.
+  return metadata.digestMetricAccess(context, spec.metricId);
 }
 
 const revoked = (e: unknown) => e instanceof Error && 'code' in e && [

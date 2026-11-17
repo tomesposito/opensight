@@ -1,3 +1,5 @@
+import { athenaDateCast } from './athena-sql.js';
+import { mysqlCollation, type MySqlVariant } from './mysql-session.js';
 import { mysqlDateCast } from './mysql-sql.js';
 import type { BoundColumn } from './types.js';
 import type { ParameterValue } from './parameters.js';
@@ -131,13 +133,13 @@ export function resolveSecurity(raw: unknown, columns: readonly BoundColumn[], d
   if (!matches.length) fail('ROW_ACCESS_DENIED', '$.security.policy', 'protected dataset has no matching row rule');
   return { rowPredicate: { any: matches.map(r => r.predicate) }, deniedColumns, protected: protectedData };
 }
-export function rowSecuritySql(predicate: RowPredicate, columns: readonly BoundColumn[], bind: (value: ParameterValue) => string, dialect: import('./types.js').SqlDialect = 'duckdb'): string {
+export function rowSecuritySql(predicate: RowPredicate, columns: readonly BoundColumn[], bind: (value: ParameterValue) => string, dialect: import('./types.js').SqlDialect = 'duckdb', mysqlVariant: MySqlVariant = 'mysql'): string {
   const compile = (p: RowPredicate): string => {
     if ('all' in p) return `(${p.all.map(compile).join(' AND ')})`;
     if ('any' in p) return `(${p.any.map(compile).join(' OR ')})`;
     const type = columns.find(c => c.name === p.column)!.scalarType;
-    const column = q(p.column, dialect) + (dialect === 'mysql' && type === 'string' ? ' COLLATE utf8mb4_0900_bin' : '');
-    const parameter = (v: ParameterValue) => type === 'datetime' ? dialect === 'mysql' ? mysqlDateCast(bind(v)) : `CAST(${bind(v)} AS TIMESTAMP)` : bind(v);
+    const column = q(p.column, dialect) + (dialect === 'mysql' && type === 'string' ? ` COLLATE ${mysqlCollation(mysqlVariant)}` : '');
+    const parameter = (v: ParameterValue) => type === 'datetime' ? dialect === 'athena' ? athenaDateCast(bind(v)) : dialect === 'mysql' ? mysqlDateCast(bind(v)) : `CAST(${bind(v)} AS TIMESTAMP)` : bind(v);
     if (p.operator === 'is-null' || p.operator === 'is-not-null') return `${column} IS ${p.operator === 'is-null' ? '' : 'NOT '}NULL`;
     if (p.operator === 'in') return `${column} IN (${p.values.map(parameter).join(', ')})`;
     if ('value' in p) return `${column} ${{ eq: '=', ne: '<>', lt: '<', lte: '<=', gt: '>', gte: '>=' }[p.operator]} ${parameter(p.value)}`;

@@ -130,6 +130,7 @@ export function VisualCard({ visual, dataMessage, loading = false, definitionPre
       </div>
       <footer className="card-footer">
         {!loading && visual.rows !== null && (provenance?.source === 'cache' || provenance?.source === 'aggregate') && <span className="query-provenance">{provenance.source === 'cache' ? 'Cached result' : `Aggregate: ${provenance.aggregateName}`}</span>}
+        {compiled.forecastNote && <p className="forecast-note">{compiled.forecastNote}</p>}
         {compiled.model.facet && <p className="facet-caption">Group by: {fieldName(compiled.model.facet, compiled.model.formatting)}</p>}
         {compiled.model.breakdown && <p className="facet-caption">Breakdown: {fieldName(compiled.model.breakdown, compiled.model.formatting)}</p>}
         {compiled.state === 'ready' && compiled.model.kind !== 'table' && compiled.model.kind !== 'pivot' && <details><summary>View data · {compiled.table.rows.length} {compiled.table.rows.length === 1 ? 'row' : 'rows'}</summary><DataTable compiled={compiled} interaction={interaction} /></details>}

@@ -196,3 +196,69 @@ test('notebooks: load rejects missing required content and corrupted result stat
     const copy = structuredClone(state); change(copy.runs[0].results[0]); assert.throws(() => validateNotebookState(copy), /NOTEBOOK_STORE_CORRUPT/);
   }
 });
+
+// #230: aggregate byte budgets. Each test measures one real result's JSON
+// bytes under the default budgets, then sets budgets relative to that size so
+// every cell result is individually valid and only the aggregate can bind.
+const NOTEBOOK_BYTE_ENV = ['OPENSIGHT_NOTEBOOK_RUN_BYTES', 'OPENSIGHT_NOTEBOOK_NOTEBOOK_BYTES', 'OPENSIGHT_NOTEBOOK_STORE_BYTES'];
+function byteEnv(t, values) {
+  const saved = Object.fromEntries(NOTEBOOK_BYTE_ENV.map(k => [k, process.env[k]]));
+  t.after(() => { for (const k of NOTEBOOK_BYTE_ENV) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } });
+  for (const k of NOTEBOOK_BYTE_ENV) delete process.env[k];
+  Object.assign(process.env, values);
+}
+async function resultBytes(t, options = {}) {
+  const call = await api(t, options), n = await create(call, { cells: [sql()] });
+  const r = await run(call, n);
+  return Buffer.byteLength(JSON.stringify(r.results[0].data));
+}
+test('notebooks: a run drops results past its aggregate byte budget and dependent visuals fail', async t => {
+  const bytes = await resultBytes(t);
+  byteEnv(t, { OPENSIGHT_NOTEBOOK_RUN_BYTES: String(bytes + Math.floor(bytes / 2)) });
+  const call = await api(t);
+  const n = await create(call, { cells: [sql(), sql(undefined, undefined, 'sql2'), { ...visual, sourceCellId: 'sql2' }] });
+  const r = await run(call, n);
+  assert.ok(r.results[0].data, JSON.stringify(r.results));
+  assert.equal(r.results[1].data, undefined); assert.equal(r.results[1].error.code, 'NOTEBOOK_RESULT_BUDGET_EXCEEDED');
+  assert.equal(r.results[2].error.code, 'NOTEBOOK_DEPENDENCY_FAILED');
+  const history = (await call(`${path(n)}/runs`)).body.runs;
+  assert.equal(history[0].results[1].error.code, 'NOTEBOOK_RESULT_BUDGET_EXCEEDED');
+});
+test('notebooks: byte eviction retains fewer runs than the count cap when the notebook budget binds', async t => {
+  const bytes = await resultBytes(t);
+  byteEnv(t, { OPENSIGHT_NOTEBOOK_RUN_BYTES: String(bytes + Math.floor(bytes / 2)), OPENSIGHT_NOTEBOOK_NOTEBOOK_BYTES: String(2 * bytes + Math.floor(bytes / 2)) });
+  const dir = await mkdtemp(join(tmpdir(), 'opensight-notebook-bytes-')), storePath = join(dir, 'notebooks.json');
+  const call = await api(t, { notebookStorePath: storePath }), n = await create(call, { cells: [sql()] });
+  for (let i = 0; i < 5; i++) await run(call, n);
+  const history = (await call(`${path(n)}/runs`)).body.runs;
+  assert.equal(history.length, 2, JSON.stringify(history.map(r => r.id)));
+  const retained = history.reduce((total, r) => total + r.results.reduce((sum, c) => sum + (c.data ? Buffer.byteLength(JSON.stringify(c.data)) : 0), 0), 0);
+  assert.ok(retained <= 2 * bytes + Math.floor(bytes / 2));
+  const reloaded = await api(t, { notebookStorePath: storePath });
+  assert.equal((await reloaded(`${path(n)}/runs`)).body.runs.length, 2);
+});
+test('notebooks: a snapshot that would exceed the notebook byte budget is refused, never evicted silently', async t => {
+  const bytes = await resultBytes(t);
+  byteEnv(t, { OPENSIGHT_NOTEBOOK_RUN_BYTES: String(bytes + Math.floor(bytes / 2)), OPENSIGHT_NOTEBOOK_NOTEBOOK_BYTES: String(2 * bytes + Math.floor(bytes / 2)) });
+  const call = await api(t), n = await create(call, { cells: [sql()] });
+  await run(call, n);
+  assert.equal((await call(`${path(n)}/cells/sql1/snapshot`, 'POST', {})).status, 201);
+  const second = await call(`${path(n)}/cells/sql1/snapshot`, 'POST', {});
+  assert.equal(second.status, 409); assert.equal(second.body.errorCode, 'NOTEBOOK_SNAPSHOT_LIMIT_EXCEEDED');
+  assert.equal((await call(path(n))).body.snapshots.length, 1);
+});
+test('notebooks: state validation enforces run, notebook and store aggregate byte budgets', async () => {
+  const { validateNotebookState } = await import('../dist/notebooks.js');
+  const cell = (cellId, x) => ({ cellId, kind: 'sql', executedAt: '2026-11-04T00:00:00Z', elapsedMs: 1, datasetRefs: ['sales'], data: { columns: [{ name: 'x', type: 'INTEGER' }], rows: [{ x }], rowCount: 1, truncated: false } });
+  const one = Buffer.byteLength(JSON.stringify(cell('sql1', 1).data));
+  const nb = id => ({ id, namespaceId: 'default', ownerId: 'author', name: id, published: false, parameters: [], cells: [sql()], version: 1, createdAt: '2026-11-04T00:00:00Z', updatedAt: '2026-11-04T00:00:00Z' });
+  const runState = (id, notebookId, results) => ({ id, namespaceId: 'default', notebookId, notebookVersion: 1, executedBy: 'author', executedAt: '2026-11-04T00:00:00Z', accessStamp: 'stamp', results });
+  const generous = { runBytes: 100 * one, notebookBytes: 100 * one, storeBytes: 100 * one };
+  const twoCells = { version: 1, notebooks: [nb('n')], snapshots: [], runs: [runState('r', 'n', [cell('sql1', 1), cell('sql2', 2)])] };
+  assert.equal(validateNotebookState(twoCells, generous).runs.length, 1);
+  assert.throws(() => validateNotebookState(twoCells, { ...generous, runBytes: one + Math.floor(one / 2) }), /NOTEBOOK_STORE_CORRUPT/);
+  assert.throws(() => validateNotebookState(twoCells, { ...generous, notebookBytes: one + Math.floor(one / 2) }), /NOTEBOOK_STORE_CORRUPT/);
+  const twoNotebooks = { version: 1, notebooks: [nb('a'), nb('b')], snapshots: [], runs: [runState('r1', 'a', [cell('sql1', 1)]), runState('r2', 'b', [cell('sql1', 2)])] };
+  assert.equal(validateNotebookState(twoNotebooks, generous).runs.length, 2);
+  assert.throws(() => validateNotebookState(twoNotebooks, { ...generous, storeBytes: one + Math.floor(one / 2) }), /NOTEBOOK_STORE_CORRUPT/);
+});

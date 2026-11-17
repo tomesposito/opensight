@@ -73,6 +73,53 @@ test('D-77 marketing assets have accurate media types and cannot inherit immutab
   assert.equal(frontendMetadata('assets/app-abcdefgh.js').CacheControl, 'public,max-age=31536000,immutable');
 });
 
+test('marketing archive contains every public page, local reference and social preview with exact bytes', () => {
+  const root = mkdtempSync(join(tmpdir(), 'opensight-marketing-pages-'));
+  try {
+    const target = join(root, 'frontend'), demo = join(root, 'demo.html');
+    mkdirSync(target); writeFileSync(demo, '<html>Offline demo</html>');
+    writeFileSync(join(target, 'manifest.json'), JSON.stringify({ version: 1, kind: 'frontend', files: { 'index.html': 'a'.repeat(64) } }));
+    const site = fileURLToPath(new URL('../site/', import.meta.url));
+    packageSites(site, demo, target);
+    const manifest = JSON.parse(readFileSync(join(target, 'manifest.json')));
+    const origin = 'https://getopensight.org';
+    const checkUrl = url => {
+      if (url.origin !== origin) return;
+      const response = request('opensight.example', url.pathname);
+      assert.equal(response.statusCode, undefined, `unrouted public URL: ${url.pathname}`);
+      const name = response.uri.slice(1);
+      assert.ok(manifest.files[name], `unpackaged public URL: ${url.pathname}`);
+      return name;
+    };
+    for (const name of marketingFiles) {
+      const bytes = readFileSync(join(target, name));
+      assert.equal(manifest.files[name], createHash('sha256').update(bytes).digest('hex'));
+      if (name === 'marketing/demo/index.html') continue;
+      assert.deepEqual(bytes, readFileSync(join(site, name.slice(10))));
+      if (!name.endsWith('.html')) continue;
+      const url = new URL('/' + name.slice(10), origin), html = bytes.toString();
+      checkUrl(url);
+      for (const [, href] of html.matchAll(/\b(?:href|src|poster)="([^"]+)"/g)) checkUrl(new URL(href, url));
+      for (const [, href] of html.matchAll(/<meta\b[^>]*(?:property="og:image"|name="twitter:image")[^>]*content="([^"]+)"/g)) {
+        assert.equal(checkUrl(new URL(href, url)), 'marketing/assets/og-image.jpg');
+      }
+      if (name.endsWith('/index.html') && name !== 'marketing/index.html') {
+        const directory = '/' + name.slice(10, -'/index.html'.length);
+        assert.equal(request('opensight.example', directory).headers.location.value, directory + '/');
+        assert.equal(request('opensight.example', directory + '/', 'HEAD').uri, '/' + name);
+        assert.equal(request('app.opensight.example', directory + '/').statusCode, 404);
+      }
+    }
+    for (const [, url] of readFileSync(join(site, 'sitemap.xml'), 'utf8').matchAll(/<loc>([^<]+)<\/loc>/g)) checkUrl(new URL(url));
+    const image = 'marketing/assets/og-image.jpg';
+    assert.equal(frontendMetadata(image).ContentType, 'image/jpeg');
+    assert.equal(frontendMetadata(image).CacheControl, 'public,max-age=300');
+    assert.ok(readFileSync(join(target, image)).subarray(0, 3).equals(Buffer.from([255, 216, 255])));
+    for (const path of ['/docs/private/', '/docs/../index.html', '/docs/%2e%2e/', '/signup/private.js', '/build-docs.mjs', '/alternatives/unknown/'])
+      assert.equal(request('opensight.example', path).statusCode, 404);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('D-77 package binds the exact approved site and rejects missing files, links and partial rollbacks', () => {
   const root = mkdtempSync(join(tmpdir(), 'opensight-sites-'));
   try {

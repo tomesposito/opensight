@@ -47,7 +47,7 @@ await runJourney('j7-operator', 'Operator', async j => {
     assert.match(await page.locator('main').innerText(), /Billing is not configured/);
     assert.equal(await button(page, 'Generate payment link').count(), 0);
     assert.equal(await page.getByRole('progressbar').count(), 4);
-    return 'Detail renders overview, live usage with daily/monthly quota labels, members, billing-not-configured state and lifecycle controls.';
+    return 'Detail renders overview, live usage with monthly quota labels and current storage, members, billing-not-configured state and lifecycle controls.';
   });
   await j.step('tenant-detail-narrow', page, async () => {
     await page.setViewportSize({ width: 390, height: 844 });

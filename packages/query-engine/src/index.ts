@@ -1,4 +1,4 @@
-/** Synthetic/provisional local query slice. No AWS, archive or source-compatibility claim. */
+/** Query planning and server-side executors; live connector compatibility requires operator verification. */
 export { planVisual } from './planner.js';
 export { LiveResultCache, liveDatasetCachePrefix } from './live-performance.js';
 export type { AggregateTableDeclaration, LiveCachePolicy, CachedLiveResult, LiveCacheFillToken } from './live-performance.js';
@@ -42,6 +42,7 @@ export { artifactColumns, artifactScalar, writeArtifactParquet, readArtifactParq
 export type { PrepScalar, PrepSink, PrepReadLimits, PrepMemoryTable } from './prep-stream.js';
 export { queryPrepared } from './prepared-query.js';
 export { planPreparedQuery, planPreparedVisual, queryPreparedVisual } from './prepared-query.js';
+export { streamSourceMySql } from './source-mysql.js';
 export { planSourceRead, streamSourcePostgres, streamSourceMemory } from './source-read.js';
 export type { SourceRead, SourceConnection } from './source-read.js';
 
@@ -50,3 +51,15 @@ export { relativeDifference, formatNumber, shiftDate, resultDate, groupedPeriodD
 export * from './governed-metrics.js';
 
 export { executeNotebookSql, NotebookSqlError, NOTEBOOK_EXECUTION_MS, NOTEBOOK_RESULT_BYTES } from './notebook-sql.js';
+
+export { executeRedshift } from './redshift-executor.js';
+export type { RedshiftExecuteOptions } from './redshift-executor.js';
+export { redshiftType } from './redshift-sql.js';
+export { streamSourceRedshift } from './source-redshift.js';
+
+export { executeAthena } from './athena-executor.js';
+export type { AthenaExecuteOptions, AthenaQueryClient } from './athena-executor.js';
+export { readS3Upload, listS3Objects, S3SourceError, type S3SourceClient, type S3SourceOptions, type S3SourceErrorCode, type S3ObjectSummary } from './source-s3.js';
+export { discoverDatabaseSources, rdsSourceConfig, RdsDiscoveryError, type RdsDiscoveryClient, type RdsDiscoveryOptions, type RdsDiscoveryErrorCode, type DiscoveredDatabase } from './rds-discovery.js';
+
+export { suggestPrepJoinKeys } from './prep-join.js';

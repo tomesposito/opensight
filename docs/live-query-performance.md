@@ -67,9 +67,15 @@ prefix/full invalidation release the removed entries' bytes. Retrieval also
 copies rows to isolate them from caller mutation.
 
 `stats()` returns cumulative `{ hits, misses, stores }` counters plus current
-`entries` and `retainedBytes`. It purges expired entries before reporting the live
-totals, without changing the cumulative counters. `stores` counts only results
-actually stored, including successful replacements.
+`entries`, `retainedBytes`, `activeFills`, and `trackedFillKeys` (#246). It purges
+expired entries before reporting the live totals, without changing the cumulative
+counters. `stores` counts only results actually stored, including successful
+replacements. `activeFills` counts all in-flight fill tokens, including superseded
+tokens; `trackedFillKeys` counts keys that still have a latest-fill marker.
+Multiple fills for one key can therefore count as several active fills but only
+one tracked key. Token-aware `set` and `releaseFill` end a fill; both executors
+release in `finally` so failures retain no fill state. Reporting statistics does
+not release fills or remove their markers.
 
 Keys are JSON arrays of dataset ARN, visual ID, dialect, SQL, and parameters.
 Use a separate cache instance for independent source environments with overlapping

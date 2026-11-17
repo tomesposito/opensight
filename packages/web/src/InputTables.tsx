@@ -70,7 +70,7 @@ export function InputTablesPanel({ client }: { client?: InputTableClient }) {
               : <input aria-label={`${column.name} for row ${row.id}`} type={column.type === 'number' ? 'number' : column.type === 'date' ? 'date' : 'text'} value={drafts[row.id]?.[column.name] ?? ''} onChange={event => setDrafts(current => ({ ...current, [row.id]: { ...current[row.id], [column.name]: event.target.value } }))} />
             : cellText(row.values[column.name] ?? null) || '—'}</td>)}
           {table.canEdit && <td>
-            <button disabled={busy} onClick={() => void action(async () => { await client!.updateInputTableRow!(table.id, row.id, Object.fromEntries(table.columns.map(c => [c.name, parseCell(c, drafts[row.id]?.[c.name] ?? '')]))); await reloadTable(table.id); setRevision(n => n + 1); })}>Save</button>
+            <button disabled={busy} onClick={() => void action(async () => { await client!.updateInputTableRow!(table.id, row.id, Object.fromEntries(table.columns.map(c => [c.name, parseCell(c, drafts[row.id]?.[c.name] ?? '')])), table.version); await reloadTable(table.id); setRevision(n => n + 1); })}>Save</button>
             <button disabled={busy} onClick={() => void action(async () => { await client!.deleteInputTableRow!(table.id, row.id); await reloadTable(table.id); setRevision(n => n + 1); })}>Delete row</button>
           </td>}
         </tr>)}

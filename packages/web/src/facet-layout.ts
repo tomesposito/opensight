@@ -1,11 +1,25 @@
 import type { AnalysisTheme } from './themes.js';
-import type { Cell, Field, MultiplesOptions, Row } from './model.js';
+import type { Cell, Field, MultiplesOptions, Row, VisualModel } from './model.js';
 import type { VisualKind } from './visual-catalog.js';
 
 /** Visual kinds that render a Small multiples facet as a grid of per-facet panels. */
 export const FACETED_KINDS: readonly VisualKind[] = ['bar', 'bar100', 'line', 'area', 'combo', 'pie'] as const;
 
 export interface FacetGroup { value: Cell; rows: Row[] }
+
+/** Limit first-appearance groups before layout caps. The compiler supplies the
+ * row merge so field bindings and category totals are shared by every renderer,
+ * detailed tooltips and view-data. Unset/non-binding limits preserve the input. */
+export function applyFacetLimit(
+  groups: FacetGroup[],
+  limit: VisualModel['facetLimit'],
+  mergeOtherRows: (rows: Row[]) => Row[],
+): FacetGroup[] {
+  if (!limit || groups.length <= limit.count) return groups;
+  const kept = groups.slice(0, limit.count);
+  if (limit.includeOther) kept.push({ value: 'Other', rows: mergeOtherRows(groups.slice(limit.count).flatMap(group => group.rows)) });
+  return kept;
+}
 
 /** Group rows by the facet dimension's cell value, in first-appearance order. */
 export function groupRowsByFacet(rows: Row[], facet: Field, cell: (row: Row, field: Field) => Cell): FacetGroup[] {

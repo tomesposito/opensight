@@ -99,7 +99,6 @@ test('radar import reports unsupported native options and invalid wells, blocks 
     c => { c.startAngle = 90; },
     c => { c.colorAxis = {}; },
     c => { c.sortConfiguration = { colorSort: [] }; },
-    c => { c.tooltip = { selectedTooltipType: 'DETAILED' }; },
     c => { c.fieldWells.radarChartAggregatedFieldWells.category = []; },
     c => { c.fieldWells.radarChartAggregatedFieldWells.values = []; },
   ]) {
