@@ -10,7 +10,7 @@ export interface ConnectorDefinition {
   readonly category: 'File' | 'Database' | 'AWS' | 'SaaS';
   readonly schema: Readonly<Record<string, ConnectorField>>;
   readonly dialect?: SqlDialect;
-  readonly implementation: 'upload' | 'query' | 'hosted' | 'unimplemented';
+  readonly implementation: 'upload' | 'query' | 'hosted' | 'discovery' | 'unimplemented';
 }
 const env = (label: string, required = true): ConnectorField => ({ kind: 'environment', label, required });
 const sql = { hostEnv: env('Host environment variable'), portEnv: env('Port environment variable'), databaseEnv: env('Database environment variable'), userEnv: env('User environment variable'), passwordEnv: env('Password environment variable'), caEnv: env('TLS CA environment variable', false) };
@@ -40,7 +40,8 @@ export const connectors: readonly ConnectorDefinition[] = [
     bucket: { kind: 'string', label: 'Bucket', required: true }, key: { kind: 'string', label: 'Object key', required: true },
     prefix: { kind: 'string', label: 'Browse prefix' },
   } },
-  ...[['s3-analytics', 'S3 Analytics'], ['rds', 'RDS (auto-discovery)'], ['aurora', 'Aurora'], ['redshift', 'Redshift (auto-discovery)'], ['iot-analytics', 'AWS IoT Analytics']].map(([id, name]): ConnectorDefinition => ({ id: id!, name: name!, category: 'AWS', schema: aws, implementation: 'hosted' })),
+  ...[['rds', 'RDS (auto-discovery)'], ['aurora', 'Aurora'], ['redshift', 'Redshift (auto-discovery)']].map(([id, name]): ConnectorDefinition => ({ id: id!, name: name!, category: 'AWS', schema: { regionEnv: env('AWS region environment variable') }, implementation: 'discovery' })),
+  ...[['s3-analytics', 'S3 Analytics'], ['iot-analytics', 'AWS IoT Analytics']].map(([id, name]): ConnectorDefinition => ({ id: id!, name: name!, category: 'AWS', schema: aws, implementation: 'hosted' })),
 ];
 // Registry metadata is shared by API and browser. Callers cannot change validation rules.
 for (const connector of connectors) {
@@ -100,6 +101,9 @@ export function connectorState(id: string, apiAvailable = false): ConnectorState
   if (c.implementation === 'upload') return apiAvailable
     ? { state: 'ready', message: 'Ready for file upload to DuckDB staging' }
     : { state: 'needs_hosted_api', message: 'Needs local or hosted API · Uploads are unavailable in the static demo.' };
+  if (c.implementation === 'discovery') return apiAvailable
+    ? { state: 'not_configured', message: 'Needs an operator-configured discovery connection' }
+    : { state: 'needs_hosted_api', message: 'Needs a hosted API and an operator-configured discovery connection' };
   if (c.implementation === 'hosted') return { state: apiAvailable ? 'not_configured' : 'needs_hosted_api', message: 'Needs a hosted connector implementation' };
   return apiAvailable
     ? { state: 'not_configured', message: 'Needs an operator-configured connection' }
