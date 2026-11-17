@@ -13,5 +13,5 @@ export function PrepJoinIcon({ type }: { type: Extract<PrepStep, { kind: 'join' 
   </svg>;
 }
 export function PrepStepIcon({ kind }: { kind: PrepStep['kind'] }) {
-  return <span aria-hidden="true">{({ calculate: 'ƒ', changeType: '⇄', rename: '✎', select: '⊞', append: '⊟', join: '⋈', aggregate: 'Σ', filter: '▽', pivot: '↱', unpivot: '↳' })[kind]}</span>;
+  return <span aria-hidden="true">{({ calculate: 'ƒ', window: '▥', changeType: '⇄', rename: '✎', select: '⊞', append: '⊟', join: '⋈', aggregate: 'Σ', filter: '▽', pivot: '↱', unpivot: '↳' })[kind]}</span>;
 }
