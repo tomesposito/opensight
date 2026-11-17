@@ -20,7 +20,7 @@ export class HostedDataRoutes {
   async route(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, recheck: () => Promise<void>): Promise<boolean> {
     this.data.begin(context, undefined, recheck);
     const revisions = await this.data.sources.metadata.revisions(context);
-    const read = request.method === 'GET' || /\/(query|preview|rows|output|refresh|schema|browse|download)$/.test(path);
+    const read = request.method === 'GET' || /\/(query|preview|join-diagnostics|rows|output|refresh|schema|browse|download)$/.test(path);
     const input = async () => {
       const body = await readBody(request);
       // A durable write invalidates revision-bound sessions, including this one.
@@ -73,7 +73,7 @@ export class HostedDataRoutes {
     if (ai) { method(request, response, ['GET']); await publish(200, await this.data.schema(context, ai[1]!, 'ai')); return true; }
     if (path === '/api/prep-datasets') { method(request, response, ['GET']); await publish(200, { ...(await this.prep.list(context)), persistence: 'durable' }); return true; }
     if (path === '/api/prep-datasets/import') { method(request, response, ['POST']); await publish(201, await this.prep.import(context, await input())); return true; }
-    const prep = /^\/api\/datasets\/([A-Za-z0-9_-]{1,128})\/(prep(?:\/preview)?|execution|refresh|publish|rows|query|download|share|permissions|embed)$/.exec(path);
+    const prep = /^\/api\/datasets\/([A-Za-z0-9_-]{1,128})\/(prep(?:\/(?:preview|join-diagnostics))?|execution|refresh|publish|rows|query|download|share|permissions|embed)$/.exec(path);
     if (prep) {
       const id = prep[1]!, action = prep[2]!;
       if (['share', 'permissions', 'embed'].includes(action)) { await this.prep.get(context, id); sourceError(action === 'embed' ? 'PREP_EMBED_REFUSED' : 'PREP_SHARING_REFUSED', 403); }
@@ -88,6 +88,8 @@ export class HostedDataRoutes {
         if (request.method === 'GET') await publish(200, await this.prep.get(context, id));
         else if (request.method === 'PUT') await publish(200, await this.prep.save(context, id, await input()));
         else { const raw = object(await input(), ['expectedVersion']); await this.prep.remove(context, id, raw.expectedVersion as number); await publish(200, { removed: true }); }
+      } else if (action === 'prep/join-diagnostics') {
+        method(request, response, ['POST']); await publish(200, await this.prep.joinDiagnostics(context, id, await input()));
       } else if (action === 'prep/preview') {
         method(request, response, ['POST']); await publish(200, await this.prep.preview(context, id, await input()));
       } else if (action === 'execution') {

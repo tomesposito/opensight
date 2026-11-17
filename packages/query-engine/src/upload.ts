@@ -1,3 +1,5 @@
+import { diagnosePrepJoinDuckDb } from './prep-executor.js';
+import { PrepJoinBudget } from './prep-join-diagnostics.js';
 import { streamPrepDuckDb, withPrepTables, type PrepSink, type PrepReadLimits, type PrepMemoryTable } from './prep-stream.js';
 import { previewPrepDuckDb, type PrepPreview, type PrepPreviewOptions } from './prep-executor.js';
 import type { PrepSource } from './prep.js';
@@ -404,6 +406,11 @@ export class UploadStaging {
   }
   prepSources(): PrepSource[] {
     return [...this.uploads.values()].filter(upload => !this.expired(upload)).map(upload => ({ id: upload.id, connectorId: 'file', table: upload.id, columns: structuredClone(upload.columns), security: 'unrestricted' }));
+  }
+  async joinDiagnostics(raw: unknown, step: string, options: PrepPreviewOptions = {}) {
+    const budget = new PrepJoinBudget();
+    await this.expire(); budget.check();
+    return diagnosePrepJoinDuckDb(this.connection, raw, this.prepSources(), step, options, budget);
   }
   async previewPrep(raw: unknown, options: PrepPreviewOptions = {}, tables: readonly PrepMemoryTable[] = []): Promise<PrepPreview> {
     await this.expire();

@@ -180,3 +180,32 @@ test('branch validation errors fail closed on save and every preview, preserving
     assert.equal((await call(`${path}/preview`, 'POST', { pipeline, through: 'c' }, user)).body.errorCode, 'PREP_SOURCE_NOT_FOUND');
   }
 });
+
+test('join diagnostics API bounds source samples and reports exact fan-out without changing preview', async t => {
+  const call = await api(t);
+  const csv = 'id\n' + Array.from({ length: 10030 }, (_, i) => `${i + 1}\n`).join('');
+  const left = (await call('/api/uploads', 'POST', { config: { format: 'csv' }, base64: Buffer.from(csv).toString('base64') })).body.id;
+  const right = (await call('/api/uploads', 'POST', { config: { format: 'csv' }, base64: Buffer.from('id\n1\n1\n10000\n10020\n').toString('base64') })).body.id;
+  const pipeline = { version: 1, input: left, steps: [{ id: 'join', kind: 'join', config: { source: right, joinType: 'full', keys: [{ left: 'id', right: 'id' }], prefix: 'r_' } }] };
+  const path = '/api/datasets/diagnostics/prep/join-diagnostics';
+  const result = await call(path, 'POST', { pipeline, through: 'join' });
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.deepEqual(result.body, { basis: 'bounded-preview', sampleLimit: 10000, timedOut: false, matchedRows: 3, unmatchedLeft: 9998, unmatchedRight: 1,
+    fanOut: true, maxLeftMultiplicity: 1, maxRightMultiplicity: 2, leftRowsSampled: 10000, rightRowsSampled: 4, leftTruncated: true, rightTruncated: false });
+  const filtered = structuredClone(pipeline); filtered.steps.unshift({ id: 'filter', kind: 'filter', config: { filters: [{ columnName: 'id', values: [10020] }] } });
+  const bounded = await call(path, 'POST', { pipeline: filtered, through: 'join' });
+  assert.equal(bounded.body.leftRowsSampled, 0); assert.equal(bounded.body.leftTruncated, true); assert.equal(bounded.body.matchedRows, 0);
+  await call('/api/datasets/cached-diagnostics/prep', 'PUT', { name: 'Cached', pipeline: { version: 1, input: left, steps: [] } });
+  await call('/api/datasets/cached-diagnostics/execution', 'PUT', { mode: 'BLAZE', intervalMinutes: null });
+  assert.equal((await call(path, 'POST', { pipeline: { ...pipeline, input: { dataset: 'cached-diagnostics' } }, through: 'join' })).body.errorCode, 'UNSUPPORTED_PREP_STEP');
+  const preview = await call('/api/datasets/diagnostics/prep/preview', 'POST', { pipeline, through: 'join', limit: 1 });
+  assert.equal(preview.body.returnedRows, 1); assert.equal(preview.body.limit, 1);
+  for (const user of ['other-author', 'tenant-author']) assert.equal((await call(path, 'POST', { pipeline, through: 'join' }, user)).body.errorCode, 'PREP_SOURCE_NOT_FOUND');
+  assert.equal((await call(path, 'POST', { pipeline, through: 'join' }, 'reader')).status, 403);
+  for (const [keys, code] of [[[], 'INVALID_PREP_PIPELINE'], [[{ left: 'missing', right: 'id' }], 'PREP_SCHEMA_MISMATCH']]) {
+    const bad = structuredClone(pipeline); bad.steps[0].config.keys = keys;
+    assert.equal((await call(path, 'POST', { pipeline: bad, through: 'join' })).body.errorCode, code);
+  }
+  assert.equal((await call(path, 'POST', { pipeline, through: 'missing' })).body.errorCode, 'PREP_NOT_FOUND');
+  assert.equal((await call(path, 'POST', { pipeline, through: 'join', limit: 100000 })).body.errorCode, 'INVALID_PREP_PIPELINE');
+});

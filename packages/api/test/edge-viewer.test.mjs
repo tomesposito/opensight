@@ -146,3 +146,14 @@ test('#273 generated and packaged edge admit S3 prefix browsing and reject neigh
     }
   }
 });
+
+test('#286 generated and packaged edge admit bounded join diagnostics and reject neighboring paths', async () => {
+  for (const code of [source, await readFile(new URL('../../../ops/serverless/modules/edge/edge-viewer.js', import.meta.url), 'utf8')]) {
+    const edge = vm.createContext({ Buffer: { byteLength: Buffer.byteLength } });
+    vm.runInContext(code.replaceAll('__OPENSIGHT_ORIGIN__', JSON.stringify(origin)).replaceAll('__OPENSIGHT_HOST__', JSON.stringify(host)), edge);
+    for (const uri of ['/api/api/datasets/draft/prep/join-diagnostics', '/api/api/namespaces/one/datasets/draft/prep/join-diagnostics']) {
+      const e = frame(); e.request.uri = uri; e.request.method = 'POST'; assert.equal(edge.handler(e).uri, uri);
+      e.request.uri += '/extra'; assert.equal(edge.handler(e).statusCode, 403);
+    }
+  }
+});

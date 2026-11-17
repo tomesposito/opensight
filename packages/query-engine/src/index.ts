@@ -63,3 +63,6 @@ export { readS3Upload, listS3Objects, S3SourceError, type S3SourceClient, type S
 export { discoverDatabaseSources, rdsSourceConfig, RdsDiscoveryError, type RdsDiscoveryClient, type RdsDiscoveryOptions, type RdsDiscoveryErrorCode, type DiscoveredDatabase } from './rds-discovery.js';
 
 export { suggestPrepJoinKeys } from './prep-join.js';
+export { compilePrepJoinSample, type PrepJoinSamplePlan } from './prep.js';
+export * from './prep-join-diagnostics.js';
+export { diagnosePrepJoinDuckDb, diagnosePrepJoinPostgres, prepJoinSampleResult } from './prep-executor.js';

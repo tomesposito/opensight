@@ -1,3 +1,5 @@
+import { PREP_JOIN_SAMPLE_LIMIT, PrepJoinBudget } from '@opensight/query-engine';
+import { prepFail } from '@opensight/bundle-parser/prep';
 import { StoredTableFiles } from './stored-tables.js';
 import { disabledAnalytics, rowCountBucket } from './analytics.js';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
@@ -216,6 +218,26 @@ export class HostedData {
       });
       return { mode: 'BLAZE', state: 'ready' };
     }, a.revisions, { claim: { kind: 'source', id, version: a.source.version }, definitions: [] });
+  }
+  assertBoundedSample(a: Admission): void {
+    if (a.physical.security !== 'unrestricted' || a.tenantPredicate || a.deniedColumns.length) sourceError('PREP_SECURITY_REJECTED', 403);
+    if (!isQueryConnectorId(a.source.binding.connectorId)) prepFail('UNSUPPORTED_PREP_STEP', '$.joinDiagnostics', 'Bounded diagnostics are unavailable for uploaded file and S3 payloads');
+  }
+  /** SQL LIMIT is applied at the source, before any table is staged in the worker. */
+  async boundedSample(context: TenantContext, a: Admission, budget: PrepJoinBudget): Promise<BlazeTable> {
+    this.assertBoundedSample(a);
+    const scope = this.scope(context), read = this.read(a);
+    this.plan(context, read); budget.check(); await this.finish(context, [a]);
+    const table = new BlazeTable(this.limits(context)), sink = this.sink(context, table, true);
+    const connection = await this.connection(context, a); budget.check();
+    await this.streamer(a)(read, connection, { ...this.limits(context), maxRows: PREP_JOIN_SAMPLE_LIMIT }, {
+      ...sink, row: values => {
+        budget.check();
+        if (table.rowCount >= PREP_JOIN_SAMPLE_LIMIT + 1) prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Source exceeded the bounded sample contract');
+        sink.row(values);
+      },
+    }, { signal: scope.signal, executionMs: budget.remaining() });
+    budget.check(); await this.finish(context, [a]); return table;
   }
   async table(context: TenantContext, a: Admission, columns: readonly string[], mode: 'DIRECT_QUERY' | 'BLAZE' = 'DIRECT_QUERY'): Promise<BlazeTable> {
     const scope = this.scope(context);

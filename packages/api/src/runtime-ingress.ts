@@ -56,7 +56,7 @@ export function publicPath(path: unknown): string {
     && !/^\/api\/sources\/[A-Za-z0-9_-]+(?:\/(?:bind|rotate|preview|rows|output|query|refresh|policy))?$/.test(unscoped)
     && !/^\/api\/(?:uploads\/[A-Za-z0-9_-]+|ai\/sources(?:\/[A-Za-z0-9_-]+\/schema)?|prep-datasets\/import)$/.test(unscoped)
     && !/^\/api\/(?:uploads\/reservations(?:\/[A-Za-z0-9_-]+(?:\/complete)?)?|operations\/[A-Za-z0-9_-]+(?:\/result\/(?:0|[1-9]\d{0,5}))?)$/.test(unscoped)
-    && !/^\/api\/datasets\/[A-Za-z0-9_-]+\/(?:prep(?:\/preview)?|execution|refresh|rows|query|share|permissions|embed)$/.test(unscoped)
+    && !/^\/api\/datasets\/[A-Za-z0-9_-]+\/(?:prep(?:\/(?:preview|join-diagnostics))?|execution|refresh|rows|query|share|permissions|embed)$/.test(unscoped)
     && !/^\/api\/jobs\/[A-Za-z0-9_-]+(?:\/(?:runs|deliveries))?$/.test(unscoped)
     && !/^\/api\/embedding\/(?:config|sessions(?:\/[A-Za-z0-9_-]+(?:\/renew)?)?|GenerateEmbedUrlForRegisteredUser|GenerateEmbedUrlForAnonymousUser)$/.test(unscoped)
     && !/^\/api\/embed\/sessions\/[A-Za-z0-9_-]+\/(?:redeem|status|content|question|analysis|save)$/.test(unscoped)) throw new MetadataError('RESOURCE_NOT_FOUND', 404);

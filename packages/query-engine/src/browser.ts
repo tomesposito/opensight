@@ -26,3 +26,4 @@ export { planPreparedVisual, queryPrepared } from './prepared-query.js';
 export * from './governed-metrics.js';
 
 export { suggestPrepJoinKeys } from './prep-join.js';
+export type { PrepJoinDiagnostics } from './prep-join-diagnostics.js';

@@ -1,3 +1,4 @@
+import { PREP_JOIN_SAMPLE_LIMIT } from './prep-join-diagnostics.js';
 import { rowFilterSql } from './row-filter.js';
 import { validatePrepPipeline, prepFail, prepName, prepTypes, type PrepColumn, type PrepPipeline, type PrepType, type PrepJoinInput } from '@opensight/bundle-parser/prep';
 import { connectorDefinition, connectorDialect } from './connectors.js';
@@ -48,6 +49,15 @@ export function prepSource(id: string, sources: readonly PrepSource[], dialect: 
 }
 const relation = (s: PrepSource): string => s.schema ? `${q(s.schema)}.${q(s.table)}` : q(s.table);
 export function compilePrep(raw: unknown, sources: readonly PrepSource[], options: PrepCompileOptions = {}): PrepPlan {
+  return compile(raw, sources, options);
+}
+export interface PrepJoinSamplePlan extends PrepPlan { sampleSources: PrepSource[] }
+/** Bounds every physical input BEFORE transformations, then probes each join input.
+ * The ordinary preview compiler never enters this mode. */
+export function compilePrepJoinSample(raw: unknown, sources: readonly PrepSource[], step: string, options: PrepCompileOptions = {}): PrepJoinSamplePlan {
+  return compile(raw, sources, options, step) as PrepJoinSamplePlan;
+}
+function compile(raw: unknown, sources: readonly PrepSource[], options: PrepCompileOptions, diagnosticStep?: string): PrepPlan | PrepJoinSamplePlan {
   const pipeline = validatePrepPipeline(raw), dialect = options.dialect ?? 'duckdb', limit = options.limit ?? 100;
   if (!['duckdb', 'postgres'].includes(dialect)) prepFail('UNSUPPORTED_PREP_STEP', '$.dialect', 'Only DuckDB and Postgres preparation is supported');
   if (!Number.isInteger(limit) || limit < 1 || limit > 500) prepFail('PREP_LIMIT_EXCEEDED', '$.limit', 'Preview limit must be 1–500 rows');
@@ -58,16 +68,31 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
   let prefix = '__prep_'; while (sources.some(s => s.table.toLowerCase().startsWith(prefix))) prefix += '_';
   const ctes: string[] = [], parameters: (string | number)[] = [], stages: PrepPlan['stages'] = [];
   const now = options.now ?? new Date().toISOString();
-  type Stage = { from: string; columns: PrepColumn[]; nesting: number };
+  type Stage = { from: string; columns: PrepColumn[]; nesting: number; inputs: string[] };
   const datasets = options.datasets ?? [], cache = new Map<string, Stage>();
   const active = new Set<string>(options.datasetId ? [options.datasetId] : []);
   let totalSteps = 0, selectedFrom = '', selectedColumns: PrepColumn[] = [];
   const bind = (value: string | number): string => { parameters.push(value); return `$${parameters.length}`; };
   let selectedParameters = 0, selectedCtes = 0;
+  const sampled = new Map<string, { source: PrepSource; from: string }>();
+  let diagnostic: { left: Stage; right: Stage; keys: { left: string; right: string }[]; ctes: number; parameters: number } | undefined;
+  const physical = (source: PrepSource, path: string): Stage => {
+    let from = relation(source);
+    if (diagnosticStep !== undefined) {
+      let sample = sampled.get(source.id);
+      if (!sample) {
+        const name = q(`${prefix}${ctes.length}`);
+        ctes.push(`${name} AS MATERIALIZED (SELECT * FROM ${from} LIMIT ${PREP_JOIN_SAMPLE_LIMIT + 1})`);
+        sample = { source, from: name }; sampled.set(source.id, sample);
+      }
+      from = `(SELECT * FROM ${sample.from} LIMIT ${PREP_JOIN_SAMPLE_LIMIT})`;
+    }
+    return { from, columns: prepColumns(source.columns, path), nesting: 0, inputs: [source.id] };
+  };
   function resolve(ref: PrepJoinInput, previous: Map<string, Stage>, path: string, depth: number): Stage {
     if (typeof ref === 'string') {
       const source = prepSource(ref, sources, dialect);
-      return { from: relation(source), columns: prepColumns(source.columns, path), nesting: 0 };
+      return physical(source, path);
     }
     if ('step' in ref) return previous.get(ref.step) ?? prepFail('INVALID_PREP_PIPELINE', path, `Join source must reference an earlier step: ${ref.step}`);
     if (active.has(ref.dataset)) prepFail('INVALID_PREP_PIPELINE', path, `Prepared dataset cycle: ${ref.dataset}`);
@@ -82,7 +107,7 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
     const materialized = matches[0]!.materialized;
     if (materialized) {
       const source = prepSource(materialized.id, [materialized], dialect);
-      return { from: relation(source), columns: prepColumns(source.columns, path), nesting: 0 };
+      return physical(source, path);
     }
     active.add(ref.dataset);
     const result = build(validatePrepPipeline(matches[0]!.pipeline, `${path}.dataset`), false, `${path}.dataset`, depth + 1);
@@ -93,12 +118,12 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
     totalSteps += p.steps.length;
     if (totalSteps > 500) prepFail('PREP_LIMIT_EXCEEDED', basePath, 'At most 500 expanded transformation steps');
     const previous = new Map<string, Stage>();
-    let { from, columns, nesting } = resolve(p.input, previous, `${basePath}.input`, depth);
-    const inputStage = { from, columns, nesting };
+    let { from, columns, nesting, inputs } = resolve(p.input, previous, `${basePath}.input`, depth);
+    const inputStage = { from, columns, nesting, inputs };
     const select = () => { selectedFrom = from; selectedColumns = columns; selectedParameters = parameters.length; selectedCtes = ctes.length; };
     if (root) select();
     for (const [i, step] of p.steps.entries()) {
-      if (step.from !== undefined) ({ from, columns, nesting } = previous.get(step.from)!);
+      if (step.from !== undefined) ({ from, columns, nesting, inputs } = previous.get(step.from)!);
       const path = `${basePath}.steps[${i}].config`;
       const column = (name: string, cols = columns): PrepColumn => cols.find(c => c.name === name) ?? prepFail('PREP_SCHEMA_MISMATCH', path, `Unknown column: ${name}`);
       const measure = (name: string, aggregation: string): PrepColumn => {
@@ -166,6 +191,8 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
             if (leftCol.type !== rightCol.type) prepFail('PREP_SCHEMA_MISMATCH', `${path}.keys[${n}]`, `Join keys must have identical types: ${k.left} (${leftCol.type}) and ${k.right} (${rightCol.type})`);
             return `l.${q(k.left)} = r.${q(k.right)}`;
           });
+          if (root && step.id === diagnosticStep) diagnostic = { left: { from, columns, nesting, inputs }, right, keys: c.keys, ctes: ctes.length, parameters: parameters.length };
+          inputs = [...new Set([...inputs, ...right.inputs])];
           const outputs = c.columns ?? right.columns.map(col => ({ column: col.name, name: `${c.prefix}${col.name}` }));
           const added = outputs.map(c => ({ ...column(c.column, right.columns), name: c.name }));
           sql = `SELECT ${[...columns.map(c => `l.${q(c.name)}`), ...outputs.map(c => `r.${q(c.column)} AS ${q(c.name)}`)].join(', ')} FROM ${from} l ${c.joinType.toUpperCase()} JOIN ${right.from} r ON ${keys.join(' AND ')}`;
@@ -173,9 +200,10 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
         }
         case 'append': {
           const right = prepSource(step.config.source, sources, dialect);
+          const rightStage = physical(right, path); inputs = [...new Set([...inputs, ...rightStage.inputs])];
           if (right.columns.length !== columns.length || columns.some(c => !right.columns.some(r => r.name === c.name && r.type === c.type))) prepFail('PREP_SCHEMA_MISMATCH', path, 'Append requires identical names and types; column order is matched by name');
           const projection = columns.map(c => q(c.name)).join(', ');
-          sql = `SELECT ${projection} FROM ${from} UNION${step.config.duplicates === 'dedupe' ? '' : ' ALL'} SELECT ${projection} FROM ${relation(right)}`; break;
+          sql = `SELECT ${projection} FROM ${from} UNION${step.config.duplicates === 'dedupe' ? '' : ' ALL'} SELECT ${projection} FROM ${rightStage.from}`; break;
         }
         case 'pivot': {
           const c = step.config, key = column(c.column), groups = c.groupBy.map(name => column(name)), result = measure(c.value, c.aggregation);
@@ -195,7 +223,7 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
       }
       columns = prepColumns(columns, path);
       from = q(`${prefix}${ctes.length}`); ctes.push(`${from} AS (${sql})`);
-      previous.set(step.id, { from, columns, nesting });
+      previous.set(step.id, { from, columns, nesting, inputs });
       if (root) { stages.push({ id: step.id, columns }); if (step.id === through) select(); }
     }
     const output = p.output ?? p.steps.at(-1)?.id;
@@ -205,6 +233,23 @@ export function compilePrep(raw: unknown, sources: readonly PrepSource[], option
     return { ...result, nesting: Math.max(inputStage.nesting, ...[...previous.values()].map(s => s.nesting)) };
   }
   build(pipeline, true, '$.opensightPrep', 0);
+  if (diagnosticStep !== undefined) {
+    if (!diagnostic) prepFail('PREP_NOT_FOUND', '$.through', 'Configured join step not found');
+    const d = diagnostic;
+    const keyColumns = d.keys.map((k, i) => ({ ...d.left.columns.find(c => c.name === k.left)!, name: `key_${i}` }));
+    const side = (stage: Stage, which: 'left' | 'right', n: number) => {
+      const projection = d.keys.map((k, i) => {
+        const value = q(k[which]);
+        return `${keyColumns[i]!.type === 'DATETIME' ? timestamp(value, dialect) : value} AS ${q(`key_${i}`)}`;
+      }).join(', ');
+      const probes = [...new Set(stage.inputs)].map(id => `EXISTS (SELECT 1 FROM ${sampled.get(id)!.from} OFFSET ${PREP_JOIN_SAMPLE_LIMIT} LIMIT 1)`);
+      return `(SELECT ${n} AS ${q('__side')}, ${projection} FROM ${stage.from} LIMIT ${PREP_JOIN_SAMPLE_LIMIT + 1}) UNION ALL (SELECT ${n + 2} AS ${q('__side')}, ${keyColumns.map(c => `NULL AS ${q(c.name)}`).join(', ')} WHERE ${probes.join(' OR ') || 'FALSE'})`;
+    };
+    return { dialect, pipeline, stages, through: diagnosticStep, limit: PREP_JOIN_SAMPLE_LIMIT,
+      columns: [{ name: '__side', type: 'INTEGER' }, ...keyColumns], parameters: parameters.slice(0, d.parameters),
+      sql: `${d.ctes ? `WITH ${ctes.slice(0, d.ctes).join(',\n')}\n` : ''}${side(d.left, 'left', 0)} UNION ALL ${side(d.right, 'right', 1)}`,
+      sampleSources: [...sampled.values()].filter(s => ctes.slice(0, d.ctes).some(c => c.startsWith(`${s.from} AS `))).map(s => s.source) };
+  }
   const projection = selectedColumns.map(c => `${c.type === 'DATETIME' ? timestamp(q(c.name), dialect) : q(c.name)} AS ${q(c.name)}`).join(', ');
   const withSql = selectedCtes ? `WITH ${ctes.slice(0, selectedCtes).join(',\n')}\n` : '';
   return { dialect, pipeline, columns: selectedColumns, stages, parameters: parameters.slice(0, selectedParameters), sql: `${withSql}SELECT ${projection} FROM ${selectedFrom} LIMIT ${options.executionLimit ?? limit + 1}`, limit, through };

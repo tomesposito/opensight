@@ -1,3 +1,5 @@
+import { compilePrepJoinSample, PrepJoinBudget, type PrepJoinDiagnostics } from '@opensight/query-engine';
+import { prepFail } from '@opensight/bundle-parser/prep';
 import { tableDownload, tableDownloadFormat, type TableDownload } from './table-download.js';
 import { storedMaterialization, storedFailure, storedStatus, storedCapacity } from './stored-tables.js';
 import { lookupMetrics, metricQuery, metricDefinition } from './metric-consumption.js';
@@ -194,6 +196,30 @@ export class HostedPrep {
     const stored = await this.stored(context, id);
     await this.data.sources.metadata.remove(context, this.key(context, id), expectedVersion);
     await this.data.storedFiles.remove(this.cacheKey(context, id), stored.materialization); await this.data.cache?.invalidate(this.cacheKey(context, id));
+  }
+  async joinDiagnostics(context: TenantContext, id: string, input: unknown) {
+    const raw = object(structuredClone(input), ['pipeline', 'through']);
+    const pipeline = validatePrepPipeline(raw.pipeline ?? (await this.stored(context, id)).resource.opensightPrep);
+    const graph = await this.graph(context, id, pipeline), step = identifier(raw.through), sources = this.sources(graph);
+    const options = { datasets: graph.datasets, datasetId: id };
+    const plan = compilePrepJoinSample(pipeline, sources, step, options);
+    for (const mode of graph.modes.values()) if (mode.execution.mode !== 'DIRECT_QUERY') prepFail('UNSUPPORTED_PREP_STEP', '$.joinDiagnostics', 'Bounded diagnostics are unavailable for cached prepared inputs');
+    const leaves = graph.leaves.filter(a => plan.sampleSources.some(s => s.id === a.source.id));
+    for (const a of leaves) this.data.assertBoundedSample(a);
+    return this.data.work(context, false, graph.leaves, async () => {
+      const scope = this.data.scope(context), budget = new PrepJoinBudget();
+      const timer = setTimeout(() => scope.cancel(), budget.remaining());
+      try {
+        const tables: WireTable[] = [];
+        for (const a of leaves) {
+          const table = await this.data.boundedSample(context, a, budget);
+          tables.push(await wireTable(scope, table, sources.find(s => s.id === a.source.id)!)); budget.check();
+        }
+        const result = await containedWork<PrepJoinDiagnostics>(scope, { kind: 'join-diagnostics', pipeline, sources,
+          datasets: graph.datasets, id, step, tables }, this.data.limits(context), budget.remaining());
+        budget.check(); await this.data.finish(context, graph.leaves, graph.revisions); budget.check(); return result;
+      } finally { clearTimeout(timer); }
+    }, graph.revisions);
   }
   async preview(context: TenantContext, id: string, input: unknown) {
     const raw = object(structuredClone(input), ['pipeline', 'through', 'limit']);
