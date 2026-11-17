@@ -143,14 +143,17 @@ export class PrepRoutes {
   private async resolve(identity: Identity, pipeline: PrepPipeline, id: string) {
     this.graph(identity, id, pipeline);
     const datasets = this.datasets(identity), tables: PrepMemoryTable[] = [], cachedInputs = new Map<string, CachedInput>(), visited = new Set<string>();
-    const visit = (ref: PrepInput) => {
+    const visit = async (ref: PrepInput): Promise<void> => {
       if (typeof ref === 'string' || visited.has(ref.dataset)) return;
       visited.add(ref.dataset);
       const d = datasets.find(d => d.id === ref.dataset);
       if (!d) prepFail('PREP_SOURCE_NOT_FOUND', '$.input', 'Prepared dataset is unavailable');
       const key = this.key(identity, d.id);
-      if (this.blaze.status(key).mode === 'BLAZE') {
-        const { table, refreshedAt } = this.blaze.read(key);
+      const stored = this.find(identity, d.id);
+      if (stored.execution?.mode === 'STORED' || this.blaze.status(key).mode === 'BLAZE') {
+        const { table, refreshedAt } = stored.execution?.mode === 'STORED'
+          ? { table: await this.files.read(key, stored.materialization, this.blaze.limits), refreshedAt: stored.materialization!.lastRefreshedAt }
+          : this.blaze.read(key);
         const source: PrepSource = { id: `blaze_${randomUUID().replaceAll('-', '')}`, table: `blaze_${randomUUID().replaceAll('-', '')}`, connectorId: 'file', columns: table.columns, security: 'unrestricted' };
         d.materialized = source; tables.push({ source, rowCount: table.rowCount, value: table.value });
         const add = (input: CachedInput) => {
@@ -159,14 +162,14 @@ export class PrepRoutes {
           cachedInputs.set(key, input);
         };
         add({ datasetId: d.id, refreshedAt }); for (const input of table.cachedInputs) add(input);
-      } else for (const r of this.references(d.pipeline)) visit(r);
+      } else for (const r of this.references(d.pipeline)) await visit(r);
     };
-    for (const ref of this.references(pipeline)) visit(ref);
+    for (const ref of this.references(pipeline)) await visit(ref);
     // Issue #161: input tables referenced by source id (pipeline input or a join source)
     // ride the in-memory table path. Only same-namespace tables are returned by the hook,
     // so a foreign reference stays unresolved and context() fails closed below.
     const referenced = new Set(this.references(pipeline).filter((r): r is string => typeof r === 'string'));
-    if (typeof pipeline.input === 'string') referenced.add(pipeline.input);
+    for (const dataset of datasets.filter(d => visited.has(d.id) && !d.materialized)) for (const ref of this.references(dataset.pipeline)) if (typeof ref === 'string') referenced.add(ref);
     for (const table of this.inputTableTables?.(identity) ?? []) if (referenced.has(table.source.id) && !tables.some(t => t.source.id === table.source.id)) tables.push(table);
     return { ...await this.context(identity, pipeline.input, datasets), datasets, tables, cachedInputs: [...cachedInputs.values()] };
   }
@@ -243,6 +246,8 @@ export class PrepRoutes {
       const plan = planPreparedVisual(table.columns, analysis, visualId, dataSetArn);
       return { ...(metrics ? { metrics } : {}), ...queryPreparedVisual(table.columns, table.rowCount, table.value, analysis, visualId, dataSetArn), bindings: Object.fromEntries([...plan.dimensions, ...plan.measures].map(f => [f.fieldId, f.outputName])) };
     };
+    const entry = this.find(identity, id);
+    if (entry.execution?.mode === 'STORED') return run(await this.files.read(this.key(identity, id), entry.materialization, this.blaze.limits));
     if (this.blaze.status(this.key(identity, id)).mode === 'BLAZE') return run(this.blaze.read(this.key(identity, id)).table);
     this.requireDirect(identity, id);
     return this.blaze.transient(table => this.materialize(identity, id, table), run);
@@ -270,6 +275,7 @@ export class PrepRoutes {
   }
   async deleteAsset(identity: Identity, id: string, version: number, check: () => void): Promise<void> {
     if (!this.persistent) throw new MetadataError('ASSET_DURABLE_STORE_REQUIRED', 503);
+    const materialization = this.find(identity, id).materialization;
     await this.store.change(state => {
       check();
       const entry = state.datasets.find(e => this.owned(identity, e) && e.resource.dataSetId === id);
@@ -278,6 +284,7 @@ export class PrepRoutes {
       if (this.datasets(identity, state).some(d => this.references(d.pipeline).some(ref => typeof ref !== 'string' && ref.dataset === id))) throw new MetadataError('ASSET_DELETE_REFERENCED', 409);
       state.datasets = state.datasets.filter(e => e !== entry);
     });
+    await this.files.remove(this.key(identity, id), materialization);
     this.blaze.remove(this.key(identity, id)); this.configured.delete(this.key(identity, id));
   }
   private owned(identity: Identity, entry: Pick<Stored, 'namespaceId' | 'userId'>): boolean { return identity.namespaceId === entry.namespaceId && identity.userId === entry.userId; }
@@ -323,6 +330,8 @@ export class PrepRoutes {
     };
     if (ref.startsWith('prepared-') && this.datasets(identity).some(d => `prepared-${d.id}` === ref)) {
       const id = ref.slice('prepared-'.length);
+      const entry = this.find(identity, id);
+      if (entry.execution?.mode === 'STORED') return use(await this.files.read(this.key(identity, id), entry.materialization, this.blaze.limits));
       if (this.blaze.status(this.key(identity, id)).mode === 'BLAZE') return use(this.blaze.read(this.key(identity, id)).table);
       this.requireDirect(identity, id);
       return this.blaze.transient(table => this.materialize(identity, id, table), use);
@@ -336,9 +345,13 @@ export class PrepRoutes {
   }
   /** Schema-only admission under the existing owner-private prep resolver. */
   async analysisSchema(identity: Identity, id: string) {
-    const entry = this.find(identity, id), datasets = this.datasets(identity);
-    const context = await this.context(identity, entry.resource.opensightPrep!.input, datasets);
-    return compilePrep(entry.resource.opensightPrep!, context.sources, { datasets, datasetId: id, dialect: context.dialect }).columns;
+    const entry = this.find(identity, id);
+    if (entry.execution?.mode === 'STORED') {
+      if (!entry.materialization) throw new BlazeError('STORED_NOT_PUBLISHED', 'Publish this dataset before reading its stored schema');
+      return entry.materialization.columns;
+    }
+    const context = await this.resolve(identity, entry.resource.opensightPrep!, id);
+    return compilePrep(entry.resource.opensightPrep!, context.sources, { datasets: context.datasets, datasetId: id, dialect: context.dialect }).columns;
   }
   /** Create only: template application cannot overwrite an existing recipe. */
   async createFromTemplate(identity: Identity, id: string, name: string, raw: PrepPipeline, recheck: () => Promise<void>) {
@@ -434,6 +447,7 @@ export class PrepRoutes {
       await this.invalidate(identity, id); this.blaze.remove(this.key(identity, id));
       this.configured.delete(this.key(identity, id));
       await this.store.change(draft => { draft.datasets = draft.datasets.filter(e => !(this.owned(identity, e) && e.resource.dataSetId === id)); });
+      await this.files.remove(this.key(identity, id), existing.materialization);
       send(response, 200, { deleted: true });
     } catch (e) {
       if (e instanceof QueryEngineError && path.endsWith('/query')) { request.resume(); send(response, 422, { errorCode: e.code, message: e.message, path: e.path }); return; }

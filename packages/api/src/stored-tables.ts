@@ -52,7 +52,7 @@ export function checkStoredQuota(limitBytes: number, usedBytes: number, requeste
  * contract); leases prevent replacing a table from unlinking an active read. */
 export class StoredTableFiles {
   private readonly readers = new Map<string, number>();
-  private readonly retired = new Set<string>();
+  private readonly retired = new Map<string, string>();
   private readonly busy = new Set<string>();
   constructor(private readonly root?: string) {}
   requireDurable(): void { if (!this.root) throw new MetadataError('STORED_DURABLE_STORE_REQUIRED', 503); }
@@ -83,7 +83,7 @@ export class StoredTableFiles {
   async read(key: string, value: StoredMaterialization | undefined, limits: BlazeLimits): Promise<BlazeTable> {
     if (!value) throw new BlazeError('STORED_NOT_PUBLISHED', 'Publish this dataset before reading its stored table');
     const checked = storedMaterialization(value), path = this.path(key, checked.generation);
-    this.readers.set(path, (this.readers.get(path) ?? 0) + 1);
+    this.readers.set(key, (this.readers.get(key) ?? 0) + 1);
     try {
       const bytes = await readFile(path);
       if (bytes.length !== checked.bytes || createHash('sha256').update(bytes).digest('hex') !== checked.sha256) throw Error();
@@ -91,14 +91,26 @@ export class StoredTableFiles {
       await readArtifactParquet(path, checked.columns, checked.rowCount, limits.cellChars, table, 128); return table;
     } catch { throw new BlazeError('STORED_ARTIFACT_INVALID', 'Stored table is missing or corrupt; explicitly refresh to replace it'); }
     finally {
-      const remaining = this.readers.get(path)! - 1;
-      if (remaining) this.readers.set(path, remaining);
-      else { this.readers.delete(path); if (this.retired.delete(path)) await rm(path, { force: true }); }
+      await this.release(key);
+    }
+  }
+  /** Lease before fetching a metadata pointer; concurrent refresh cannot retire
+   * the generation between the metadata read and opening its Parquet file. */
+  async readCurrent(key: string, current: () => Promise<StoredMaterialization | undefined>, limits: BlazeLimits): Promise<BlazeTable> {
+    this.readers.set(key, (this.readers.get(key) ?? 0) + 1);
+    try { return await this.read(key, await current(), limits); } finally { await this.release(key); }
+  }
+  private async release(key: string): Promise<void> {
+    const remaining = this.readers.get(key)! - 1;
+    if (remaining) this.readers.set(key, remaining);
+    else {
+      this.readers.delete(key);
+      for (const [path, owner] of this.retired) if (owner === key) { await rm(path, { force: true }); this.retired.delete(path); }
     }
   }
   async remove(key: string, value?: StoredMaterialization): Promise<void> {
     if (!value) return;
     const path = this.path(key, value.generation);
-    if (this.readers.has(path)) this.retired.add(path); else await rm(path, { force: true });
+    if (this.readers.has(key)) this.retired.set(path, key); else await rm(path, { force: true });
   }
 }

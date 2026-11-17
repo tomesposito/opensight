@@ -105,3 +105,24 @@ test('input-table edits mark stored dependents stale', async t => {
   assert.equal((await call('/api/datasets/plan/execution')).body.state, 'stale');
   assert.deepEqual((await call('/api/datasets/plan/rows')).body.rows, [{ amount: 5 }]);
 });
+test('stored output feeds nested pipelines, visual queries and the notebook input seam without source execution', async t => {
+  const dir = await directory(t), path = join(dir, 'prep.json'), call = await api(t, true, { prepStorePath: path });
+  await prepare(call); await call('/api/datasets/computed/publish', 'POST', {});
+  // A new server has no ephemeral upload payloads. Stored reads must still work.
+  const restarted = await api(t, true, { prepStorePath: path });
+  const query = { dimensions: [], measures: [{ fieldId: 'total', columnName: 'amount', aggregation: 'SUM' }], filters: [] };
+  assert.deepEqual((await restarted('/api/datasets/computed/query', 'POST', query)).body.rows, [{ total: 5 }]);
+  assert.equal((await restarted('/api/datasets/nested/prep', 'PUT', { name: 'Nested', pipeline: { version: 1, input: { dataset: 'computed' }, steps: [] } })).status, 201);
+  await restarted('/api/datasets/nested/execution', 'PUT', stored);
+  assert.equal((await restarted('/api/datasets/nested/publish', 'POST', {})).body.rowCount, 2);
+  const connectors = new ConnectorRoutes(false), routes = await PrepRoutes.create(connectors, path); t.after(() => connectors.close());
+  connectors.streamPrep = async () => assert.fail('Notebook inputs must not rerun stored pipelines');
+  const table = await routes.notebookTable({ namespaceId: 'default', userId: 'author' }, 'prepared-computed');
+  assert.equal(table.rowCount, 2); assert.equal(table.value(1, 1), 3);
+  for (const user of ['reader', 'other-author', 'tenant-author']) {
+    for (const [action, method, body] of [['rows', 'GET'], ['refresh', 'POST', {}], ['publish', 'POST', {}]]) {
+      const response = await restarted(`/api/datasets/computed/${action}`, method, body, user);
+      assert.equal(response.status, user === 'reader' ? 403 : 404);
+    }
+  }
+});

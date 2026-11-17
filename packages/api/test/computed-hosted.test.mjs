@@ -35,3 +35,15 @@ test('hosted publish is durable, refresh errors retain rows, and source revision
   const restarted = f.setup();
   assert.deepEqual((await restarted.prep.execute(await f.f.login(), 'computed', 'rows')).rows, old);
 });
+test('hosted stored datasets feed other computed pipelines; foreign owners cannot read or refresh', async t => {
+  const f = await fixture(t); await f.prep.execute(await f.login(), 'computed', 'publish');
+  await f.prep.save(await f.login(), 'nested', { name: 'Nested', pipeline: { version: 1, input: { dataset: 'computed' }, steps: [] }, expectedVersion: 0 });
+  await f.prep.configure(await f.login(), 'nested', { ...settings, expectedVersion: 1 });
+  f.sources.payload = async () => assert.fail('A nested stored input must read its artifact');
+  assert.equal((await f.prep.execute(await f.login(), 'nested', 'publish')).rowCount, 3);
+  const query = { dimensions: [], measures: [{ fieldId: 'total', columnName: 'amount', aggregation: 'SUM' }], filters: [] };
+  assert.deepEqual((await f.prep.execute(await f.login(), 'nested', 'query', query)).rows, [{ total: 60 }]);
+  for (const context of [await f.login('one', 'other'), await f.login('two', 'admin')]) for (const action of ['rows', 'refresh', 'publish']) {
+    await assert.rejects(f.prep.execute(context, 'computed', action), { code: 'RESOURCE_NOT_FOUND' });
+  }
+});
