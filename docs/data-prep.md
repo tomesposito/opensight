@@ -353,6 +353,32 @@ which report `BLAZE_EVICTED`. These are accounted storage limits, not process RS
 limits. See [Blaze bounds and capacity](blaze.md#bounds-and-capacity) for all
 variables, accounting, execution overhead, and the eviction policy.
 
+**Stored execution (computed tables, issue #280).** A dataset may instead use
+`STORED` mode: **Publish** runs the pipeline once and writes the output as a
+durable Parquet artifact (immutable generations in the tenant's dataset store;
+the metadata record — columns, row count, bytes, SHA-256, refresh time, state —
+lives with the saved dataset). A stored table survives restarts and is never
+Blaze-evicted, and it works everywhere a dataset works: as a visual source, as
+a pipeline input (including to other computed tables), and as a declared
+notebook input. Reader dashboards keep following share-the-recipe (D-85); the
+artifact is not a separate permission path. Before a publish or refresh runs,
+the reserved output capacity (the Blaze per-dataset bound plus 1 MiB of Parquet
+overhead) is checked against the tenant's storage quota; a publish that would
+exceed it stops before running and reports by how much (`USAGE_LIMIT_EXCEEDED`).
+**Refresh** re-runs the pipeline and swaps generations atomically — readers see
+the old table or the new one, never a partial one. A failed refresh keeps the
+last good table serving and records the state `refresh-failed` with the
+pipeline's named error and its time. When an input dataset changes, the table
+is labeled `stale`; its stored rows keep serving under that label. There is no
+automatic or scheduled refresh in v1. The Data section's **Tables** surface
+lists computed tables and input tables together, marked by kind, with rows,
+size, last refreshed, and state; its empty state offers a single
+**Create from a dataset** action. A published table offers **Download** of the
+full stored table as CSV or XLSX, counted against the tenant's egress quota;
+permission to download is permission to view the data (no separate switch),
+and when the workspace disables downloads (`OPENSIGHT_DOWNLOADS_ENABLED=false`)
+the API refuses with `DOWNLOADS_DISABLED` and the action is absent from the UI.
+
 Previews transform the full source, then return `limit + 1` rows internally.
 The API defaults to 100 displayed rows and accepts 1–500. Aggregate results are
 never computed from a pre-limited sample. Returned order is unspecified.

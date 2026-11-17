@@ -21,6 +21,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Computed tables (issue #280): a dataset pipeline can be published in stored mode — Publish writes the pipeline output as a durable Parquet table that survives restarts and is never Blaze-evicted, counts against the storage quota (a publish or refresh that would exceed it stops before running and reports by how much), and works everywhere a dataset works (visual source, pipeline input including other computed tables, declared notebook input). Refresh swaps the stored table atomically; a failed refresh keeps the last good table, labeled with the failure and its time; an input change labels the table stale while its stored rows keep serving. The Data section gains a Tables surface listing computed and input tables together by kind (rows, size, last refreshed, state; empty state offers a single "Create from a dataset" action), and a published table can be downloaded in full as CSV or XLSX, counted against the egress quota and absent entirely when the workspace disables downloads.
+
 - Prep joins offer name/type key suggestions that require confirmation and labeled Venn choices; every transformation exposes read-only shared-compiler SQL and named compile errors (issue #279). Join match diagnostics remain blocked on bounded input previews.
 
 - Dataset preparation now offers structured and bounded advanced Window steps for ranking, running/moving calculations, lag/lead and buckets, a Keep first/latest row per group recipe, and optional full-row append deduplication (issue #278).
