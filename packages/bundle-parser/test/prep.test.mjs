@@ -141,3 +141,40 @@ test('JSON and .qs imports reject invalid branch references and output before gr
     for (const parse of [parseQsBundle, parseBrowser]) await assert.rejects(parse(zipSync({ 'dataset/invalid.json': bytes })), e => e.code === 'INVALID_PREP_PIPELINE');
   }
 });
+
+const windowPipeline = config => ({ version: 1, input: 'source', steps: [{ id: 'w', kind: 'window', config }] });
+const windowBase = { name: 'position', function: 'rowNumber', partitionBy: [], orderBy: [{ column: 'id', direction: 'asc' }] };
+test('window configs preserve structured functions, optional defaults and the separate advanced shape', () => {
+  for (const config of [
+    windowBase, { ...windowBase, orderBy: [] },
+    ...['rank', 'denseRank'].map(fn => ({ ...windowBase, function: fn })),
+    ...['runningTotal', 'runningAverage', 'movingSum', 'movingAverage', 'lag', 'lead'].map(fn => ({ ...windowBase, function: fn, valueColumn: 'amount' })),
+    { ...windowBase, function: 'movingSum', valueColumn: 'amount', frameBefore: 0, frameAfter: 2 },
+    { ...windowBase, function: 'lag', valueColumn: 'label', offset: 2 },
+    { ...windowBase, function: 'ntile', buckets: 4 },
+    { name: 'position', expression: 'ROW_NUMBER() OVER (ORDER BY id)' },
+  ]) assert.deepEqual(validatePrepPipeline(windowPipeline(config)), windowPipeline(config));
+});
+test('window validation rejects unknown keys, mixed modes, malformed lists and function-specific settings', () => {
+  const invalidConfigs = [
+    { ...windowBase, function: 'median' }, { ...windowBase, name: ' bad' },
+    { ...windowBase, sql: 'ignored' }, { ...windowBase, valueColumn: 'amount' },
+    { ...windowBase, partitionBy: undefined }, { ...windowBase, orderBy: undefined },
+    { ...windowBase, partitionBy: ['id', 'ID'] }, { ...windowBase, partitionBy: Array(257).fill('id') },
+    { ...windowBase, orderBy: [{ column: 'id', direction: 'sideways' }] },
+    { ...windowBase, orderBy: [{ column: 'id', direction: 'asc', nulls: 'first' }] },
+    { ...windowBase, orderBy: [{ column: 'id', direction: 'asc' }, { column: 'ID', direction: 'desc' }] },
+    { ...windowBase, orderBy: Array(257).fill({ column: 'id', direction: 'asc' }) },
+    { ...windowBase, expression: 'ROW_NUMBER() OVER (ORDER BY id)' },
+    { name: 'w', expression: '' }, { name: 'w', expression: 'x'.repeat(10001) },
+    { name: 'w', expression: 'ROW_NUMBER() OVER ()', partitionBy: [] },
+    { ...windowBase, function: 'ntile' }, { ...windowBase, function: 'runningTotal' },
+    ...['frameBefore', 'frameAfter', 'offset', 'buckets'].map(key => ({ ...windowBase, [key]: 1 })),
+  ];
+  for (const [fn, key] of [['movingSum', 'frameBefore'], ['movingAverage', 'frameAfter'], ['ntile', 'buckets'], ['lag', 'offset'], ['lead', 'offset']]) {
+    for (const value of [-1, 1.5, NaN, Infinity, 2147483648, '2', null, undefined, ...(key === 'buckets' || key === 'offset' ? [0] : [])]) {
+      invalidConfigs.push({ ...windowBase, function: fn, ...(fn === 'ntile' ? {} : { valueColumn: 'amount' }), [key]: value });
+    }
+  }
+  for (const config of invalidConfigs) assert.throws(() => validatePrepPipeline(windowPipeline(config)), e => e instanceof PrepError && e.code === 'INVALID_PREP_PIPELINE', JSON.stringify(config));
+});

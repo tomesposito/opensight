@@ -8,12 +8,22 @@ export interface PrepMeasure { column: string; name: string; aggregation: PrepAg
 export type PrepInput = string | { dataset: string };
 export type PrepJoinInput = PrepInput | { step: string };
 export type PrepJoinOutputs = { columns: { column: string; name: string }[]; prefix?: never } | { prefix: string; columns?: never };
+export const prepWindowFunctions = ['rowNumber', 'rank', 'denseRank', 'runningTotal', 'runningAverage', 'lag', 'lead', 'movingAverage', 'movingSum', 'ntile'] as const;
+export type PrepWindowFunction = typeof prepWindowFunctions[number];
+export interface PrepWindowStructured {
+  name: string; function: PrepWindowFunction; valueColumn?: string;
+  partitionBy: string[]; orderBy: { column: string; direction: 'asc' | 'desc' }[];
+  frameBefore?: number; frameAfter?: number; buckets?: number; offset?: number;
+}
+/** Advanced expressions contain their own OVER clause; they never mix with structured fields. */
+export type PrepWindowConfig = PrepWindowStructured | { name: string; expression: string };
 export type PrepStep = { id: string; name?: string; from?: string } & (
   { kind: 'changeType'; config: { column: string; type: PrepType } } |
   { kind: 'rename'; config: { column: string; name: string } } |
   { kind: 'select'; config: { columns: string[] } } |
   { kind: 'filter'; config: { filters: PrepFilter[] } } |
   { kind: 'calculate'; config: { name: string; expression: string } } |
+  { kind: 'window'; config: PrepWindowConfig } |
   { kind: 'aggregate'; config: { groupBy: string[]; measures: PrepMeasure[] } } |
   { kind: 'join'; config: { source: PrepJoinInput; joinType: 'inner' | 'left' | 'right' | 'full'; keys: { left: string; right: string }[] } & PrepJoinOutputs } |
   { kind: 'append'; config: { source: string } } |
@@ -21,7 +31,7 @@ export type PrepStep = { id: string; name?: string; from?: string } & (
   { kind: 'unpivot'; config: { columns: string[]; nameColumn: string; valueColumn: string } }
 );
 export interface PrepPipeline { version: 1; input: PrepInput; steps: PrepStep[]; output?: string }
-export type PrepErrorCode = 'INVALID_PREP_PIPELINE' | 'UNSUPPORTED_PREP_STEP' | 'PREP_SCHEMA_MISMATCH' | 'PREP_SOURCE_NOT_FOUND' | 'PREP_SECURITY_REJECTED' | 'PREP_EXECUTION_FAILED' | 'PREP_NOT_FOUND' | 'PREP_LIMIT_EXCEEDED';
+export type PrepErrorCode = 'INVALID_PREP_PIPELINE' | 'UNSUPPORTED_PREP_STEP' | 'PREP_WINDOW_ORDER_REQUIRED' | 'PREP_SCHEMA_MISMATCH' | 'PREP_SOURCE_NOT_FOUND' | 'PREP_SECURITY_REJECTED' | 'PREP_EXECUTION_FAILED' | 'PREP_NOT_FOUND' | 'PREP_LIMIT_EXCEEDED';
 export class PrepError extends Error {
   constructor(readonly code: PrepErrorCode, readonly path: string, message: string) { super(`${path}: ${message}`); this.name = 'PrepError'; }
 }
@@ -47,6 +57,36 @@ function names(raw: unknown, path: string, empty = false): void {
 function choice(raw: unknown, values: readonly string[], path: string): void { if (typeof raw !== 'string' || !values.includes(raw)) invalid(path, `Expected ${values.join(', ')}`); }
 function scalar(raw: unknown, path: string): void { if (!(typeof raw === 'number' && Number.isFinite(raw) || typeof raw === 'string' && raw.length <= 10000 && !raw.includes('\0'))) invalid(path, 'Expected a finite number or string'); }
 const aggregations = ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'];
+export function validatePrepWindowConfig(raw: unknown, path: string): PrepWindowConfig {
+  const advanced = !!raw && typeof raw === 'object' && Object.hasOwn(raw, 'expression');
+  const c = prepObject(raw, advanced ? ['name', 'expression'] : ['name', 'function', 'valueColumn', 'partitionBy', 'orderBy', 'frameBefore', 'frameAfter', 'buckets', 'offset'], path);
+  prepName(c.name, `${path}.name`);
+  if (advanced) {
+    if (typeof c.expression !== 'string' || !c.expression.trim() || c.expression.length > 10000) invalid(`${path}.expression`, 'Expected an expression of 1–10000 characters');
+  } else {
+    choice(c.function, prepWindowFunctions, `${path}.function`);
+    names(c.partitionBy, `${path}.partitionBy`, true);
+    const orders = list(c.orderBy, `${path}.orderBy`, true);
+    for (const [i, order] of orders.entries()) {
+      const op = `${path}.orderBy[${i}]`, o = prepObject(order, ['column', 'direction'], op);
+      prepName(o.column, `${op}.column`); choice(o.direction, ['asc', 'desc'], `${op}.direction`);
+    }
+    names(orders.map(o => (o as { column: string }).column), `${path}.orderBy`, true);
+    const fn = c.function as PrepWindowFunction;
+    const value = ['runningTotal', 'runningAverage', 'movingAverage', 'movingSum', 'lag', 'lead'].includes(fn);
+    if (value) prepName(c.valueColumn, `${path}.valueColumn`);
+    else if (Object.hasOwn(c, 'valueColumn')) invalid(`${path}.valueColumn`, 'This function does not accept a value column');
+    for (const key of ['frameBefore', 'frameAfter', 'buckets', 'offset'] as const) {
+      const allowed = key === 'buckets' ? fn === 'ntile' : key === 'offset' ? fn === 'lag' || fn === 'lead' : fn === 'movingAverage' || fn === 'movingSum';
+      if (!Object.hasOwn(c, key)) { if (key === 'buckets' && allowed) invalid(`${path}.${key}`, 'NTILE requires buckets'); continue; }
+      if (!allowed) invalid(`${path}.${key}`, 'Setting is not supported for this window function');
+      const minimum = key === 'buckets' || key === 'offset' ? 1 : 0;
+      // Both engines accept signed 32-bit NTILE/LAG/LEAD arguments. Bound all counts alike.
+      if (typeof c[key] !== 'number' || !Number.isInteger(c[key]) || c[key] < minimum || c[key] > 2147483647) invalid(`${path}.${key}`, `Expected an integer from ${minimum} to 2147483647`);
+    }
+  }
+  return structuredClone(c) as unknown as PrepWindowConfig;
+}
 /** Deliberate self-hosted workflow limits (see docs/data-prep.md § Workflow limits). */
 export const PREP_MAX_IMPORT_INPUTS = 32;
 export const PREP_MAX_CONSUMERS = 5;
@@ -97,6 +137,7 @@ export function validatePrepPipeline(raw: unknown, path = '$.opensightPrep'): Pr
         break;
       }
       case 'calculate': { const c = prepObject(s.config, ['name', 'expression'], cp); prepName(c.name, cp); if (typeof c.expression !== 'string' || !c.expression.trim() || c.expression.length > 10000) invalid(cp, 'Expected an expression of 1–10000 characters'); break; }
+      case 'window': validatePrepWindowConfig(s.config, cp); break;
       case 'aggregate': {
         const c = prepObject(s.config, ['groupBy', 'measures'], cp); names(c.groupBy, cp, true);
         for (const m of list(c.measures, cp)) { const v = prepObject(m, ['column', 'name', 'aggregation'], cp); prepName(v.column, cp); prepName(v.name, cp); choice(v.aggregation, aggregations, cp); }
