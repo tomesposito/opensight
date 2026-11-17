@@ -831,3 +831,15 @@ test('input tables (#218): a still-authorized editor write that queues behind a 
   assert.equal(editorAdd.status, 201, JSON.stringify(editorAdd.body));
   assert.equal((await call(`/api/input-tables/${table.id}`)).body.rows.length, 2);
 });
+
+import { InputTableRoutes } from '../dist/input-table-routes.js';
+test('Issue #288 governed table diagnostics render exact fan-out through the API without the ordinary full-table hook', async t => {
+  const call = await api(t), table = await createTable(call);
+  for (const region of ['East', 'East', 'West']) await call(`/api/input-tables/${table.id}/rows`, 'POST', { values: { region, forecast: 10 } });
+  const source = `input-table-${table.id}`, pipeline = { version: 1, input: source, steps: [{ id: 'join', kind: 'join', config: { source, joinType: 'inner', prefix: 'r_', keys: [{ left: 'region', right: 'region' }] } }] };
+  const full = t.mock.method(InputTableRoutes.prototype, 'prepTablesFor', () => { throw Error('Full-table hook forbidden in diagnostics'); });
+  const result = await call('/api/datasets/draft/prep/join-diagnostics', 'POST', { pipeline, through: 'join' });
+  assert.equal(result.status, 200, JSON.stringify(result.body)); assert.equal(result.body.matchedRows, 5); assert.equal(result.body.fanOut, true);
+  assert.equal(result.body.leftRowsSampled, 3); assert.equal(result.body.leftTruncated, false); assert.equal(result.body.rightTruncated, false); assert.equal(full.mock.callCount(), 0);
+  assert.equal((await call('/api/datasets/draft/prep/join-diagnostics', 'POST', { pipeline, through: 'join' }, 'tenant-author')).body.errorCode, 'PREP_SOURCE_NOT_FOUND');
+});

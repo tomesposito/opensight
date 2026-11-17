@@ -89,6 +89,9 @@ export class PrepRoutes {
   /** Issue #161: governed input tables exposed as prep sources (reference form `input-table-<id>`). */
   inputTableSources?: (identity: Identity) => PrepSource[];
   inputTableTables?: (identity: Identity) => PrepMemoryTable[];
+  /** Optional bounded contract; old full-table hooks remain preview-only. Return only
+   * requested sources, with at most limit rows, including the truncation probe. */
+  inputTableSamples?: (identity: Identity, sourceIds: readonly string[], limit: number) => PrepMemoryTable[];
   private readonly blaze = new BlazeStore();
   private readonly configured = new Map<string, string>();
   private requirement(identity: Identity, id: string, state = this.store.read()): string | null {
@@ -422,9 +425,20 @@ export class PrepRoutes {
         const budget = new PrepJoinBudget();
         const context = await this.resolve(identity, pipeline, id, budget), options = { datasets: context.datasets, datasetId: id };
         const plan = compilePrepJoinSample(pipeline, context.sources, step, { ...options, dialect: context.dialect });
-        if (plan.sampleSources.some(s => s.id.startsWith('input-table-'))) prepFail('UNSUPPORTED_PREP_STEP', '$.joinDiagnostics', 'Bounded diagnostics are unavailable for governed input tables');
         const tables = context.tables.filter(t => plan.sampleSources.some(s => s.id === t.source.id));
-        if (tables.some(t => t.rowCount > PREP_JOIN_SAMPLE_LIMIT + 1)) prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Reader exceeded the bounded sample contract');
+        const governed = plan.sampleSources.filter(s => s.id.startsWith('input-table-'));
+        if (governed.length) {
+          if (!this.inputTableSamples) prepFail('UNSUPPORTED_PREP_STEP', '$.joinDiagnostics', 'Governed input-table hook has no bounded sample contract');
+          budget.check(); const samples = this.inputTableSamples(identity, governed.map(s => s.id), PREP_JOIN_SAMPLE_LIMIT + 1); budget.check();
+          if (samples.length !== governed.length || governed.some(s => samples.filter(t => t.source.id === s.id).length !== 1)) prepFail('PREP_SOURCE_NOT_FOUND', '$.joinDiagnostics', 'Bounded input-table sample is missing or ambiguous');
+          for (const table of samples) {
+            const source = governed.find(s => s.id === table.source.id)!;
+            if (source.table !== table.source.table || source.schema !== table.source.schema || source.connectorId !== table.source.connectorId || source.security !== table.source.security
+              || source.columns.length !== table.source.columns.length || source.columns.some((c, i) => c.name !== table.source.columns[i]?.name || c.type !== table.source.columns[i]?.type)) prepFail('PREP_SCHEMA_MISMATCH', '$.joinDiagnostics', 'Bounded input-table schema changed');
+            tables.push(table);
+          }
+        }
+        if (tables.some(t => !Number.isSafeInteger(t.rowCount) || t.rowCount < 0 || t.rowCount > PREP_JOIN_SAMPLE_LIMIT + 1)) prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Reader exceeded the bounded sample contract');
         budget.check();
         const result = context.binding ? await diagnosePrepJoinPostgres(pipeline, context.sources, context.binding.config, step, options, budget)
           : await this.connectors.joinDiagnostics(identity, pipeline, step, options, tables, budget);

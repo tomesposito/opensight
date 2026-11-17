@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { hasCapability, type PrepMemoryTable, type PrepSource } from '@opensight/query-engine';
+import { PREP_JOIN_SAMPLE_LIMIT, hasCapability, type PrepMemoryTable, type PrepSource } from '@opensight/query-engine';
+import { prepFail } from '@opensight/bundle-parser/prep';
 import type { PrepColumn } from '@opensight/bundle-parser/prep';
 import { readBody, RequestError, SecurityError } from './query.js';
 import { method, routeId, send } from './automation-routes.js';
@@ -106,7 +107,7 @@ export class InputTableRoutes {
   /** Prep integration: same-namespace tables as DuckDB memory sources. Reference form: `input-table-<id>`. */
   prepSourcesFor(identity: Identity): PrepSource[] {
     const principal: InputPrincipal = this.deps.security ? (() => { try { return { namespaceId: identity.namespaceId, userId: identity.userId, role: this.deps.security!.user(identity).role }; } catch { return { namespaceId: identity.namespaceId, userId: identity.userId }; } })() : { ...identity };
-    return this.store.read().tables.filter(t => canViewInputTable(principal, t)).map(t => this.prepSource(t));
+    return this.store.store.project(state => state.tables.filter(t => canViewInputTable(principal, t)).map(t => this.prepSource(t)));
   }
   prepTablesFor(identity: Identity): PrepMemoryTable[] {
     const principal: InputPrincipal = this.deps.security ? (() => { try { return { namespaceId: identity.namespaceId, userId: identity.userId, role: this.deps.security!.user(identity).role }; } catch { return { namespaceId: identity.namespaceId, userId: identity.userId }; } })() : { ...identity };
@@ -115,6 +116,14 @@ export class InputTableRoutes {
       const matrix = t.rows.map(r => t.columns.map(c => r.values[c.name] ?? null));
       return { source, rowCount: matrix.length, value: (row: number, column: number) => matrix[row]?.[column] ?? null };
     });
+  }
+  /** Select rows before cloning; source discovery and diagnostics never copy complete tables. */
+  prepSamplesFor(identity: Identity, sourceIds: readonly string[], limit: number): PrepMemoryTable[] {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > PREP_JOIN_SAMPLE_LIMIT + 1) prepFail('PREP_LIMIT_EXCEEDED', '$.joinDiagnostics', 'Invalid bounded input-table request');
+    const principal: InputPrincipal = this.deps.security ? { ...identity, role: this.deps.security.user(identity).role } : { ...identity };
+    const samples = this.store.store.project(state => state.tables.filter(t => sourceIds.includes(inputTablePrepSourceId(t.id)) && canViewInputTable(principal, t))
+      .map(t => ({ source: this.prepSource(t), rows: t.rows.slice(0, limit).map(r => t.columns.map(c => r.values[c.name] ?? null)) })));
+    return samples.map(({ source, rows }) => ({ source, rowCount: rows.length, value: (r: number, c: number) => rows[r]?.[c] ?? null }));
   }
   private prepSource(table: InputTable): PrepSource {
     return {
