@@ -170,6 +170,12 @@ try {
   await hold(1800);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: resolve(FRAMES, '../insight.png'), fullPage: true });
+  await page.getByLabel('Assign Category', { exact: true }).selectOption('order_date');
+  await page.getByLabel('Narrative computation', { exact: true }).selectOption('forecast');
+  await page.getByLabel('Title', { exact: true }).fill('Statistical revenue forecast');
+  assert.match(await page.locator('.author-card .chart').getAttribute('aria-label'), /Statistical forecast for revenue: unavailable \(at least 4 usable data points required\)/);
+  await hold(1800);
+  await page.screenshot({ path: resolve(FRAMES, '../insight-forecast.png'), fullPage: true });
   await page.getByRole('button', { name: 'Save draft', exact: true }).click();
   // Issue #40: row groups run against local synthetic data and save in the bundle.
   await page.locator('.author-card-actions button[aria-label^="Remove "]').click();

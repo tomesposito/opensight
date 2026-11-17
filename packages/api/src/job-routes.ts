@@ -15,6 +15,8 @@ export async function jobRoute(request: IncomingMessage, response: ServerRespons
   }
   if (path === '/api/job-recipients') { method(request, response, ['GET']); send(response, 200, await store.recipients(context)); return true; }
   if (path === '/api/jobs') { method(request, response, ['GET']); send(response, 200, await store.list(context)); return true; }
+  const retry = /^\/api\/jobs\/([A-Za-z0-9_-]{1,512})\/deliveries\/([A-Za-z0-9_-]{1,512})\/retry$/.exec(path);
+  if (retry) { method(request, response, ['POST']); object(await readBody(request), []); send(response, 200, await store.retryDelivery(context, retry[1]!, retry[2]!)); return true; }
   const match = /^\/api\/jobs\/([A-Za-z0-9_-]{1,512})(?:\/(runs|deliveries))?$/.exec(path);
   if (!match) return false;
   const id = match[1]!, action = match[2];

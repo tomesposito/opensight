@@ -698,6 +698,10 @@ export interface ForecastComputation extends TotalAggregationComputation {
   PredictionInterval?: number; Seasonality?: 'AUTOMATIC' | 'CUSTOM';
   CustomSeasonalityValue?: number; LowerBoundary?: number; UpperBoundary?: number;
 }
+export interface TopBottomMoversComputation extends UnknownProperties {
+  ComputationId: string; Name?: string; Time?: DimensionField; Category?: DimensionField; Value?: MeasureField;
+  MoverSize?: number; SortOrder?: 'PERCENT_DIFFERENCE' | 'ABSOLUTE_DIFFERENCE'; Type: 'TOP' | 'BOTTOM';
+}
 /** Additional documented computation variants remain opaque and cannot execute. */
 export type Computation = OneOf<{
   TotalAggregation: TotalAggregationComputation;
@@ -708,6 +712,6 @@ export type Computation = OneOf<{
   MetricComparison: MetricComparisonComputation;
   Forecast: ForecastComputation;
   PeriodToDate: UnknownProperties;
-  TopBottomMovers: UnknownProperties;
+  TopBottomMovers: TopBottomMoversComputation;
   UniqueValues: UnknownProperties;
 }>;

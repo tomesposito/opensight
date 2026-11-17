@@ -45,6 +45,13 @@ test('D-86 folded edge grammar matches shared routes without per-request regex c
   for (const path of ['/api/v1/analyses', '/api/v1/dashboards', '/api/v1/metrics', '/api/v1/metric-datasets', '/api/uploads/reservations/a/complete', '/api/session'])
     assert.equal(JSON.stringify(context.serverlessV1Methods(path)), JSON.stringify(serverlessV1Methods(path)), path);
 });
+test('edge rejects unsupported paths before reading a large header map', () => {
+  const e = frame(); e.request.uri = '/api/api/v1/datasets';
+  Object.defineProperty(e.request.headers, 'authorization', { enumerable: true, get() { throw Error('Unsupported route scanned headers'); } });
+  // Call the validator directly so a header read cannot be hidden by handler's
+  // uniform denial response; the path error must win before accessing headers.
+  assert.throws(() => context.validateViewerRequest({ ...e.request, protocol: 'https' }, origin), error => error.code === 'RESOURCE_NOT_FOUND');
+});
 test('SR4a edge executes shared path/header rejection without Node APIs and cannot accept forged provenance', () => {
   const bad = [];
   for (const name of ['x-user', 'x-role', 'x-tenant-id', 'x-opensight-ingress-peer', 'x-opensight-ingress-secret', 'x-forwarded-for', 'x-forwarded-host', 'forwarded']) {
@@ -124,5 +131,18 @@ test('#196 generated and packaged edge admit plan/revise without opening neighbo
     const e = frame(); e.request.method = 'POST'; e.request.uri = scope + action;
     assert.equal(context.handler(e).uri, e.request.uri);
     e.request.uri += '/unknown'; assert.equal(context.handler(e).statusCode, 403);
+  }
+});
+
+test('#273 generated and packaged edge admit S3 prefix browsing and reject neighboring connector routes', async () => {
+  for (const code of [source, await readFile(new URL('../../../ops/serverless/modules/edge/edge-viewer.js', import.meta.url), 'utf8')]) {
+    const edge = vm.createContext({ Buffer: { byteLength: Buffer.byteLength } });
+    vm.runInContext(code.replaceAll('__OPENSIGHT_ORIGIN__', JSON.stringify(origin)).replaceAll('__OPENSIGHT_HOST__', JSON.stringify(host)), edge);
+    for (const uri of ['/api/api/connectors/s3/browse', '/api/api/namespaces/one/connectors/s3/browse']) {
+      const e = frame(); e.request.uri = uri; e.request.method = 'POST'; assert.equal(edge.handler(e).uri, uri);
+    }
+    for (const uri of ['/api/api/connectors/s3/read', '/api/api/connectors/s3-analytics/browse', '/api/api/connectors/s3/browse/extra']) {
+      const e = frame(); e.request.uri = uri; assert.equal(edge.handler(e).statusCode, 403);
+    }
   }
 });

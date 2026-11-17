@@ -91,13 +91,21 @@ export class HostedAISettings {
       { key: configKey, body: { ...saved.body, secretId: secretKey.id }, expectedVersion: saved.version },
     ]);
   }
+  /** Retry a validated receipt without generating or recording token spend again. */
+  async commitReceipt(context: TenantContext, count: number, managed: boolean): Promise<void> {
+    if (!managed) return;
+    if (!this.meter?.commit) throw new AIError(503, 'AI_MANAGED_UNAVAILABLE', 'Managed AI is unavailable for this workspace');
+    await this.meter.commit(context.namespaceId, 0, false, count);
+  }
   async complete(context: TenantContext, input: Completion, test = false): Promise<DeliveredCompletion> {
     const saved = await this.saved(context), mode = this.mode(saved?.body);
     let key = '', config: ProviderConfig, adapter;
     if (mode === 'managed') {
       if (!this.managed || !this.meter?.commit || !this.meter.credits || (await this.meter.credits(context.namespaceId)).limit === null) throw new AIError(503, 'AI_MANAGED_UNAVAILABLE', 'Managed AI is unavailable for this workspace');
       config = { provider: 'bedrock', model: this.managed.model }; adapter = this.adapters[this.managed.provider];
-      if (!test) await this.meter.check(context.namespaceId, true);
+      // Connection tests are credit-free, not cost-free: the pre-call gate
+      // (monthly credits + daily spend cap) applies to them too (#217).
+      await this.meter.check(context.namespaceId, true);
     } else if (mode === 'byo' && saved) {
       config = this.provider(saved.body);
       if (config.provider === 'bedrock') throw new AIError(409, 'AI_BEDROCK_APPROVAL_REQUIRED', 'Amazon Bedrock is managed only');
@@ -108,9 +116,11 @@ export class HostedAISettings {
     const result = await adapter.complete(config, key, input);
     // Token spend is an operator cost even when grammar/policy later rejects delivery.
     // Count zero leaves the monthly delivered-answer allowance untouched.
-    if (!test && mode === 'managed') await this.meter!.commit!(context.namespaceId, result.tokens ?? estimateTokens(input.system, input.prompt, result.text), result.tokens === undefined, 0);
+    // Connection tests commit the same way (#217): their tokens land in the
+    // spend ledger so the daily cap accounts for them, still at zero credits.
+    if (mode === 'managed') await this.meter!.commit!(context.namespaceId, result.tokens ?? estimateTokens(input.system, input.prompt, result.text), result.tokens === undefined, 0);
     let committed = false;
-    return { text: key ? result.text.split(key).join('[redacted]') : result.text, remaining: async () => mode === 'managed' ? (await this.meter!.credits!(context.namespaceId)).remaining : Infinity, commit: async (count = 1) => {
+    return { managed: mode === 'managed', text: key ? result.text.split(key).join('[redacted]') : result.text, remaining: async () => mode === 'managed' ? (await this.meter!.credits!(context.namespaceId)).remaining : Infinity, commit: async (count = 1) => {
       if (committed || test || mode !== 'managed') return;
       await this.meter!.commit!(context.namespaceId, 0, false, count);
       committed = true;

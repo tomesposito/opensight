@@ -58,8 +58,8 @@ its inputs produces identical bytes; it includes no timestamps.
 
 The committed `site/docs/index.html` and `site/docs/<slug>/index.html` files are
 the static deliverable. Deployments must serve these directory indexes and
-`site/docs/docs.css` on the marketing host. The current
-`ops/serverless/edge-static.js` allowlist does not route `/docs` or `/docs/*`;
-that routing needs an operator-reviewed follow-up before these URLs work through
-that deployment. This issue does not push, deploy or change infrastructure, and
-does not establish a live HTTP 200 response on getopensight.org.
+`site/docs/docs.css` on the marketing host. The bounded frontend inventory and
+`ops/serverless/edge-static.js` explicitly include these pages and stylesheet.
+Adding a documentation page also requires adding its packaged path and edge
+route. Deployment acceptance checks the signed archive and live response bytes;
+committing generated HTML alone does not establish a live HTTP 200 response.

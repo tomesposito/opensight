@@ -129,6 +129,18 @@ test('192 C: detail shows inline usage and billing, link generation keeps tier, 
   await click(button(ui, 'Disconnect')); assert.equal(ui.root.findAllByType('progress').length, 0); assert.doesNotMatch(ui.text(), /Workspace Admin/);
 });
 
+test('225: tenant usage labels API calls, queries and NLQ with the UTC month and storage as current', async t => {
+  const ui = await mount(t, OperatorTenant, detailHandler(), { tenantId: 'tenant-one' });
+  await connect(ui);
+  const strip = ui.root.findByProps({ 'aria-label': 'Tenant usage' });
+  assert.deepEqual(strip.findAllByType('small').map(node => node.children.join('')), [
+    'API calls · 2026-11', 'Queries · 2026-11', 'Storage · Current', 'NLQ · 2026-11',
+  ]);
+  assert.deepEqual(strip.findAllByType('progress').map(node => [node.props.value, node.props.max]), [[8, 100], [2, 10], [512, 1024], [3, 20]]);
+  assert.match(ui.text(), /API calls, queries and NLQ use quotas for the current UTC month/);
+  assert.doesNotMatch(ui.text(), /daily UTC quotas/);
+});
+
 test('197: billing 404 removes controls; paused resolutions exclude drop-to-Free', async t => {
   const missing = await mount(t, OperatorTenant, detailHandler({ billing: null }), { tenantId: 'tenant-one' }); await connect(missing);
   assert.equal(missing.root.findAllByType('button').some(b => b.children.join('').includes('Generate payment link')), false);
@@ -168,4 +180,25 @@ test('192 C: route guards exclude offline app; operator navigation contains all 
   assert.match(app, /!offline && operator === '#operator-tenants'/); assert.match(app, /!offline && operatorTenant/); assert.match(app, /key=\{operatorTenant\[1\]\}/);
   for (const page of ['OperatorUsers', 'OperatorIdeas']) assert.match(readFileSync(new URL(`../src/${page}.tsx`, import.meta.url), 'utf8'), /OperatorNav current=/);
   for (const page of ['OperatorTenants', 'OperatorTenant', 'operator-provisioning']) assert.doesNotMatch(readFileSync(new URL(`../src/${page}.tsx`, import.meta.url), 'utf8'), /localStorage|sessionStorage|document\.cookie/);
+});
+
+test('241 tenant detail resolves only pending request IDs, refreshes grant/decline, and shows manual entitlement', async t => {
+  for (const action of ['grant', 'decline']) {
+    let billing = { billingMode: 'waitlist', tier: null, accessState: 'paused', trialEndsAt: '2026-11-19T00:00:00Z', paidRequest: { id: 'request-one', tier: 'regular', state: 'pending', requestedByEmail: 'requester@example.test' } };
+    const ui = await mount(t, OperatorTenant, call => {
+      if (call.path.endsWith('/billing')) return response({ billing });
+      if (call.path.endsWith(`/paid-request/${action}`)) {
+        assert.deepEqual(call.input, { requestId: 'request-one', expectedTier: 'regular' });
+        billing = { ...billing, tier: action === 'grant' ? 'regular' : null, entitlementSource: action === 'grant' ? 'manual' : 'trial', paidRequest: { ...billing.paidRequest, state: action === 'grant' ? 'granted' : 'declined' } };
+        return response({ billing });
+      }
+      return detailHandler()(call);
+    }, { tenantId: 'tenant-one' });
+    await connect(ui); assert.match(ui.text(), /Trial ended/); assert.doesNotMatch(ui.text(), /Self-hosted/); assert.ok(button(ui, 'Grant Regular (manual)')); assert.ok(button(ui, 'Decline request'));
+    assert.equal(ui.root.findAllByProps({ 'aria-label': 'Generate payment link' }).length, 0);
+    await click(button(ui, action === 'grant' ? 'Grant Regular (manual)' : 'Decline request'));
+    assert.equal(button(ui, 'Grant Regular (manual)'), undefined);
+    if (action === 'grant') assert.match(ui.text(), /Manual entitlement/);
+    assert.equal(ui.calls.filter(c => c.path.endsWith(`/paid-request/${action}`)).length, 1);
+  }
 });

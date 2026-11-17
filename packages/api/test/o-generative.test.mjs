@@ -300,3 +300,30 @@ for (const endpoint of ['/api/o/plan', '/api/o/revise']) test(`#196 ${endpoint} 
   await entered; await api('/api/users/alice', 'PUT', { name: 'Alice', role: 'author' }); release();
   assert.equal((await pending).body.errorCode, 'SECURITY_AI_REQUIRED');
 });
+
+// These direct shared-function tests also cover callers (including the local
+// plane) that omit the optional hosted cancellation check.
+const cancellationSource = {
+  securitySchema: async () => ({ columns: [{ name: 'revenue', type: 'DECIMAL', scalarType: 'number', nullable: true }], deniedColumns: [], datasetId: 'sales' }),
+  metricLookup: async () => [], execute: async () => ({}),
+};
+for (const kind of ['generate', 'calculation', 'plan', 'revise']) test(`#229 ${kind} checks cancellation immediately before credit commit`, async () => {
+  const { generateAnswer, planAnswer, reviseAnswer } = await import('../dist/o-generative.js');
+  const { MetadataError } = await import('../dist/metadata-db.js');
+  const controller = new AbortController(); let commits = 0, checks = 0;
+  const source = { ...cancellationSource, securitySchema: async () => {
+    // Abort during the post-provider schema read, after the earlier recheck.
+    if (++checks === 2) controller.abort();
+    return cancellationSource.securitySchema();
+  } };
+  const text = JSON.stringify(kind === 'calculation' ? { name: 'Double', expression: '{revenue} * 2', role: 'measure', explanation: 'Double.' } : kind === 'plan' ? { questions: ['sum revenue'] } : { question: 'sum revenue' });
+  const complete = async () => ({ text, commit: async () => { commits++; } });
+  const answer = kind === 'plan' ? planAnswer : kind === 'revise' ? reviseAnswer : (body, ...args) => generateAnswer(body, kind === 'calculation', ...args);
+  const body = { question: 'total', currentQuestion: 'sum revenue' };
+  await assert.rejects(answer(body, source, complete, async () => {}, undefined, () => {
+    if (controller.signal.aborted) throw new MetadataError('EXECUTION_CANCELLED', 409);
+  }), { code: 'EXECUTION_CANCELLED', status: 409 });
+  assert.equal(commits, 0);
+  await answer(body, cancellationSource, complete, async () => {});
+  assert.equal(commits, 1);
+});

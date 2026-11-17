@@ -340,20 +340,40 @@ test('live Postgres monthly billing serializes concurrent meters, preserves exac
     } finally { await client.query('RESET ROLE'); client.release(); }
   });
 
-test('Issue 192 B: operator overview matches daily enforcement, live storage and monthly NLQ quotas', async t => {
+test('Issue 192 B / 225: operator overview matches monthly API/query enforcement, live storage and monthly NLQ quotas', async t => {
   const f = await setup(t);
+  await daily(f.db, one, '2026-09-30', 'apiCalls', 999);
+  await daily(f.db, one, '2026-11-01', 'computeAttempts', 999);
   await daily(f.db, one, '2026-10-02', 'apiCalls', 100);
   await daily(f.db, one, '2026-10-03', 'apiCalls', 7);
   await daily(f.db, one, '2026-10-03', 'computeAttempts', 3);
   await daily(f.db, one, '2026-10-02', 'aiCalls', 2);
   await daily(f.db, one, '2026-10-03', 'aiCalls', 4);
   await daily(f.db, two, '2026-10-03', 'aiCalls', 99);
+  await daily(f.db, two, '2026-10-03', 'apiCalls', 99);
+  await daily(f.db, two, '2026-10-03', 'computeAttempts', 99);
   const before = await counters(f.db), overview = await f.usage.operatorOverview(one.tenantId, month);
-  assert.equal(overview.apiCalls, 7); assert.equal(overview.queries, 3); assert.equal(overview.nlq, 6);
+  assert.equal(overview.apiCalls, 107); assert.equal(overview.queries, 3); assert.equal(overview.nlq, 6);
+  assert.equal(overview.period, month);
   assert.equal(overview.day, '2026-10-03'); assert.equal(overview.quotas.apiCalls, f.usage.entitlement(one).apiCalls);
   assert.equal(overview.storageBytes, await f.db.transaction(c => resourceBytes(c, one)));
   assert.equal(await f.usage.operatorOverview(one.tenantId, '2026-09'), null);
   f.usage.tierEntitlement = () => ({ apiCalls: 500, computeAttempts: 40, storageBytes: 9999, aiCallsPerMonth: 10 });
   assert.deepEqual((await f.usage.operatorOverview(one.tenantId, month)).quotas, { apiCalls: 500, queries: 40, storageBytes: 9999, nlq: 10 });
   assert.deepEqual(await counters(f.db), before);
+});
+
+test('225 operator overview validates earlier-day API/query counters and safe monthly sums', async t => {
+  const f = await setup(t);
+  for (const metric of ['apiCalls', 'computeAttempts']) {
+    for (const [admitted, denied] of [[-1, 0], [0.5, 0], ['corrupt', 0], [Number.MAX_SAFE_INTEGER + 1, 0], [0, -1]]) {
+      await daily(f.db, one, '2026-10-02', metric, admitted, denied);
+      await assert.rejects(f.usage.operatorOverview(one.tenantId, month), unresolved);
+      await f.db.transaction(c => c.query('DELETE FROM h8_usage'));
+    }
+    await daily(f.db, one, '2026-10-01', metric, Number.MAX_SAFE_INTEGER);
+    await daily(f.db, one, '2026-10-02', metric, 1);
+    await assert.rejects(f.usage.operatorOverview(one.tenantId, month), unresolved);
+    await f.db.transaction(c => c.query('DELETE FROM h8_usage'));
+  }
 });

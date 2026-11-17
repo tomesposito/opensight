@@ -23,8 +23,8 @@ appear in these captures.
 The implementation follows the mockups' header, navigation, cards, field layout,
 state chips and danger-zone treatment. It uses the existing system font. Detail
 shows the approved namespace and creation-operation identifiers rather than
-inventing readable namespace slugs. API/query quota labels say daily UTC, matching
-the existing enforcement contract; NLQ is monthly and storage is a current gauge.
+inventing readable namespace slugs. Issue #225 updates API/query quota labels to
+the UTC month to match monthly enforcement; NLQ is monthly and storage is a current gauge.
 The mockups' illustrative figures and paid subscriptions are not fixture data.
 No blocking layout gap was found. Pixel parity is not claimed.
 

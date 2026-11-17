@@ -3,7 +3,7 @@ import { fieldName } from './formatting.js';
 import type { AnalysisTheme } from './themes.js';
 import type { Cell, Field, Row, VisualModel } from './model.js';
 import { countryNames, WORLD_MAP } from './geo/world.js';
-import { facetLayout, facetTitles, groupRowsByFacet } from './facet-layout.js';
+import { facetLayout, facetTitles, groupRowsByFacet, type FacetGroup } from './facet-layout.js';
 
 type CellReader = (row: Row, field: Field) => Cell;
 type NumberReader = (row: Row, field: Field) => number | null;
@@ -20,7 +20,7 @@ const quartile = (values: number[], p: number): number => {
 };
 /** Distributions describe supplied result values; they never pretend to recover raw observations. */
 export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, number: NumberReader, option: EChartsOption, fail: (message: string) => never,
-  context?: { path: string; theme: AnalysisTheme; warn: (message: string) => void }): Row[][] | undefined {
+  context?: { path: string; theme: AnalysisTheme; warn: (message: string) => void; facetGroups?: FacetGroup[] }): Row[][] | undefined {
   const names = rows.map(r => model.dimensions[0] ? label(cell(r, model.dimensions[0])) : '');
   const values = (i = 0) => rows.map(r => number(r, model.measures[i]!));
   const nonnegative = (r: Row, i = 0): number => {
@@ -57,7 +57,7 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
       // Small multiples: one panel per facet value on a grid.
       const opts = model.multiplesOptions;
       const { shown, cols, topPad, cellW, cellH } =
-        facetLayout(groupRowsByFacet(rows, model.facet, cell), opts, context.path, context.warn);
+        facetLayout(context.facetGroups ?? groupRowsByFacet(rows, model.facet, cell), opts, context.path, context.warn);
       const inset = opts?.gutter ? 1.5 : 0;
       option.grid = shown.map((_, i) => {
         const c = i % cols, r = Math.floor(i / cols);
@@ -97,12 +97,16 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
     const assist: number[] = [];
     const axisNames: string[] = [];
     let running = 0;
-    const pushBar = (name: string, base: number, height: number, delta: number, color: string) => {
+    // Detailed tooltips resolve a bar back to its result row; only bars that are
+    // exactly one row carry an index (treemap/wordCloud precedent). Subtotal,
+    // Other and Total bars aggregate rows and keep the basic tooltip.
+    const detailed = model.tooltipDetail?.type === 'detailed';
+    const pushBar = (name: string, base: number, height: number, delta: number, color: string, sourceRowIndex?: number) => {
       assist.push(base); axisNames.push(name);
-      return { name, value: height, delta, itemStyle: { color } };
+      return { name, value: height, delta, itemStyle: { color }, ...(detailed && sourceRowIndex !== undefined ? { sourceRowIndex } : {}) };
     };
     const finite = (value: number) => { if (!Number.isFinite(value)) fail('WATERFALL_TOTAL_OVERFLOW: running totals must be finite'); };
-    let data: { name: string; value: number; delta: number; itemStyle: { color: string } }[];
+    let data: { name: string; value: number; delta: number; itemStyle: { color: string }; sourceRowIndex?: number }[];
     if (!model.breakdown) {
       // Deliberate OpenSight semantics: start at zero, retain supplied (or explicit
       // field-sort) order, and append one Total. Native starting values,
@@ -113,7 +117,7 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
         const previous = running;
         running += delta;
         finite(running);
-        const bar = pushBar(names[i]!, Math.min(previous, running), Math.abs(delta), delta, delta < 0 ? '#d64545' : '#2e8b57');
+        const bar = pushBar(names[i]!, Math.min(previous, running), Math.abs(delta), delta, delta < 0 ? '#d64545' : '#2e8b57', i);
         return bar;
       });
       if (rows.length) {
@@ -134,14 +138,17 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
       const breakdownOrder: string[] = [];
       const seenBreakdown = new Set<string>();
       const deltaOf = new Map<string, number>();
-      for (const row of rows) {
+      const rowIndexOf = new Map<string, number>();
+      rows.forEach((row, rowIndex) => {
         const c = label(cell(row, category)), b = label(cell(row, breakdown));
         if (!catIndex.has(c)) { catIndex.set(c, categories.length); categories.push(c); }
         if (!seenBreakdown.has(b)) { seenBreakdown.add(b); breakdownOrder.push(b); }
         const delta = number(row, measure);
         if (delta === null) fail('WATERFALL_VALUE_INVALID: deltas must be finite, non-null numbers');
-        deltaOf.set(JSON.stringify([c, b]), delta);
-      }
+        const key = JSON.stringify([c, b]);
+        deltaOf.set(key, delta);
+        rowIndexOf.set(key, rowIndex);
+      });
       data = [];
       if (categories.length) {
         // BreakdownItemsLimit parity: keep the top-N breakdown values in
@@ -168,12 +175,13 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
         for (let i = 1; i < categories.length; i++) {
           const c = categories[i]!;
           for (const b of keptOrder) {
-            const delta = deltaOf.get(JSON.stringify([c, b]));
+            const key = JSON.stringify([c, b]);
+            const delta = deltaOf.get(key);
             if (delta === undefined) continue;
             const previous = running;
             running += delta;
             finite(running);
-            data.push(pushBar(b, Math.min(previous, running), Math.abs(delta), delta, delta < 0 ? '#d64545' : '#2e8b57'));
+            data.push(pushBar(b, Math.min(previous, running), Math.abs(delta), delta, delta < 0 ? '#d64545' : '#2e8b57', rowIndexOf.get(key)));
           }
           if (limit?.includeOther) {
             const rest = restDeltaFor(c);
@@ -200,7 +208,7 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
       // positive-height delta off its negative base when the total crosses zero.
       { type: 'bar', name: fieldName(measure, model.formatting), stack: 'waterfall', stackStrategy: 'all', data,
         itemStyle: { color: '#2673c9' }, barMaxWidth: 72, label: { show: model.labels, position: 'top', formatter: waterfallLabel },
-        labelLayout: { hideOverlap: true }, tooltip: { formatter: waterfallTooltip } },
+        labelLayout: { hideOverlap: true }, ...(detailed ? {} : { tooltip: { formatter: waterfallTooltip } }) },
     ];
   } else if (model.kind === 'sankey') {
     const source = model.dimensions[0], destination = model.dimensions[1], weight = model.measures[0];
@@ -246,7 +254,7 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
       nodeWidth: 16, nodeGap: 12, draggable: false,
       data: [...nodes].map(([value, index]) => ({ id: `node-${index}`, name: label(value), ...(Array.isArray(option.color) ? { itemStyle: { color: option.color[index % option.color.length] as string } } : {}) })), links,
       label: { show: model.labels, formatter: sankeyName, color: option.textStyle?.color }, labelLayout: { hideOverlap: true },
-      tooltip: { formatter: sankeyTooltip },
+      ...(model.tooltipDetail?.type === 'detailed' ? {} : { tooltip: { formatter: sankeyTooltip } }),
       lineStyle: { color: 'source', opacity: 0.35 }, emphasis: { focus: 'adjacency' },
     }];
   } else if (model.kind === 'radar') {
@@ -290,15 +298,19 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
     option.series = [{ type: 'gauge', min: model.gaugeMin, max: model.gaugeMax, progress: { show: true }, detail: { formatter: '{value}', fontSize: 22 }, data: rows.length && values()[0] !== null ? [{ name: fieldName(model.measures[0]!, model.formatting), value: values()[0]! }] : [] }];
     if (rows.length && values()[0] === null) model.warnings.push('Gauge measure is null; no needle value is shown.');
   } else if (model.kind === 'treemap') {
-    type Node = { name: string; value?: number; children?: Node[] };
+    type Node = { name: string; value?: number; children?: Node[]; sourceRowIndex?: number };
     const root: Node[] = [];
-    rows.forEach(r => {
+    rows.forEach((r, sourceRowIndex) => {
       let level = root;
       model.dimensions.forEach((f, i) => {
         const name = label(cell(r, f));
         let node = level.find(n => n.name === name);
         if (!node) { node = { name }; level.push(node); }
-        if (i === model.dimensions.length - 1) node.value = nonnegative(r);
+        if (i === model.dimensions.length - 1) {
+          node.value = nonnegative(r);
+          // Only leaves have a source row; overwritten paths keep the winning row.
+          if (model.tooltipDetail?.type === 'detailed') node.sourceRowIndex = sourceRowIndex;
+        }
         else { node.children ??= []; level = node.children; }
       });
     });
@@ -326,7 +338,9 @@ export function compileExtra(model: VisualModel, rows: Row[], cell: CellReader, 
     // A fixed virtual grid makes the layout deterministic in SSR and responsive in browsers.
     option.xAxis = { show: false, min: 0, max: 100 }; option.yAxis = { show: false, min: 0, max: 100 }; option.grid = { left: 5, right: 5, top: 5, bottom: 5 };
     const columns = Math.min(4, Math.ceil(Math.sqrt(words.length || 1))), lines = Math.ceil(words.length / columns);
-    option.series = [{ type: 'scatter', symbolSize: 0, data: words.map((w, i) => ({ name: w.name, value: [(i % columns + .5) * 100 / columns, 100 - (Math.floor(i / columns) + .5) * 100 / lines, w.value], label: { show: true, position: 'inside', formatter: w.name.length > 22 ? w.name.slice(0, 21) + '…' : w.name, fontSize: Math.min(30, 11 + 19 * Math.sqrt(w.value / max), 160 / Math.max(1, w.name.length)), color: Array.isArray(option.color) ? option.color[i % option.color.length] as string : '#157f88' } })) }];
+    option.series = [{ type: 'scatter', symbolSize: 0, data: words.map((w, i) => ({ name: w.name, value: [(i % columns + .5) * 100 / columns, 100 - (Math.floor(i / columns) + .5) * 100 / lines, w.value],
+      ...(model.tooltipDetail?.type === 'detailed' ? { sourceRowIndex: w.i } : {}),
+      label: { show: true, position: 'inside', formatter: w.name.length > 22 ? w.name.slice(0, 21) + '…' : w.name, fontSize: Math.min(30, 11 + 19 * Math.sqrt(w.value / max), 160 / Math.max(1, w.name.length)), color: Array.isArray(option.color) ? option.color[i % option.color.length] as string : '#157f88' } })) }];
     if (rows.length > 80) model.warnings.push(`Word cloud displays 80 of ${rows.length} words; View data retains all supplied rows.`);
   } else if (model.kind === 'filledMap') {
     const unknown = names.filter(n => !countryNames.has(n));

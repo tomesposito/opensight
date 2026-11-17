@@ -1,6 +1,6 @@
 import { type Dispatch } from 'react';
-import type { AuthorAction, AuthorDraft, AuthorVisual, BreakdownLimit, GroupSort, SliceLimit } from './authoring.js';
-import { GRID_COLUMNS, defaultMultiplesOptions, hasSmallMultiplesWell, breakdownLimitValid, sliceLimitValid } from './authoring.js';
+import type { AuthorAction, AuthorDraft, AuthorVisual, BreakdownLimit, FacetLimit, ForecastConfig, GroupSort, SliceLimit } from './authoring.js';
+import { GRID_COLUMNS, defaultMultiplesOptions, hasSmallMultiplesWell, breakdownLimitValid, facetLimitValid, sliceLimitValid } from './authoring.js';
 import type { MultiplesOptions as MultiplesOptionsState } from './model.js';
 import { hasDataLabels, hasLegend, LEGEND_POSITIONS, DATA_LABEL_POSITIONS, CARD_DEFAULTS, cleanCardStyle, cleanCardLayout, cleanAltText, altTextValid, type LegendPosition, type LegendTextStyle, type LegendTitle, type GroupTitle, type DataLabels, type DataLabelPosition, type CardStyle, type CardSwatch, type CardBorder } from './formatting.js';
 import { LIGHT_THEME } from './themes.js';
@@ -114,6 +114,7 @@ export function MultiplesOptions({ visual, dispatch }: SectionProps) {
     if (/^\d+$/.test(trimmed) && Number(trimmed) >= 1) apply(Number(trimmed));
   };
   return <details className="property-section"><summary>Multiples Options</summary>
+    {!!visual.smallMultiples?.length && <FacetLimitControls visual={visual} dispatch={dispatch} />}
     <h4 className="property-caption">Layout</h4>
     <div className="property-inline">
       <label>Visible rows<input aria-label="Visible rows" placeholder="Auto" inputMode="numeric"
@@ -234,6 +235,24 @@ function SliceLimitControls({ visual, dispatch }: SectionProps) {
     {limit && <label className="toggle"><input type="checkbox" aria-label="Group the rest as Other"
       checked={limit.includeOther} onChange={e => setLimit(String(limit.count), e.target.checked)} />Group the rest as “Other”</label>}
     <p className="field-hint">Top {limit?.count ?? 'N'} categories in display order{limit?.includeOther === false ? '; the rest are hidden' : '; the rest roll into an “Other” slice'}. Empty shows all rows.</p>
+  </div>;
+}
+
+/** Small multiples limit is separate from the existing layout panel cap. */
+function FacetLimitControls({ visual, dispatch }: SectionProps) {
+  const limit = visual.facetLimit;
+  const setLimit = (raw: string, includeOther?: boolean) => {
+    if (raw.trim() === '') { dispatch({ type: 'facet-limit', limit: undefined }); return; }
+    const next: FacetLimit = { count: Number(raw), includeOther: includeOther ?? limit?.includeOther ?? true };
+    if (!facetLimitValid(next)) return;
+    dispatch({ type: 'facet-limit', limit: next });
+  };
+  return <div className="property-control-row" role="group" aria-label="Small multiples limit controls">
+    <label>Number of panels displayed<input type="number" aria-label="Number of panels displayed" min={1} max={100}
+      placeholder="All panels" value={limit?.count ?? ''} onChange={e => setLimit(e.target.value)} /></label>
+    {limit && <label className="toggle"><input type="checkbox" aria-label="Group the rest as Other"
+      checked={limit.includeOther} onChange={e => setLimit(String(limit.count), e.target.checked)} />Group the rest as “Other”</label>}
+    <p className="field-hint">First {limit?.count ?? 'N'} panels in display order{limit?.includeOther === false ? '; the rest are hidden' : '; the rest roll into an “Other” panel'}. Empty keeps all panels. Layout limits still apply.</p>
   </div>;
 }
 
@@ -425,6 +444,44 @@ export function ReferenceLinesEditor({ visual, dispatch }: SectionProps) {
       <button type="button" onClick={() => dispatch({ type: 'reference-line-remove', id: line.id })}>Remove line</button>
     </fieldset>)}
     <button type="button" onClick={() => dispatch({ type: 'reference-line-add' })}>Add reference line</button>
+  </details>;
+}
+
+/** Forecast section (issue #235): line/area charts with a date dimension only —
+ *  the caller gates visibility, so the section is never presented where a
+ *  forecast cannot apply. Copy calls the method what it is: a statistical
+ *  forecast (exponential smoothing), never ML/AI. */
+export function ForecastEditor({ visual, dispatch }: SectionProps) {
+  const current: ForecastConfig = visual.forecast ?? { enabled: false, periodsForward: 3, periodsBackward: 0, predictionInterval: 95, seasonality: 'auto' };
+  const set = (patch: Partial<ForecastConfig>) => dispatch({ type: 'forecast', forecast: { ...current, ...patch } });
+  const seasonalityMode = current.seasonality === 'auto' ? 'auto' : current.seasonality === 'none' ? 'none' : 'custom';
+  return <details className="property-section"><summary data-author-control="forecast">Forecast</summary>
+    <p className="field-hint">Statistical forecast (exponential smoothing). The chart picks the best-fitting smoothing model and shades the prediction interval.</p>
+    <label className="toggle"><input type="checkbox" checked={current.enabled} onChange={e => set({ enabled: e.target.checked })} />Show forecast</label>
+    {current.enabled && <>
+      <label>Periods forward<input type="number" min="0" max="100" value={current.periodsForward} onChange={e => {
+        const value = Number(e.target.value);
+        if (Number.isInteger(value) && value >= 0 && value <= 100) set({ periodsForward: value });
+      }} /></label>
+      <label>Periods back (show fit)<input type="number" min="0" max="100" value={current.periodsBackward} onChange={e => {
+        const value = Number(e.target.value);
+        if (Number.isInteger(value) && value >= 0 && value <= 100) set({ periodsBackward: value });
+      }} /></label>
+      <label>Prediction interval<select aria-label="Prediction interval" value={current.predictionInterval}
+        onChange={e => set({ predictionInterval: Number(e.target.value) as 80 | 90 | 95 })}>
+        {[80, 90, 95].map(v => <option key={v} value={v}>{v}%</option>)}
+      </select></label>
+      <label>Seasonality<select aria-label="Seasonality" value={seasonalityMode}
+        onChange={e => set({ seasonality: e.target.value === 'custom' ? 12 : e.target.value as 'auto' | 'none' })}>
+        <option value="auto">Auto</option>
+        <option value="none">None</option>
+        <option value="custom">Custom period</option>
+      </select></label>
+      {seasonalityMode === 'custom' && <label>Custom period<input type="number" min="2" max="366" value={typeof current.seasonality === 'number' ? current.seasonality : 12} onChange={e => {
+        const value = Number(e.target.value);
+        if (Number.isInteger(value) && value >= 2 && value <= 366) set({ seasonality: value });
+      }} /></label>}
+    </>}
   </details>;
 }
 

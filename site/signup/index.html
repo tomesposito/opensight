@@ -35,6 +35,7 @@
   .ok .dot { width: 8px; height: 8px; border-radius: 50%; background: #1db954; }
   .hint { font-size: 13px; color: #75839c; margin-top: 6px; }
   .cta { width: 100%; margin-top: 26px; padding: 13px; border: none; border-radius: 10px; background: linear-gradient(90deg, #3B82F6, #6D3BFF); color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; }
+  .terms a { text-decoration: underline; }
   .terms { margin-top: 15px; font-size: 12.5px; color: #75839c; line-height: 1.55; text-align: center; }
 </style></head>
 <body>
@@ -71,7 +72,7 @@
     <input id="email" name="adminEmail" placeholder="jordan@acme.example" type="email" autocomplete="email" required maxlength="254">
     <p class="hint">You'll be the workspace's first administrator. You can invite your team once you're in.</p>
     <div id="signup-challenge"></div><button class="cta" id="signup-submit" disabled>Create workspace</button>
-    <p class="terms">By continuing you agree to the terms and privacy policy. Disposable email addresses can't start a trial — use a permanent one.</p>
+    <p class="terms">By continuing you agree to the <a href="/legal/terms/">terms</a> and <a href="/legal/privacy/">privacy policy</a>. Disposable email addresses can't start a trial — use a permanent one.</p>
   <p id="signup-status" role="status"></p></form><button id="signup-resend" type="button" hidden>Resend verification email</button><p class="hint">Need help? <a href="/#request-access">Talk to us</a>.</p></section>
 </main>
 <script src="/signup/signup.js" defer></script>

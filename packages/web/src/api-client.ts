@@ -259,7 +259,11 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   async function rawResource(route: string, method = 'GET', body?: unknown, signal?: AbortSignal, key?: string, headers: Record<string, string> = {}, received?: (response: Response) => void): Promise<unknown> {
     const expected = generation;
     const response = await authenticatedFetch(`${base}${route}`, { method, ...(signal ? { signal } : {}), credentials: 'same-origin', headers: { ...headers, Accept: 'application/json', ...(key ? { 'Idempotency-Key': key } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: controlBody(body) }) });
-    const value: unknown = await response.json();
+    // Error responses are not always JSON: the edge and a starting workspace
+    // can answer with an empty body. Never let the parser's raw TypeError
+    // reach the UI; name the failure like the auth paths already do.
+    const value: unknown = await response.json().catch(() => undefined);
+    if (value === undefined) throw new ApiError('The server returned an unreadable response.', response.status, 'API_RESPONSE_INVALID');
     if (!response.ok) {
       const error = object(value, 'API error');
       throw new ApiError(`${typeof error.errorCode === 'string' ? `${error.errorCode}: ` : ''}${typeof error.Message === 'string' ? error.Message : 'Request failed'}`, response.status, typeof error.errorCode === 'string' ? error.errorCode : undefined);
@@ -355,7 +359,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   const deleteInputTable = (id: string) => resource<{ deleted: true }>(`/api/input-tables/${encodeURIComponent(id)}`, 'DELETE');
   const setInputTableEditors = (id: string, editors: string[]) => resource<InputTableFull>(`/api/input-tables/${encodeURIComponent(id)}/editors`, 'PUT', { editors });
   const addInputTableRow = (id: string, values: Record<string, InputCellValue>) => resource<{ row: InputRow; version: number }>(`/api/input-tables/${encodeURIComponent(id)}/rows`, 'POST', { values });
-  const updateInputTableRow = (id: string, rowId: string, values: Record<string, InputCellValue>) => resource<{ row: InputRow; version: number }>(`/api/input-tables/${encodeURIComponent(id)}/rows/${encodeURIComponent(rowId)}`, 'PATCH', { values });
+  const updateInputTableRow = (id: string, rowId: string, values: Record<string, InputCellValue>, expectedVersion: number) => resource<{ row: InputRow; version: number }>(`/api/input-tables/${encodeURIComponent(id)}/rows/${encodeURIComponent(rowId)}`, 'PATCH', { values, expectedVersion });
   const deleteInputTableRow = (id: string, rowId: string) => resource<{ deleted: true; version: number }>(`/api/input-tables/${encodeURIComponent(id)}/rows/${encodeURIComponent(rowId)}`, 'DELETE');
   const getInputTableAudit = (id: string) => resource<{ entries: InputAuditEntry[] }>(`/api/input-tables/${encodeURIComponent(id)}/audit`);
   const listPrepDatasets = () => resource<PrepDatasetsResponse>('/api/prep-datasets');
@@ -373,6 +377,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   const jobRecipients = () => resource<{ id: string; name: string; email: string }[]>('/api/job-recipients');
   const jobHistory = (id: string) => resource<JobHistory[]>(`/api/jobs/${encodeURIComponent(id)}/runs`);
   const jobDeliveries = (id: string) => resource<JobDelivery[]>(`/api/jobs/${encodeURIComponent(id)}/deliveries`);
+  const retryJobDelivery = (id: string, deliveryId: string) => resource<JobDelivery>(`/api/jobs/${encodeURIComponent(id)}/deliveries/${encodeURIComponent(deliveryId)}/retry`, 'POST', {});
   const runJob = (id: string) => resource<JobHistory>(`/api/jobs/${encodeURIComponent(id)}/runs`, 'POST', {});
   const saveUser = (id: string, body: { name: string; role: Role }) => resource<Session>(`/api/users/${encodeURIComponent(id)}`, 'PUT', body);
   const deleteUser = (id: string) => resource<{ deleted: true }>(`/api/users/${encodeURIComponent(id)}`, 'DELETE');
@@ -396,6 +401,8 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   const saveAIKey = (key: string) => resource<AIConfig>('/api/admin/ai/key', 'POST', { key });
   const testAIConnection = () => resource<{ ok: true }>('/api/admin/ai/test', 'POST', {});
   const checkout = (tier: 'light' | 'regular' | 'heavy') => resource<{ url: string }>('/api/signup/checkout', 'POST', { tier });
+  const requestPaidPlan = (tier: import('./TrialBilling.js').PaidTier) => resource<{ billing: import('./TrialBilling.js').BillingState }>('/api/billing/paid-request', 'POST', { tier });
+  const withdrawPaidRequest = () => resource<{ billing: import('./TrialBilling.js').BillingState }>('/api/billing/paid-request', 'DELETE');
   const exportWorkspace = () => resource<unknown>('/api/workspace/export');
   const closeWorkspace = (confirmTenantId: string) => resource<{ closed: boolean }>('/api/workspace/close', 'POST', { confirmTenantId });
   async function getSession(signal?: AbortSignal): Promise<Session> {
@@ -582,8 +589,8 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     listDashboards, getPublishedDashboard, queryDashboardVisual,
     saveHostedAnalysis, publishAnalysis,
     onDemand, connect, subscribeAvailability,
-    checkout, exportWorkspace, closeWorkspace, enroll, acceptEnrollment, login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
-    listJobs, jobRecipients, jobHistory, jobDeliveries, runJob,
+    checkout, requestPaidPlan, withdrawPaidRequest, exportWorkspace, closeWorkspace, enroll, acceptEnrollment, login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
+    listJobs, jobRecipients, jobHistory, jobDeliveries, runJob, retryJobDelivery,
     listPrepTemplates, proposePrepTemplate, publishPrepTemplate, createFromPrepTemplate, promoteCalculation, metricDatasets, listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, planO, reviseO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     listNotebooks, getNotebook, createNotebook, updateNotebook, deleteNotebook, runNotebook, notebookDatasets, notebookRuns, snapshotNotebookCell,
     listInputTables, getInputTable, createInputTable, updateInputTable, deleteInputTable, setInputTableEditors, addInputTableRow, updateInputTableRow, deleteInputTableRow, getInputTableAudit,

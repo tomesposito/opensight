@@ -89,3 +89,17 @@ single sign-on, row-level security, the audit log, and basic
 embedding — stays in the open product and is never paywalled. For
 those four features the "future enterprise lever" note no longer
 applies. The rule is published in `docs/open-economics.md`.
+
+#### UPDATE (2026-11-09, issue #234) — SLA commitment superseded
+
+The DECISION and IMPLICATIONS above describe paid tiers as including
+"support and SLA", and the hosted-only part as operations including
+an SLA. That SLA commitment is superseded. The Terms of Service
+published in the #210 legal release state that they "do not include
+a service-level agreement or uptime guarantee in version 1.0", and
+HQ-10 was already decided on the same basis: best-effort, no SLA,
+RPO or RTO promises. Paid tiers are higher quotas plus support; no
+tier carries a service-level agreement unless a later confirmed
+decision and a Terms change say so. The historical text above is
+preserved as the record of the 2026-10-16 decision; do not restore
+an SLA promise in pricing or implementation work on its basis.

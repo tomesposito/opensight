@@ -15,6 +15,7 @@ import { assembleQsBundle, parseBundleJson, parseQsBundle, summarizeQsBundle, ZI
 import type { BundleDefinition, BundleSheet, BundleVisual, QsBundle } from '@opensight/bundle-parser';
 import { defaults, emptyDraft, serializeDraft, serializeVisual, grouped, noDimensions, singleMeasure, validateDraft, dataFields, calculationError, sheetParameters, multiplesOptionsValid } from './authoring.js';
 import type { AuthorDraft, AuthorSheet, AuthorVisual, CalculatedField, CategoryFilter, ImportResult, ImportedVisual, Placement, TooltipExtraField } from './authoring.js';
+import { forecastConfigValid, type ForecastConfig } from './forecast.js';
 
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Obj : {};
@@ -196,6 +197,15 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const importedSliceLimit = kind === 'pie' && Number.isInteger(itemsLimit) && (itemsLimit as number) >= 1 && (itemsLimit as number) <= 100 &&
     (otherCategories === undefined || otherCategories === 'INCLUDE' || otherCategories === 'EXCLUDE')
     ? { count: itemsLimit as number, includeOther: otherCategories !== 'EXCLUDE' } : undefined;
+  // Small multiples panel limits become editable for the faceted kinds. The
+  // compiler and differences check retain malformed/unsupported inputs read-only.
+  const facetLimitObj = obj(obj(config.sortConfiguration).smallMultiplesLimitConfiguration);
+  const facetItemsLimit = facetLimitObj.itemsLimit;
+  const facetOtherCategories = facetLimitObj.otherCategories;
+  const importedFacetLimit = FACETED_KINDS.includes(kind) && names(wells.smallMultiples).length === 1 && Number.isInteger(facetItemsLimit) && (facetItemsLimit as number) >= 1 && (facetItemsLimit as number) <= 100 &&
+    Object.keys(facetLimitObj).every(key => key === 'itemsLimit' || key === 'otherCategories') &&
+    (facetOtherCategories === undefined || facetOtherCategories === 'INCLUDE' || facetOtherCategories === 'EXCLUDE')
+    ? { count: facetItemsLimit as number, includeOther: facetOtherCategories !== 'EXCLUDE' } : undefined;
   // Waterfall breakdown items limit (BreakdownItemsLimit): top-N breakdown
   // values in display order, with the rest rolled into an "Other" bar unless
   // OtherCategories is EXCLUDE. Fail-closed on shape (a malformed limit stays
@@ -207,6 +217,45 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const importedBreakdownLimit = kind === 'waterfall' && Number.isInteger(breakdownItemsLimit) && (breakdownItemsLimit as number) >= 1 && (breakdownItemsLimit as number) <= 100 &&
     (breakdownOtherCategories === undefined || breakdownOtherCategories === 'INCLUDE' || breakdownOtherCategories === 'EXCLUDE')
     ? { count: breakdownItemsLimit as number, includeOther: breakdownOtherCategories !== 'EXCLUDE' } : undefined;
+  // QuickSight ForecastConfigurations[0] imports into the draft (line/area charts;
+  // issue #235). The complete configuration is validated before any editable
+  // state is constructed (issue #263): an unknown property, a non-numeric
+  // boundary, or an inverted boundary pair is malformed, not a value to
+  // silently drop — the configuration stays out of the draft, the original
+  // JSON is preserved verbatim for export, and the recorded problem (with the
+  // compiler normalization check below) blocks preview instead of letting the
+  // preview execute a sanitized forecast the export does not carry.
+  const forecastRaw = (kind === 'line' || kind === 'area') ? config.forecastConfigurations : undefined;
+  let forecastProblem: string | undefined;
+  const importedForecast = forecastRaw !== undefined ? ((): ForecastConfig | undefined => {
+    if (!Array.isArray(forecastRaw)) { forecastProblem = 'forecastConfigurations: expected an array'; return undefined; }
+    if (!forecastRaw.length) return undefined;
+    const rawFirst: unknown = forecastRaw[0];
+    if (!rawFirst || typeof rawFirst !== 'object' || Array.isArray(rawFirst)) { forecastProblem = 'forecastConfigurations[0]: expected an object'; return undefined; }
+    const forecastObj = rawFirst as Obj;
+    const unknown = Object.keys(forecastObj).filter(k => !['periodsForward', 'periodsBackward', 'predictionInterval', 'seasonality', 'customSeasonalityValue', 'lowerBoundary', 'upperBoundary'].includes(k));
+    if (unknown.length) { forecastProblem = `forecastConfigurations[0].${unknown[0]}: unsupported property`; return undefined; }
+    const intIn = (v: unknown, fallback: number): number | undefined =>
+      v === undefined ? fallback : typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 100 ? v : undefined;
+    const periodsForward = intIn(forecastObj.periodsForward, 3), periodsBackward = intIn(forecastObj.periodsBackward, 0);
+    if (periodsForward === undefined) { forecastProblem = 'forecastConfigurations[0].periodsForward: expected an integer between 0 and 100'; return undefined; }
+    if (periodsBackward === undefined) { forecastProblem = 'forecastConfigurations[0].periodsBackward: expected an integer between 0 and 100'; return undefined; }
+    const interval = forecastObj.predictionInterval === undefined ? 95 : forecastObj.predictionInterval;
+    if (![80, 90, 95].includes(interval as number)) { forecastProblem = 'forecastConfigurations[0].predictionInterval: prediction interval must be 80, 90 or 95'; return undefined; }
+    const seasonalityRaw = forecastObj.seasonality === undefined ? 'AUTOMATIC' : forecastObj.seasonality;
+    const seasonality = seasonalityRaw === 'AUTOMATIC' ? 'auto' as const : seasonalityRaw === 'NONE' ? 'none' as const
+      : seasonalityRaw === 'CUSTOM' && Number.isInteger(forecastObj.customSeasonalityValue) && (forecastObj.customSeasonalityValue as number) >= 2 && (forecastObj.customSeasonalityValue as number) <= 366
+        ? forecastObj.customSeasonalityValue as number : undefined;
+    if (seasonality === undefined) { forecastProblem = seasonalityRaw === 'CUSTOM' ? 'forecastConfigurations[0].customSeasonalityValue: a custom seasonality period between 2 and 366 is required' : 'forecastConfigurations[0].seasonality: unsupported value; expected AUTOMATIC, NONE or CUSTOM'; return undefined; }
+    const lower = forecastObj.lowerBoundary, upper = forecastObj.upperBoundary;
+    if (lower !== undefined && (typeof lower !== 'number' || !Number.isFinite(lower))) { forecastProblem = 'forecastConfigurations[0].lowerBoundary: expected a finite number'; return undefined; }
+    if (upper !== undefined && (typeof upper !== 'number' || !Number.isFinite(upper))) { forecastProblem = 'forecastConfigurations[0].upperBoundary: expected a finite number'; return undefined; }
+    const candidate: ForecastConfig = { enabled: true, periodsForward, periodsBackward, predictionInterval: interval as 80 | 90 | 95, seasonality,
+      ...(lower !== undefined ? { lowerBoundary: lower as number } : {}),
+      ...(upper !== undefined ? { upperBoundary: upper as number } : {}) };
+    if (!forecastConfigValid(candidate)) { forecastProblem = 'forecastConfigurations[0]: invalid forecast configuration'; return undefined; }
+    return candidate;
+  })() : undefined;
   if (body.opensightO !== undefined && !validOProvenance(body.opensightO)) throw new Error('Invalid Ask O provenance.');
   const visual: AuthorVisual = { ...defaults(), ...(validOProvenance(body.opensightO) ? { o: copy(body.opensightO) } : {}), ...(validInsight && body.insightConfiguration !== undefined ? { insightConfiguration: copy(obj(body.insightConfiguration)) } : {}), ...(paletteValid(body.opensightPalette) ? { palette: [...body.opensightPalette] } : {}), id, kind, title: string(obj(obj(body.title).formatText).plainText),
     ...(formattingValid(body.opensightFormatting) ? { formatting: copy(body.opensightFormatting) } : {}),
@@ -216,13 +265,17 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     ...(kind === 'histogram' && binsValid(config.opensightBins) ? { bins: config.opensightBins } : {}),
     // OpenSight extension: faceted kinds' Multiples Options panel state imports into the draft.
     ...(FACETED_KINDS.includes(kind) && multiplesOptionsValid(config.opensightMultiplesOptions) ? { multiplesOptions: copy(config.opensightMultiplesOptions) } : {}),
+    ...(FACETED_KINDS.includes(kind) && wells.smallMultiples !== undefined ? { smallMultiples: names(wells.smallMultiples) } : {}),
     // OpenSight extension: imported Group/Color sort imports into the draft.
     ...(importedGroupSort ? { groupSort: importedGroupSort } : {}),
     // OpenSight extension: imported pie slice limit imports into the draft.
     ...(importedSliceLimit ? { sliceLimit: importedSliceLimit } : {}),
+    ...(importedFacetLimit ? { facetLimit: importedFacetLimit } : {}),
     // OpenSight extension: imported waterfall breakdown limit imports into the
     // draft. The compiler validates on import that a Breakdowns field exists.
     ...(importedBreakdownLimit ? { breakdownLimit: importedBreakdownLimit } : {}),
+    // QuickSight ForecastConfigurations[0] imports into the draft (line only).
+    ...(importedForecast ? { forecast: importedForecast } : {}),
     // QuickSight Breakdowns well imports into the draft (waterfall only; the
     // compiler validates the field shape and count on import).
     ...(kind === 'waterfall' ? { breakdowns: names(wells.breakdowns).slice(0, 1) } : {}),
@@ -246,10 +299,19 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const checked = { [variant]: checkedBody };
   const dataSets = [...new Set(references(body))].map(identifier => ({ identifier, arn: definition.dataSetIdentifierDeclarations.find(d => d.identifier === identifier)?.dataSetArn }));
   const issues = Object.hasOwn(kinds, variant) ? differences(checked, projectVisual(visual, raw, (definition.calculatedFields ?? []).map(c => ({ name: string(obj(c).name), expression: string(obj(c).expression), role: 'dimension' }))), variant) : [`Unsupported visual type: ${variant}`];
-  if (kind === 'insight' || kind === 'radar' || kind === 'sankey' || kind === 'waterfall') {
+  // Line/area visuals carrying a forecast configuration get the same compiler
+  // normalization check Insight imports get (issue #263): the compiler's
+  // forecast gate is fail-closed, so a malformed configuration records a
+  // blocking diagnostic here instead of executing sanitized in the preview.
+  const forecastChecked = (kind === 'line' || kind === 'area') && config.forecastConfigurations !== undefined;
+  const issuesBeforeNormalize = issues.length;
+  if (kind === 'insight' || kind === 'radar' || kind === 'sankey' || kind === 'waterfall' || forecastChecked) {
     try { normalizeVisual('bundle', checked); }
     catch (error) { issues.push(error instanceof Error ? `${error.name}: ${error.message}` : String(error)); }
   }
+  // A strict-validation problem the compiler check did not surface still
+  // blocks: never let a rejected forecast import pass as a clean visual.
+  if (forecastProblem && issues.length === issuesBeforeNormalize) issues.push(`Forecast configuration: ${forecastProblem}`);
   if (dataSets.length > 1) issues.push('Multiple datasets in one visual are unsupported');
   visual.imported = { visualId: string(body.visualId), variant, dataSets, issues, unmappedFields: [],
     local: dataSets.length === 1 && localBinding(dataSets[0]!.arn, bundle, dataSets[0]!.identifier),
@@ -386,6 +448,7 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
         const meta = v.imported!;
         for (const name of [v.dimension, ...v.rows, ...v.columns, ...v.measures]) if (name && calculationProblems.has(name)) meta.issues.push(`Calculated field ${name}: ${calculationProblems.get(name)}`);
         messages.push(`Visual ${meta.visualId} (${meta.variant}): ${meta.local ? 'local sales binding' : `unresolved dataset ${meta.dataSets.map(d => d.arn ?? d.identifier).join(', ') || '(none)'}`}.`);
+        if (v.forecast) messages.push(`Visual ${meta.visualId}: forecast configuration mapped (statistical forecast, ${v.forecast.periodsForward} period(s) forward, ${v.forecast.predictionInterval}% prediction interval).`);
         for (const value of d.filterGroups ?? []) {
           const group = obj(value);
           if (!scopeResolved(group, d) && group.status !== 'DISABLED') {

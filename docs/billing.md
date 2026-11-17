@@ -10,10 +10,17 @@ until the separately authorized rollout.
 ## Configuration
 
 Billing is enabled only when the full Stripe configuration is present in
-the environment. With no Stripe variables set, billing is disabled and
-the product works exactly as before. A partial configuration is an
+the environment. With no Stripe variables set, conversion uses the
+[waiting list](waiting-list-conversion.md) (#241, D-93). Trial and tier quota
+settings are independent of Stripe configuration. A partial configuration is an
 operator error: the hosted server refuses to start
 (`BILLING_CONFIG_INVALID`).
+
+In non-reference, non-invocation hosted deployments, billing always composes
+quota enforcement, including when Stripe and self-serve signup are off (#241). Explicit
+`OPENSIGHT_ENTITLEMENTS` are validated and supply deployment defaults; without
+them, defaults remain unrestricted. Trial and paid tier entitlements override
+those defaults fail-closed, while operator tenants without billing keep them.
 
 | Variable | Meaning |
 | --- | --- |
@@ -25,8 +32,10 @@ operator error: the hosted server refuses to start
 | `OPENSIGHT_TRIAL_ENTITLEMENT` | Trial entitlement JSON, validated by the same shape; trial start requires it. |
 | `OPENSIGHT_BILLING_TIER_ENTITLEMENTS` | Optional JSON mapping tier names (`free`, `light`, `regular`, `heavy`) to entitlement objects in the `OPENSIGHT_ENTITLEMENTS` shape. Paid billing records require their tier entitlement; missing mappings deny fallback. Legacy stored `free` and operator-created tenants without billing preserve their existing operator defaults. |
 
-Keys and price IDs are configuration only. No key, card data, or customer
-payment detail is ever stored in OpenSight or appears in tests.
+API credentials remain configuration only. Billing operations snapshot the
+nonsecret Stripe price ID so a retry uses the original request. No secret key,
+card data, or customer payment detail is stored in billing operations; tests
+use synthetic Stripe identifiers and credentials.
 
 Tom's remaining steps (outside the product): create the Stripe account,
 create the three products/prices, and put the key, webhook secret, and
@@ -43,15 +52,172 @@ price IDs in the deploy environment.
    payment link bound to that tenant. Send the link to the customer; they
    pay on Stripe's pages.
 3. Stripe calls `POST /api/host/billing/webhook`. Configure the Stripe
-   webhook endpoint for `checkout.session.completed`,
+   webhook endpoint for `checkout.session.completed`, `checkout.session.expired`,
    `customer.subscription.created/updated/deleted`,
-   `invoice.payment_failed`, and `invoice.paid` events. The endpoint
+   `invoice.payment_failed`, `invoice.paid`, and `invoice.payment_succeeded` events. The endpoint
    verifies the Stripe signature against the raw body before trusting
    anything in it; events are applied exactly once (replays are durable
    no-ops), and every entitlement change lands in the operator audit
    trail with the Stripe event ID as the reference.
 4. `GET /api/host/tenants/{tenantId}/billing` shows the tenant's current
    tier, subscription status, trial deadline, access state and retention date.
+
+## Retry-safe creation (#227)
+
+Both payment-link and checkout creation first commit a pending row in
+`h9_billing_operations`: operation ID, unique idempotency key, tenant, kind,
+tier, original price ID, checkout origin when applicable, status and timestamps.
+Stripe object ID and URL are recorded on completion. Checkout operations also
+retain Stripe's session status and actual `expires_at` in Unix seconds (#248),
+separately from the operation's pending/completed/failed retry status.
+Every Stripe POST sends
+the stored key as `Idempotency-Key`; retries use the stored request, including
+after a configuration change or process restart.
+
+Reservation checks and insertion take the tenant lock used by webhook handling
+(`SELECT ... FOR UPDATE` on PostgreSQL, `BEGIN IMMEDIATE` on SQLite). A second
+transaction takes the same lock, rechecks tenant availability and the checkout
+subscription guard, reads the operation, and holds the lock through the Stripe
+POST and result commit. Concurrent callers wait and then return the committed
+result without another POST. This also coordinates separate service instances.
+The tradeoff is that a slow Stripe request holds a tenant lock on PostgreSQL
+and the metadata writer transaction on SQLite until it finishes. There is no
+in-memory reservation or lease timeout to recover after a process crash.
+
+- **Payment links:** the same tenant and tier reuse the completed `{id, url,
+  tier}` indefinitely. Different tenants or tiers have separate operations.
+  Completion writes `h9_billing_links` and `billing.payment_link.created` in
+  the same transaction, once per creation; reuse writes neither. Legacy link
+  bindings remain valid for webhooks, but their URLs were never stored, so
+  they cannot be reconstructed as reusable operation results.
+- **Checkout:** the second request returns the reserved session's `{id, url}`.
+  While the first POST is running, it waits for the database lock. Reservation
+  is per tenant across all tiers: requesting another tier still returns the
+  original session and its original tier, while it remains usable. A cached
+  URL is reusable only with recorded **`open` status and a future Stripe
+  `expires_at`**. There is no local 24-hour reuse window. At the exact expiry,
+  after consumption, or when lifecycle/expiry evidence is unknown (including
+  legacy rows), a fresh operation gets a fresh key. The execution transaction
+  rechecks eligibility because expiry or a webhook can intervene after selection.
+  Session state comes from Stripe's creation response and verified webhooks;
+  reuse does not perform a live Stripe lookup. `billing.checkout.created` fires once per
+  recorded creation, and checkout does not insert a payment-link binding.
+- **Failure and recovery:** Stripe failures return `STRIPE_REQUEST_FAILED`
+  (502) and commit `failed` with the original key and request. A retry resumes
+  that operation; a timeout or 5xx never authorizes a new key. If a process
+  dies before result commit, the committed reservation survives as pending
+  (or retains its earlier failed state) and the database releases its lock.
+  A subsequent caller can immediately resume it using the same key, including
+  a stale pending operation. Unresolved operations are never discarded because
+  of session expiry or a webhook. Reconciliation first resolves the original
+  key, then reserves a replacement if the returned session is unusable. It
+  never extends Stripe's expiry or overwrites terminal webhook evidence with
+  an old `open` POST response. A fresh response with unusable or unknown state
+  returns `STRIPE_REQUEST_FAILED` rather than returning its URL or creating
+  sessions indefinitely; its completed operation is not reusable.
+  Stripe's retention of its idempotency result
+  bounds recovery of an ambiguous external creation; this table does not
+  provide a separate Stripe-object lookup after that result is forgotten.
+
+The operation table participates in encrypted reference backups and tenant
+erasure. Initialization is additive and repeatable on SQLite and PostgreSQL.
+No new error code is introduced: invalid paid tiers remain
+`BILLING_TIER_INVALID` (400), unavailable tenants `TENANT_UNAVAILABLE` (403),
+missing checkout origin/client support `BILLING_CHECKOUT_UNAVAILABLE` (503),
+and a bound subscription other than `canceled` or `incomplete_expired` remains
+`BILLING_SUBSCRIPTION_EXISTS` (409), including when a reusable session exists.
+
+Checkout completion consumes the matching session even when unpaid or stale
+for entitlement reconciliation. Expiration retires the session without changing
+entitlements, access or subscription bindings. A stored session ID can resolve
+its tenant when a checkout webhook has no metadata. Accepted subscription
+lifecycle events conservatively consume earlier checkout reservations for that
+tenant, so cancellation followed by re-checkout cannot return the previous URL.
+Pending/failed reservations also retain terminal evidence for later timeout
+reconciliation. Stripe event creation time fences this invalidation: later
+reservations are unaffected (reservations in the same second are conservatively
+included). Terminal state never returns to `open`; replayed events remain no-ops.
+
+## Event reconciliation (#211, #242)
+
+The verified event must include a nonnegative integer `created` timestamp
+in Unix seconds; missing or invalid timestamps return `STRIPE_EVENT_INVALID`
+(400). Only the exact event types listed above can change billing. Other
+types, including unlisted `customer.subscription.*` types, are recorded in
+`h9_billing_events` as `ignored` without resolving or changing a tenant.
+
+Subscription and invoice events must refer to the tenant's currently bound
+subscription. A missing or different subscription is recorded as
+`foreign_subscription` and cannot change the tier, status, access, retention
+dates, customer or subscription binding. Tenant metadata and customer lookup
+locate a tenant; they do not authorize arbitrary updates or invoices to bind
+a subscription. Binding creation or replacement is limited to checkout
+completion with tenant metadata (or the existing stored operator payment
+link), and `customer.subscription.created` for the already-bound customer.
+Checkout resolved only through customer lookup cannot replace a binding.
+
+The billing row keeps independent subscription, invoice and checkout creation
+times in `stripe_ordering` (internal JSON). An event strictly older than its
+domain's watermark is `stale`; equal-second events are reconciled. The public
+`lastStripeEventCreated` remains the maximum creation time of any applied
+event, for diagnostics only. Invoice bookkeeping cannot suppress subscription
+updates, or vice versa. Rejected or ignored events advance neither value.
+The subscription check precedes ordering, so an event for a foreign
+subscription is classified as `foreign_subscription` even if it is older.
+
+Stripe timestamps have one-second precision and event IDs do not establish
+chronology. Reconciliation uses these explicit tie rules, without a Stripe
+lookup or treating delivery order as chronology:
+
+- Subscription status precedence, strongest first: `canceled`,
+  `incomplete_expired`, `unpaid`, `past_due`, `incomplete`, `trialing`, `active`.
+  Other statuses rank below these, with lexical ordering to resolve ties.
+  Access-changing subscription evidence follows the same precedence; a pause
+  wins over activation at the same second. Equal cancellation snapshots use
+  the earlier pause deadline. Incomplete and past-due events do not themselves
+  grant or revoke access.
+- Successful transitions supply tier evidence independently of status. A paid
+  checkout or an active subscription with a recognized price can convert a
+  trial (#212); invoices and incomplete/unpaid transitions cannot. A
+  trialing subscription also supplies tier evidence, but it does not convert
+  a trial (#243): while the trial deadline survives, the trial entitlement
+  and expiry govern, whatever paid tier is recorded, until an active
+  subscription or a paid checkout clears the deadline.
+  This evidence is retained even when a restrictive subscription status wins
+  the same-second tie: a paid tier may coexist with paused access. Newer tier
+  evidence wins; at the same second subscription evidence outranks checkout,
+  then the lower paid tier wins if successful prices conflict.
+- Invoice success wins over failure at the same second. A failed invoice
+  temporarily reports `past_due` only over an `active` subscription snapshot
+  that is strictly older. An equal/newer subscription snapshot takes priority.
+  Invoice success removes that invoice-only indication; invoices never grant
+  a tier, clear a trial deadline or restore paused access.
+- Checkout is a binding/conversion domain, not a subscription status snapshot.
+  Verified payment may grant a tier and restore access, subject to newer
+  subscription access evidence (and subscription precedence at equal seconds).
+  Replacing a different bound subscription still requires a strictly newer
+  checkout/subscription binding event than the existing binding, subscription
+  and checkout watermarks. Replacement resets the old subscription's ordering;
+  events older than the new binding remain stale. Same-binding checkout does
+  not prevent equal-second subscription or invoice reconciliation.
+
+Resolution, checks, event recording, billing writes and audit entries share
+one database transaction. PostgreSQL locks the tenant row before reading the
+billing state, including when no billing row exists yet; SQLite serializes
+writes with `BEGIN IMMEDIATE`. Replayed IDs remain durable no-ops, including
+IDs previously recorded as stale, foreign or ignored. Stale and foreign events
+do not send pause notifications or entitlement-change audits.
+
+Initialization adds the nullable ordering column using the existing guarded
+column migration and is safe to repeat. Legacy rows seed each domain from the
+old global watermark and their committed billing state, conservatively
+preserving the older-event fence; the old event log lacks Stripe creation
+times and cannot recover domain history from receipt times. Equal-second
+events can still reconcile. Rows without a historical watermark preserve their
+stored billing state without rejecting any valid creation time (including zero).
+Only compact billing evidence is stored, not raw Stripe
+payloads. Reconciliation evidence survives reload and shares the billing row's
+backup and erasure lifecycle.
 
 ## Past-due behaviour (amended by #197)
 
@@ -73,6 +239,20 @@ price IDs in the deploy environment.
   with `TRIAL_EXPIRED` (403) and audit reason `trial_expired`.
 - There is no automatic downgrade and no grace window beyond Stripe's
   retry cycle.
+
+## Scheduled work (#226)
+
+The hosted scheduler expires trials and checks billing access before admitting
+due jobs. Paused tenants create no new scheduled occurrences; their jobs stay
+enabled and due so the next tick can run them after payment restores access.
+Already queued occurrences fail with `TRIAL_EXPIRED` or
+`BILLING_ACCESS_PAUSED` before source access or `computeAttempts` admission.
+Execution rechecks and delivery checks also enforce billing, including before
+shared-digest rendering and its compute charge. A pause during work stops it at
+the next recheck; previously admitted compute is not refunded. Delivery denials
+record the billing code on the cancelled delivery without stopping the job.
+The hook is optional for compositions without hosted billing; manual enqueue
+retains its existing request gate and claim semantics.
 
 ## Scope notes
 

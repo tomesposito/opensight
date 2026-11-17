@@ -1,3 +1,5 @@
+import { athenaScalarSql } from './athena-sql.js';
+import { redshiftScalarSql } from './redshift-sql.js';
 import { mysqlScalarSql } from './mysql-sql.js';
 import { functionReference } from './catalog.js';
 import { datetimeValue, datetimeSql } from './datetime.js';
@@ -50,7 +52,9 @@ export function scalarValue(name: string, args: readonly ResultValue[]): ResultV
   }
 }
 export function scalarSql(e: CallExpression, dialect: SqlDialect, compile: (e: RowExpression) => string): string {
+  if (dialect === 'athena') return athenaScalarSql(e, compile);
   if (dialect === 'mysql') return mysqlScalarSql(e, compile);
+  if (dialect === 'redshift') return redshiftScalarSql(e, compile, () => scalarSql(e, 'postgres', compile));
   if (functionReference(e.name)?.stage === 'aggregate') {
     const a = compile(e.args[0]!);
     if (e.name === 'distinct_count') return `COUNT(DISTINCT ${a})`;

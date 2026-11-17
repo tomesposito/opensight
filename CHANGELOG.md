@@ -11,7 +11,257 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ## [Unreleased]
 
+### Changed
+
+- Forecast grid search work is now bounded (issue #262): the seasonal state rotates through a ring buffer (O(1) per observation instead of an O(season-length) array copy), fitted values are retained only for each candidate's winning grid point, and a step budget (`MAX_FORECAST_GRID_STEPS`) steps very long series down to deterministic coarser grid tiers — the maximum-seasonality case (season 366, 732 observations) still runs the full grid, with identical results on ordinary series.
+
+- Docs pages now carry the full OG/Twitter social block with the shared og-image and each page's own title and description; docs pages link the pricing page, the migration guide links the QuickSight alternative and pricing pages, the alternatives/versus pages cross-link the QuickSight alternative page, pricing links onward to the alternatives and migration pages, and pricing serves a SoftwareApplication JSON-LD with the hosted tier offers (#239).
+
+- Marketing meta batch: the page titles and meta descriptions on the home, pricing, QuickSight/Tableau/Power BI alternatives, Metabase/Superset versus and docs pages now match the approved values exactly — no truncated titles and no auto-truncated excerpt descriptions on those pages; the docs generator carries the approved docs values as explicit meta overrides (#238).
+
 ### Added
+
+- Prep joins offer name/type key suggestions that require confirmation and labeled Venn choices; every transformation exposes read-only shared-compiler SQL and named compile errors (issue #279). Join match diagnostics remain blocked on bounded input previews.
+
+- Dataset preparation now offers structured and bounded advanced Window steps for ranking, running/moving calculations, lag/lead and buckets, a Keep first/latest row per group recipe, and optional full-row append deduplication (issue #278).
+
+- Persona Journey 11 covers notebook authoring, governed SQL totals, published run views, explicit re-runs after data changes, calibrated result byte limits and history eviction, plus the hosted availability boundary; it records the current hosted 503/error-banner regression against the designed unavailable notice (issue #277).
+
+- RDS, Aurora and Redshift auto-discovery is now implemented as a library discovery service over the RDS API (issue #274): DB instances and clusters in the configured region are classified by engine into the matching manual connector (PostgreSQL, MySQL, MariaDB, Redshift manual), returning endpoints and identifiers only — never credentials — and a discovered resource becomes a source config built from user-supplied environment variable names, validated by the manual connector's own rules. Fake SDK coverage verifies classification, pagination and the no-credentials rule; hosted provisioning and live AWS verification remain follow-on work.
+
+- S3 objects can now become hosted file sources and prepared datasets, with bounded prefix browsing, operator-allowlisted environment-name configuration, all five upload formats, and the existing file/XLSX size guards (#273). Fake SDK coverage verifies the flow; live AWS verification is Tom's follow-on.
+
+- Athena now has a library query connector with a dedicated SQL dialect, typed results, bounded polling/pagination, timeout and abort cancellation, and sanitized failures (issue #272). Fake SDK tests verify the execution flow; hosted provisioning and live-account verification remain follow-on work.
+
+- Manual Redshift sources now support registered-table discovery, dataset preparation and direct/BLAZE visual queries with tenant/RLS/CLS enforcement, credential rotation and a dedicated SQL layer over the existing pg driver (issue #271). Loopback coverage verifies wire flow and generated SQL; live-cluster verification remains pending.
+
+- MySQL and MariaDB hosted sources now support registered-table discovery, dataset preparation, direct/BLAZE visual queries, tenant/RLS/CLS enforcement and credential rotation, with matching-source selection in the app (issue #270).
+
+- Native and hosted query planning now supports Insight visuals: the secured
+  planner derives dimensions and measures from the insight computations
+  (forecast, period-to-date, unique values with a plan-only COUNT carrier,
+  and top/bottom movers over category and time), validated with the same
+  rules as bundle import, so insight dashboards plan through the hosted path
+  with row- and column-level security intact (#257).
+
+- Live-result cache statistics now report active fills and tracked fill keys,
+  with executor regressions that detect retained fill state after distinct local
+  and PostgreSQL failures (#246).
+
+- Insight top/bottom movers computations, ranking categories by percent or
+  absolute change in the bound measure between the latest dated period and the
+  preceding calendar period, with validated native import/export, disclosed
+  exclusions and honest unavailable sentences (parity-insight-top-bottom-movers,
+  phase-plan fallback; no GitHub issue).
+
+- Insight unique-values computations and an authoring preset, listing the
+  distinct bound-category values in deterministic typed order, with validated
+  native import/export and category-only execution for visuals whose
+  computations are all UniqueValues (parity-insight-unique-values, phase-plan
+  fallback; no GitHub issue).
+
+- Insight period-to-date computations and a date-required authoring preset, with
+  UTC calendar-period totals, validated native import/export, null disclosure and
+  honest unavailable reasons (parity-insight-period-to-date, phase-plan fallback;
+  no GitHub issue).
+
+- Insight forecast computations and a date-required authoring preset, using the
+  shared statistical forecast engine for the final projected value and prediction
+  interval, with validated native import/export and honest unavailable states
+  (parity-insight-forecast, phase-plan fallback; no GitHub issue).
+
+- Detailed tooltips for radar polygons and sankey links, with governed value
+  formats and field visibility. Sankey nodes keep basic text; aggregate extra
+  fields warn instead of inventing row values (parity-radar-sankey-tooltip,
+  phase-plan parity slice; no GitHub issue).
+
+- Detailed tooltips for waterfall visuals: delta bars (plain and breakdown
+  mode) show their source row's category, breakdown, measure and extra
+  fields, while subtotal, Other and Total bars keep the basic tooltip
+  (parity-waterfall-tooltip, phase-plan fallback; no GitHub issue).
+
+- Detailed tooltips for treemaps, word clouds, box plots and histograms, with
+  hierarchy/weight values, group statistics and bin frequencies. Leaf/word
+  extras follow their source rows; box/histogram extras warn instead of showing
+  fabricated values (parity-tooltip-aggregate, phase-plan fallback; no GitHub issue).
+
+- Statistical forecasts on date-based area charts, including each measure in
+  small-multiples panels: dashed fitted/future segments, prediction intervals,
+  Forecast properties, and editable bundle import/export (parity-forecast-area,
+  extends #235).
+
+- Small multiples panel limits in Multiples Options, with first-N panels and
+  optional merged Other totals shared by charts, detailed tooltips and view-data;
+  limits and facet fields survive editable bundle import/export (parity-sm-limit,
+  phase-plan fallback; no GitHub issue).
+
+- Hosted workspaces can request Light, Regular or Heavy plans when Stripe is unconfigured, change or withdraw a pending request, and keep their data without a retention countdown while waiting. Operators can review the queue, grant plans immediately or decline requests; request notifications and grant confirmations explain that no payment is taken (#241).
+
+- Statistical forecasting on line charts with a date dimension: a dashed forecast continuation with a shaded prediction interval (80/90/95%), fitted values for trailing periods, and Auto/None/Custom seasonality, computed with exponential smoothing (ETS/Holt-Winters, corrected-AIC model selection) in the web layer so author view, dashboards, small multiples, and PDF export agree. Edited in the Properties panel's Forecast section; QuickSight `ForecastConfigurations` import and export round-trip, with boundaries applied as clamps. Series with fewer than 4 points render actuals with a quiet note instead of a forecast (#235).
+
+### Fixed
+
+- The generated connectors docs page is current again (#284): it now
+  describes the shipped S3, MySQL/MariaDB, Redshift and Athena connectors
+  instead of the pre-connector-batch text. The stale page also failed the
+  site check that runs in the CI test stage, taking master CI red.
+
+- Insight top/bottom movers now reject category/time bindings that resolve
+  against wells listed in the opposite order (#268): normalization resolves
+  each computation's category and time bindings and fails with
+  `INSIGHT_FIELD_UNBOUND` when they are not the category dimension first
+  and the time dimension second, instead of discarding the resolved indexes
+  and executing with the fields swapped (a date-decoding failure for a
+  categorical field, or silently wrong grouping/period semantics with two
+  date fields). Multiple movers computations with inconsistent
+  category/time roles against the same wells are rejected the same way.
+
+- Insight configurations are now validated completely before any author
+  query is issued (#267): draft admission rejects malformed native
+  configurations (unknown variants, unsupported properties, duplicate
+  computation IDs, custom narratives, mixed top/bottom-movers collections),
+  query construction applies the compiler's structural and field-binding
+  validation against the visual's own wells and fails closed with no query
+  instead of substituting an ordinary query, and bundle import now enforces
+  the same Movers-only collection rule as the compiler in both dialects.
+
+- Insight unique-values narratives are now bounded (#266): at most 20
+  categories are named in the sentence, each label is truncated at 100
+  characters, and the named text is capped at 1,000 characters in total,
+  with the omitted category count disclosed in the sentence. The complete
+  authorized result remains available through View data/export.
+
+- Insight top/bottom movers now reject duplicate decoded category/period
+  pairs (#265): two rows for the same category whose time values are
+  different spellings of the same period (for example `2024-01` and
+  `2024-01-01` under a MONTH grain) fail with `INSIGHT_VALUE_INVALID`
+  instead of one silently overwriting the other and making the ranking
+  depend on input order.
+
+- Waterfall detailed tooltips now escape rich-text markup in aggregate
+  (subtotal/Other/Total) bar labels and values (#264): a category name
+  containing markup such as `{style|text}` displays literally in the
+  aggregate fallback, matching the delta-bar detailed path, instead of
+  being interpreted as ECharts rich text.
+
+- Imported line/area forecast configurations are now validated in full before
+  any editable state is built (#263): a malformed configuration — a string
+  boundary, an unknown property, an inverted boundary pair, or any other
+  invalid shape — no longer has the offending value silently dropped and a
+  sanitized forecast executed in the preview. It stays out of the draft, the
+  original definition is preserved verbatim for export, and a blocking
+  diagnostic from the compiler normalization check stops the preview.
+
+- Forecasts over very large finite values (residuals near 1e200) no longer
+  produce infinite prediction endpoints: the fit scoring and interval width
+  are computed in a numerically stable scaled/log form, nonfinite fits are
+  rejected, and when no finite model remains the chart and Insight surfaces
+  show their unavailable state instead of invalid numbers (#261).
+
+- Notebooks on a server without notebook routes (including the hosted app
+  in v1) now show the designed "not available on this server" notice
+  instead of a red banner carrying a raw JSON parse error; the API client
+  names unreadable response bodies as API_RESPONSE_INVALID with the HTTP
+  status instead of leaking the parser's TypeError to any page (#281).
+
+- Forecast model selection now uses one common criterion for every
+  candidate: corrected AIC when every candidate's correction is defined,
+  plain AIC for all candidates when any correction is undefined (too few
+  observations for that candidate's parameter count). The old per-candidate
+  fallback let a complex candidate escape the correction entirely and beat
+  simpler candidates that paid it in full — five constant points picked
+  Holt over level-only despite identical zero residual error (#260).
+
+- Forecast dates are now canonicalized consistently across charts and
+  Insight: both surfaces share one chronological preparation that sorts by
+  decoded period, rejects two rows that decode to the same period (raw
+  aliases such as `2025-01` and `2025-01-01T00:00:00Z` at MONTH grain are
+  one period, not two observations), and anchors future dates to the
+  latest period — including a trailing null group — instead of the last
+  row in display order. Reordered or descending chart rows no longer
+  change the fitted history, and fitted values map back to the displayed
+  rows they belong to (#259).
+
+- Forecast prediction intervals are now clipped consistently: the estimate
+  and both interval endpoints share one clipping range built from the
+  imported lower/upper boundaries and the automatic zero floor for
+  non-negative histories, so a boundary outside the raw interval can no
+  longer leave a reversed range — charts no longer receive negative band
+  widths and Insight no longer displays intervals backwards (#258).
+
+- Forecast line and area charts now plan through the native/hosted query
+  planner: `ForecastConfigurations` and the line `Type` are validated against
+  the same contract as the web compiler (period bounds, prediction interval,
+  seasonality, boundaries) instead of failing with `UNSUPPORTED_FEATURE`, and
+  a forecast without a date dimension fails closed. Insight visuals remain
+  unsupported in the native planner (#257, forecast increment).
+
+- Trial expiry now serializes with paid-plan requests and their resolution, so
+  a concurrent decline or withdrawal cannot leave a paused workspace without
+  a retention deadline. Pending requests still hold retention, and grants
+  restore access (#256).
+
+- Session billing state no longer discloses the paid-plan requester's email
+  address to non-administrator workspace members: `requestedByEmail` is
+  included only in administrator and operator billing views, for pending and
+  resolved requests alike (#253).
+
+- Operator retries of dead-lettered job deliveries are now cumulatively
+  bounded: a delivery's total attempts and retry sequences are counted
+  durably and never reset, and after 2 retries or 30 total attempts a
+  further retry is refused with `DELIVERY_RETRY_BUDGET_EXHAUSTED`, so one
+  delivery can no longer be rearmed through unlimited dead-letter cycles
+  (#252).
+
+- Job mail delivery now enforces its 10-attempt limit during crash recovery,
+  pending claims and receipt failures after SMTP acceptance. Exhausted
+  deliveries dead-letter and settle their occurrences instead of sending again
+  or retrying indefinitely (#251).
+
+- Access-request notification leases now start when each row is claimed, not
+  when the batch started, so a notification batch slower than the five-minute
+  lease can no longer have a later row claimed by a competing notifier during
+  its live send and emailed twice (#250).
+
+- Hosted Ask O answer receipts now prune expired answers and abandoned
+  reservations in indexed, bounded batches across distinct keys, protect active
+  replays, and enforce configurable per-tenant entry and payload limits (#249).
+
+- Checkout reuses a URL only while its Stripe session is open and unexpired;
+  cancellation, consumption and early expiry now allow a fresh checkout, and
+  delayed timeout reconciliation no longer extends the old session's lifetime
+  (#248).
+
+- Analytics outbox selection now deserializes and validates each persisted row
+  independently: a malformed restored, legacy or corrupted row is quarantined
+  with a named reason and skipped, so valid rows from other tenants keep
+  draining and the malformed event is never transmitted (#247).
+
+- Input-table audit history now has per-table and store-wide serialized-byte
+  budgets alongside entry-count limits, bounding retained large-text changes.
+  Paginated audit reads clone only authorization metadata and the requested
+  visible page, avoiding allocations for table rows and off-page history (#245).
+
+- Input-table row edits now require the table version the editor loaded, so
+  missing or stale versions cannot silently overwrite another editor's changes.
+  Rejected saves leave data, version and audit unchanged; reload and reconcile
+  before retrying (#244).
+
+- A Stripe subscription still in its trialing state no longer converts a hosted trial: the paid tier is recorded as evidence, but the trial deadline and trial entitlement stay in force — and expiry still pauses access — until an active subscription or a paid checkout verifies payment (#243).
+
+- Stripe events for the same bound subscription created in the same second now converge on the same hosted tier, subscription status and access state regardless of delivery order. Invoice, subscription and checkout ordering are separate, while older events within each domain, duplicate replays and foreign subscriptions remain fenced (#242).
+
+- Hosted migrations against Postgres no longer fail with `relation "sqlite_master" does not exist`: the runtime and serverless migration paths now pass their dialect explicitly into the auth/job schema initializers instead of reading it off a transaction connection that does not carry one, so the #233 delivery dead-letter upgrade inspects `pg_constraint` on Postgres (#240).
+
+- Marketing site hygiene: the sitemap no longer lists the `/demo/` app shell or the cross-host `https://app.getopensight.org/` login shell, and the built demo artifact serves a `noindex, follow` robots meta so the app shell stays out of the index while demo links keep working as CTAs (#237).
+
+- Job mail delivery retries are now bounded: after 10 attempts a delivery dead-letters instead of rescheduling forever, its occurrence settles as `JOB_DELIVERY_EXHAUSTED`, and later periods of the job are admitted again. The job owner or a tenant administrator can retry a dead delivery in place — same delivery and dedupe key, fresh attempt sequence — from the automation page or `POST /api/jobs/:id/deliveries/:deliveryId/retry` (#233).
+
+- Decision D-77 now records that its paid-tier SLA commitment is superseded by the #210 Terms, which include no service-level agreement or uptime guarantee in version 1.0, so pricing and implementation work cannot restore the removed promise from the historical decision text (#234).
+
+### Added
+
+- Terms of Service and Privacy Policy published as site pages at `/legal/terms/` and `/legal/privacy/`, linked from every site footer (and from the signup page's terms line) and listed in the sitemap; the pricing page and the open-economics doc no longer promise an SLA (#210).
 
 - Dependabot configuration covering the npm workspaces and the SHA-pinned GitHub Actions on a weekly schedule, opening labeled update PRs against the triage bar in `docs/dependency-triage.md` (#111).
 
@@ -170,6 +420,46 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Access-request operator notifications are now claimed atomically before sending, so concurrent submissions or maintenance calls can no longer email the operator twice about the same request; a claim whose sender died mid-send is recovered when its five-minute lease lapses (#232).
+
+- Digest audience resolution no longer clones the whole workspace catalog once per recipient: metric authorization for previews and scheduled deliveries now uses a targeted read of the principal, groups, metric, dataset and folder chain, with identical errors and grant semantics (#231).
+
+- Hosted Ask O checks cancellation before charging and preserves validated answers with optional Idempotency-Key receipts, allowing retries after response loss without another generation or charge (#229).
+
+- Ask O conversational revision no longer silently overwrites manual edits: if a stamped tile's filters or field assignments were changed with the normal editors after Ask O created it, revision is blocked with a VISUAL_EDITED explanation before any AI call or credit, instead of replacing the tile from the older interpretation (#228).
+
+- Stripe payment-link and checkout retries now reuse durable operations and idempotency keys; concurrent requests share one result, payment links remain reusable, and checkout reservations expire 24 hours after result persistence (#227).
+
+- Hosted scheduled jobs now honor trial expiry and billing pauses before admission, execution and delivery rendering, avoiding compute charges for work denied by billing and preserving schedules for when access is restored (#226).
+
+- Hosted API-call and query quotas are now enforced per UTC calendar month, matching the published terms and pricing; operator usage shows the same monthly totals (#225).
+
+- Access-request operator notifications now hash their dedupe key into the 64-character hex format the production SMTP transport accepts, so the oldest pending request no longer blocks every later notification in production (#224).
+
+- Deferred analytics delivery skips disabled and inactive tenants before filling each batch, so their pending events cannot block enabled tenants; retained events become deliverable again when analytics is re-enabled or the tenant returns to active (#223).
+
+- Live-result cache metadata is now bounded by in-flight work: failed query fills release their markers through a token-aware `releaseFill` called from both executors' `finally` paths, and invalidation prefix generations are kept only while an active fill can observe them instead of accumulating forever (#222).
+
+- Input-table audit history now retains the newest 1,000 entries per table and 10,000 overall, with optional pagination; single-table and audit reads clone only the requested slices. Legacy stores still load and retained row details remain intact (#220).
+
+- Concurrent input-table cell edits preserve each other's changes and record accurate audit values. Optional version checks reject stale saves, and the row editor uses them to prevent overwriting newer table data (#219).
+
+- The open-economics guard (#165) now exercises executable checks instead of prose alone: behavior tests prove row-level security, the audit log, basic embedding and the identity verifier seam work under every billing tier's entitlement, the entitlement parsers reject governance feature-flag fields, and the site guard scans every published site page, pricing and comparison pages included (#215).
+
+- Hosted egress caps reserve the remaining allowance before sending a response, preventing concurrent requests from multiplying the permitted single-response overshoot. Failed accounting retains the reservation so later requests remain denied (#214).
+
+- Existing hosted tenants keep their configured quotas and billing tier limits enforced when self-serve signup is disabled (#213).
+
+- A trial workspace no longer converts to paid entitlements before payment succeeds: an unpaid checkout or an incomplete subscription now binds and is recorded without assigning the paid tier or clearing the trial expiry, and conversion happens only on a verified paid checkout or an active subscription (#212).
+
+- Delayed Stripe events can no longer restore canceled access, undo tier upgrades, or replace the current subscription through unrelated subscription updates or invoices. Billing now checks event creation order and subscription bindings atomically, and ignores unlisted event types (#211).
+
+- Reject unsupported API paths before scanning large browser headers at the edge, avoiding a CloudFront regex-limit failure during release validation (#199).
+
+- Include the social preview image and all approved pricing, comparison, documentation and dark signup pages in the attested marketing archive, with explicit public routes and reference checks (#183, #184, #185, #186, #187, #197).
+
+- Durable job deliveries (digests, reports, alerts) that fail with a load cancellation — execution-budget `EXECUTION_CANCELLED` or queue-wait `QUEUE_WAIT_EXCEEDED` — now retry with the existing durable backoff instead of being cancelled permanently, keeping delivery at-least-once as decided in HQ-13 (#199).
+
 - Imported visuals' tooltip field references no longer leak foreign QuickSight field IDs into live queries after remap; unresolvable tooltip references stay retained/read-only for export (#195).
 
 - Imported visuals whose only issues are retained, read-only properties now render once remapped to a local dataset with their wells assigned: the retained properties stay named in the import report and are preserved verbatim on export, but are not executed. Unsupported visual types, filter-group and calculated-field issues, and compile errors still block rendering (#191).
@@ -272,6 +562,44 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Security
 
+- Operator grant/decline of a waiting-list paid request is now bound to the
+  tier the operator reviewed: both operator surfaces send the displayed tier
+  as a required precondition, and if the tenant changed the tier after the
+  operator loaded the request, the resolution is rejected with
+  `BILLING_PAID_REQUEST_TIER_CHANGED` and the request stays pending for a
+  fresh review — a stale screen can no longer grant a tier nobody reviewed
+  (#255).
+- Waiting-list paid requests now recheck the requester's current administrator
+  role, active membership, and active identity inside the mutation's locking
+  boundary, for create, tier change, and withdrawal alike: a downgrade or
+  suspension landing after the route's initial administrator check can no
+  longer complete a paid request (#254).
+- Notebook retained results are now bounded by aggregate byte budgets, not
+  only per cell: a run retains at most 8 MiB of result payloads
+  (`NOTEBOOK_RESULT_BUDGET_EXCEEDED` past that), each notebook at most 64 MiB
+  across its runs and snapshots, and the store at most 256 MiB, with
+  oldest-run eviction and snapshot saves refused past budget; the budgets are
+  configurable via `OPENSIGHT_NOTEBOOK_RUN_BYTES`,
+  `OPENSIGHT_NOTEBOOK_NOTEBOOK_BYTES` and `OPENSIGHT_NOTEBOOK_STORE_BYTES`
+  (#230).
+- XLSX uploads now validate actual ZIP inflation before spreadsheet parsing,
+  enforcing the 16 MiB member and 64 MiB total limits even when headers lie;
+  contradictory local/central metadata, data descriptors and ZIP64 overrides
+  fail closed (#221).
+- Input-table mutations now recheck the caller's editor/manager authorization
+  inside the serialized store change, against the current table and current
+  role: an editor whose grant is revoked while their request body is in
+  flight, or while the write is queued, can no longer commit a row add,
+  patch, delete, rename, editor change, or table deletion (#218).
+- Managed-AI connection tests in the admin AI settings now pass the same
+  pre-call spend gate as answers and record their provider tokens in the
+  spend ledger (still zero delivered-answer credits), so repeated tests can
+  no longer run past the daily spend cap or hide their operator cost (#217).
+- The dark-by-default signup flag is now enforced on the namespace-scoped
+  checkout route as well as the literal one: with signup disabled, an
+  authenticated administrator can no longer create a Stripe checkout session
+  through `/api/namespaces/<ns>/signup/checkout`; billing state stays
+  readable with `checkoutEnabled: false` (#216).
 - XLSX uploads are now rejected before parsing when the workbook's declared
   uncompressed ZIP sizes exceed the ceilings (16 MiB per member, 64 MiB
   total, 1000 members), so a small high-ratio file can no longer inflate

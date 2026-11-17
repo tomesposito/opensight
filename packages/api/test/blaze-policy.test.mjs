@@ -17,3 +17,12 @@ test('Blaze requirements follow output ancestry including right-step inputs and 
   datasets[0].pipeline = { ...pipeline, output: 'sum' };
   assert.match(materializationReason('child', datasets), /aggregate/);
 });
+
+test('single-input window and keep-first filter steps stay on the direct path', () => {
+  const window = { id: 'window', kind: 'window', config: { name: 'position', function: 'rowNumber', partitionBy: [], orderBy: [{ column: 'id', direction: 'asc' }] } };
+  const filter = { id: 'filter', kind: 'filter', config: { filters: [{ columnName: 'position', operator: 'EQUALS', value: 1 }] } };
+  for (const steps of [[window], [window, filter]]) {
+    const pipeline = { version: 1, input: 'table', steps };
+    assert.equal(materializationReason('test', [{ id: 'test', pipeline, mode: 'DIRECT_QUERY' }]), null);
+  }
+});

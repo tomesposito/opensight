@@ -56,7 +56,7 @@ test('SR1 edge contract rejects caller forwarding/identity headers, duplicate si
 });
 
 test('SR1 pre-DB method validation matches existing data and job routes', () => {
-  for (const [path, methods] of [['/api/api/sources/id/rows', ['POST']], ['/api/api/sources/id/output', ['POST']], ['/api/api/sources/id/policy', ['GET']], ['/api/api/uploads/upload_id', ['GET']], ['/api/api/jobs/id/runs', ['GET', 'POST']], ['/api/api/auth/login', ['POST']], ['/api/api/auth/login/select', ['POST']]]) {
+  for (const [path, methods] of [['/api/api/connectors/s3/browse', ['POST']], ['/api/api/sources/id/rows', ['POST']], ['/api/api/sources/id/output', ['POST']], ['/api/api/sources/id/policy', ['GET']], ['/api/api/uploads/upload_id', ['GET']], ['/api/api/jobs/id/runs', ['GET', 'POST']], ['/api/api/auth/login', ['POST']], ['/api/api/auth/login/select', ['POST']]]) {
     for (const method of ['GET', 'POST', 'PUT', 'DELETE']) {
       if (methods.includes(method)) assert.equal(adaptGatewayRequest(event(path, method), runtimeEnv()).method, method);
       else assert.throws(() => adaptGatewayRequest(event(path, method), runtimeEnv()));

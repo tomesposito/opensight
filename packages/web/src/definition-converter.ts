@@ -127,6 +127,9 @@ const visualBody: Schema = {
     CustomNarrative: ['customNarrative', members('Narrative')], Interactions: ['interactions', interactions],
     Computations: ['computations', Object.fromEntries(['TotalAggregation', 'MaximumMinimum', 'TopBottomRanked', 'GrowthRate', 'PeriodOverPeriod', 'MetricComparison', 'Forecast', 'PeriodToDate', 'TopBottomMovers', 'UniqueValues'].map(name => [name, [name[0]!.toLowerCase() + name.slice(1), {
       ...members('ComputationId Name Type ResultSize PeriodSize PeriodsForward PeriodsBackward PredictionInterval Seasonality CustomSeasonalityValue LowerBoundary UpperBoundary'),
+      ...(name === 'Forecast' ? { ForecastProperties: ['forecastProperties', members('PeriodsForward PeriodsBackward PredictionInterval Seasonality CustomSeasonalityValue LowerBoundary UpperBoundary')] as Rule } : {}),
+      ...(name === 'PeriodToDate' ? members('PeriodTimeGranularity') : {}),
+      ...(name === 'TopBottomMovers' ? members('MoverSize SortOrder') : {}),
       Time: ['time', dimension], Category: ['category', dimension], Value: ['value', measure], FromValue: ['fromValue', measure], TargetValue: ['targetValue', measure],
     }] as Rule]))],
   }],
@@ -163,6 +166,7 @@ const visualBody: Schema = {
       Comparison: ['comparison', { ComparisonMethod: ['comparisonMethod'], ComparisonFormat: ['comparisonFormat', numberFormat] }],
       VisualLayoutOptions: ['visualLayoutOptions', { StandardLayout: ['standardLayout', members('Type')] }],
     }],
+    ForecastConfigurations: ['forecastConfigurations', members('PeriodsForward PeriodsBackward PredictionInterval Seasonality CustomSeasonalityValue UpperBoundary LowerBoundary')],
     DonutOptions: ['donutOptions', { ArcOptions: ['arcOptions', { ArcThickness: ['arcThickness'] }] }],
     DataLabels: ['dataLabels', labels],
     Legend: ['legend', members('Visibility Position Width')],

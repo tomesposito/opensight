@@ -1,8 +1,9 @@
 import { validOProvenance } from './o-provenance.js';
 import { formatMetric } from './governed-metrics.js';
-import { formatNumber } from '@opensight/query-engine/browser';
+import { formatNumber, groupedPeriodDate, shiftDate, resultDate } from '@opensight/query-engine/browser';
+import { computeForecast, forecastConfigValid, MIN_FORECAST_POINTS, prepareChronological, type ForecastConfig } from './forecast.js';
 import { convertDefinition } from './definition-converter.js';
-import { InsightError, projectInsightBody, normalizeInsight } from './insight-configuration.js';
+import { InsightError, projectInsightBody, normalizeInsight, uniqueValuesOnly, topBottomMoversOnly } from './insight-configuration.js';
 import { insightNarrative, type InsightNarrative } from './insight-narrative.js';
 import { insightGraphic } from './insight-graphic.js';
 import { LIGHT_THEME, themeValid, paletteValid } from './themes.js';
@@ -13,7 +14,7 @@ import type { Cell, Field, FixtureVisual, MultiplesOptions, Row, VisualModel } f
 import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
 import { applyDisplayOptions, legendTextStyle } from './display-options.js';
-import { FACETED_KINDS, facetLayout, facetPanelGrids, facetTitles, groupRowsByFacet } from './facet-layout.js';
+import { FACETED_KINDS, applyFacetLimit, facetLayout, facetPanelGrids, facetTitles, groupRowsByFacet, type FacetGroup } from './facet-layout.js';
 
 export const DATA_REQUIRED_LABEL = 'Needs data';
 
@@ -29,6 +30,9 @@ export interface CompiledVisual {
     dimensionCount?: number; measureIndices?: number[][];
     /** Typed row-group path per row (pivot only): subtotal rows carry their prefix, the grand total carries []. */
     rowGroupPaths?: Cell[][] };
+  /** Quiet note rendered under the chart for a render-time forecast state
+   *  (issue #235): insufficient history, or a skipped seasonal fit. */
+  forecastNote?: string;
   state: 'ready' | 'empty' | 'unavailable';
 }
 
@@ -69,6 +73,44 @@ function extensionReferenceLines(value: unknown, path: string): { referenceLines
   return { referenceLines: value
     .filter(line => !!line && typeof line === 'object' && !Array.isArray(line) && typeof (line as { value?: unknown }).value === 'number' && Number.isFinite((line as { value: number }).value))
     .map(line => { const raw = line as { value: number; label?: unknown; color?: unknown }; return { value: raw.value, label: String(raw.label ?? ''), color: String(raw.color ?? '#c0392b') }; }) };
+}
+
+/** QuickSight LineChartConfiguration.ForecastConfigurations[0] → the model's
+ *  forecast config (issue #235). Fail-closed on malformed shapes, like every
+ *  other configuration gate; only the first configuration maps (the rest are
+ *  noted in warnings by the caller-visible parse result). */
+function parseForecastConfigurations(value: unknown, key: (a: string, b: string) => string, path: string): { forecast?: ForecastConfig; extra: number } {
+  if (value === undefined) return { extra: 0 };
+  if (!Array.isArray(value)) fail(path, 'expected an array');
+  if (!value.length) return { extra: 0 };
+  const raw = object(value[0], `${path}[0]`);
+  keys(raw, [key('periodsForward', 'PeriodsForward'), key('periodsBackward', 'PeriodsBackward'), key('predictionInterval', 'PredictionInterval'), key('seasonality', 'Seasonality'), key('customSeasonalityValue', 'CustomSeasonalityValue'), key('upperBoundary', 'UpperBoundary'), key('lowerBoundary', 'LowerBoundary')], `${path}[0]`);
+  const intIn = (v: unknown, fallback: number, name: string): number => {
+    if (v === undefined) return fallback;
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 100) fail(`${path}[0].${name}`, 'expected an integer between 0 and 100');
+    return v as number;
+  };
+  const intervalRaw = raw[key('predictionInterval', 'PredictionInterval')];
+  if (intervalRaw !== undefined && ![80, 90, 95].includes(intervalRaw as number)) fail(`${path}[0].${key('predictionInterval', 'PredictionInterval')}`, 'prediction interval must be 80, 90 or 95');
+  const seasonalityRaw = enumValue(raw[key('seasonality', 'Seasonality')], ['AUTOMATIC', 'NONE', 'CUSTOM'], 'AUTOMATIC', `${path}[0].${key('seasonality', 'Seasonality')}`);
+  const customRaw = raw[key('customSeasonalityValue', 'CustomSeasonalityValue')];
+  if (seasonalityRaw === 'CUSTOM' && (typeof customRaw !== 'number' || !Number.isInteger(customRaw) || customRaw < 2 || customRaw > 366)) fail(`${path}[0].${key('customSeasonalityValue', 'CustomSeasonalityValue')}`, 'a custom seasonality period between 2 and 366 is required');
+  const bound = (v: unknown, name: string): number | undefined => {
+    if (v === undefined) return undefined;
+    if (typeof v !== 'number' || !Number.isFinite(v)) fail(`${path}[0].${name}`, 'expected a finite number');
+    return v as number;
+  };
+  const forecast: ForecastConfig = {
+    enabled: true,
+    periodsForward: intIn(raw[key('periodsForward', 'PeriodsForward')], 3, key('periodsForward', 'PeriodsForward')),
+    periodsBackward: intIn(raw[key('periodsBackward', 'PeriodsBackward')], 0, key('periodsBackward', 'PeriodsBackward')),
+    predictionInterval: (intervalRaw ?? 95) as 80 | 90 | 95,
+    seasonality: seasonalityRaw === 'AUTOMATIC' ? 'auto' : seasonalityRaw === 'NONE' ? 'none' : (customRaw as number),
+    ...(bound(raw[key('lowerBoundary', 'LowerBoundary')], key('lowerBoundary', 'LowerBoundary')) !== undefined ? { lowerBoundary: bound(raw[key('lowerBoundary', 'LowerBoundary')], key('lowerBoundary', 'LowerBoundary')) } : {}),
+    ...(bound(raw[key('upperBoundary', 'UpperBoundary')], key('upperBoundary', 'UpperBoundary')) !== undefined ? { upperBoundary: bound(raw[key('upperBoundary', 'UpperBoundary')], key('upperBoundary', 'UpperBoundary')) } : {}),
+  };
+  if (!forecastConfigValid(forecast)) fail(`${path}[0]`, 'invalid forecast configuration');
+  return { forecast, extra: value.length - 1 };
 }
 
 /** OpenSight extension: per-extra-tooltip-field label and aggregation annotations. Fail-closed on malformed shape. */
@@ -222,6 +264,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const id = text(body[key('visualId', 'VisualId')], p);
   const cpath = `${p}.${key('chartConfiguration', 'ChartConfiguration')}`;
   const config = object(body[key('chartConfiguration', 'ChartConfiguration')], cpath);
+  const lineFamily = kind === 'line';
   if (kind === 'bar' && config[key('barsArrangement', 'BarsArrangement')] === 'STACKED_PERCENT') kind = 'bar100';
   if (kind === 'line' && config[key('type', 'Type')] === 'AREA') kind = 'area';
   const extra = extraKind(kind) ? EXTRA_VISUALS[kind] : undefined;
@@ -233,6 +276,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   if (kind === 'table' || kind === 'pivot') common.push(key('totalOptions', 'TotalOptions'));
   if (kind === 'table') common.push(key('opensightSubtotalOptions', 'OpenSightSubtotalOptions'));
   if (kind === 'area') common.push(key('type', 'Type'));
+  if (lineFamily) common.push(key('forecastConfigurations', 'ForecastConfigurations'));
   if (kind === 'gauge') common.push(key('opensightGauge', 'OpenSightGauge'));
   if (kind === 'histogram') common.push(key('opensightBins', 'OpenSightBins'));
   keys(config, common, cpath);
@@ -307,9 +351,12 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   }
   if (extra) {
     const d = dimensions.length, m = measures.length;
+    let uvOnly = false, mvOnly = false;
     if (kind === 'insight') {
-      if (d !== 1) fail(wpath, 'INSIGHT_CATEGORY_REQUIRED: expected exactly one Category dimension');
-      if (m < 1 || m > 2) fail(wpath, 'INSIGHT_VALUES_REQUIRED: expected one Values measure, or two for comparison');
+      try { mvOnly = topBottomMoversOnly(body.insightConfiguration ?? {}); } catch { mvOnly = false; }
+      if (mvOnly ? d !== 2 : d !== 1) fail(wpath, mvOnly ? 'INSIGHT_CATEGORY_REQUIRED: movers require a Category dimension and a Time dimension' : 'INSIGHT_CATEGORY_REQUIRED: expected exactly one Category dimension');
+      try { uvOnly = uniqueValuesOnly(body.insightConfiguration ?? {}); } catch { uvOnly = false; }
+      if (m > 2 || (m < 1 && !uvOnly)) fail(wpath, 'INSIGHT_VALUES_REQUIRED: expected one Values measure, or two for comparison');
       try { normalizeInsight(body.insightConfiguration ?? {}, dimensions, measures); }
       catch (error) { if (error instanceof InsightError) fail(cpath, error.message); throw error; }
       if (body.dataSetIdentifier !== undefined && measures.some(f => f.dataSet !== body.dataSetIdentifier)) fail(p, 'INSIGHT_FIELD_UNBOUND: dataset does not match computation fields');
@@ -328,8 +375,8 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
       if (list(wells[wellKey('color')], wpath).length > 1) fail(wpath, 'RADAR_COLOR_LIMIT: expected at most one Color dimension');
       if (!m) fail(wpath, 'RADAR_VALUES_REQUIRED: expected one or more Values measures');
     }
-    const validDimensions = kind === 'radar' ? d >= 1 && d <= 2 : kind === 'gauge' ? d === 0 : kind === 'scatter' || kind === 'histogram' ? d <= 1 : kind === 'heatmap' || kind === 'pointMap' || kind === 'sankey' ? d === 2 && dimensionNames.every(n => list(wells[n], wpath).length === 1) : kind === 'treemap' || kind === 'box' ? d >= 1 : d === 1;
-    const validMeasures = kind === 'insight' ? m >= 1 && m <= 2 : kind === 'scatter' ? m >= 2 && m <= 3 && measureNames.slice(0, 2).every(n => list(wells[n], wpath).length === 1) && list(wells[measureNames[2]!], wpath).length <= 1 : kind === 'combo' ? m >= 2 && list(wells[measureNames[0]!], wpath).length === 1 && measureNames.every(n => list(wells[n], wpath).length >= 1) : kind === 'radar' || kind === 'bar100' || kind === 'area' ? m >= 1 : m === 1;
+    const validDimensions = kind === 'insight' ? d === 1 || (mvOnly && d === 2) : kind === 'radar' ? d >= 1 && d <= 2 : kind === 'gauge' ? d === 0 : kind === 'scatter' || kind === 'histogram' ? d <= 1 : kind === 'heatmap' || kind === 'pointMap' || kind === 'sankey' ? d === 2 && dimensionNames.every(n => list(wells[n], wpath).length === 1) : kind === 'treemap' || kind === 'box' ? d >= 1 : d === 1;
+    const validMeasures = kind === 'insight' ? m <= 2 && (m >= 1 || uvOnly) : kind === 'scatter' ? m >= 2 && m <= 3 && measureNames.slice(0, 2).every(n => list(wells[n], wpath).length === 1) && list(wells[measureNames[2]!], wpath).length <= 1 : kind === 'combo' ? m >= 2 && list(wells[measureNames[0]!], wpath).length === 1 && measureNames.every(n => list(wells[n], wpath).length >= 1) : kind === 'radar' || kind === 'bar100' || kind === 'area' ? m >= 1 : m === 1;
     if (!validDimensions || !validMeasures) fail(wpath, extra.note);
   } else {
     if (kind === 'kpi' ? dimensions.length !== 0 : kind === 'pivot' || kind === 'table' ? dimensions.length < 1 : dimensions.length !== 1) fail(wpath, kind === 'kpi' ? 'KPI must have no category' : 'exactly one category/group field is supported');
@@ -384,7 +431,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   keys(labels, [key('visibility', 'Visibility'), key('overlap', 'Overlap')], cpath);
   enumValue(labels[key('overlap', 'Overlap')], ['DISABLE_OVERLAP'], 'DISABLE_OVERLAP', cpath);
   const tooltip = object(config[key('tooltip', 'Tooltip')] ?? {}, cpath);
-  keys(tooltip, ['radar', 'sankey', 'waterfall'].includes(kind) ? [key('tooltipVisibility', 'TooltipVisibility')] : [key('tooltipVisibility', 'TooltipVisibility'), key('selectedTooltipType', 'SelectedTooltipType'), key('fieldBasedTooltip', 'FieldBasedTooltip')], `${cpath}.${key('tooltip', 'Tooltip')}`);
+  keys(tooltip, [key('tooltipVisibility', 'TooltipVisibility'), key('selectedTooltipType', 'SelectedTooltipType'), key('fieldBasedTooltip', 'FieldBasedTooltip')], `${cpath}.${key('tooltip', 'Tooltip')}`);
   const tooltipPath = `${cpath}.${key('tooltip', 'Tooltip')}`;
   const tooltipDetail = parseTooltipDetail(tooltip, key, tooltipPath, [...dimensions, ...(breakdown ? [breakdown] : []), ...(facet ? [facet] : []), ...measures]);
   const legend = object(config[key('legend', 'Legend')] ?? {}, cpath);
@@ -405,6 +452,15 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const multiplesKey = key('opensightMultiplesOptions', 'OpenSightMultiplesOptions');
   const multiplesOptions = FACETED_KINDS.includes(kind) && config[multiplesKey] !== undefined
     ? parseMultiplesOptions(config[multiplesKey], `${cpath}.${multiplesKey}`) : undefined;
+  // Forecast configurations (line family only; the key gate above rejects them
+  // elsewhere). A stored config stays on the model even when it cannot apply —
+  // a non-date category or an area chart — so it round-trips; rendering ignores
+  // it and the warnings below say why.
+  const forecastKey = key('forecastConfigurations', 'ForecastConfigurations');
+  const parsedForecast = lineFamily ? parseForecastConfigurations(config[forecastKey], key, `${cpath}.${forecastKey}`) : { extra: 0 } as { forecast?: ForecastConfig; extra: number };
+  const forecast = parsedForecast.forecast;
+  if (parsedForecast.extra > 0) warnings.push(`${cpath}.${forecastKey}: ${parsedForecast.extra} additional forecast configuration${parsedForecast.extra === 1 ? '' : 's'} ignored; only the first is applied.`);
+  if (forecast && !dimensions[0]?.dateGranularity) warnings.push(`${cpath}.${forecastKey}: forecast ignored — the chart's category field is not a date dimension.`);
   const sort = object(config[key('sortConfiguration', 'SortConfiguration')] ?? {}, cpath);
   const sortsKey = key('categorySort', 'CategorySort');
   const breakdownLimitKey = key('breakdownItemsLimit', 'BreakdownItemsLimit');
@@ -427,11 +483,23 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     }
   }
   const smallLimitKey = key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration');
+  let facetLimit: VisualModel['facetLimit'];
   if (sort[smallLimitKey] !== undefined) {
     const limit = object(sort[smallLimitKey], `${cpath}.${smallLimitKey}`);
-    keys(limit, [key('otherCategories', 'OtherCategories')], `${cpath}.${smallLimitKey}`);
-    enumValue(limit[key('otherCategories', 'OtherCategories')], ['INCLUDE'], 'INCLUDE', cpath);
-    warnings.push(`${cpath}.${smallLimitKey}: no top-N/Other bucket is computed; all supplied result rows are shown.`);
+    keys(limit, [key('otherCategories', 'OtherCategories'), key('itemsLimit', 'ItemsLimit')], `${cpath}.${smallLimitKey}`);
+    const other = enumValue(limit[key('otherCategories', 'OtherCategories')], ['INCLUDE', 'EXCLUDE'], 'INCLUDE', cpath);
+    const count = limit[key('itemsLimit', 'ItemsLimit')];
+    if (count === undefined) {
+      warnings.push(`${cpath}.${smallLimitKey}: no top-N/Other bucket is computed; all supplied result rows are shown.`);
+    } else if (!FACETED_KINDS.includes(kind)) {
+      fail(`${cpath}.${smallLimitKey}`, 'small multiples limits are only computed for faceted visuals');
+    } else if (!Number.isInteger(count) || (count as number) < 1 || (count as number) > 100) {
+      fail(`${cpath}.${smallLimitKey}`, 'small multiples limit count must be an integer between 1 and 100');
+    } else if (!facet) {
+      fail(`${cpath}.${smallLimitKey}`, 'small multiples limits require a SmallMultiples field');
+    } else {
+      facetLimit = { count: count as number, includeOther: other === 'INCLUDE' };
+    }
   }
   // Waterfall breakdown limits (QuickSight BreakdownItemsLimit parity): show the
   // top N breakdown values in first-appearance order, rolling the rest into a
@@ -475,9 +543,11 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     legendPosition: enumValue(legend[key('position', 'Position')] ?? (formattingValid(formatting) ? formatting.legendPosition : undefined), [...LEGEND_POSITIONS], 'BOTTOM', `${cpath}.legend.position`) as LegendPosition,
     dimensions, rowDimensions, columnDimensions, measures, totals, subtotals, columnTotals, columnSubtotals, innerRadius, sort: fieldSort, warnings,
     ...(sliceLimit ? { sliceLimit } : {}),
+    ...(facetLimit ? { facetLimit } : {}),
     ...(breakdownLimit ? { breakdownLimit } : {}),
     ...(facet ? { facet } : {}),
     ...(breakdown ? { breakdown } : {}),
+    ...(forecast ? { forecast } : {}),
     ...(multiplesOptions ? { multiplesOptions } : {}),
     horizontal: (kind === 'bar' || kind === 'bar100') && enumValue(config[key('orientation', 'Orientation')], ['VERTICAL', 'HORIZONTAL'], 'VERTICAL', `${cpath}.${key('orientation', 'Orientation')}`) === 'HORIZONTAL',
     stacked: kind === 'bar' && enumValue(config[key('barsArrangement', 'BarsArrangement')], ['CLUSTERED', 'STACKED'], 'CLUSTERED', `${cpath}.${key('barsArrangement', 'BarsArrangement')}`) === 'STACKED',
@@ -548,6 +618,42 @@ export function compileVisual(input: Input): CompiledVisual {
     const categories = rows.map(row => JSON.stringify(keyFields.map(f => cell(row, f))));
     if (new Set(categories).size !== categories.length) fail(input.path, 'duplicate categories: expected aggregated result rows');
   }
+  // Compute facet limits once, before any of the three layout paths or per-panel
+  // slice limits. Explicit groups keep a retained literal "Other" facet distinct
+  // from the extra panel, even though both have the fixed English title.
+  let facetGroups: FacetGroup[] | undefined;
+  if (model.facet && model.facetLimit) {
+    const facet = model.facet;
+    const groups = groupRowsByFacet(rows, facet, cell);
+    facetGroups = applyFacetLimit(groups, model.facetLimit, rest => {
+      const merged = new Map<string, Record<string, Cell>>();
+      for (const row of rest) {
+        const key = JSON.stringify(model.dimensions.map(field => cell(row, field)));
+        let other = merged.get(key);
+        if (!other) {
+          other = { ...row, [extraColumn(facet)]: 'Other' };
+          for (const measure of model.measures) other[extraColumn(measure)] = null;
+          // As with slice limits, extra tooltip values cannot be inferred from
+          // already aggregated rows. Never inherit one source facet's value.
+          for (const extra of extraFields) other[extraColumn(extra)] = null;
+          merged.set(key, other);
+        }
+        for (const measure of model.measures) {
+          const value = number(row, measure);
+          if (value !== null) {
+            const total = (number(other, measure) ?? 0) + value;
+            if (!Number.isFinite(total)) fail(input.path, 'small multiples Other totals must be finite');
+            other[extraColumn(measure)] = total;
+          }
+        }
+      }
+      return [...merged.values()];
+    });
+    if (facetGroups !== groups) {
+      rows.length = 0;
+      rows.push(...facetGroups.flatMap(group => group.rows));
+    }
+  }
   // Pie slice limit (QuickSight CategoryItemsLimit parity): keep the top N rows
   // in display order per facet group, rolling the rest into one "Other" bucket
   // (per-measure SUM, null when every contributing value is null) or dropping
@@ -563,7 +669,8 @@ export function compileVisual(input: Input): CompiledVisual {
       groups.get(k)!.push(row);
     }
     const limited: Row[] = [];
-    for (const group of groups.values()) {
+    for (const group of facetGroups?.map(group => group.rows) ?? groups.values()) {
+      const start = limited.length;
       if (group.length <= limit.count) { limited.push(...group); continue; }
       const kept = group.slice(0, limit.count), rest = group.slice(limit.count);
       // Fold a retained literal "Other" into this facet's bucket (#126).
@@ -588,6 +695,7 @@ export function compileVisual(input: Input): CompiledVisual {
         for (const extra of extraFields) other[alias(extra)] = null;
         limited.push(other);
       }
+      if (facetGroups) group.splice(0, group.length, ...limited.slice(start));
     }
     rows.length = 0;
     rows.push(...limited);
@@ -608,8 +716,15 @@ export function compileVisual(input: Input): CompiledVisual {
   // global series index (#125). Carry an explicit mapping from each series,
   // in option.series order, to its facet rows and its measure index.
   let facetSeriesMap: { rows: Row[]; measureIndex: number }[] | undefined;
+  // Line/area panels for the forecast post-pass (issue #235): rows per panel,
+  // the option.series indices of its measure series, and its axis index.
+  // Forecast extras are appended after every other pass so these indices and
+  // facetSeriesMap stay valid for the passes that consume them.
+  let forecastPanels: { rows: Row[]; measureSeries: number[]; axisIndex: number }[] | undefined;
   if (model.kind === 'insight') {
-    try { narrative = insightNarrative(rows.map(row => ({ category: cell(row, model.dimensions[0]!), values: model.measures.map(f => number(row, f)) })), { category: model.dimensions[0], measures: model.measures, computations: model.insightConfiguration, formatting: model.formatting }); }
+    let mvOnly = false;
+    try { mvOnly = topBottomMoversOnly(model.insightConfiguration ?? {}); } catch { mvOnly = false; }
+    try { narrative = insightNarrative(rows.map(row => ({ category: cell(row, model.dimensions[0]!), ...(mvOnly ? { time: cell(row, model.dimensions[1]!) } : {}), values: model.measures.map(f => number(row, f)) })), { category: model.dimensions[0], ...(mvOnly ? { time: model.dimensions[1] } : {}), measures: model.measures, computations: model.insightConfiguration, formatting: model.formatting }); }
     catch (error) { if (error instanceof InsightError) fail(input.path, error.message); throw error; }
     option.tooltip = { show: false };
     option.graphic = insightGraphic(narrative, theme, model.formatting?.fontSize).graphic;
@@ -618,8 +733,9 @@ export function compileVisual(input: Input): CompiledVisual {
     // area/combo/bar100, whose panels each emit one series per measure in
     // panel order — expand those groups into the per-series map.
     const extraGroups = compileExtra(model, rows, cell, number, option, message => fail(input.path, message),
-      { path: input.path, theme, warn: message => model.warnings.push(message) });
+      { path: input.path, theme, warn: message => model.warnings.push(message), facetGroups });
     if (extraGroups) facetSeriesMap = extraGroups.flatMap(groupRows => model.measures.map((_, measureIndex) => ({ rows: groupRows, measureIndex })));
+    if (model.kind === 'area') forecastPanels = (extraGroups ?? [rows]).map((panelRows, i) => ({ rows: panelRows, measureSeries: model.measures.map((_, mi) => i * model.measures.length + mi), axisIndex: i }));
   } else if (model.kind === 'pie') {
     const measure = model.measures[0]!;
     option.legend = { show: model.legend, bottom: 4, type: 'scroll' };
@@ -638,7 +754,7 @@ export function compileVisual(input: Input): CompiledVisual {
       // Small multiples: one pie per facet value on a grid, first-appearance order.
       const opts = model.multiplesOptions;
       const { shown, cols, topPad, cellW, cellH } =
-        facetLayout(groupRowsByFacet(rows, model.facet, cell), opts, input.path, w => model.warnings.push(w));
+        facetLayout(facetGroups ?? groupRowsByFacet(rows, model.facet, cell), opts, input.path, w => model.warnings.push(w));
       // Gutter opens an inter-panel gap by shrinking each panel's content (and
       // insetting its chrome below); the factor is an OpenSight approximation
       // of the reference spacing, not measured QuickSight geometry.
@@ -678,7 +794,7 @@ export function compileVisual(input: Input): CompiledVisual {
       // Small multiples: one cartesian panel per facet value on a grid.
       const opts = model.multiplesOptions;
       const { shown, cols, topPad, cellW, cellH } =
-        facetLayout(groupRowsByFacet(rows, model.facet, cell), opts, input.path, w => model.warnings.push(w));
+        facetLayout(facetGroups ?? groupRowsByFacet(rows, model.facet, cell), opts, input.path, w => model.warnings.push(w));
       const inset = opts?.gutter ? 1.5 : 0;
       option.grid = shown.map((_, i) => {
         const c = i % cols, r = Math.floor(i / cols);
@@ -701,6 +817,7 @@ export function compileVisual(input: Input): CompiledVisual {
       option.xAxis = panels.map((panel, i) => ({ ...(model.horizontal ? panel.value : panel.category), gridIndex: i }));
       option.yAxis = panels.map((panel, i) => ({ ...(model.horizontal ? panel.category : panel.value), gridIndex: i }));
       option.series = panels.flatMap((panel, i) => panel.series.map(s => ({ ...s, xAxisIndex: i, yAxisIndex: i })));
+      if (model.kind === 'line') forecastPanels = shown.map((group, i) => ({ rows: group.rows, measureSeries: model.measures.map((_, mi) => i * model.measures.length + mi), axisIndex: i }));
       option.title = facetTitles(shown, opts, cols, cellH, topPad, theme, displayCell);
       facetSeriesMap = shown.flatMap(group => model.measures.map((_, measureIndex) => ({ rows: group.rows, measureIndex })));
     } else {
@@ -709,6 +826,7 @@ export function compileVisual(input: Input): CompiledVisual {
       option.xAxis = model.horizontal ? value : category;
       option.yAxis = model.horizontal ? category : value;
       option.series = series;
+      if (model.kind === 'line') forecastPanels = [{ rows, measureSeries: model.measures.map((_, mi) => mi), axisIndex: 0 }];
     }
     option.legend = { show: model.legend, bottom: 0 };
   } else if (model.kind === 'kpi') {
@@ -721,9 +839,23 @@ export function compileVisual(input: Input): CompiledVisual {
   }
   applyDisplayOptions(model, option, theme);
   if (model.tooltip && model.tooltipDetail?.type === 'detailed') {
+    if (['box', 'histogram', 'sankey', 'radar'].includes(model.kind) && model.tooltipExtraFields?.length) {
+      model.warnings.push(`Extra fields are not shown in ${model.kind} detailed tooltips because each datum aggregates multiple rows.`);
+    }
     if (DETAILED_TOOLTIP_KINDS.includes(model.kind)) {
       option.tooltip = { ...(typeof option.tooltip === 'object' && !Array.isArray(option.tooltip) ? option.tooltip : {}),
-        formatter: detailedTooltipFormatter(model, rows, cell, availableExtras, facetSeriesMap) };
+        ...(model.kind === 'radar' ? { trigger: 'item' as const } : {}),
+        formatter: ['treemap', 'wordCloud'].includes(model.kind)
+          ? transformedTooltipFormatter(model, rows, cell, availableExtras)
+          : ['box', 'histogram'].includes(model.kind)
+            ? distributionTooltipFormatter(model, option)
+            : model.kind === 'waterfall'
+              ? waterfallTooltipFormatter(model, rows, cell, availableExtras)
+              : model.kind === 'sankey'
+                ? sankeyTooltipFormatter(model, option)
+                : model.kind === 'radar'
+                  ? radarTooltipFormatter(model, option)
+                  : detailedTooltipFormatter(model, rows, cell, availableExtras, facetSeriesMap) };
     } else {
       model.warnings.push(`detailed tooltips are not rendered for ${model.kind} visuals; using basic tooltips.`);
     }
@@ -762,20 +894,120 @@ export function compileVisual(input: Input): CompiledVisual {
     const table = compilePivotTable(model, rows, cell, number, input.path);
     return { model, option, state: state === 'ready' && !table.rows.length ? 'empty' : state, table };
   }
-  return { model, option, state, ...(narrative ? { narrative } : {}), table: { columns: fields.map(f => fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
+  // Forecast post-pass (issue #235): appended extras keep every earlier index
+  // (facet map, conditional formatting, detailed tooltips) valid.
+  let forecastNote: string | undefined;
+  if (model.forecast?.enabled && forecastPanels && model.dimensions[0]?.dateGranularity && Array.isArray(option.series)) {
+    const config = model.forecast;
+    const grain = model.dimensions[0].dateGranularity;
+    const dimension = model.dimensions[0];
+    let anyApplied = false, anyInsufficient = false, anySeasonalSkipped = false, anyInapplicable = false;
+    const extras: LineSeriesOption[] = [];
+    for (const panel of forecastPanels) {
+      if (!panel.rows.length) continue;
+      // Shared chronological preparation with Insight (issue #259): decode
+      // each row's period, sort chronologically for the fit, reject decoded
+      // duplicates, and anchor future labels to the latest period — display
+      // order must not change the fitted history or the future dates.
+      const prepared = prepareChronological(panel.rows, row => groupedPeriodDate(cell(row, dimension), grain));
+      if (!prepared.ok) {
+        if (prepared.reason === 'invalid') { anyInapplicable = true; continue; }
+        fail(input.path, 'duplicate date/time periods: two rows decode to the same period at the chart grain; expected unique aggregated periods');
+      }
+      const chrono = prepared.entries;
+      const latest = chrono.at(-1)!;
+      const n = panel.rows.length;
+      const axis = (Array.isArray(option.xAxis) ? option.xAxis[panel.axisIndex] : option.xAxis) as { data?: string[] } | undefined;
+      const labels = axis?.data ?? panel.rows.map(row => displayCell(cell(row, dimension)));
+      const rawLatest = String(cell(latest.item, dimension));
+      const extended = [...labels];
+      for (let h = 1; h <= config.periodsForward; h++) extended.push(periodLabel(shiftPeriod(latest.date, grain, h), grain, rawLatest));
+      panel.measureSeries.forEach((seriesIndex, mi) => {
+        const parent = (option.series as LineSeriesOption[])[seriesIndex]!;
+        const measure = model.measures[mi]!;
+        // Chronological points; idx keeps the display position so fitted and
+        // join values map back onto the rows the chart actually shows.
+        const pts = chrono.map(({ item, index }) => ({ idx: index, v: number(item, measure) })).filter(p => p.v !== null) as { idx: number; v: number }[];
+        if (pts.length < MIN_FORECAST_POINTS) { anyInsufficient = true; return; }
+        const result = computeForecast(pts.map(p => p.v), grain, config);
+        if (!result) { anyInsufficient = true; return; }
+        if (result.seasonalSkipped) anySeasonalSkipped = true;
+        if (!config.periodsForward && !config.periodsBackward) return;
+        anyApplied = true;
+        const color = (model.palette ?? theme.palette)[seriesIndex % (model.palette ?? theme.palette).length]!;
+        const total = n + config.periodsForward;
+        const last = pts.at(-1)!;
+        type SegDatum = { value: number; forecastKind: 'fit' | 'join' | 'future'; lower?: number; upper?: number } | null;
+        const seg: SegDatum[] = new Array<SegDatum>(total).fill(null);
+        const back = Math.min(config.periodsBackward, pts.length);
+        for (let j = pts.length - back; j < pts.length; j++) {
+          const fitted = result.fitted[j];
+          if (fitted !== null && fitted !== undefined) seg[pts[j]!.idx] = { value: fitted, forecastKind: 'fit' };
+        }
+        seg[last.idx] = { value: last.v, forecastKind: 'join' };
+        result.future.forEach((point, h) => { seg[n + h] = { value: point.value, forecastKind: 'future', lower: point.lower, upper: point.upper }; });
+        const bandLower: (number | null)[] = new Array<number | null>(total).fill(null);
+        const bandDelta: (number | null)[] = new Array<number | null>(total).fill(null);
+        if (config.periodsForward) {
+          bandLower[last.idx] = last.v; bandDelta[last.idx] = 0;
+          result.future.forEach((point, h) => { bandLower[n + h] = point.lower; bandDelta[n + h] = point.upper - point.lower; });
+        }
+        const stack = `forecast-band-${panel.axisIndex}-${mi}`;
+        const axes = model.facet ? { xAxisIndex: panel.axisIndex, yAxisIndex: panel.axisIndex } : {};
+        if (config.periodsForward) extras.push(
+          { type: 'line', id: `forecast-band-lo-${panel.axisIndex}-${mi}`, name: '', stack, data: bandLower, symbol: 'none', silent: true, tooltip: { show: false }, emphasis: { disabled: true }, lineStyle: { opacity: 0 }, itemStyle: { color }, ...axes } as LineSeriesOption,
+          { type: 'line', id: `forecast-band-hi-${panel.axisIndex}-${mi}`, name: '', stack, data: bandDelta, symbol: 'none', silent: true, tooltip: { show: false }, emphasis: { disabled: true }, lineStyle: { opacity: 0 }, itemStyle: { color }, areaStyle: { color, opacity: 0.16 }, ...axes } as LineSeriesOption,
+        );
+        extras.push({
+          type: 'line', id: `forecast-seg-${panel.axisIndex}-${mi}`, name: parent.name as string, data: seg, connectNulls: false, symbolSize: 6,
+          lineStyle: { type: 'dashed', color }, itemStyle: { color }, label: { show: false },
+          ...(mi === 0 && config.periodsForward ? { markLine: { silent: true, symbol: 'none', label: { show: false }, lineStyle: { type: 'solid' as const, width: 1, color: '#98a4ab' }, data: [{ xAxis: n - 1 }] } } : {}),
+          ...axes,
+        } as LineSeriesOption);
+      });
+      if (axis && extended.length !== labels.length) axis.data = extended;
+    }
+    if (extras.length) option.series = [...option.series, ...extras];
+    if (anyInapplicable) model.warnings.push(`${input.path}: forecast was not rendered because the category values are not dates at the chart grain.`);
+    if (!anyApplied && anyInsufficient) forecastNote = 'Not enough history to forecast — showing actuals. A forecast needs at least 4 data points.';
+    else if (anySeasonalSkipped) forecastNote = 'Seasonality was skipped: a seasonal forecast needs at least 2 full cycles of history. Showing a trend forecast instead.';
+    if (anyApplied && model.tooltip && option.tooltip && !Array.isArray(option.tooltip) && !(option.tooltip as { formatter?: unknown }).formatter) {
+      (option.tooltip as { formatter?: unknown }).formatter = (params: unknown) => {
+        const list = (Array.isArray(params) ? params : [params]) as { seriesId?: string; seriesName?: string; value?: unknown; data?: unknown; axisValue?: unknown }[];
+        const fmt = (v: number): string => formatNumber(Math.round(v * 100) / 100);
+        const lines: string[] = [];
+        for (const p of list) {
+          if (p.seriesId?.startsWith('forecast-band')) continue;
+          if (!lines.length && p.axisValue !== undefined) lines.push(richTextEscape(String(p.axisValue)));
+          const d = p.data as { forecastKind?: string; lower?: number; upper?: number } | null;
+          const v = typeof p.value === 'number' ? p.value : null;
+          if (v === null) continue;
+          if (d?.forecastKind === 'future') lines.push(`${richTextEscape(p.seriesName ?? '')} (Forecast): ${fmt(v)} · ${config.predictionInterval}% interval ${fmt(d.lower!)}–${fmt(d.upper!)}`);
+          else if (d?.forecastKind === 'fit') lines.push(`${richTextEscape(p.seriesName ?? '')} (Forecast fit): ${fmt(v)}`);
+          else if (d?.forecastKind === 'join') continue;
+          else lines.push(`${richTextEscape(p.seriesName ?? '')}: ${fmt(v)}`);
+        }
+        return lines.join('\n');
+      };
+    }
+  }
+  return { model, option, state, ...(forecastNote ? { forecastNote } : {}), ...(narrative ? { narrative } : {}), table: { columns: fields.map(f => fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
     ...(model.formatting ? { visibleColumns: fields.map(f => (model.measures.includes(f) ? model.formatting?.valueNamesVisible : model.formatting?.rowNamesVisible) === false ? '' : fieldName(f, model.formatting)) } : {}),
   } };
 }
 
-/** Kinds whose series data maps 1:1 to result rows, so a per-row detailed tooltip is exact.
+/** Kinds with exact detailed tooltips, either per-row or from compiled datums.
  *  scatter, funnel, heatmap, filledMap and pointMap build their series with rows.map
  *  (index-preserving); gauge renders a single datum from the single aggregate row.
- *  treemap (hierarchy flattens rows), box (per-group quartiles), histogram (bins)
- *  and wordCloud (sorted/sliced remap) are aggregate and keep the basic fallback. */
-const DETAILED_TOOLTIP_KINDS = ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap'];
+ *  treemap and wordCloud retain leaf/word source indices for extra fields;
+ *  box/histogram resolve compiled statistics/bins, radar resolves polygons and
+ *  sankey resolves links (nodes stay basic), all without source-row extras;
+ *  waterfall delta bars retain their source row, while subtotal/Other/Total
+ *  bars (compiled aggregates) keep the basic tooltip. */
+const DETAILED_TOOLTIP_KINDS = ['bar', 'line', 'pie', 'combo', 'area', 'bar100', 'scatter', 'funnel', 'gauge', 'heatmap', 'filledMap', 'pointMap', 'treemap', 'wordCloud', 'box', 'histogram', 'waterfall', 'radar', 'sankey'];
 /** Kinds whose tooltip config accepts the detailed keys (mirrors the chartConfiguration gate). */
-export const tooltipDetailKinds = (kind: VisualKind): boolean => !['insight', 'kpi', 'table', 'pivot', 'radar', 'sankey', 'waterfall'].includes(kind);
-/** Kinds where a detailed tooltip actually renders (others fall back to basic with a warning). */
+export const tooltipDetailKinds = (kind: VisualKind): boolean => !['insight', 'kpi', 'table', 'pivot'].includes(kind);
+/** All config-accepting kinds now render detailed tooltips. */
 export const detailedTooltipKinds = (kind: VisualKind): boolean => DETAILED_TOOLTIP_KINDS.includes(kind);
 
 /** Escape richText markup characters in dynamic tooltip text (display encoding; table data stays exact). */
@@ -825,8 +1057,224 @@ function detailedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: R
   };
 }
 
+/** Transformed datums carry their own displayed values. Only explicit leaf/word
+ * source indices can resolve extras; an ECharts dataIndex is never a row index. */
+function transformedTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: Row, field: Field) => Cell, extraFields: Field[]): (params: unknown) => string {
+  const detail = model.tooltipDetail!;
+  const measure = model.measures[0]!;
+  const titleField = model.dimensions[0] ?? measure;
+  const visible = (field: Field): boolean => !detail.hiddenFields.includes(field.id);
+  const line = (field: Field, value: Cell): string => {
+    const governed = model.formatting?.metricFormats?.[field.column];
+    const name = fieldName(field, model.formatting);
+    const label = detail.aggregations && field === measure && !governed ? `Sum of ${name}` : name;
+    return `${richTextEscape(label)}: ${richTextEscape(formatMetric(value, governed) ?? displayCell(value))}`;
+  };
+  const extras = (model.tooltipExtraFields ?? []).flatMap(extra => {
+    const field = extraFields.find(f => f.id === extra.id);
+    return field ? [{ ...extra, field }] : [];
+  });
+  return (params: unknown): string => {
+    const first = (Array.isArray(params) ? params[0] : params) as {
+      name?: string; value?: unknown;
+      data?: { sourceRowIndex?: number; children?: unknown[] };
+      treePathInfo?: { name: string }[];
+    } | undefined;
+    if (!first) return '';
+    // ECharts prepends the synthetic series root to the treemap path.
+    const path = model.kind === 'treemap' ? first.treePathInfo?.slice(1).map(node => node.name) : [first.name];
+    const value = model.kind === 'wordCloud' && Array.isArray(first.value) ? first.value[2] : first.value;
+    if (!path?.length || path[0] === undefined || typeof value !== 'number' || !Number.isFinite(value)) return '';
+    const lines = [richTextEscape(detail.titleType === 'primaryValue' ? path[0] : fieldName(titleField, model.formatting))];
+    model.dimensions.forEach((field, i) => {
+      const value = path[i];
+      if (value !== undefined && visible(field)) lines.push(line(field, value));
+    });
+    if (visible(measure)) lines.push(line(measure, value));
+    const index = first.data?.sourceRowIndex;
+    const row = !first.data?.children?.length && typeof index === 'number' && Number.isInteger(index) ? rows[index] : undefined;
+    if (row) for (const extra of extras) {
+      const name = extra.label ?? fieldName(extra.field, model.formatting);
+      const label = detail.aggregations ? `${TOOLTIP_AGGREGATION_WORD[extra.aggregation]} of ${name}` : name;
+      lines.push(`${richTextEscape(label)}: ${richTextEscape(displayCell(cell(row, extra.field)))}`);
+    }
+    return lines.join('\n');
+  };
+}
+
+/** Waterfall bars are compiled datums: a delta bar carries the index of the
+ * single result row it decomposes, so its detailed tooltip reads that row
+ * (category, breakdown, measure, extras). Subtotal, Other and Total bars
+ * aggregate several rows (or the running total) — no row is invented for
+ * them; they keep the basic `name: delta` text. */
+function waterfallTooltipFormatter(model: VisualModel, rows: Row[], cell: (row: Row, field: Field) => Cell, extraFields: Field[]): (params: unknown) => string {
+  const detail = model.tooltipDetail!;
+  const measure = model.measures[0]!;
+  const fields = [...model.dimensions, ...(model.breakdown ? [model.breakdown] : []), ...model.measures];
+  const extras = (model.tooltipExtraFields ?? []).flatMap(e => {
+    const field = extraFields.find(f => f.id === e.id);
+    return field ? [{ ...e, field }] : [];
+  });
+  const line = (field: Field, value: Cell): string => {
+    const governed = model.formatting?.metricFormats?.[field.column];
+    const name = fieldName(field, model.formatting);
+    const label = detail.aggregations && model.measures.includes(field) && !governed ? `Sum of ${name}` : name;
+    return `${richTextEscape(label)}: ${richTextEscape(formatMetric(value, governed) ?? displayCell(value))}`;
+  };
+  return (params: unknown): string => {
+    const first = (Array.isArray(params) ? params[0] : params) as {
+      name?: unknown;
+      data?: { delta?: unknown; sourceRowIndex?: number };
+    } | undefined;
+    if (!first) return '';
+    const name = typeof first.name === 'string' ? first.name : '';
+    const index = first.data?.sourceRowIndex;
+    const row = typeof index === 'number' && Number.isInteger(index) ? rows[index] : undefined;
+    if (!row) return `${richTextEscape(name)}: ${richTextEscape(String(first.data?.delta ?? ''))}`;
+    const title = detail.titleType === 'primaryValue' ? name : fieldName(model.dimensions[0] ?? measure, model.formatting);
+    const lines = [richTextEscape(title)];
+    for (const field of fields) {
+      if (detail.hiddenFields.includes(field.id)) continue;
+      lines.push(line(field, cell(row, field)));
+    }
+    for (const extra of extras) {
+      const name = extra.label ?? fieldName(extra.field, model.formatting);
+      const label = detail.aggregations ? `${TOOLTIP_AGGREGATION_WORD[extra.aggregation]} of ${name}` : name;
+      lines.push(`${richTextEscape(label)}: ${richTextEscape(displayCell(cell(row, extra.field)))}`);
+    }
+    return lines.join('\n');
+  };
+}
+
+/** Each radar series holds one color-group × measure polygon. Its values align
+ * with compiled indicators, not row indices. The title identifies the measure,
+ * so axis lines do not repeat an aggregation/measure label. */
+function radarTooltipFormatter(model: VisualModel, option: EChartsOption): (params: unknown) => string {
+  const detail = model.tooltipDetail!;
+  const category = model.dimensions[0]!, color = model.dimensions[1];
+  const radar = Array.isArray(option.radar) ? option.radar[0] : option.radar;
+  const indicators = radar?.indicator ?? [];
+  const series = Array.isArray(option.series) ? option.series : [option.series];
+  return (params: unknown): string => {
+    const first = (Array.isArray(params) ? params[0] : params) as { seriesIndex?: unknown } | undefined;
+    const index = first?.seriesIndex;
+    if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) return '';
+    const polygonSeries = series[index];
+    const polygon: unknown = polygonSeries && 'data' in polygonSeries && Array.isArray(polygonSeries.data) ? polygonSeries.data[0] : undefined;
+    if (!polygon || typeof polygon !== 'object' || !('value' in polygon) || !Array.isArray(polygon.value) || !('name' in polygon) || typeof polygon.name !== 'string') return '';
+    // compileExtra emits every measure in model order for each color group.
+    const measure = model.measures[index % model.measures.length]!;
+    const title = detail.titleType === 'fieldId' ? fieldName(category, model.formatting)
+      : color && detail.hiddenFields.includes(color.id) ? fieldName(measure, model.formatting) : polygon.name;
+    const lines = [richTextEscape(title)];
+    if (detail.hiddenFields.includes(category.id) || detail.hiddenFields.includes(measure.id)) return lines[0]!;
+    const governed = model.formatting?.metricFormats?.[measure.column];
+    const values: readonly unknown[] = polygon.value;
+    indicators.forEach((indicator, i) => {
+      const value = values[i];
+      if (value === null || typeof value === 'number' && Number.isFinite(value)) {
+        lines.push(`${richTextEscape(indicator.name ?? '')}: ${richTextEscape(formatMetric(value, governed) ?? displayCell(value))}`);
+      }
+    });
+    return lines.join('\n');
+  };
+}
+
+/** Sankey links may sum several rows. Resolve their numeric endpoints against
+ * compiled nodes, never against source rows. Node hovers retain basic text. */
+function sankeyTooltipFormatter(model: VisualModel, option: EChartsOption): (params: unknown) => string {
+  const detail = model.tooltipDetail!;
+  const source = model.dimensions[0]!, destination = model.dimensions[1]!, measure = model.measures[0]!;
+  const series = Array.isArray(option.series) ? option.series[0] : option.series;
+  const nodes: readonly unknown[] = series && 'data' in series && Array.isArray(series.data) ? series.data : [];
+  const nodeName = (index: number): string | undefined => {
+    const node = nodes[index];
+    return node && typeof node === 'object' && 'name' in node && typeof node.name === 'string' ? node.name : undefined;
+  };
+  return (params: unknown): string => {
+    const first = (Array.isArray(params) ? params[0] : params) as {
+      name?: unknown; value?: unknown;
+      data?: { name?: unknown; source?: unknown; target?: unknown; value?: unknown };
+    } | undefined;
+    if (!first) return '';
+    const datum = first.data;
+    const name = typeof datum?.name === 'string' ? datum.name : typeof first.name === 'string' ? first.name : '';
+    if (typeof datum?.source !== 'number' || typeof datum.target !== 'number') {
+      return richTextEscape(typeof first.value === 'number' && Number.isFinite(first.value) ? `${name}: ${first.value}` : name);
+    }
+    const from = nodeName(datum.source), to = nodeName(datum.target);
+    if (from === undefined || to === undefined || typeof datum.value !== 'number' || !Number.isFinite(datum.value)) return '';
+    const lines = [richTextEscape(detail.titleType === 'primaryValue' ? name : fieldName(source, model.formatting))];
+    for (const [field, value] of [[source, from], [destination, to], [measure, datum.value]] as const) {
+      if (detail.hiddenFields.includes(field.id)) continue;
+      const governed = model.formatting?.metricFormats?.[field.column];
+      const label = detail.aggregations && field === measure && !governed ? `Sum of ${fieldName(field, model.formatting)}` : fieldName(field, model.formatting);
+      lines.push(`${richTextEscape(label)}: ${richTextEscape(formatMetric(value, governed) ?? displayCell(value))}`);
+    }
+    return lines.join('\n');
+  };
+}
+
+/** Distributions describe compiled groups/bins, never any particular input row.
+ * Read the compiled series: ECharts may add a category coordinate to box values. */
+function distributionTooltipFormatter(model: VisualModel, option: EChartsOption): (params: unknown) => string {
+  const detail = model.tooltipDetail!;
+  const measure = model.measures[0]!;
+  const dimension = model.dimensions[0];
+  const titleField = model.kind === 'box' ? dimension ?? measure : measure;
+  const axis = Array.isArray(option.xAxis) ? option.xAxis[0] : option.xAxis;
+  const categories = axis && 'data' in axis ? axis.data : undefined;
+  const series = Array.isArray(option.series) ? option.series[0] : option.series;
+  const data: readonly unknown[] = series && 'data' in series && Array.isArray(series.data) ? series.data : [];
+  const measureName = fieldName(measure, model.formatting);
+  const governed = model.formatting?.metricFormats?.[measure.column];
+  return (params: unknown): string => {
+    const first = (Array.isArray(params) ? params[0] : params) as { dataIndex?: number } | undefined;
+    const index = first?.dataIndex;
+    if (typeof index !== 'number' || !Number.isInteger(index)) return '';
+    const category = categories?.[index];
+    if (typeof category !== 'string') return '';
+    const lines = [richTextEscape(detail.titleType === 'primaryValue' ? category : fieldName(titleField, model.formatting))];
+    const value = data?.[index];
+    if (model.kind === 'box') {
+      if (dimension && !detail.hiddenFields.includes(dimension.id)) {
+        lines.push(`${richTextEscape(fieldName(dimension, model.formatting))}: ${richTextEscape(category)}`);
+      }
+      // Empty groups contain five '-': preserve their identity, omit statistics.
+      if (!detail.hiddenFields.includes(measure.id) && Array.isArray(value)) {
+        ['min', 'Q1', 'median', 'Q3', 'max'].forEach((stat, i) => {
+          const n: unknown = value[i];
+          if (typeof n === 'number' && Number.isFinite(n)) {
+            lines.push(`${richTextEscape(measureName)} ${stat}: ${richTextEscape(formatMetric(n, governed) ?? displayCell(n))}`);
+          }
+        });
+      }
+    } else {
+      if (!detail.hiddenFields.includes(measure.id)) lines.push(`${richTextEscape(measureName)}: ${richTextEscape(category)}`);
+      if (typeof value === 'number' && Number.isFinite(value)) lines.push(`Frequency: ${richTextEscape(displayCell(value))}`);
+    }
+    return lines.join('\n');
+  };
+}
+
 export function displayCell(value: Cell): string {
   return value === null ? '(null)' : typeof value === 'number' ? formatNumber(value) : String(value);
+}
+
+/** Step a period-start date by whole grain units (forecast axis extension). */
+function shiftPeriod(date: Date, grain: 'DAY' | 'MONTH' | 'QUARTER' | 'YEAR', steps: number): Date {
+  return resultDate(shiftDate(date.toISOString(), steps, { DAY: 'DD', MONTH: 'MM', QUARTER: 'Q', YEAR: 'YYYY' }[grain]));
+}
+
+/** Format a future period in the same shape as the axis' existing labels:
+ *  period strings stay period strings; full ISO timestamps stay ISO. */
+function periodLabel(date: Date, grain: 'DAY' | 'MONTH' | 'QUARTER' | 'YEAR', rawLast: string): string {
+  if (/^\d{4}-\d{2}-\d{2}T/.test(rawLast)) return date.toISOString();
+  const iso = date.toISOString();
+  if (grain === 'YEAR') return iso.slice(0, 4);
+  if (grain === 'MONTH') return iso.slice(0, 7);
+  if (grain === 'QUARTER') return `${iso.slice(0, 4)}-Q${Math.floor(Number(iso.slice(5, 7)) / 3) + 1}`;
+  return iso.slice(0, 10);
 }
 
 interface AxisEntry { cells: Cell[]; kind: 'detail' | 'subtotal' | 'total' }

@@ -3,8 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Open economics: the features that are never paywalled — OpenSight docs</title>
-<meta name="description" content="OpenSight is Apache-2.0 software. The hosted service charges for running it, not for unlocking it. Core governance — single sign-on, row-level security, the…">
+<title>Open economics: features never paywalled — OpenSight docs</title>
+<meta name="description" content="OpenSight is Apache-2.0. The hosted service charges for running it, not unlocking it: SSO, row-level security and core governance are never paywalled.">
+<meta property="og:title" content="Open economics: features never paywalled — OpenSight docs">
+<meta property="og:description" content="OpenSight is Apache-2.0. The hosted service charges for running it, not unlocking it: SSO, row-level security and core governance are never paywalled.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://getopensight.org/docs/open-economics/">
+<meta property="og:image" content="https://getopensight.org/assets/og-image.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Open economics: features never paywalled — OpenSight docs">
+<meta name="twitter:description" content="OpenSight is Apache-2.0. The hosted service charges for running it, not unlocking it: SSO, row-level security and core governance are never paywalled.">
+<meta name="twitter:image" content="https://getopensight.org/assets/og-image.jpg">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta property="og:image:alt" content="Open economics: features never paywalled — OpenSight docs">
 <link rel="canonical" href="https://getopensight.org/docs/open-economics/">
 <link rel="stylesheet" href="../docs.css">
 </head>
@@ -19,6 +31,7 @@
     <nav class="nav-links" aria-label="Main">
       <a href="/">Home</a>
       <a href="/docs/" aria-current="true">Docs</a>
+      <a href="/pricing/">Pricing</a>
       <a href="https://github.com/tomesposito/opensight">GitHub</a>
     </nav>
   </div>
@@ -39,7 +52,7 @@
   <main id="content">
     <article>
 <h1 id="open-economics-the-features-that-are-never-paywalled">Open economics: the features that are never paywalled</h1>
-<p>OpenSight is Apache-2.0 software. The hosted service charges for running it, not for unlocking it. Core governance — single sign-on, row-level security, the audit log, and basic embedding — stays in the open product and is never paywalled. Paid tiers buy higher usage quotas, support, and an SLA. Nothing else.</p>
+<p>OpenSight is Apache-2.0 software. The hosted service charges for running it, not for unlocking it. Core governance — single sign-on, row-level security, the audit log, and basic embedding — stays in the open product and is never paywalled. Paid tiers buy higher usage quotas and support. Nothing else.</p>
 <p>This page is the rule that binds future pricing and packaging work (issue #165). It sits on top of the earlier free-vs-paid decision (D-77) and the pricing model (D-78): tiers differ by quantity, never by which governance features a workspace gets.</p>
 <h2 id="what-counts-as-core-governance">What counts as core governance</h2>
 <ul>
@@ -56,8 +69,10 @@
 <li>The entitlement type in <code>packages/api/src/hosted-usage.ts</code> carries quantities only — <code>apiCalls</code>, <code>storageBytes</code>, <code>computeAttempts</code>, <code>egressBytes</code>, and the AI spend-cap fields. No feature flags exist in it.</li>
 <li>No code path in the API or web packages gates a feature on a tier. Enforcement raises <code>USAGE_LIMIT_EXCEEDED</code> when a quota is spent; it does not hide governance features from smaller tiers.</li>
 <li>The marketing site and the published docs named no governance feature as paid or enterprise-only. A guard test in <code>site/build-docs.test.mjs</code> now fails the suite if a published page puts one of the four behind a paid or enterprise tier, or if this rule disappears from the published docs.</li>
+<li>Behavior tests in <code>packages/api/test/open-economics-tiers.test.mjs</code> (added 2026-11-07, issue #215) exercise the executable side: the entitlement parsers reject any governance feature-flag field, and row-level security, the audit log, basic embedding and the identity verifier seam are exercised under every billing tier&#39;s entitlement with a sufficient quantitative allowance. The site guard now scans every published site page — pricing, alternatives, vs, signup and legal included — not just the homepage and the docs.</li>
 </ul>
 <p>One older note needed correcting. D-77 (decided 2026-10-16) called SSO and audit logs &quot;the future enterprise lever — decided if a buyer ever asks.&quot; A buyer-independent answer arrived on 2026-10-30, when the scope of this rule was confirmed as written. For the four features named above, the lever is settled: they are not one.</p>
+<p>The current hosted tiers this rule governs are on the <a href="/pricing/">pricing page</a>.</p>
     </article>
   </main>
 </div>
@@ -73,6 +88,8 @@
       <a href="https://github.com/tomesposito/opensight">GitHub</a>
       <a href="/docs/">Docs</a>
       <a href="https://github.com/tomesposito/opensight/issues">Discuss</a>
+      <a href="/legal/terms/">Terms</a>
+      <a href="/legal/privacy/">Privacy</a>
       <a href="/alternatives/tableau/">Tableau alternative</a>
       <a href="/alternatives/power-bi/">Power BI alternative</a>
       <a href="/vs/metabase/">OpenSight vs Metabase</a>

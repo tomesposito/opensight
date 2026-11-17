@@ -85,6 +85,7 @@ if (!/^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(unscoped)
 && !/^\/api\/invitations(?:\/[A-Za-z0-9_-]+)?$/.test(unscoped)
 && !/^\/api\/(?:startup|session|ideas|namespaces|users|groups|connectors|sources|prep-sources|uploads|prep-datasets|automation-status|job-recipients|jobs)$/.test(unscoped)
 && !/^\/api\/auth\/(?:enroll|accept|login(?:\/select)?|switch|logout)$/.test(unscoped)
+&& unscoped !== '/api/connectors/s3/browse'
 && !/^\/api\/sources\/[A-Za-z0-9_-]+(?:\/(?:bind|rotate|preview|rows|output|query|refresh|policy))?$/.test(unscoped)
 && !/^\/api\/(?:uploads\/[A-Za-z0-9_-]+|ai\/sources(?:\/[A-Za-z0-9_-]+\/schema)?|prep-datasets\/import)$/.test(unscoped)
 && !/^\/api\/(?:uploads\/reservations(?:\/[A-Za-z0-9_-]+(?:\/complete)?)?|operations\/[A-Za-z0-9_-]+(?:\/result\/(?:0|[1-9]\d{0,5}))?)$/.test(unscoped)
@@ -154,6 +155,7 @@ return result;
 }
 function validateViewerRequest(raw, origin) {
 var request = record(raw);
+publicPath(request.uri);
 var h = headers(request.headers);
 if (h.host !== __OPENSIGHT_HOST__ || request.protocol !== 'https')
 denied();
@@ -161,7 +163,6 @@ if (Object.keys(h).some(function (k) { return k.startsWith('x-opensight-ingress-
 denied();
 if (!['/api/access-requests', '/api/api/access-requests'].includes(String(request.uri)) && h.origin !== undefined && h.origin !== origin)
 denied();
-publicPath(request.uri);
 if (Object.keys(record(request.querystring)).length)
 invalid();
 }

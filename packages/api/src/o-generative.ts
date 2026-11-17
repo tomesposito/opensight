@@ -19,7 +19,11 @@ export interface GenerativeSchemaSource {
   metricLookup(): Promise<readonly PublishedMetric[]>;
   execute(query: InteractiveQuery): Promise<unknown>;
 }
-export interface DeliveredCompletion { text: string; commit(count?: number): Promise<void>; remaining?(): Promise<number> }
+export interface DeliveredCompletion { text: string; managed?: boolean; commit(count?: number): Promise<void>; remaining?(): Promise<number> }
+export interface AnswerReceiptHooks {
+  pending(answer: unknown, count: number, completion: DeliveredCompletion): Promise<void>;
+  committed(): Promise<void>;
+}
 async function schema(body: Record<string, unknown>, source: GenerativeSchemaSource) {
   const metadata = await source.securitySchema(), policy = { deniedColumns: metadata.deniedColumns };
   const raw = body.calculatedFields ?? [];
@@ -72,7 +76,7 @@ export async function generativeRoute(request: IncomingMessage, response: Server
 }
 /** Both planes share the guard, prompt, grammar and calculation validation. */
 export async function generateAnswer(body: Record<string, unknown>, calculation: boolean, source: GenerativeSchemaSource,
-  complete: (input: Completion) => Promise<DeliveredCompletion>, recheck: () => Promise<void>, onAsked: (count: number) => void = () => {}) {
+  complete: (input: Completion) => Promise<DeliveredCompletion>, recheck: () => Promise<void>, onAsked: (count: number) => void = () => {}, checkCancelled: () => void = () => {}, receipt?: AnswerReceiptHooks) {
   if (typeof body.question !== 'string' || !body.question.trim() || body.question.length > 2000) invalid('$.question', 'expected 1–2000 characters');
   const before = await schema(body, source);
   if (hasFieldNamePII(before.fields)) throw new AIError(400, 'AI_FIELD_NAME_PII', 'A field name matches a sensitive-data pattern. Rename the field before using generative AI.');
@@ -83,22 +87,30 @@ export async function generateAnswer(body: Record<string, unknown>, calculation:
   const instructions = generativeInstructions(calculation);
   const completion = await complete( { system: instructions, prompt: JSON.stringify({ question: redactPII(body.question), fields: before.fields }) });
   // Authorization and policy changes during provider I/O must not release stale answers.
-  await recheck();
+  await recheck(); checkCancelled();
   const current = await schema(body, source);
   if (calculation) {
     const result = providerObject(completion.text, ['name', 'expression', 'role', 'explanation']);
     if (typeof result.name !== 'string' || !/^[A-Za-z_][A-Za-z0-9_ ]{0,127}$/.test(result.name) || current.fields.some(f => f.name.toLowerCase() === String(result.name).toLowerCase()) || typeof result.expression !== 'string' || typeof result.explanation !== 'string' || result.explanation.length > 2000 || !['measure', 'dimension'].includes(String(result.role))) throw new AIError(502, 'O_INVALID_PROVIDER_RESPONSE', 'Provider returned an invalid calculated field');
     const parsed = parseExpression(result.expression, '$.expression', { bind: (name, path) => current.binder.bind(name, path) });
     if (result.role === 'measure' && parsed.scalarType !== 'number') throw new AIError(502, 'O_INVALID_PROVIDER_RESPONSE', 'Measure expression must return a number');
+    const answer = { suggestion: result };
+    await receipt?.pending(answer, 1, completion);
+    checkCancelled();
     await completion.commit();
-    return { suggestion: result };
+    await receipt?.committed();
+    return answer;
   } else {
     const value = providerObject(completion.text, ['question']);
     if (typeof value.question !== 'string' || !value.question.trim() || value.question.length > 2000) throw new AIError(422, 'O_UNSUPPORTED_QUESTION', 'Provider could not express this question in the supported O grammar');
     const result = interpretQuestion(value.question, current.fields);
     if (!result.interpretations.length || result.errors.some(e => e.code !== 'AMBIGUOUS_QUESTION')) throw new AIError(422, 'O_UNSUPPORTED_QUESTION', 'Provider returned an unsupported interpretation');
+    const answer = { ...result, question: value.question };
+    await receipt?.pending(answer, 1, completion);
+    checkCancelled();
     await completion.commit();
-    return { ...result, question: value.question };
+    await receipt?.committed();
+    return answer;
   }
 }
 
@@ -116,11 +128,11 @@ async function guardedSchema(body: Record<string, unknown>, source: GenerativeSc
   if (hasFieldNamePII(value.fields)) throw new AIError(400, 'AI_FIELD_NAME_PII', 'A field name matches a sensitive-data pattern. Rename the field before using generative AI.');
   return value;
 }
-export async function planAnswer(body: Record<string, unknown>, source: GenerativeSchemaSource, complete: Complete, recheck: () => Promise<void>, onAsked: (count: number) => void = () => {}): Promise<PlanAnswer> {
+export async function planAnswer(body: Record<string, unknown>, source: GenerativeSchemaSource, complete: Complete, recheck: () => Promise<void>, onAsked: (count: number) => void = () => {}, checkCancelled: () => void = () => {}, receipt?: AnswerReceiptHooks): Promise<PlanAnswer> {
   prompt(body.question, '$.question');
   const before = await guardedSchema(body, source);
   const completion = await complete({ system: planInstructions(), prompt: JSON.stringify({ question: redactPII(body.question), fields: before.fields }) });
-  await recheck();
+  await recheck(); checkCancelled();
   const current = await schema(body, source);
   const value = providerObject(completion.text, ['sheetTitle', 'questions']);
   if (!Array.isArray(value.questions) || !value.questions.every(q => typeof q === 'string')) throw new AIError(502, 'O_INVALID_PROVIDER_RESPONSE', 'Provider did not return a supported O response');
@@ -134,11 +146,15 @@ export async function planAnswer(body: Record<string, unknown>, source: Generati
     delivered++;
     return { question, status: 'ok', result: { ...result, interpretations: result.interpretations.slice(0, 1) } };
   });
+  const answer = { sheetTitle, tiles, delivered };
+  await receipt?.pending(answer, delivered, completion);
+  checkCancelled();
   await completion.commit(delivered);
+  await receipt?.committed();
   onAsked(delivered);
-  return { sheetTitle, tiles, delivered };
+  return answer;
 }
-export async function reviseAnswer(body: Record<string, unknown>, source: GenerativeSchemaSource, complete: Complete, recheck: () => Promise<void>, onAsked: (count: number) => void = () => {}) {
+export async function reviseAnswer(body: Record<string, unknown>, source: GenerativeSchemaSource, complete: Complete, recheck: () => Promise<void>, onAsked: (count: number) => void = () => {}, checkCancelled: () => void = () => {}, receipt?: AnswerReceiptHooks) {
   prompt(body.question, '$.question'); prompt(body.currentQuestion, '$.currentQuestion');
   const before = await guardedSchema(body, source);
   const validate = (question: string, fields: SchemaField[]) => {
@@ -148,12 +164,17 @@ export async function reviseAnswer(body: Record<string, unknown>, source: Genera
   };
   validate(body.currentQuestion, before.fields);
   const completion = await complete({ system: reviseInstructions(), prompt: JSON.stringify({ question: redactPII(body.question), currentQuestion: redactPII(body.currentQuestion), fields: before.fields }) });
-  await recheck();
+  await recheck(); checkCancelled();
   const current = await schema(body, source);
   validate(body.currentQuestion, current.fields);
   const value = providerObject(completion.text, ['question']);
   if (typeof value.question !== 'string' || !value.question.trim() || value.question.length > 2000) throw new AIError(422, 'O_UNSUPPORTED_QUESTION', 'Provider could not express this question in the supported O grammar');
   const result = validate(value.question, current.fields);
-  await completion.commit(); onAsked(1);
-  return { ...result, question: value.question };
+  const answer = { ...result, question: value.question };
+  await receipt?.pending(answer, 1, completion);
+  checkCancelled();
+  await completion.commit();
+  await receipt?.committed();
+  onAsked(1);
+  return answer;
 }

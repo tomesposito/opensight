@@ -1,4 +1,5 @@
 import { metricColumn } from '@opensight/query-engine/browser';
+import { normalizeInsight, rebindInsight, uniqueValuesOnly, topBottomMoversTimeColumn, validateInsightConfiguration } from './insight-configuration.js';
 import { unresolvedVisualFieldDiagnostics } from './unresolved-fields.js';
 import { declaration, type AuthorParameter } from './parameters.js';
 import type { AuthorControl } from './controls.js';
@@ -6,15 +7,56 @@ import { authorVisualProblem, noDimensions, visualDimensions, dataFields, type A
 import { FACETED_KINDS } from './facet-layout.js';
 import type { createApiClient, QueryRequest, QueryResponse } from './api-client.js';
 import { ApiError } from './api-client.js';
-import type { Row } from './model.js';
+import type { Field, Row } from './model.js';
 
 export type QueryClient = Pick<ReturnType<typeof createApiClient>, 'queryDataset'> & Partial<Pick<ReturnType<typeof createApiClient>, 'listMetrics' | 'getDatasetRefreshStatus' | 'queryO' | 'getDatasetExecution' | 'setDatasetExecution' | 'refreshBlaze' | 'getPreparedRows' | 'listPrepSources'>> & { dataset?: AuthorDataset };
 export interface AuthorRows { metrics?: QueryResponse['metrics']; rows: Row[] | null; message?: string; provenance?: QueryResponse['provenance'] }
 
+/** Dimension well for one author field, mirroring serializeVisual's dimensionField. */
+function insightDimensionWell(name: string, visual: AuthorVisual, calculations: readonly CalculatedField[], dataset?: AuthorDataset): unknown {
+  const field = { fieldId: name, column: { dataSetIdentifier: 'sales_data', columnName: name } };
+  return dataFields(calculations, dataset).find(f => f.name === name)?.type === 'DATETIME' ? { dateDimensionField: { ...field, dateGranularity: visual.dateGrain ?? 'MONTH' } }
+    : !dataset && name === 'order_id' ? { numericalDimensionField: field } : { categoricalDimensionField: field };
+}
+
+/** Measure well for one author field, mirroring serializeVisual's measure fields. */
+function insightMeasureWell(name: string, dataset?: AuthorDataset): unknown {
+  return { numericalMeasureField: { fieldId: name, column: { dataSetIdentifier: 'sales_data', columnName: name }, aggregationFunction: { simpleNumericalAggregation: dataset?.metrics?.find(m => metricColumn(m.id) === name)?.defaultAggregation ?? 'SUM' } } };
+}
+
+/** Compiler-shaped Field for one author dimension name. */
+function insightDimensionField(name: string, visual: AuthorVisual, calculations: readonly CalculatedField[], dataset?: AuthorDataset): Field {
+  return { id: name, column: name, dataSet: 'sales_data', ...(dataFields(calculations, dataset).find(f => f.name === name)?.type === 'DATETIME' ? { dateGranularity: visual.dateGrain ?? 'MONTH' } : {}) };
+}
+
 export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly CalculatedField[] = [], parameters: readonly AuthorParameter[] = [], dataset?: AuthorDataset): QueryRequest | null {
   if (authorVisualProblem(visual) || unresolvedVisualFieldDiagnostics(visual, calculations, dataset, parameters).length) return null;
-  const dimensions = visualDimensions(visual);
-  if (!visual.measures.length || (!noDimensions(visual.kind) && !dimensions.length)) return null;
+  let dimensions = visualDimensions(visual);
+  // A uniqueValues-only insight binds no measure; its grouped query is category-only.
+  let uvOnly = false;
+  if (visual.kind === 'insight' && visual.insightConfiguration !== undefined) {
+    // A configured insight must pass the same complete validation the compiler
+    // applies — structural rules, the Movers-only collection rule and field
+    // bindings against this visual's own wells (the configuration rebound onto
+    // those wells, exactly as serializeVisual projects it) — before any query
+    // is built. A malformed or mixed configuration fails closed with no query;
+    // it never substitutes an ordinary query the compiler would reject (#267).
+    try {
+      validateInsightConfiguration(visual.insightConfiguration);
+      // A movers insight groups by (category, time): the time field lives in
+      // the insight configuration, not the author's single dimension well.
+      const moversTime = topBottomMoversTimeColumn(visual.insightConfiguration);
+      if (moversTime && !dimensions.includes(moversTime)) dimensions = [...dimensions, moversTime];
+      const rebound = rebindInsight(visual.insightConfiguration,
+        dimensions.map(name => insightDimensionWell(name, visual, calculations, dataset)),
+        visual.measures.map(name => insightMeasureWell(name, dataset)));
+      normalizeInsight(rebound,
+        dimensions.map(name => insightDimensionField(name, visual, calculations, dataset)),
+        visual.measures.map((name): Field => ({ id: name, column: name, dataSet: 'sales_data' })));
+      uvOnly = uniqueValuesOnly(rebound);
+    } catch { return null; }
+  }
+  if ((!visual.measures.length && !uvOnly) || (!noDimensions(visual.kind) && !dimensions.length)) return null;
   // Faceted small multiples group by (dimension, facet): the query groups at
   // that grain so the renderer can draw one panel per facet value.
   const facetNames = FACETED_KINDS.includes(visual.kind) ? visual.smallMultiples ?? [] : [];
@@ -35,6 +77,10 @@ export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly Ca
   return {
     dimensions: [...dimensions.map(dimensionDescriptor), ...facetNames.map(dimensionDescriptor), ...breakdownNames.map(dimensionDescriptor)],
     measures: [...visual.measures.map(name => ({ fieldId: name, columnName: name, aggregation: dataset?.metrics?.find(m => metricColumn(m.id) === name)?.defaultAggregation ?? 'SUM' })),
+      // A uniqueValues-only insight groups by category alone; the planner still
+      // requires one explicit measure, so carry a COUNT like buildDistinctQuery
+      // does — it is discarded by the compiler, never shown as narrative data.
+      ...(uvOnly && !visual.measures.length ? [{ fieldId: '__unique_count', columnName: dataset?.columns.find(c => c.type === 'INTEGER' || c.type === 'DECIMAL')?.name ?? (dataset ? dimensions[0]! : 'revenue'), aggregation: 'COUNT' as const }] : []),
       // Extra tooltip measures aggregate at the visual's existing grain; they never change grouping.
       ...visual.tooltipExtraFields.map(e => ({ fieldId: e.field, columnName: e.field, aggregation: e.aggregation }))],
     filters: [...visual.filters.map(f => f.parameterName ? { columnName: f.columnName, parameterName: f.parameterName, ...(f.operator ? { operator: f.operator } : {}) } : { columnName: f.columnName, values: f.values }), ...dynamic.map(({ filter, parameter }) => ({ columnName: filter.columnName, parameterName: parameter.name, ...(filter.operator ? { operator: filter.operator } : {}) }))],

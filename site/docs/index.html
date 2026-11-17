@@ -4,7 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Documentation — OpenSight docs</title>
-<meta name="description" content="Install and run OpenSight, connect data, configure embedding, and understand permissions and row-level security.">
+<meta name="description" content="Install and run OpenSight, connect data, configure embedding, and understand permissions and row-level security. Plus getting started and migration guides.">
+<meta property="og:title" content="Documentation — OpenSight docs">
+<meta property="og:description" content="Install and run OpenSight, connect data, configure embedding, and understand permissions and row-level security. Plus getting started and migration guides.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://getopensight.org/docs/">
+<meta property="og:image" content="https://getopensight.org/assets/og-image.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Documentation — OpenSight docs">
+<meta name="twitter:description" content="Install and run OpenSight, connect data, configure embedding, and understand permissions and row-level security. Plus getting started and migration guides.">
+<meta name="twitter:image" content="https://getopensight.org/assets/og-image.jpg">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta property="og:image:alt" content="Documentation — OpenSight docs">
 <link rel="canonical" href="https://getopensight.org/docs/">
 <link rel="stylesheet" href="docs.css">
 </head>
@@ -19,6 +31,7 @@
     <nav class="nav-links" aria-label="Main">
       <a href="/">Home</a>
       <a href="/docs/" aria-current="page">Docs</a>
+      <a href="/pricing/">Pricing</a>
       <a href="https://github.com/tomesposito/opensight">GitHub</a>
     </nav>
   </div>
@@ -45,9 +58,10 @@
   <li><h2><a href="/docs/embedding/">H5: embedding configuration and appearance (#25)</a></h2><p>H5 adds durable tenant configuration and an offline appearance preview. H6 (#26) now supplies hosted sessions under the recorded HQ-5/HQ-6/HQ-7/HQ-12 decisions. Phase 3c v1 remains separate and unchanged: registered dashboard/visual snapshots, 60–900 second TTL, default 300 seconds, existing signatures, SDK, authorization and exact-origin checks.</p></li>
   <li><h2><a href="/docs/embedding-sessions/">H6: scoped embedded sessions (#26)</a></h2><p>H6 implements the recorded HQ-5/HQ-6/HQ-7/HQ-12 decisions. Registered dashboard, visual, Q search and authoring experiences, and anonymous dashboard/visual sessions use the hosted tenant stack. The H5 configuration API and Phase 3c v1 signed URL API remain available with their existing semantics. No AWS adapter, infrastructure or deployment is supplied. The static demo is still an offline fixture.</p></li>
   <li><h2><a href="/docs/permissions/">Permissions and row-level security</a></h2><p>Access to an OpenSight analysis or dashboard and access to its data are separate permissions. Sharing a definition lets someone open that asset; it does not give them the owner&#39;s credentials, prepared data, or row and column permissions.</p></li>
-  <li><h2><a href="/docs/open-economics/">Open economics: the features that are never paywalled</a></h2><p>OpenSight is Apache-2.0 software. The hosted service charges for running it, not for unlocking it. Core governance — single sign-on, row-level security, the audit log, and basic embedding — stays in the open product and is never paywalled. Paid tiers buy higher usage quotas, support, and an SLA. Nothing else.</p></li>
+  <li><h2><a href="/docs/open-economics/">Open economics: the features that are never paywalled</a></h2><p>OpenSight is Apache-2.0 software. The hosted service charges for running it, not for unlocking it. Core governance — single sign-on, row-level security, the audit log, and basic embedding — stays in the open product and is never paywalled. Paid tiers buy higher usage quotas and support. Nothing else.</p></li>
   <li><h2><a href="/docs/migrating-from-quicksight/">Moving from QuickSight to OpenSight</a></h2><p>A QuickSight bundle carries four kinds of thing: analyses, dashboards, datasets and data sources. OpenSight imports the bundle file directly. Most of a migration is the import itself. The rest is datasets, and this page says exactly where the line falls.</p></li>
 </ul>
+<p>Running OpenSight yourself is free. If you would rather we ran it, the hosted tiers are on the <a href="/pricing/">pricing page</a>.</p>
     </article>
   </main>
 </div>
@@ -63,6 +77,8 @@
       <a href="https://github.com/tomesposito/opensight">GitHub</a>
       <a href="/docs/">Docs</a>
       <a href="https://github.com/tomesposito/opensight/issues">Discuss</a>
+      <a href="/legal/terms/">Terms</a>
+      <a href="/legal/privacy/">Privacy</a>
       <a href="/alternatives/tableau/">Tableau alternative</a>
       <a href="/alternatives/power-bi/">Power BI alternative</a>
       <a href="/vs/metabase/">OpenSight vs Metabase</a>

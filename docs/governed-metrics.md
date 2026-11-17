@@ -122,6 +122,13 @@ calls or publications. Local catalogs, metric authoring transactions and storage
 formats are unchanged. Bound metrics still carry their own full version history;
 this optimization removes unrelated history from the read, not that history.
 
+Digest authorization uses the same targeted approach (#231): authorizing one
+principal for a digest loads only that principal, the workspace's groups, the
+metric, its dataset and the dataset's folder chain — never the whole catalog —
+while running the identical published-state, folder and grant checks, so
+preview and scheduled-delivery cost stays constant per recipient as the
+workspace grows.
+
 The static demo has no metric store and displays an explicit API requirement.
 It does not ship staged definitions. Metric authoring requires a local or hosted
 API; the single-file demo is not a deployed server.

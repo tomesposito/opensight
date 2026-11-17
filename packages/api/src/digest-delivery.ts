@@ -8,3 +8,24 @@ export const deliveryKey = (run: Occurrence, recipient: string) => checksum([run
 /** The owner is only the durable FK anchor; shared addresses come from the
  * current resolved audience, never from this recipient_id. */
 export const deliveryRecipients = (spec: JobSpec): string[] => spec.kind === 'refresh' ? [] : spec.kind === 'digest' && spec.destination === 'shared' ? [spec.subscriberId] : spec.recipients;
+
+/** Bounded delivery retries (#233): delivery stays at-least-once (HQ-13), but
+ * one retry sequence ends after this many attempts. The delivery then lands
+ * in the terminal `dead` state instead of rescheduling forever, its
+ * occurrence settles, later periods are admitted again, and an operator can
+ * start a new sequence for the same delivery via the retry action. */
+export const MAX_DELIVERY_ATTEMPTS = 10;
+/** Cumulative delivery budget (#252): explicit operator retries start a new
+ * sequence, but the sequences and attempts a single delivery may ever spend
+ * are bounded across all of them. The counters are durable and monotonic —
+ * a retry never resets them — so after the initial sequence plus this many
+ * operator retries, or this many total attempts, the delivery stays dead
+ * and a further retry is refused (DELIVERY_RETRY_BUDGET_EXHAUSTED). The
+ * budget binds owner and tenant administrator alike; no override path
+ * bypasses it. Later occurrences of the job carry their own deliveries
+ * and their own budgets, so they proceed unaffected. */
+export const MAX_DELIVERY_RETRY_SEQUENCES = 2;
+export const MAX_DELIVERY_TOTAL_ATTEMPTS = 30;
+/** Transient delivery outcomes that earn another attempt within a sequence. */
+export const DELIVERY_RETRYABLE_CODES = ['SMTP_SEND_FAILED', 'SMTP_NOT_CONFIGURED', 'WORKER_EXECUTION_FAILED', 'TENANT_BUDGET_EXCEEDED', 'NODE_BUDGET_EXCEEDED', 'EXECUTION_CANCELLED', 'QUEUE_WAIT_EXCEEDED'];
+export const isRetryableDeliveryError = (code: string): boolean => DELIVERY_RETRYABLE_CODES.includes(code);

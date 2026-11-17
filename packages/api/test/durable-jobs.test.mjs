@@ -4,6 +4,7 @@ import { sr3Fixture } from './sr3-helpers.mjs';
 import { report, refresh, executor } from './job-helpers.mjs';
 import { MailError } from '../dist/mail.js';
 import { MetadataError } from '../dist/metadata-db.js';
+import { MAX_DELIVERY_RETRY_SEQUENCES } from '../dist/digest-delivery.js';
 
 async function delivery(t, options) {
   const f = await sr3Fixture(t, options); await f.put();
@@ -95,12 +96,47 @@ test('SR3 SMTP acceptance with lost receipt stays ambiguous; only explicit reaut
   assert.equal(messages.length, 2); assert.equal(messages[0].dedupeKey, messages[1].dedupeKey);
   assert.equal((await f.rows('h7_deliveries'))[0].message, null);
 });
-test('SR3 unconfigured SMTP fails closed, terminates after five attempts and never caches a body', async t => {
+test('SR3 unconfigured SMTP fails closed, dead-letters after five attempts and never caches a body', async t => {
   const f = await delivery(t, { mail: { configured: false, send: async () => assert.fail('not configured') } });
   for (let i = 0; i < 4; i++) await assert.rejects(f.jobs.run(f.envelope), { code: 'SMTP_NOT_CONFIGURED' });
   await f.jobs.run(f.envelope); await f.jobs.run(f.envelope);
-  const row = (await f.rows('h7_deliveries'))[0]; assert.equal(row.state, 'cancelled'); assert.equal(row.message, null);
-  assert.equal((await f.rows('h7_occurrences'))[0].state, 'failed');
+  const row = (await f.rows('h7_deliveries'))[0]; assert.equal(row.state, 'dead'); assert.equal(row.message, null);
+  const occurrence = (await f.rows('h7_occurrences'))[0];
+  assert.equal(occurrence.state, 'failed'); assert.equal(occurrence.error_code, 'JOB_DELIVERY_EXHAUSTED');
+});
+test('SR3 an expired delivery event dead-letters instead of cancelling', async t => {
+  const f = await delivery(t);
+  f.time.now += 90000000;
+  await f.jobs.run(f.envelope);
+  assert.equal(f.mail.messages.length, 0);
+  const row = (await f.rows('h7_deliveries'))[0]; assert.equal(row.state, 'dead'); assert.equal(row.error_code, 'DISPATCH_EVENT_EXPIRED');
+  const occurrence = (await f.rows('h7_occurrences'))[0];
+  assert.equal(occurrence.state, 'failed'); assert.equal(occurrence.error_code, 'JOB_DELIVERY_EXHAUSTED');
+});
+test('SR3 operator retry rearms a dead delivery event in place and the same dedupe key delivers', async t => {
+  const messages = [], mail = { configured: false, async send(message, authorize) { await authorize(); messages.push(structuredClone(message)); } };
+  const f = await delivery(t, { mail });
+  for (let i = 0; i < 4; i++) await assert.rejects(f.jobs.run(f.envelope), { code: 'SMTP_NOT_CONFIGURED' });
+  await f.jobs.run(f.envelope);
+  const dead = (await f.rows('h7_deliveries'))[0]; assert.equal(dead.state, 'dead');
+  const eventId = f.envelope.eventId;
+  mail.configured = true;
+  const retried = await f.store.retryDelivery(f.contexts[0], 'report', dead.delivery_id);
+  assert.equal(retried.delivery_id, dead.delivery_id); assert.equal(retried.state, 'pending'); assert.equal(retried.attempts, 0);
+  assert.equal((await f.rows('h7_deliveries')).length, 1);
+  assert.equal((await f.rows('h7_occurrences'))[0].state, 'delivering');
+  const outbox = (await f.rows('sr_outbox')).find(r => r.kind === 'job-deliver');
+  assert.equal(outbox.event_id, eventId); assert.notEqual(outbox.state, 'terminal');
+  await f.jobs.run(await f.event('job-deliver'));
+  assert.equal(messages.length, 1); assert.equal(messages[0].dedupeKey, dead.delivery_id);
+  assert.equal((await f.rows('h7_deliveries'))[0].state, 'sent');
+  assert.equal((await f.rows('h7_occurrences'))[0].state, 'succeeded');
+});
+test('SR3 a non-retryable delivery failure still cancels instead of dead-lettering', async t => {
+  const f = await delivery(t);
+  f.executor.verifyDelivery = async () => { throw new MetadataError('BLAZE_INVALIDATED', 409); };
+  await f.jobs.run(f.envelope);
+  const row = (await f.rows('h7_deliveries'))[0]; assert.equal(row.state, 'cancelled'); assert.equal(row.error_code, 'BLAZE_INVALIDATED');
 });
 test('SR3 construction and idle time create zero background SQL queries or heartbeat timers', async t => {
   const f = await sr3Fixture(t); const count = f.queries.length;
@@ -203,4 +239,32 @@ test('SR3 delivery rechecks the rendered artifact certificate before SMTP DATA',
   await f.jobs.run(f.envelope);
   assert.equal(f.mail.messages.length, 0);
   assert.equal((await f.rows('h7_deliveries'))[0].error_code, 'BLAZE_INVALIDATED');
+});
+
+test('SR3 #252 repeated operator rearms exhaust the cumulative budget and the event stays terminal', async t => {
+  const f = await delivery(t, { mail: { configured: false, send: async () => assert.fail('not configured') } });
+  const exhaust = async () => {
+    const envelope = await f.event('job-deliver');
+    for (let i = 0; i < 4; i++) await assert.rejects(f.jobs.run(envelope), { code: 'SMTP_NOT_CONFIGURED' });
+    await f.jobs.run(envelope);
+    const row = (await f.rows('h7_deliveries'))[0]; assert.equal(row.state, 'dead'); return row;
+  };
+  let dead = await exhaust(); assert.equal(Number(dead.retry_sequences), 0);
+  for (let s = 1; s <= MAX_DELIVERY_RETRY_SEQUENCES; s++) {
+    const retried = await f.store.retryDelivery(f.contexts[0], 'report', dead.delivery_id);
+    assert.equal(retried.state, 'pending'); assert.equal(retried.retry_sequences, s);
+    assert.equal((await f.rows('sr_execution')).filter(r => r.event_id === f.envelope.eventId).length, 0);
+    dead = await exhaust(); assert.equal(Number(dead.retry_sequences), s);
+  }
+  // The next retry is refused before any rearm: the delivery stays dead,
+  // the outbox event stays terminal and its execution record is preserved
+  // instead of being deleted for a fresh sequence.
+  const executions = (await f.rows('sr_execution')).filter(r => r.event_id === f.envelope.eventId); assert.equal(executions.length, 1);
+  await assert.rejects(f.store.retryDelivery(f.contexts[0], 'report', dead.delivery_id), { code: 'DELIVERY_RETRY_BUDGET_EXHAUSTED' });
+  const row = (await f.rows('h7_deliveries'))[0];
+  assert.equal(row.state, 'dead'); assert.equal(Number(row.retry_sequences), MAX_DELIVERY_RETRY_SEQUENCES);
+  assert.equal((await f.rows('sr_outbox')).find(r => r.kind === 'job-deliver').state, 'terminal');
+  assert.deepEqual((await f.rows('sr_execution')).filter(r => r.event_id === f.envelope.eventId), executions);
+  const occurrence = (await f.rows('h7_occurrences'))[0];
+  assert.equal(occurrence.state, 'failed'); assert.equal(occurrence.error_code, 'JOB_DELIVERY_EXHAUSTED');
 });

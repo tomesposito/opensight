@@ -20,6 +20,8 @@ export class AutomationStore<T> {
     return new AutomationStore(state, path);
   }
   read(): T { return structuredClone(this.state); }
+  /** Read-only projection: fn must not mutate state and must return only the slice it needs. */
+  project<R>(fn: (state: T) => R): R { return structuredClone(fn(this.state)); }
   change<R>(update: (draft: T) => R): Promise<R> {
     const operation = this.tail.then(async () => {
       const draft = structuredClone(this.state);

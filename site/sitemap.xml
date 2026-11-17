@@ -7,6 +7,12 @@
     <loc>https://getopensight.org/pricing/</loc>
   </url>
   <url>
+    <loc>https://getopensight.org/legal/terms/</loc>
+  </url>
+  <url>
+    <loc>https://getopensight.org/legal/privacy/</loc>
+  </url>
+  <url>
     <loc>https://getopensight.org/alternatives/quicksight/</loc>
   </url>
   <url>
@@ -20,12 +26,6 @@
   </url>
   <url>
     <loc>https://getopensight.org/vs/superset/</loc>
-  </url>
-  <url>
-    <loc>https://getopensight.org/demo/</loc>
-  </url>
-  <url>
-    <loc>https://app.getopensight.org/</loc>
   </url>
   <url>
     <loc>https://getopensight.org/docs/</loc>

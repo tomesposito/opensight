@@ -28,12 +28,48 @@ One API process owns one scheduler. Multi-node scheduling remains H10.
 - A completed report or alert evaluation atomically creates one outbox entry
   per recipient. Delivery retries use bounded exponential backoff and an
   immutable tenant/job/occurrence/recipient dedupe key. Interrupted execution
-  returns to the queue; interrupted delivery returns to pending with the same
-  key. A successful send receipt is durable. Retries reauthorize before sending.
+  returns to the queue; interrupted delivery below the attempt cap returns to
+  pending with the same key. A successful send receipt is durable. Retries
+  reauthorize before sending.
   SMTP receives a stable Message-ID; an SMTP acceptance followed by a crash
   before receipt commit can still duplicate mail. This is at-least-once delivery,
   not exactly-once SMTP. The stub transport honors dedupe keys, including an
   injected shared receipt set for restart tests.
+- Retry sequences are bounded (#233): after 10 attempts a delivery lands in
+  the terminal `dead` state instead of rescheduling, keeping its last error
+  code. Its occurrence then settles `failed` with `JOB_DELIVERY_EXHAUSTED`,
+  so one persistently failing delivery cannot block the job's later periods.
+  The job owner or a tenant administrator can start a new bounded sequence
+  for the same delivery — same delivery row, same dedupe key, attempts reset
+  — with `POST /api/jobs/:id/deliveries/:deliveryId/retry` or the Retry
+  button in the automation page's deliveries table. Retrying is refused for
+  non-dead deliveries (`DELIVERY_NOT_DEAD`) and for stopped or revised jobs.
+  In the durable-events deployment the retry rearms the delivery's original
+  event in place with a fresh window and execution sequence.
+- The single-node runner enforces the same cap during crash recovery and
+  atomically when claiming pending deliveries (#251). Interrupted `sending`
+  rows and due `pending` rows already at or above 10 attempts dead-letter
+  without another send or increment. If SMTP accepts the tenth attempt but
+  its durable receipt fails, the delivery also dead-letters; below the cap,
+  that ambiguous claim remains recoverable. Recovery records
+  `DELIVERY_INTERRUPTED`; claim exhaustion preserves the previous error (or
+  uses `JOB_DELIVERY_EXHAUSTED` when absent), and receipt failure records the
+  store error. Occurrences settle only after all deliveries are terminal:
+  any dead delivery yields `JOB_DELIVERY_EXHAUSTED`, otherwise cancellation
+  yields `JOB_DELIVERY_CANCELLED`, and all-sent occurrences succeed.
+- Explicit retries are cumulatively bounded (#252): each delivery carries
+  durable, monotonic `total_attempts` and `retry_sequences` counters that a
+  retry never resets. An operator retry is refused with
+  `DELIVERY_RETRY_BUDGET_EXHAUSTED` once the delivery has spent 2 retry
+  sequences or 30 total attempts (three bounded sequences in all); the
+  delivery then stays `dead` permanently, its occurrence stays settled,
+  and — in the durable-events deployment — its event stays terminal with
+  its execution record intact instead of being deleted for a fresh
+  sequence. The budget binds the job owner and tenant administrators
+  alike; there is no bypass on this path. Later occurrences of the same
+  job create their own deliveries with their own budgets and proceed
+  unaffected. The deliveries list and the retry response expose both
+  counters.
 
 ## User removal
 
@@ -69,7 +105,8 @@ never replays historical notifications. Unresolved owners, recipients or data
 bindings fail closed. Hosted startup refuses unconverted legacy automation.
 
 Tenant routes: `/api/jobs`, `/api/jobs/:id`, `/api/jobs/:id/runs`,
-`/api/jobs/:id/deliveries`, `/api/job-recipients`, `/api/automation-status`.
+`/api/jobs/:id/deliveries`, `/api/jobs/:id/deliveries/:deliveryId/retry`,
+`/api/job-recipients`, `/api/automation-status`.
 Creation derives the owner from the verified session; updates require the job's
 current version. Histories and recipients are tenant scoped. The hosted
 automation page displays jobs, recipients and their run/delivery histories.

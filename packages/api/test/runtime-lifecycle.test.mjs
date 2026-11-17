@@ -124,12 +124,15 @@ test('SR1 a connect resolving after cancellation is discarded and awaited before
   pool.connect = () => new Promise(resolve => { releaseConnect = () => { open++; resolve({ query: async () => ({ rows: [] }), release: () => { open--; } }); }; });
   pool.end = async () => { ended++; };
   const invocation = scope();
+  const cancelled = once(invocation.signal, 'abort');
   const run = invocation.run(async s => {
     const db = new PostgresMetadataDatabase(new InvocationPool(s, {}, 10, () => pool));
     await db.transaction(c => c.query('SELECT 1'));
   });
   const rejected = assert.rejects(run, { code: 'SQL_CONNECT_TIMEOUT' });
-  await new Promise(resolve => setTimeout(resolve, 20));
+  // Invocation setup first clears temporary remnants asynchronously. Wait for
+  // actual cancellation, rather than racing that setup with a wall-clock sleep.
+  await cancelled;
   releaseConnect(); await rejected; assert.equal(open, 0); assert.equal(ended, 1);
 });
 

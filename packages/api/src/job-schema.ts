@@ -68,7 +68,7 @@ export async function cancelJob(c: SqlConnection, s: Scope, id: string, code: st
   await c.query(`UPDATE h7_deliveries SET state = 'cancelled', error_code = ?, message = NULL WHERE ${scoped} AND job_id = ? AND state IN ('pending','sending')`, [code, ...scopeArgs(s), id]);
 }
 /** Private operator-owned tables; no grants to the H1 tenant role. */
-export async function initializeJobs(db: Database): Promise<void> {
+export async function initializeJobs(db: Database, dialect: 'sqlite' | 'postgres' = db.dialect ?? 'sqlite'): Promise<void> {
   await db.transaction(async c => {
     await c.query(`CREATE TABLE IF NOT EXISTS h7_jobs (
       tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, job_id TEXT NOT NULL, owner_id TEXT NOT NULL,
@@ -87,7 +87,8 @@ export async function initializeJobs(db: Database): Promise<void> {
       FOREIGN KEY (tenant_id, namespace_id, initiated_by) REFERENCES h2_memberships(tenant_id, namespace_id, user_id))`);
     await c.query(`CREATE TABLE IF NOT EXISTS h7_deliveries (
       tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, delivery_id TEXT NOT NULL, job_id TEXT NOT NULL, occurrence_id TEXT NOT NULL, recipient_id TEXT NOT NULL,
-      state TEXT NOT NULL CHECK (state IN ('pending','sending','sent','cancelled')), attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0), next_attempt TEXT NOT NULL,
+      state TEXT NOT NULL CHECK (state IN ('pending','sending','sent','cancelled','dead')), attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+      total_attempts INTEGER NOT NULL DEFAULT 0 CHECK (total_attempts >= 0), retry_sequences INTEGER NOT NULL DEFAULT 0 CHECK (retry_sequences >= 0), next_attempt TEXT NOT NULL,
       error_code TEXT, message TEXT, sent_at TEXT, PRIMARY KEY (tenant_id, namespace_id, delivery_id),
       UNIQUE (tenant_id, namespace_id, occurrence_id, recipient_id),
       FOREIGN KEY (tenant_id, namespace_id, occurrence_id) REFERENCES h7_occurrences(tenant_id, namespace_id, occurrence_id),
@@ -95,5 +96,53 @@ export async function initializeJobs(db: Database): Promise<void> {
       FOREIGN KEY (tenant_id, namespace_id, recipient_id) REFERENCES h2_memberships(tenant_id, namespace_id, user_id))`);
     await c.query(`CREATE TABLE IF NOT EXISTS h7_migrations (tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, checksum TEXT NOT NULL,
       PRIMARY KEY (tenant_id, namespace_id), FOREIGN KEY (tenant_id, namespace_id) REFERENCES h1_namespaces(tenant_id, namespace_id))`);
+    await ensureDeliveryDeadState(c, dialect);
+    await ensureDeliveryCumulativeColumns(c, dialect);
   });
+}
+
+const deliveryColumns = `tenant_id TEXT NOT NULL, namespace_id TEXT NOT NULL, delivery_id TEXT NOT NULL, job_id TEXT NOT NULL, occurrence_id TEXT NOT NULL, recipient_id TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('pending','sending','sent','cancelled','dead')), attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0), next_attempt TEXT NOT NULL,
+  error_code TEXT, message TEXT, sent_at TEXT, PRIMARY KEY (tenant_id, namespace_id, delivery_id),
+  UNIQUE (tenant_id, namespace_id, occurrence_id, recipient_id),
+  FOREIGN KEY (tenant_id, namespace_id, occurrence_id) REFERENCES h7_occurrences(tenant_id, namespace_id, occurrence_id),
+  FOREIGN KEY (tenant_id, namespace_id, job_id) REFERENCES h7_jobs(tenant_id, namespace_id, job_id),
+  FOREIGN KEY (tenant_id, namespace_id, recipient_id) REFERENCES h2_memberships(tenant_id, namespace_id, user_id)`;
+
+/** Upgrade the delivery state constraint for databases created before the
+ * dead-letter state (#233), without losing rows. Mirrors ensureMetricKind. */
+export async function ensureDeliveryDeadState(c: SqlConnection, dialect: 'sqlite' | 'postgres'): Promise<void> {
+  if (dialect === 'postgres') {
+    const checks = await c.query("SELECT conname, pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid = 'h7_deliveries'::regclass AND contype = 'c'");
+    for (const row of checks) {
+      const definition = String(row.definition), name = String(row.conname);
+      if (!definition.includes("'pending'") || definition.includes("'dead'")) continue;
+      if (!/^[a-zA-Z0-9_]+$/.test(name)) throw new Error('Unexpected jobs constraint name');
+      await c.query(`ALTER TABLE h7_deliveries DROP CONSTRAINT "${name}"`);
+      await c.query(`ALTER TABLE h7_deliveries ADD CONSTRAINT "${name}" ${definition.replace("'cancelled'::text", "'cancelled'::text, 'dead'::text")}`);
+    }
+    return;
+  }
+  const rows = await c.query("SELECT sql FROM sqlite_master WHERE name = 'h7_deliveries'");
+  if (String(rows[0]?.sql).includes("'dead'")) return;
+  await c.query(`CREATE TABLE h7_deliveries_dead (${deliveryColumns})`);
+  await c.query('INSERT INTO h7_deliveries_dead SELECT * FROM h7_deliveries');
+  await c.query('DROP TABLE h7_deliveries');
+  await c.query('ALTER TABLE h7_deliveries_dead RENAME TO h7_deliveries');
+}
+
+/** Add the cumulative retry-budget counters (#252) to databases created
+ * before them. Runs after the dead-state upgrade so its sqlite rebuild,
+ * which copies the pre-#252 column list verbatim, still matches. The
+ * backfill is a lower bound: a legacy row's current-sequence attempts are
+ * the only attempts still observable, so they seed the total. */
+export async function ensureDeliveryCumulativeColumns(c: SqlConnection, dialect: 'sqlite' | 'postgres'): Promise<void> {
+  const columns = await c.query(dialect === 'postgres'
+    ? "SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'h7_deliveries'"
+    : 'PRAGMA table_info(h7_deliveries)');
+  for (const column of ['total_attempts', 'retry_sequences']) {
+    if (columns.some(row => row.name === column)) continue;
+    await c.query(`ALTER TABLE h7_deliveries ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0 CHECK (${column} >= 0)`);
+    if (column === 'total_attempts') await c.query('UPDATE h7_deliveries SET total_attempts = attempts WHERE total_attempts < attempts');
+  }
 }

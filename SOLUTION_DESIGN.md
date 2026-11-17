@@ -1277,11 +1277,45 @@ After reopening, retain captured submissions; acceptance failure closes admissio
 for forward reconciliation rather than restoring over new requests. See
 [D-89](docs/itd/D-89-access-request-maintenance.md).
 
+**Ideas and analytics maintenance (D-92, frozen 2026-11-06, #178, #175):**
+Extend the D-89 owner-only, same-epoch procedure from the exact access-request
+inventory to that inventory plus `-ideas-v1`. The only schema additions are an
+empty `h8_ideas` table and nullable `analytics_events.delivered_at`; preserve
+existing analytics rows with a null delivery marker and all other rows exactly.
+Bind both inventories, source releases, schema expectations and the unchanged
+object-cleanup protocol in the owner plan. Keep the full drain, pinned registered
+backup, exact future unclaimed cleanup/schedule checks, transactional migration,
+receipt replay, runtime-grant verification and watchdog requirements. Rehearse
+against the deployed schema, including existing access requests and analytics,
+with explicit drift/failure cases. No signup/billing rollout or new runtime
+configuration is included. After reopening, any failure requires forward
+reconciliation so captured ideas, access requests and analytics are retained.
+See [D-92](docs/itd/D-92-ideas-analytics-maintenance.md).
+
 **Access-request release packaging (frozen 2026-11-01, #176):** Include the
 marketing page's existing Apple touch icon in the bounded, attested frontend
 inventory. Verify that each local icon referenced by the marketing HTML is
 packaged with its exact digest and image content type. Do not change the icon
 artwork or expand packaging to arbitrary site files.
+
+**Marketing release completeness (frozen 2026-11-06, #183–#187, #197):**
+Include the existing `site/assets/og-image.jpg`, pricing, comparison pages,
+committed documentation pages/styles and unlinked signup page/script in the
+explicit bounded attested frontend inventory. Never recurse over arbitrary site
+files. Package exact source bytes and media types; verify local page, asset,
+Open Graph and Twitter image references and sitemap URLs resolve within that
+inventory. Route only the named public directory indexes and scripts on the
+marketing host, with canonical trailing-slash redirects; retain host isolation,
+path rejection and app routes. Keep signup dark and all existing CTAs unchanged.
+Verify the actual CloudFront functions and served artifact digests after cutover.
+
+**Viewer rejection budget (frozen 2026-11-06, #199 release acceptance):**
+The generated CloudFront viewer must reject unsupported paths before scanning
+request headers, while preserving the shared path/header acceptance contract
+and uniform 403 denial. This avoids spending the regex instruction budget on
+large headers for requests that cannot be routed. Verify malformed paths,
+large headers, every supported route family and forbidden provenance in the
+actual CloudFront engine before deployment.
 
 **SR4c compatible release automation (frozen 2026-10-11):** The operator approved
 public isolated CI, immutable release artifacts, private manual deployment via

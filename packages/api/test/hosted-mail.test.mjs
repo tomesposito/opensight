@@ -24,7 +24,7 @@ test('197 mail: trial is 25 total across month boundary, recipient-counted, retr
 test('197 mail: paid D-82 allowance resets monthly and concurrent sends cannot exceed it', async t => {
   const f = await fixture(t);
   assert.deepEqual(MONTHLY_EMAILS, { free: 100, light: 500, regular: 5000, heavy: 25000 });
-  await f.billing.handleEvent({ id: 'evt_paidmail', type: 'customer.subscription.updated', object: { id: 'sub_mail', status: 'active', metadata: { tenant_id: 'tenant-one' }, items: { data: [{ price: { id: 'price_l' } }] } } });
+  await f.billing.handleEvent({ id: 'evt_paidmail', created: 1, type: 'checkout.session.completed', object: { subscription: 'sub_mail', customer: 'cus_fixture', metadata: { tenant_id: 'tenant-one', tier: 'light' }, payment_status: 'paid' } });
   await f.send(499, 'start');
   const results = await Promise.allSettled([f.send(1, 'a'), f.send(1, 'b')]);
   assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);

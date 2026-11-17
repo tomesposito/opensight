@@ -12,8 +12,10 @@ have labels; cards are keyboard-accessible buttons with selected state.
 The static demo uses the browser-safe registry without loading database drivers
 or the Excel parser. It shows **Needs local or hosted API** for files,
 **Needs a hosted API and an operator-configured connection** for PostgreSQL,
-**Needs a hosted connector implementation** for SaaS/AWS, and **Not yet
-implemented** for MySQL and other database connections. Its upload and
+**Needs hosted API and an operator-configured S3 source** for S3,
+**Needs a hosted connector implementation** for SaaS and the remaining AWS stubs,
+and **Not yet implemented** for unsupported database connections. MySQL, MariaDB,
+manual Redshift and Athena report the need for an operator-configured connection. Its upload and
 validation controls are disabled. There are no
 simulated connections, sample upload success messages, or network requests.
 
@@ -45,3 +47,13 @@ and [MySQL](connector-mysql.md) for supported semantics and limits. The static
 artifact is `packages/web/dist/opensight-demo.html`, rebuilt using
 `npm run build:demo --workspace @opensight/web`. It is a local preview, not a
 deployed server.
+
+S3 now supports [hosted API ingestion and prefix browsing](connector-s3.md).
+The current source-creation dialog still excludes AWS connectors; S3 provisioning
+is through the documented API, not a simulated connection in the gallery.
+
+RDS, Aurora and Redshift auto-discovery are implemented as a
+[library discovery service](connector-rds-discovery.md): their cards report the
+need for an operator-configured discovery connection. Hosted provisioning and
+the gallery's one-click source creation from a discovery result are follow-on
+work, not a simulated flow in the gallery.

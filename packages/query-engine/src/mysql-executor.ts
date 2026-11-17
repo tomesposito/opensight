@@ -1,3 +1,5 @@
+import { executeAthena } from './athena-executor.js';
+import { executeRedshift } from './redshift-executor.js';
 import { createConnection, type Connection, type RowDataPacket } from 'mysql2/promise';
 import { validateConnectorConfig, ConnectorError, connectorDefinition, type ConnectorConfig } from './connectors.js';
 import { planVisual } from './planner.js';
@@ -5,9 +7,11 @@ import { executePostgres } from './postgres-executor.js';
 import { evaluateSqlPlan } from './evaluate.js';
 import { fail, QueryEngineError } from './validation.js';
 import type { PlanRequest, QueryResult, ResultValue } from './types.js';
+import { mysqlSessionSql, mysqlVariantSql, type MySqlVariant } from './mysql-session.js';
 
 export interface MySqlExecuteOptions {
   config: unknown;
+  connectorId?: MySqlVariant;
   /** Trusted server environment injection; defaults to process.env. Never accept from HTTP. */
   environment?: Readonly<Record<string, string | undefined>>;
   /** Tests/local loopback only; other addresses always require verified TLS. */
@@ -33,8 +37,10 @@ function value(raw: unknown, numeric: boolean): ResultValue {
 }
 /** MySQL 8.0.22+: generated SELECT only, UTC, prepared parameters, verified TLS. */
 export async function executeMySql(request: PlanRequest, options: MySqlExecuteOptions): Promise<QueryResult> {
-  const plan = planVisual(request, { dialect: 'mysql' }); // Security and SQL validation precede any socket.
-  const config = validateConnectorConfig('mysql', options?.config);
+  const variant = options.connectorId ?? 'mysql';
+  const planned = planVisual(request, { dialect: 'mysql' }); // Security and SQL validation precede any socket.
+  const plan = { ...planned, sql: mysqlVariantSql(planned.sql, variant) };
+  const config = validateConnectorConfig(variant, options?.config);
   const env = resolveEnvironment(config, options.environment ?? process.env);
   const port = Number(env.portEnv);
   if (!/^\d+$/.test(env.portEnv!) || !Number.isInteger(port) || port < 1 || port > 65535) throw new ConnectorError('INVALID_CONNECTOR_CONFIG', '$.config.portEnv', 'Expected port 1–65535');
@@ -48,7 +54,7 @@ export async function executeMySql(request: PlanRequest, options: MySqlExecuteOp
       connectTimeout: 3000, timezone: 'Z', dateStrings: true, supportBigNumbers: true, bigNumberStrings: true, rowsAsArray: true,
       multipleStatements: false, enableKeepAlive: false,
     });
-    await client.query({ sql: "SET SESSION time_zone = '+00:00', sql_mode = 'STRICT_TRANS_TABLES,NO_BACKSLASH_ESCAPES,ONLY_FULL_GROUP_BY', collation_connection = 'utf8mb4_0900_bin', max_execution_time = 10000", timeout: 10000 });
+    await client.query({ sql: mysqlSessionSql(variant), timeout: 10000 });
     const [rows, fields] = await client.execute<RowDataPacket[]>({ sql: plan.sql, values: [...plan.parameters], timeout: 10000 });
     const numericTypes = new Set([0, 1, 2, 3, 4, 5, 8, 9, 13, 246]);
     const converted = rows.map(row => Object.fromEntries(fields.map((f, i) => [f.name, value(row[i] as unknown, numericTypes.has(f.type ?? -1))])));
@@ -61,7 +67,9 @@ export async function executeMySql(request: PlanRequest, options: MySqlExecuteOp
 /** Trusted server-side entry point; stub connectors never open connections. */
 export async function executeConnector(id: string, config: unknown, request: PlanRequest, environment: Readonly<Record<string, string | undefined>> = process.env): Promise<QueryResult> {
   const c = connectorDefinition(id), validated = validateConnectorConfig(id, config);
-  if (id === 'mysql') return executeMySql(request, { config: validated, environment });
+  if (id === 'mysql' || id === 'mariadb') return executeMySql(request, { config: validated, environment, connectorId: id });
+  if (id === 'athena') return executeAthena(request, { config: validated, environment });
+  if (id === 'redshift-manual') return executeRedshift(request, { config: validated, environment });
   if (id === 'postgresql') return executePostgres(request, { connectionString: resolveEnvironment(validated, environment).connectionEnv! });
   throw new ConnectorError(c.implementation === 'hosted' ? 'CONNECTOR_NOT_CONFIGURED' : 'CONNECTOR_NOT_IMPLEMENTED', '$.connector', c.implementation === 'hosted' ? 'Needs hosted API / not configured' : 'Query connection is not yet implemented; file uploads use DuckDB staging');
 }

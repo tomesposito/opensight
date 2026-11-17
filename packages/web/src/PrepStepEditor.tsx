@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { PrepJoinEditor } from './PrepJoinEditor.js';
+import { PrepWindowEditor } from './PrepWindowEditor.js';
+import { PrepSqlView } from './PrepSqlView.js';
 import { PrepColumns as Columns } from './PrepColumns.js';
 import { prepName, prepTypes, type PrepColumn, type PrepStep, type PrepAggregation, type PrepJoinInput, type PrepPipeline } from '@opensight/bundle-parser/prep';
 import { prepStepLabel, prepLabel, prepRefKey, prepRefLabel, prepSourceRef, prepSourceLabel, prepInstanceLabel, prepStepSourceInstance, prepMessage, type PrepSourceSummary } from './data-prep.js';
@@ -15,7 +17,7 @@ export function PrepSourcePicker({ label, value, sources, change }: { label: str
   </select></label>;
 }
 function Text({ label, value, change }: { label: string; value: string; change: (v: string) => void }) { return <label>{label}<input value={value} onChange={e => change(e.target.value)} /></label>; }
-export function PrepStepEditor({ step, columns: inputColumns, sources, pipeline, apply, cancel, validate }: { step: PrepStep; columns: readonly PrepColumn[]; sources: readonly PrepSourceSummary[]; pipeline?: PrepPipeline; apply: (step: PrepStep) => void; cancel: () => void; validate?: (step: PrepStep) => void }) {
+export function PrepStepEditor({ step, columns: inputColumns, sources, pipeline, schemaContext, apply, cancel, validate }: { step: PrepStep; columns: readonly PrepColumn[]; sources: readonly PrepSourceSummary[]; pipeline?: PrepPipeline; schemaContext?: import('./data-prep.js').PrepSchemaContext; apply: (step: PrepStep) => void; cancel: () => void; validate?: (step: PrepStep) => void }) {
   const [edited, setEdited] = useState<PrepStep>(() => structuredClone(step));
   const index = pipeline?.steps.findIndex(s => s.id === step.id) ?? -1;
   const earlier = pipeline?.steps.slice(0, index < 0 ? pipeline.steps.length : index) ?? [];
@@ -34,6 +36,7 @@ export function PrepStepEditor({ step, columns: inputColumns, sources, pipeline,
     case 'rename': { const c = edited.config; fields = <><Select label="Column" value={c.column} values={names} change={column => setEdited({ ...edited, config: { ...c, column } })} /><Text label="New name" value={c.name} change={name => setEdited({ ...edited, config: { ...c, name } })} /></>; break; }
     case 'select': { const c = edited.config; fields = <Columns label="Keep columns" columns={columns} selected={c.columns} change={columns => setEdited({ ...edited, config: { columns } })} />; break; }
     case 'calculate': { const c = edited.config; fields = <><Text label="Column name" value={c.name} change={name => setEdited({ ...edited, config: { ...c, name } })} /><label>Expression<textarea aria-label="Expression" rows={5} value={c.expression} placeholder="{revenue} * 0.9" onChange={e => setEdited({ ...edited, config: { ...c, expression: e.target.value } })} /></label><p>Use row functions and {'{column}'} references. Calculations run in step order. Use Aggregate for totals.</p></>; break; }
+    case 'window': fields = <PrepWindowEditor config={edited.config} columns={columns} change={config => setEdited({ ...edited, config })} />; break;
     case 'filter': {
       const c = edited.config;
       fields = <>{c.filters.map((f, i) => {
@@ -49,7 +52,7 @@ export function PrepStepEditor({ step, columns: inputColumns, sources, pipeline,
         return <fieldset key={i}><legend>Measure {i + 1}</legend><Select label="Column" value={m.column} values={names} change={column => update({ ...m, column })} /><Select label="Aggregation" value={m.aggregation} values={aggregations} change={aggregation => update({ ...m, aggregation: aggregation as PrepAggregation })} /><Text label="Output name" value={m.name} change={name => update({ ...m, name })} /><button type="button" onClick={() => setEdited({ ...edited, config: { ...c, measures: c.measures.filter((_, n) => n !== i) } })}>Remove measure</button></fieldset>;
       })}<button type="button" onClick={() => setEdited({ ...edited, config: { ...c, measures: [...c.measures, { column: names[0] ?? '', name: `measure_${c.measures.length + 1}`, aggregation: 'COUNT' }] } })}>Add measure</button></>; break;
     }
-    case 'append': { const c = edited.config; fields = <><Select label="Append source" value={c.source} values={sourceIds} change={source => setEdited({ ...edited, config: { source } })} /><p>Names and types must match. Columns align by name; duplicates are kept.</p></>; break; }
+    case 'append': { const c = edited.config; fields = <><Select label="Append source" value={c.source} values={sourceIds} change={source => setEdited({ ...edited, config: { ...c, source } })} /><Select label="Duplicates" value={c.duplicates === 'dedupe' ? 'Remove duplicate rows' : 'Keep all rows'} values={['Keep all rows', 'Remove duplicate rows']} change={choice => setEdited({ ...edited, config: { ...c, duplicates: choice === 'Remove duplicate rows' ? 'dedupe' : 'keep' } })} /><p>Names and types must match. Columns align by name; duplicate removal compares the full output row.</p></>; break; }
     case 'join': {
       const c = edited.config, rightColumns = sources.find(s => prepRefKey(prepSourceRef(s)) === prepRefKey(c.source))?.columns ?? [], right = rightColumns.map(c => c.name);
       const rightSourceName = pipeline ? prepInstanceLabel(prepRefLabel(c.source), prepStepSourceInstance(pipeline, edited)) : prepRefLabel(c.source);
@@ -90,5 +93,5 @@ export function PrepStepEditor({ step, columns: inputColumns, sources, pipeline,
     if (e.target.value === '') delete next.name;
     else next.name = e.target.value;
     setEdited(next);
-  }} /></label>{edited.kind !== 'join' && leftInput}{fields}{problem && <p className="prep-error" role="alert">{problem}</p>}<div className="prep-actions"><button type="submit" disabled={!!problem}>Apply step</button><button type="button" onClick={cancel}>Cancel</button></div></form>;
+  }} /></label>{edited.kind !== 'join' && leftInput}{fields}{problem && <p className="prep-error" role="alert">{problem}</p>}{pipeline && <PrepSqlView pipeline={pipeline} step={configured()} sources={sources} context={schemaContext} />}<div className="prep-actions"><button type="submit" disabled={!!problem}>Apply step</button><button type="button" onClick={cancel}>Cancel</button></div></form>;
 }

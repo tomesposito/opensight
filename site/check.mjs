@@ -1,4 +1,4 @@
-// Integrity check for the marketing site (issues #93, #106, #134, #176, #183, #184, #185, #186, #187).
+// Integrity check for the marketing site (issues #93, #106, #134, #176, #183, #184, #185, #186, #187, #210, #237, #238, #239).
 // Usage: node site/check.mjs  (exit 0 = pass)
 // Verifies: every local asset referenced from index.html exists, no external
 // requests beyond allowlisted links, required sections and AEO artifacts present.
@@ -105,17 +105,27 @@ check(sitemap.includes('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0
   sitemap.includes('</urlset>'), 'sitemap.xml must use the sitemap namespace and urlset');
 const locations = [...sitemap.matchAll(/<url>\s*<loc>([^<]+)<\/loc>\s*<\/url>/g)].map(m => m[1]);
 const publicUrls = ['https://getopensight.org/', 'https://getopensight.org/pricing/',
+  'https://getopensight.org/legal/terms/', 'https://getopensight.org/legal/privacy/',
   'https://getopensight.org/alternatives/quicksight/',
   'https://getopensight.org/alternatives/tableau/',
   'https://getopensight.org/alternatives/power-bi/',
   'https://getopensight.org/vs/metabase/',
   'https://getopensight.org/vs/superset/',
-  'https://getopensight.org/demo/', `${APP_ORIGIN}/`,
   canonicalUrl(''), ...manifest.map(page => canonicalUrl(page.slug))];
 check(locations.length === publicUrls.length, `sitemap.xml must list exactly ${publicUrls.length} public entry points`);
 for (const url of publicUrls) {
   check(locations.includes(url), `sitemap.xml missing public entry point: ${url}`);
 }
+// Issue #237: the app shells are not placement pages. /demo/ is a bare app
+// shell and the app subdomain is a login shell on another host, so neither
+// belongs in this sitemap; the demo artifact itself serves noindex instead.
+check(!locations.includes('https://getopensight.org/demo/'),
+  'sitemap.xml must not list the /demo/ app shell (#237)');
+check(!locations.includes(`${APP_ORIGIN}/`),
+  'sitemap.xml must not list the cross-host app subdomain (#237)');
+const demoBuilder = readFileSync(resolve(root, '../packages/web/scripts/build-demo.mjs'), 'utf8');
+check(demoBuilder.includes('<meta name="robots" content="noindex, follow" />'),
+  'the demo build must inject the noindex, follow robots meta into the demo artifact (#237)');
 
 // 9. Social cards reuse the existing title, description and local hero poster.
 const meta = [...html.matchAll(/<meta\b[^>]*>/g)].map(m =>
@@ -248,7 +258,7 @@ try {
 const pricingUrl = 'https://getopensight.org/pricing/';
 const pricing = readArtifact('pricing/index.html');
 const stripTags = text => text.replace(/<[^>]+>/g, '');
-check(pricing.match(/<title>([^<]+)<\/title>/)?.[1] === 'Pricing — OpenSight',
+check(pricing.match(/<title>([^<]+)<\/title>/)?.[1] === 'OpenSight pricing: free to self-host, hosted from $29/mo',
   'pricing: incorrect page title');
 check(pricing.match(/<h1>([^<]+)<\/h1>/)?.[1] === 'Pricing', 'pricing: H1 must be Pricing');
 const pricingCanonicals = [...pricing.matchAll(/<link rel="canonical" href="([^"]+)">/g)].map(m => m[1]);
@@ -259,7 +269,7 @@ check(!/MIT license/i.test(pricing), 'pricing: page must not claim an MIT licens
 const pricingParas = [...pricing.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/g)].map(m => stripTags(m[1]));
 for (const copy of [
   'OpenSight is free. Run it yourself and it costs nothing: the code is Apache-2.0, it is the same product we host, and no feature sits behind a paywall.',
-  'Hosted OpenSight is paying us to run it for you — hosting, backups, updates, support, and an SLA. The tiers below differ in quotas, not in features.',
+  'Hosted OpenSight is paying us to run it for you — hosting, backups, updates, and support. The tiers below differ in quotas, not in features.',
   'The free tier has no time limit. The quotas above are its limit, not a clock.',
   'Hit a quota and that usage stops until the next month or a higher tier. There is no overage bill running in the background.',
   'Take a team of 20: 4 people who build dashboards and 16 who view them. That team fits the Regular tier above, at 20 users.',
@@ -374,6 +384,7 @@ const competitorPages = [
   {
     dir: 'alternatives/tableau', url: 'https://getopensight.org/alternatives/tableau/',
     title: 'Tableau charges for every seat. OpenSight charges for none.',
+    pageTitle: 'Tableau alternative with no per-seat pricing — OpenSight',
     headings: ['What a 20-person team pays Tableau', 'Your Tableau workbooks do not come with you', 'Where Tableau is the better choice'],
     copy: [
       'Tableau prices people by role. On the Standard edition a Creator is $75 per user per month, an Explorer is $42, and a Viewer is $15, billed annually. Every deployment needs at least one Creator.',
@@ -387,11 +398,12 @@ const competitorPages = [
       'OpenSight fits the team that has decided the per-seat bill itself is the problem, and is willing to rebuild once to end it.',
     ],
     sources: ['<a href="https://www.tableau.com/pricing/cloud">Tableau pricing</a>'],
-    cross: ['../power-bi/', '../../vs/metabase/', '../../vs/superset/'],
+    cross: ['../quicksight/', '../power-bi/', '../../vs/metabase/', '../../vs/superset/'],
   },
   {
     dir: 'alternatives/power-bi', url: 'https://getopensight.org/alternatives/power-bi/',
     title: 'First, check whether you already pay for Power BI',
+    pageTitle: 'Power BI alternative with no per-user pricing — OpenSight',
     headings: ['What Power BI costs when you do pay for it', 'The real difference is the surrounding stack', 'What does not convert'],
     copy: [
       'Power BI Pro is included in Microsoft 365 E5. If your company already buys E5, you may already be paying for Power BI, and $0 extra is a hard price to argue with. Check that before you read the rest of this page.',
@@ -403,11 +415,12 @@ const competitorPages = [
       'Power BI reports do not import into OpenSight. Leaving Power BI means rebuilding reports. The saving starts after that rebuild, not before it.',
     ],
     sources: ['<a href="https://www.microsoft.com/power-platform/products/power-bi/pricing">Microsoft Power BI pricing</a>'],
-    cross: ['../tableau/', '../../vs/metabase/', '../../vs/superset/'],
+    cross: ['../quicksight/', '../tableau/', '../../vs/metabase/', '../../vs/superset/'],
   },
   {
     dir: 'vs/metabase', url: 'https://getopensight.org/vs/metabase/',
     title: 'OpenSight vs Metabase: both free to self-host. That is where the similarity ends.',
+    pageTitle: 'OpenSight vs Metabase: QuickSight-compatible, Apache-2.0',
     headings: ['The licences differ, and so does the paid line', 'Where Metabase is the better choice', 'Where OpenSight is the better choice'],
     copy: [
       "Metabase's Open Source edition is free, self-hosted, with unlimited users. So is OpenSight. If price of the open edition is your only question, both answers are $0, and this page is about the questions after that one.",
@@ -420,11 +433,12 @@ const competitorPages = [
       'The same applies if AGPL terms do not work for your company and Apache-2.0 does.',
     ],
     sources: ['<a href="https://www.metabase.com/pricing/">Metabase pricing</a>'],
-    cross: ['../../alternatives/tableau/', '../../alternatives/power-bi/', '../superset/'],
+    cross: ['../../alternatives/quicksight/', '../../alternatives/tableau/', '../../alternatives/power-bi/', '../superset/'],
   },
   {
     dir: 'vs/superset', url: 'https://getopensight.org/vs/superset/',
     title: 'OpenSight vs Apache Superset: same licence, different job',
+    pageTitle: 'OpenSight vs Apache Superset: same licence, different job',
     headings: ['Superset is built for SQL teams, and it shows', "OpenSight's ground is a format, not a chart count"],
     copy: [
       'Apache Superset is Apache-2.0, like OpenSight. Self-hosted, it costs $0, like OpenSight. Nobody wins this comparison on licence or sticker price, so it comes down to what your team does all day.',
@@ -435,14 +449,14 @@ const competitorPages = [
       "If QuickSight is nowhere in your world, that ground is worth nothing to you, and the choice should be made on the tools themselves — where Superset's SQL depth may well win it.",
     ],
     sources: ['<a href="https://superset.apache.org/">Apache Superset</a>', '<a href="https://preset.io/pricing">Preset pricing</a>'],
-    cross: ['../../alternatives/tableau/', '../../alternatives/power-bi/', '../metabase/'],
+    cross: ['../../alternatives/quicksight/', '../../alternatives/tableau/', '../../alternatives/power-bi/', '../metabase/'],
   },
 ];
 const closingCopy = 'Try the live demo, or request hosted access — hosted workspaces are opening in small batches and are set up by hand.';
 for (const page of competitorPages) {
   const name = `${page.dir}/index.html`;
   const body = readArtifact(name);
-  check(body.match(/<title>([^<]+)<\/title>/)?.[1] === `${page.title} — OpenSight`,
+  check(body.match(/<title>([^<]+)<\/title>/)?.[1] === page.pageTitle,
     `${name}: incorrect page title`);
   check(body.match(/<h1>([^<]+)<\/h1>/)?.[1] === page.title, `${name}: H1 must be the approved page title`);
   const pageCanonicals = [...body.matchAll(/<link rel="canonical" href="([^"]+)">/g)].map(m => m[1]);
@@ -478,6 +492,174 @@ check(footer?.includes('<a href="/alternatives/tableau/">Tableau alternative</a>
 check(footer?.includes('<a href="/alternatives/power-bi/">Power BI alternative</a>'), 'home footer must link the Power BI page');
 check(footer?.includes('<a href="/vs/metabase/">OpenSight vs Metabase</a>'), 'home footer must link the Metabase page');
 check(footer?.includes('<a href="/vs/superset/">OpenSight vs Apache Superset</a>'), 'home footer must link the Superset page');
+
+// 17. Legal pages (issue #210): the approved Terms of Service and Privacy
+// Policy publish verbatim at /legal/, stamped with the publication date;
+// every standard footer links both pages; the signup page (which carries no
+// footer) links them from its terms line; and the SLA promise Tom removed
+// on 2026-11-06 stays out of site copy and the open-economics doc.
+const legalPages = [
+  {
+    dir: 'legal/terms', url: 'https://getopensight.org/legal/terms/',
+    title: 'Terms of Service — OpenSight', h1: 'Terms of Service',
+    copy: [
+      'These terms govern the hosted OpenSight service at app.getopensight.org',
+      'Light $29/month, Regular $99/month, Heavy $399/month, per workspace.',
+      'These terms do not include a service-level agreement or uptime guarantee in version 1.0.',
+      'Governing law: the laws of the State of Illinois, without regard to its conflict-of-law rules.',
+    ],
+  },
+  {
+    dir: 'legal/privacy', url: 'https://getopensight.org/legal/privacy/',
+    title: 'Privacy Policy — OpenSight', h1: 'Privacy Policy',
+    copy: [
+      'We do not sell personal information, and we do not share workspace content with third parties for their own purposes.',
+      'not row data, except where a question cannot be answered without a sample the product explicitly includes) are sent to our AI provider, currently AWS Bedrock',
+      'Technical logs are kept for 90 days and then deleted or anonymized.',
+    ],
+  },
+];
+for (const page of legalPages) {
+  const name = `${page.dir}/index.html`;
+  const body = readArtifact(name);
+  check(body.match(/<title>([^<]+)<\/title>/)?.[1] === page.title, `${name}: incorrect page title`);
+  check(body.match(/<h1>([^<]+)<\/h1>/)?.[1] === page.h1, `${name}: H1 must be ${page.h1}`);
+  const pageCanonicals = [...body.matchAll(/<link rel="canonical" href="([^"]+)">/g)].map(m => m[1]);
+  check(pageCanonicals.length === 1 && pageCanonicals[0] === page.url,
+    `${name}: expected exactly one canonical link naming the page`);
+  check(body.includes('<p class="legal-meta">Last updated: November 6, 2026</p>'),
+    `${name}: publication date must be stamped with the merge date`);
+  check(body.includes('<p class="legal-meta">Version: 1.0</p>'), `${name}: missing version line`);
+  const pageText = stripTags(body);
+  for (const copy of page.copy) {
+    check(pageText.includes(copy), `${name}: missing or altered approved copy: ${copy.slice(0, 60)}…`);
+  }
+  for (const match of body.matchAll(/\b(?:href|src)="([^"]+)"/g)) {
+    const ref = match[1];
+    if (/^(?:https?:|mailto:|#)/.test(ref) || ref === '../../demo/') continue;
+    const path = ref.split(/[?#]/)[0];
+    const target = path.startsWith('/') ? resolve(root, path.slice(1)) : resolve(root, page.dir, path);
+    check(existsSync(target), `${name}: missing local reference: ${ref}`);
+  }
+}
+const footerPages = ['index.html', 'pricing/index.html',
+  'alternatives/quicksight/index.html', 'alternatives/tableau/index.html',
+  'alternatives/power-bi/index.html', 'vs/metabase/index.html', 'vs/superset/index.html',
+  'legal/terms/index.html', 'legal/privacy/index.html',
+  'docs/index.html', ...manifest.map(page => `docs/${page.slug}/index.html`)];
+for (const name of footerPages) {
+  const pageFooter = readArtifact(name).match(/<footer\b[^>]*>[\s\S]*?<\/footer>/)?.[0];
+  check(pageFooter?.includes('<a href="/legal/terms/">Terms</a>'), `${name}: footer must link the Terms page`);
+  check(pageFooter?.includes('<a href="/legal/privacy/">Privacy</a>'), `${name}: footer must link the Privacy page`);
+}
+const signup = readArtifact('signup/index.html');
+check(signup.includes('<a href="/legal/terms/">terms</a>'), 'signup: terms line must link the Terms page');
+check(signup.includes('<a href="/legal/privacy/">privacy policy</a>'), 'signup: terms line must link the Privacy page');
+check(!pricing.includes('SLA'), 'pricing: the SLA promise must not return (removed 2026-11-06)');
+const economics = readArtifact('docs/open-economics/index.html');
+check(!economics.includes('SLA'), 'docs/open-economics: the SLA promise must not return (removed 2026-11-06)');
+check(economics.includes('Paid tiers buy higher usage quotas and support.'),
+  'docs/open-economics: paid-tiers sentence must match the SLA-free source doc');
+
+// 18. Marketing meta batch (issue #238): the titles and meta descriptions
+// Tom approved on 2026-11-09 are exact on all 11 audited pages. Title tags
+// are search copy and no longer mirror the H1s on the competitor pages;
+// the generated docs pages carry their approved values as metaTitle /
+// metaDescription overrides in build-docs.mjs, so no docs description is
+// an auto-truncated excerpt ending mid-sentence.
+const metaBatch = [
+  ['index.html', 'OpenSight — the open-source BI platform',
+    'OpenSight is an open-source BI tool: connect data, prepare datasets, build analyses and dashboards, and ask questions in natural language. Self-hosted.'],
+  ['pricing/index.html', 'OpenSight pricing: free to self-host, hosted from $29/mo',
+    'OpenSight is free: run it yourself and it costs nothing. Hosted tiers — Free, Light $29/mo, Regular $99/mo, Heavy $399/mo — differ in quotas, not features.'],
+  ['alternatives/quicksight/index.html', 'A QuickSight alternative you can own — OpenSight',
+    "QuickSight charges per user. OpenSight charges nothing: Apache-2.0, no open-core split, self-hosted, and dashboards stay in QuickSight's definition format."],
+  ['alternatives/tableau/index.html', 'Tableau alternative with no per-seat pricing — OpenSight',
+    'Tableau charges per seat: Creator $75, Explorer $42, Viewer $15 per user/month, billed annually. OpenSight is Apache-2.0 and costs $0 for any number of users.'],
+  ['alternatives/power-bi/index.html', 'Power BI alternative with no per-user pricing — OpenSight',
+    'Power BI Pro is $14 per user/month, paid yearly, and included in Microsoft 365 E5. OpenSight is Apache-2.0, self-hosted, and $0 for any number of users.'],
+  ['vs/metabase/index.html', 'OpenSight vs Metabase: QuickSight-compatible, Apache-2.0',
+    'Metabase and OpenSight are both free to self-host. The licences differ — AGPL v3 vs Apache-2.0 — and row and column security is open in OpenSight, not Pro-only.'],
+  ['vs/superset/index.html', 'OpenSight vs Apache Superset: same licence, different job',
+    'Apache Superset and OpenSight are both Apache-2.0 and free to self-host. Superset is built for SQL teams; OpenSight reads and writes QuickSight definitions.'],
+  ['docs/index.html', 'Documentation — OpenSight docs',
+    'Install and run OpenSight, connect data, configure embedding, and understand permissions and row-level security. Plus getting started and migration guides.'],
+  ['docs/migrating-from-quicksight/index.html', 'Moving from QuickSight to OpenSight — OpenSight docs',
+    'A QuickSight bundle carries four kinds of thing: analyses, dashboards, datasets and data sources. OpenSight imports the bundle file directly. Here is the move.'],
+  ['docs/permissions/index.html', 'Permissions and row-level security — OpenSight docs',
+    'Access to an OpenSight analysis or dashboard and access to its data are separate permissions. Sharing a definition lets someone open the asset, not the data.'],
+  ['docs/open-economics/index.html', 'Open economics: features never paywalled — OpenSight docs',
+    'OpenSight is Apache-2.0. The hosted service charges for running it, not unlocking it: SSO, row-level security and core governance are never paywalled.'],
+];
+for (const [name, expectedTitle, expectedDescription] of metaBatch) {
+  const page = readArtifact(name);
+  check(page.match(/<title>([^<]+)<\/title>/)?.[1] === expectedTitle,
+    `${name}: title must match the approved #238 value exactly`);
+  check(page.match(/<meta name="description" content="([^"]*)">/)?.[1] === expectedDescription,
+    `${name}: meta description must match the approved #238 value exactly`);
+}
+
+// 19. Docs social tags, internal linking and pricing JSON-LD (issue #239):
+// every docs page serves the full OG/Twitter set with the shared og-image
+// and its own title/description; every docs page links /pricing/; the
+// migration guide links the QuickSight alternative page and pricing; the
+// alternatives/versus cluster cross-links the QuickSight page (section 16);
+// pricing links onward to the alternatives and migration pages and serves
+// a SoftwareApplication JSON-LD whose offers match the decided tiers.
+for (const { slug } of docsPages) {
+  const name = `docs/${slug ? `${slug}/` : ''}index.html`;
+  const page = readArtifact(name);
+  const pageMeta = [...page.matchAll(/<meta\b[^>]*>/g)].map(m =>
+    Object.fromEntries([...m[0].matchAll(/([\w:-]+)="([^"]*)"/g)].map(a => [a[1], a[2]])));
+  const metaContent = (attribute, key) => {
+    const tags = pageMeta.filter(tag => tag[attribute] === key);
+    check(tags.length === 1 && Boolean(tags[0].content?.trim()),
+      `${name}: expected one non-empty meta ${attribute}="${key}"`);
+    return tags[0]?.content;
+  };
+  const pageTitle = page.match(/<title>([^<]+)<\/title>/)?.[1];
+  const pageDescription = metaContent('name', 'description');
+  for (const [key, expected] of Object.entries({
+    'og:title': pageTitle, 'og:description': pageDescription, 'og:type': 'website',
+    'og:url': canonicalUrl(slug), 'og:image': shareImage,
+    'og:image:width': '2400', 'og:image:height': '1260', 'og:image:alt': pageTitle,
+  })) check(metaContent('property', key) === expected, `${name}: incorrect ${key} content`);
+  for (const [key, expected] of Object.entries({
+    'twitter:card': 'summary_large_image', 'twitter:title': pageTitle,
+    'twitter:description': pageDescription, 'twitter:image': shareImage,
+  })) check(metaContent('name', key) === expected, `${name}: incorrect ${key} content`);
+  check(page.includes('href="/pricing/"'), `${name}: docs pages must link the pricing page`);
+}
+check(guide.includes('<a href="/alternatives/quicksight/">The QuickSight alternative page</a>'),
+  'migration guide: missing link to the QuickSight alternative page');
+check(guide.includes('<a href="/pricing/">pricing page</a>'),
+  'migration guide: missing link to the pricing page');
+check(economics.includes('<a href="/pricing/">pricing page</a>'),
+  'docs/open-economics: missing link to the pricing page');
+for (const href of ['/alternatives/quicksight/', '/docs/migrating-from-quicksight/',
+  '/alternatives/tableau/', '/alternatives/power-bi/', '/vs/metabase/', '/vs/superset/']) {
+  check(pricing.includes(`<a href="${href}">`), `pricing: missing onward link to ${href}`);
+}
+const pricingLdRaw = pricing.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)?.[1];
+check(Boolean(pricingLdRaw), 'pricing: missing application/ld+json structured data');
+let pricingLd = null;
+try { pricingLd = pricingLdRaw ? JSON.parse(pricingLdRaw) : null; } catch { /* Reported below. */ }
+check(pricingLd !== null, 'pricing: application/ld+json must parse as JSON');
+if (pricingLd) {
+  check(pricingLd['@context'] === 'https://schema.org', 'pricing JSON-LD @context must be schema.org');
+  check(pricingLd['@type'] === 'SoftwareApplication', 'pricing JSON-LD @type must be SoftwareApplication');
+  check(pricingLd.name === 'OpenSight', 'pricing JSON-LD name must be OpenSight');
+  check(pricingLd.url === pricingUrl, 'pricing JSON-LD url must be the pricing page');
+  check(pricingLd.applicationCategory === 'BusinessApplication', 'pricing JSON-LD applicationCategory');
+  check(pricingLd.license === 'https://www.apache.org/licenses/LICENSE-2.0', 'pricing JSON-LD license');
+  check(pricingLd.codeRepository === 'https://github.com/tomesposito/opensight', 'pricing JSON-LD codeRepository');
+  const offers = Array.isArray(pricingLd.offers) ? pricingLd.offers : [];
+  check(JSON.stringify(offers.map(offer => [offer.name, offer.price])) ===
+    JSON.stringify([['Free', '0'], ['Light', '29'], ['Regular', '99'], ['Heavy', '399']]),
+    'pricing JSON-LD offers must be the hosted tiers Free $0, Light $29, Regular $99, Heavy $399');
+  check(offers.every(offer => offer['@type'] === 'Offer' && offer.priceCurrency === 'USD'),
+    'pricing JSON-LD offers must all be USD Offers');
+}
 
 if (failures.length) {
   console.error(`site/check.mjs FAILED (${failures.length}):`);
