@@ -170,6 +170,12 @@ export function prepPrefix(pipeline: PrepPipeline, length: number): PrepPipeline
   const { output: _output, ...rest } = pipeline;
   return { ...rest, steps: pipeline.steps.slice(0, length) };
 }
+/** Compile the edited prefix, so an unrelated later draft cannot hide this step's SQL. */
+export function prepStepPlan(pipeline: PrepPipeline, step: PrepStep, sources: readonly PrepSourceSummary[], context: PrepSchemaContext = {}) {
+  const index = pipeline.steps.findIndex(s => s.id === step.id);
+  const prefix = prepPrefix(pipeline, index < 0 ? pipeline.steps.length : index);
+  return prepPlan({ ...prefix, steps: [...prefix.steps, step] }, sources, step.id, context);
+}
 export function prepLeftInput(pipeline: PrepPipeline, step: PrepStep): string | null {
   const index = pipeline.steps.findIndex(s => s.id === step.id);
   return step.from ?? pipeline.steps[(index < 0 ? pipeline.steps.length : index) - 1]?.id ?? null;

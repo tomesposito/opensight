@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { PrepJoinEditor } from './PrepJoinEditor.js';
 import { PrepWindowEditor } from './PrepWindowEditor.js';
+import { PrepSqlView } from './PrepSqlView.js';
 import { PrepColumns as Columns } from './PrepColumns.js';
 import { prepName, prepTypes, type PrepColumn, type PrepStep, type PrepAggregation, type PrepJoinInput, type PrepPipeline } from '@opensight/bundle-parser/prep';
 import { prepStepLabel, prepLabel, prepRefKey, prepRefLabel, prepSourceRef, prepSourceLabel, prepInstanceLabel, prepStepSourceInstance, prepMessage, type PrepSourceSummary } from './data-prep.js';
@@ -16,7 +17,7 @@ export function PrepSourcePicker({ label, value, sources, change }: { label: str
   </select></label>;
 }
 function Text({ label, value, change }: { label: string; value: string; change: (v: string) => void }) { return <label>{label}<input value={value} onChange={e => change(e.target.value)} /></label>; }
-export function PrepStepEditor({ step, columns: inputColumns, sources, pipeline, apply, cancel, validate }: { step: PrepStep; columns: readonly PrepColumn[]; sources: readonly PrepSourceSummary[]; pipeline?: PrepPipeline; apply: (step: PrepStep) => void; cancel: () => void; validate?: (step: PrepStep) => void }) {
+export function PrepStepEditor({ step, columns: inputColumns, sources, pipeline, schemaContext, apply, cancel, validate }: { step: PrepStep; columns: readonly PrepColumn[]; sources: readonly PrepSourceSummary[]; pipeline?: PrepPipeline; schemaContext?: import('./data-prep.js').PrepSchemaContext; apply: (step: PrepStep) => void; cancel: () => void; validate?: (step: PrepStep) => void }) {
   const [edited, setEdited] = useState<PrepStep>(() => structuredClone(step));
   const index = pipeline?.steps.findIndex(s => s.id === step.id) ?? -1;
   const earlier = pipeline?.steps.slice(0, index < 0 ? pipeline.steps.length : index) ?? [];
@@ -92,5 +93,5 @@ export function PrepStepEditor({ step, columns: inputColumns, sources, pipeline,
     if (e.target.value === '') delete next.name;
     else next.name = e.target.value;
     setEdited(next);
-  }} /></label>{edited.kind !== 'join' && leftInput}{fields}{problem && <p className="prep-error" role="alert">{problem}</p>}<div className="prep-actions"><button type="submit" disabled={!!problem}>Apply step</button><button type="button" onClick={cancel}>Cancel</button></div></form>;
+  }} /></label>{edited.kind !== 'join' && leftInput}{fields}{problem && <p className="prep-error" role="alert">{problem}</p>}{pipeline && <PrepSqlView pipeline={pipeline} step={configured()} sources={sources} context={schemaContext} />}<div className="prep-actions"><button type="submit" disabled={!!problem}>Apply step</button><button type="button" onClick={cancel}>Cancel</button></div></form>;
 }
