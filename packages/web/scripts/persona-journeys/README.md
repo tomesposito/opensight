@@ -1,7 +1,7 @@
 # Persona journey tests
 
 These scripts follow the persona and journey briefs in
-`~/workspace/goals/opensight/files/personas-journeys/`. J1–J9 use real Chromium,
+`~/workspace/goals/opensight/files/personas-journeys/`. J1–J9 and J11 use real Chromium,
 the real Vite app, and local API servers. There are no component mocks or
 `page.setContent` app surfaces. Static site/demo and embed preview checks serve
 the actual built files. J10 drives the real MCP server and hosted API directly,
@@ -16,8 +16,8 @@ Prerequisites:
 - PostgreSQL listening on localhost:5433 with an `opensight` database and a
   user that can create/drop schemas. Each hosted journey uses a random schema
   and drops it during cleanup. The Orders fixture also uses temporary SQLite.
-- For J1–J9, Chromium at `/opt/meta-chromium/chrome`, or set `OPENSIGHT_CHROMIUM`.
-- For J1–J9, the existing `playwright-core` installation in
+- For J1–J9 and J11, Chromium at `/opt/meta-chromium/chrome`, or set `OPENSIGHT_CHROMIUM`.
+- For J1–J9 and J11, the existing `playwright-core` installation in
   `/home/hatch/workspace/tools/screenshots`, or set `OPENSIGHT_SCREENSHOT_TOOLS`
   to its package directory. No new dependencies or browser downloads are needed.
 - `unzip` for J5's exported bundle validation.
@@ -50,7 +50,7 @@ installed `@modelcontextprotocol/sdk` dependency and built
 `packages/mcp-server/dist/index.js`; the root build provides the latter. On
 restricted machines, allow localhost PostgreSQL connections and loopback listeners.
 
-The runner executes J1–J10 sequentially in child processes. It sets the default
+The runner executes J1–J11 sequentially in child processes. It sets the default
 local PostgreSQL URL, disk-backed TMPDIR, and a shared output directory. Only
 localhost network services are permitted. On restricted machines, allow the
 scripts to launch Chromium and bind loopback ports.
@@ -90,6 +90,7 @@ These builds and the suite require no external network access.
 | j8-embedding | Embedder (future) | Four offline preview states, branding, honest lack of active session |
 | j9-ideas | Member + Operator | Member submission/isolation, operator review and decline reason, member follow-up, hosted-only local notice |
 | j10-ai-agent-mcp | AI Agent | MCP-level: author_ai identity and scoped resources, regional draft, published metric version, identical CLS denied/missing errors, real BLAZE compute quota, human draft review; explicit surface gaps |
+| j11-notebooks | Author | Local CSV preparation, declared-dataset SQL and source totals, published run view versus scratch draft, data mutation and execution timestamps, calibrated result refusal and oldest-run eviction, hosted unavailable notice |
 
 **Gaps are product findings, not test bugs.** They must state what was expected
 and what the shipped product actually offers. Do not add fake data, bypass a UI
@@ -116,6 +117,29 @@ J4 copies the actual `hostedDataFixture` rows and recipe into its PostgreSQL
 tenant, then uses real hosted HTTP handlers and built-in-auth fixture tokens.
 It does not synthesize session/data responses. A persistent local draft is
 reported as a draft; it is never counted as a published dashboard.
+
+Issue #277: J11 uploads the sales CSV through the preparation UI, then declares
+that prepared dataset and an initially empty input table in a notebook query.
+An undeclared-table attempt fails visibly before the declared query returns
+East 500 / West 400, matching the CSV total of 900. Publishing and reopening
+selects the reader-facing run view; a separate scratch notebook remains Draft.
+Both use the single local identity: this does not simulate a distinct Reader.
+Adding East revenue 100 through the real input-table API leaves displayed results
+labelled with their original execution time until an explicit re-run returns
+1000 and grows newest-first history. The journey measures the JSON bytes of
+grouped and raw results, then starts a second local stack with a run budget
+that fits the grouped result but refuses raw rows, and a notebook budget that
+fits one grouped run but not two. It restores the environment after construction
+and checks the visible named refusal, absent result data, and oldest-run eviction
+by ID. Exact calibration values are in the emitted step details. The hosted check
+expects a real admin to see **Notebooks are not available on this server**, no
+create form, and HTTP 404 from `/api/notebooks`: this is the designed v1 pass
+under #281, not a gap. The current server instead falls through to HTTP 503
+`HOSTED_CAPABILITY_UNAVAILABLE`, which renders an error banner. J11 records this
+specific regression as `hosted-unavailable-notice-regression` with expected/actual
+details; unrelated failures still fail. No product code is changed. See
+[issue #277 gap notes](../../../../docs/issue-277-gap-notes.md).
+Run it with `node packages/web/scripts/persona-journeys/j11-notebooks.mjs`.
 
 
 Issue #190: J4 starts the hosted stack with `aiStub: true`, ten monthly credits,
