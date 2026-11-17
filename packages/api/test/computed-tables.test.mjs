@@ -16,7 +16,7 @@ async function api(t, authenticated = true, options = {}) {
   t.after(() => { server.close(); server.closeAllConnections(); });
   return async (path, method = 'GET', body, user = authenticated ? 'author' : undefined) => {
     const response = await fetch(`http://127.0.0.1:${server.address().port}${path}`, { method, headers: { 'Content-Type': 'application/json', ...(user ? { Authorization: `Bearer ${user}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    return { status: response.status, body: await response.json() };
+    return { status: response.status, body: response.headers.get('content-type')?.includes('application/json') ? await response.json() : Buffer.from(await response.arrayBuffer()) };
   };
 }
 import { mkdtemp, rm, readFile, readdir } from 'node:fs/promises';
@@ -125,4 +125,20 @@ test('stored output feeds nested pipelines, visual queries and the notebook inpu
       assert.equal(response.status, user === 'reader' ? 403 : 404);
     }
   }
+});
+test('downloads include every stored row as CSV and XLSX and enforce permissions, format and workspace setting', async t => {
+  const { read, utils } = await import('xlsx');
+  const dir = await directory(t), path = join(dir, 'prep.json'), call = await api(t, true, { prepStorePath: path });
+  await prepare(call, 'computed', 'id,amount\n' + Array.from({ length: 605 }, (_, i) => `${i},${i * 2}\n`).join(''));
+  await call('/api/datasets/computed/publish', 'POST', {});
+  const csvResult = await call('/api/datasets/computed/download', 'POST', { format: 'csv' });
+  assert.equal(csvResult.status, 200); assert.equal(csvResult.body.toString().trim().split('\r\n').length, 606); assert.ok(csvResult.body.toString().includes('604,1208'));
+  const xlsx = await call('/api/datasets/computed/download', 'POST', { format: 'xlsx' });
+  assert.equal(xlsx.status, 200); const book = read(xlsx.body, { type: 'buffer' });
+  assert.deepEqual(utils.sheet_to_json(book.Sheets[book.SheetNames[0]]), Array.from({ length: 605 }, (_, i) => ({ id: i, amount: i * 2 })));
+  assert.equal((await call('/api/datasets/computed/download', 'POST', { format: 'pdf' })).body.errorCode, 'STORED_DOWNLOAD_FORMAT_INVALID');
+  for (const user of ['reader', 'other-author', 'tenant-author']) assert.equal((await call('/api/datasets/computed/download', 'POST', { format: 'csv' }, user)).status, user === 'reader' ? 403 : 404);
+  const disabled = await api(t, true, { prepStorePath: path, downloadsEnabled: false });
+  assert.equal((await disabled('/api/datasets/computed/execution')).body.downloadsEnabled, false);
+  assert.equal((await disabled('/api/datasets/computed/download', 'POST', { format: 'csv' })).body.errorCode, 'DOWNLOADS_DISABLED');
 });

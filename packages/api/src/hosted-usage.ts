@@ -327,6 +327,18 @@ export class HostedUsage {
       throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
     });
   }
+  /** Known-size downloads must fit the already reserved remainder before headers.
+   * Ordinary JSON responses retain the established one-crossing-response rule. */
+  async assertEgressSize(handle: EgressReservation, bytes: number): Promise<void> {
+    if (!Number.isSafeInteger(bytes) || bytes < 0) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+    if (handle.id === null) return;
+    await this.db.transaction(async c => {
+      await this.lockAiScope(c, handle.scope);
+      const row = (await c.query('SELECT reserved_bytes FROM h8_egress_reservations WHERE id = ? AND tenant_id = ? AND namespace_id = ?', [handle.id!, handle.scope.tenantId, handle.scope.namespaceId]))[0];
+      if (!row) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+      if (bytes > usageInteger(row.reserved_bytes)) throw new MetadataError('USAGE_LIMIT_EXCEEDED', 429);
+    });
+  }
   /** Record actual bytes and remove the claim atomically. A failed transaction
    * retains the full claim, including after restart; never release on failure. */
   settleEgress(handle: EgressReservation, actualBytes: number): Promise<void> {

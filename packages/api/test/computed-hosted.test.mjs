@@ -47,3 +47,32 @@ test('hosted stored datasets feed other computed pipelines; foreign owners canno
     await assert.rejects(f.prep.execute(context, 'computed', action), { code: 'RESOURCE_NOT_FOUND' });
   }
 });
+test('hosted storage admission uses the durable quota gauge and stops before pipeline execution', async t => {
+  const { HostedUsage, initializeUsage } = await import('../dist/hosted-usage.js');
+  const f = await fixture(t); await initializeUsage(f.db);
+  const usage = new HostedUsage(f.db, { defaults: { apiCalls: 1000, computeAttempts: 1000, storageBytes: 1 }, tenants: {} });
+  f.metadata.usage = usage;
+  f.prep.load = async () => assert.fail('Over-quota publish must stop before pipeline execution');
+  await assert.rejects(f.prep.execute(await f.login(), 'computed', 'publish'), error => {
+    assert.equal(error.code, 'USAGE_LIMIT_EXCEEDED'); assert.equal(error.detail.limitBytes, 1); assert.ok(error.detail.overageBytes > 0); return true;
+  });
+  assert.equal((await f.prep.get(await f.login(), 'computed')).execution.state, 'empty');
+});
+test('download egress uses existing reservations, refuses known over-cap sizes before bytes, and records exact served bytes', async t => {
+  const { HostedUsage, initializeUsage } = await import('../dist/hosted-usage.js');
+  const { sendTableDownload } = await import('../dist/table-download.js');
+  const { createServer } = await import('node:http'); const { once } = await import('node:events');
+  const f = await fixture(t); await initializeUsage(f.db); await f.prep.execute(await f.login(), 'computed', 'publish');
+  const c = await f.login(), download = await f.prep.download(c, 'computed', { format: 'csv' });
+  const usage = new HostedUsage(f.db, { defaults: { apiCalls: 100, computeAttempts: 100, storageBytes: 100000000, egressBytes: download.bytes.length }, tenants: {} });
+  const tooLarge = await usage.reserveEgress(c);
+  await assert.rejects(usage.assertEgressSize(tooLarge, download.bytes.length + 1), { code: 'USAGE_LIMIT_EXCEEDED' }); await usage.releaseEgress(tooLarge);
+  const server = createServer((_req, res) => void sendTableDownload(res, download, { usage, scope: c }));
+  server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => { server.close(); server.closeAllConnections(); });
+  const response = await fetch(`http://127.0.0.1:${server.address().port}`); assert.equal(response.status, 200); assert.deepEqual(Buffer.from(await response.arrayBuffer()), download.bytes);
+  // Allow the async durable settlement at stream completion to finish.
+  for (let i = 0; i < 50; i++) { const row = await f.db.transaction(db => db.query("SELECT admitted FROM h8_usage WHERE metric = 'egressBytes'")); if (Number(row[0]?.admitted) === download.bytes.length) break; await new Promise(r => setTimeout(r, 10)); }
+  const row = await f.db.transaction(db => db.query("SELECT admitted FROM h8_usage WHERE metric = 'egressBytes'")); assert.equal(Number(row[0].admitted), download.bytes.length);
+  await assert.rejects(usage.reserveEgress(c), { code: 'USAGE_LIMIT_EXCEEDED' });
+  f.prep.downloadsEnabled = false; await assert.rejects(f.prep.download(c, 'computed', { format: 'csv' }), { code: 'DOWNLOADS_DISABLED' });
+});

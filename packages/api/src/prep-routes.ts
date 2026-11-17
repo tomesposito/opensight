@@ -1,3 +1,5 @@
+import { tableDownload, tableDownloadFormat, sendTableDownload } from './table-download.js';
+import type { HostedUsage } from './hosted-usage.js';
 import { StoredTableFiles, storedMaterialization, storedFailure, storedStatus, storedCapacity, checkStoredQuota, type StoredMaterialization } from './stored-tables.js';
 import { metricQuery, metricDefinition, type MetricLookup } from './metric-consumption.js';
 import { disabledAnalytics } from './analytics.js';
@@ -46,6 +48,8 @@ function send(response: ServerResponse, status: number, body: unknown): void {
 }
 export class PrepRoutes {
   analytics = disabledAnalytics;
+  downloadsEnabled = true;
+  downloadUsage?: HostedUsage;
   /** Same entitlement snapshot supplied to the local composition; absent means unlimited. */
   storageLimit: (identity: Identity) => number = () => Number.MAX_SAFE_INTEGER;
   private async refreshStored(identity: Identity, id: string): Promise<void> {
@@ -99,7 +103,7 @@ export class PrepRoutes {
     }
   }
   private status(identity: Identity, id: string) {
-    return { ...(this.find(identity, id).execution?.mode === 'STORED' ? storedStatus(this.find(identity, id).materialization) : this.blaze.status(this.key(identity, id))), materializationReason: this.requirement(identity, id) };
+    return { ...(this.find(identity, id).execution?.mode === 'STORED' ? storedStatus(this.find(identity, id).materialization) : this.blaze.status(this.key(identity, id))), downloadsEnabled: this.downloadsEnabled, materializationReason: this.requirement(identity, id) };
   }
   private requireDirect(identity: Identity, id: string, state = this.store.read()): void {
     const reason = this.requirement(identity, id, state);
@@ -191,6 +195,14 @@ export class PrepRoutes {
   }
   private async executionRoute(request: IncomingMessage, response: ServerResponse, id: string, action: string, identity: Identity): Promise<void> {
     const existing = this.find(identity, id), key = this.key(identity, id);
+    if (action === 'download') {
+      method(request, response, ['POST']);
+      const body = prepObject(await readBody(request), ['format'], '$'), format = tableDownloadFormat(body.format);
+      if (!this.downloadsEnabled) throw new MetadataError('DOWNLOADS_DISABLED', 403);
+      if (existing.execution?.mode !== 'STORED') throw new MetadataError('STORED_MODE_REQUIRED', 409);
+      const table = await this.files.read(key, existing.materialization, this.blaze.limits);
+      await sendTableDownload(response, tableDownload(id, table, format), this.downloadUsage ? { usage: this.downloadUsage, scope: { tenantId: identity.namespaceId, namespaceId: identity.namespaceId } } : undefined); return;
+    }
     if (action === 'execution') {
       method(request, response, ['GET', 'PUT']);
       if (request.method === 'PUT') {
@@ -371,7 +383,7 @@ export class PrepRoutes {
   async route(request: IncomingMessage, response: ServerResponse, path: string, query: string, identity: Identity): Promise<void> {
     try {
       if (query) throw new RequestError(400, 'Query parameters are not supported');
-      const execution = /^\/api\/datasets\/([A-Za-z0-9_-]{1,128})\/(execution|refresh|publish|rows|query)$/.exec(path);
+      const execution = /^\/api\/datasets\/([A-Za-z0-9_-]{1,128})\/(execution|refresh|publish|rows|query|download)$/.exec(path);
       if (execution) { await this.executionRoute(request, response, execution[1]!, execution[2]!, identity); return; }
       if (path === '/api/prep-sources') {
         method(request, response, ['GET']);

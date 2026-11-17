@@ -1,3 +1,4 @@
+import { tableDownload, tableDownloadFormat, type TableDownload } from './table-download.js';
 import { storedMaterialization, storedFailure, storedStatus, storedCapacity } from './stored-tables.js';
 import { lookupMetrics, metricQuery, metricDefinition } from './metric-consumption.js';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
@@ -20,6 +21,7 @@ interface Graph { pipeline: PrepPipeline; datasets: PrepDataset[]; leaves: Admis
 /** Owner-only authoring; published dashboards may execute recipes with reader-owned sources.
  * The complete graph is checked even when reading an owner's cached output. */
 export class HostedPrep {
+  downloadsEnabled = true;
   constructor(readonly data: HostedData, private readonly jobs?: JobStore) {}
   private key(context: TenantContext, id: string) { return { kind: 'prepared-dataset' as const, id: identifier(id), ownerId: context.userId }; }
   private cacheKey(context: TenantContext, id: string) { return JSON.stringify([context.tenantId, context.namespaceId, context.userId, 'prep', id]); }
@@ -136,7 +138,7 @@ export class HostedPrep {
   }
   async get(context: TenantContext, id: string) {
     const stored = await this.stored(context, id), graph = await this.graph(context, id, stored.resource.opensightPrep!, undefined, stored.execution.mode !== 'STORED');
-    await this.data.finish(context, graph.leaves, graph.revisions); return { ...stored, execution: stored.execution.mode === 'STORED' ? { ...storedStatus(await this.storedState(context, id, stored, graph)), version: stored.version } : stored.execution };
+    await this.data.finish(context, graph.leaves, graph.revisions); return { ...stored, execution: stored.execution.mode === 'STORED' ? { ...storedStatus(await this.storedState(context, id, stored, graph)), downloadsEnabled: this.downloadsEnabled, version: stored.version } : stored.execution };
   }
   /** Headless v1 building block: schema columns, pipeline references and execution
    * settings without running any data. `inputs` are the direct PrepInputs
@@ -250,6 +252,20 @@ export class HostedPrep {
       throw error;
     }
   }
+  async download(context: TenantContext, id: string, input: unknown): Promise<TableDownload> {
+    const raw = object(input, ['format']), format = tableDownloadFormat(raw.format);
+    if (!this.downloadsEnabled) throw new MetadataError('DOWNLOADS_DISABLED', 403);
+    const stored = await this.stored(context, id);
+    if (stored.execution.mode !== 'STORED') throw new MetadataError('STORED_MODE_REQUIRED', 409);
+    const graph = await this.graph(context, id, stored.resource.opensightPrep!, undefined, false);
+    let result: TableDownload | undefined;
+    await this.data.work(context, false, graph.leaves, async () => {
+      const table = await this.readStored(context, id); this.data.scope(context).rows(table.rowCount);
+      result = tableDownload(id, table, format); this.data.scope(context).memory(table.bytes + result.bytes.length);
+      await this.data.finish(context, graph.leaves, graph.revisions); return { bytes: result.bytes.length };
+    }, graph.revisions);
+    return result!;
+  }
   async execute(context: TenantContext, id: string, path: 'rows' | 'query' | 'refresh' | 'publish', input: unknown = {}, visual?: { analysis: unknown; visualId: string; dataSetArn: string }) {
     const stored = await this.stored(context, id), graph = await this.graph(context, id, stored.resource.opensightPrep!), key = this.cacheKey(context, id);
     let metrics: readonly import('@opensight/query-engine').PublishedMetric[] | undefined;
@@ -272,7 +288,7 @@ export class HostedPrep {
             await this.data.sources.metadata.materialization(context, id, stored.version, { value, reserve: 0 }, graph.revisions);
             committed = true;
             await this.data.storedFiles.remove(key, stored.materialization);
-            return { ...storedStatus(value), version: stored.version };
+            return { ...storedStatus(value), downloadsEnabled: this.downloadsEnabled, version: stored.version };
           }, graph.revisions);
         } catch (error) {
           if (committed) throw error;

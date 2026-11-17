@@ -1,3 +1,4 @@
+import { sendTableDownload } from './table-download.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { connectors } from '@opensight/query-engine';
 import { method, send } from './automation-routes.js';
@@ -19,7 +20,7 @@ export class HostedDataRoutes {
   async route(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, recheck: () => Promise<void>): Promise<boolean> {
     this.data.begin(context, undefined, recheck);
     const revisions = await this.data.sources.metadata.revisions(context);
-    const read = request.method === 'GET' || /\/(query|preview|rows|output|refresh|schema|browse)$/.test(path);
+    const read = request.method === 'GET' || /\/(query|preview|rows|output|refresh|schema|browse|download)$/.test(path);
     const input = async () => {
       const body = await readBody(request);
       // A durable write invalidates revision-bound sessions, including this one.
@@ -72,10 +73,16 @@ export class HostedDataRoutes {
     if (ai) { method(request, response, ['GET']); await publish(200, await this.data.schema(context, ai[1]!, 'ai')); return true; }
     if (path === '/api/prep-datasets') { method(request, response, ['GET']); await publish(200, { ...(await this.prep.list(context)), persistence: 'durable' }); return true; }
     if (path === '/api/prep-datasets/import') { method(request, response, ['POST']); await publish(201, await this.prep.import(context, await input())); return true; }
-    const prep = /^\/api\/datasets\/([A-Za-z0-9_-]{1,128})\/(prep(?:\/preview)?|execution|refresh|publish|rows|query|share|permissions|embed)$/.exec(path);
+    const prep = /^\/api\/datasets\/([A-Za-z0-9_-]{1,128})\/(prep(?:\/preview)?|execution|refresh|publish|rows|query|download|share|permissions|embed)$/.exec(path);
     if (prep) {
       const id = prep[1]!, action = prep[2]!;
       if (['share', 'permissions', 'embed'].includes(action)) { await this.prep.get(context, id); sourceError(action === 'embed' ? 'PREP_EMBED_REFUSED' : 'PREP_SHARING_REFUSED', 403); }
+      if (action === 'download') {
+        method(request, response, ['POST']);
+        const result = await this.prep.download(context, id, await input());
+        await recheck(); await this.data.publication(context, revisions);
+        await sendTableDownload(response, result); return true;
+      }
       if (action === 'prep') {
         method(request, response, ['GET', 'PUT', 'DELETE']);
         if (request.method === 'GET') await publish(200, await this.prep.get(context, id));

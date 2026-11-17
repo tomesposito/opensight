@@ -90,13 +90,16 @@ export class TenantMetadata {
       if (object(body.execution).mode !== 'STORED') throw new MetadataError('STORED_MODE_REQUIRED', 409);
       if (update.reserve !== undefined) {
         if (!Number.isSafeInteger(update.reserve) || update.reserve < 0) throw new MetadataError('METADATA_INVALID', 400);
-        const previous = Math.max(Number(object(body.materialization ?? {}).bytes ?? 0), Number(body.storedReservationBytes ?? 0));
-        const used = this.usage ? await this.usage.storageBytes(c, context) : 0;
-        checkStoredQuota(this.usage?.entitlement(context).storageBytes ?? Number.MAX_SAFE_INTEGER, Math.max(0, used - previous), update.reserve);
         body.storedReservationBytes = update.reserve;
       }
       if (update.value) body.materialization = JSON.parse(JSON.stringify(update.value)) as JsonObject;
       resourceLinks(key, body);
+      if (update.reserve !== undefined && update.reserve > 0) {
+        const previous = Math.max(Number(object(current.body.materialization ?? {}).bytes ?? 0), Number(current.body.storedReservationBytes ?? 0));
+        const used = this.usage ? await this.usage.storageBytes(c, context) : 0;
+        const metadataDelta = Buffer.byteLength(JSON.stringify(body)) - Buffer.byteLength(JSON.stringify(current.body));
+        checkStoredQuota(this.usage?.entitlement(context).storageBytes ?? Number.MAX_SAFE_INTEGER, Math.max(0, used - previous + metadataDelta), Math.max(previous, update.reserve));
+      }
       await c.query(`UPDATE h1_resources SET body = ? WHERE ${predicates}`, [JSON.stringify(body), ...keyValues(context, key)]);
       await appendMetadataEvent(c, context, 'prepared.materialization.changed');
     }, true);
