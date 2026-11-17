@@ -25,3 +25,23 @@ test('new joins have no keys; suggestions apply only after an explicit confirmat
   assert.equal(ui.root.findAllByType('button').filter(b => [].concat(b.props.children).join('') === 'Use suggested key: id = id').length, 0);
   assert.deepEqual(step.config.keys, []);
 });
+test('Venn picker exposes exactly four labeled compiler join types and keyboard navigation', async t => {
+  const config = { source: 'b', joinType: 'left', keys: [{ left: 'id', right: 'id' }], prefix: 'r_' };
+  const changes = [];
+  const ui = await mount(t, PrepJoinEditor, { config, leftColumns: columns, rightColumns: columns, change: c => changes.push(c) });
+  const radios = ui.root.findAllByProps({ role: 'radio' });
+  assert.deepEqual(radios.map(r => r.props['aria-label']), ['Left join', 'Inner join', 'Right join', 'Full join']);
+  assert.equal(radios.filter(r => r.props['aria-checked']).length, 1);
+  for (const [i, radio] of radios.entries()) {
+    assert.equal(radio.findByType('span').props.children, radio.props['aria-label']);
+    assert.equal(radio.findByType('svg').findAllByType('circle').length, 2);
+    assert.equal(radio.findByType('svg').findAllByType('path').length, [2,1,2,3][i]);
+    await act(async () => radio.props.onClick());
+  }
+  assert.deepEqual(changes.map(c => c.joinType), ['left', 'inner', 'right', 'full']);
+  for (const [index, key, expected] of [[0,'ArrowRight','inner'],[0,'ArrowLeft','full'],[2,'Home','left'],[1,'End','full']]) {
+    await act(async () => radios[index].props.onKeyDown({ key, preventDefault() {}, currentTarget: {} }));
+    assert.equal(changes.at(-1).joinType, expected);
+    assert.deepEqual(changes.at(-1).keys, config.keys);
+  }
+});

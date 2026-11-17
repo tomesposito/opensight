@@ -66,7 +66,7 @@ export function PrepJoinEditor({ config, leftColumns, rightColumns, leftInput, r
         change({ ...config, joinType: joinTypes[next]! });
         e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('button')[next]?.focus();
       }
-    }}><PrepJoinIcon type={type} /></button>)}</div></fieldset>
+    }}><PrepJoinIcon type={type} /><span>{joinLabel(type)}</span></button>)}</div></fieldset>
       <fieldset className="prep-join-suggestions"><legend>Suggested keys</legend><p>Name and type matches. Confirm each key to use it.</p>
         {suggestions.length ? suggestions.map(key => <button key={JSON.stringify(key)} type="button" disabled={config.keys.length >= 256} onClick={() => change({ ...config, keys: [...config.keys, key] })}>Use suggested key: {key.left} = {key.right}</button>) : <p>No additional name and type matches.</p>}
       </fieldset>
