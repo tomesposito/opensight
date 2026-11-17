@@ -22,7 +22,7 @@ try {
   await navigate(page, 'data-prep');
   await button('New').click();
   await page.getByLabel('Dataset name', { exact: true }).fill('Regional sales preparation');
-  assert.deepEqual(await page.locator('.prep-sidebar h3').allTextContents(), ['Input', 'Column transformations', 'Combine transformations', 'Other']);
+  assert.deepEqual(await page.locator('.prep-sidebar h3').allTextContents(), ['Input', 'Column transformations', 'Combine transformations', 'Other', 'Recipes']);
   await button('＋ Add data').click();
   await page.getByLabel('Stage a source', { exact: true }).selectOption(JSON.stringify('demo-regions'));
   await button('Stage input').click();

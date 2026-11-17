@@ -220,3 +220,26 @@ test('memoized prepared dependencies retain depth limits and compile just once',
   p.steps[1].config.source = { dataset: 'extra' };
   assert.throws(() => compilePrep(p, [source], { datasets: tooDeep }), e => e.code === 'PREP_LIMIT_EXCEEDED');
 });
+
+test('append dedupe collapses full rows including nulls; absent and keep retain every duplicate', async t => {
+  const run = await engines(t), right = { ...source, id: 'right', columns: [...columns].reverse() };
+  for (const duplicates of [undefined, 'keep', 'dedupe']) {
+    const config = { source: 'right', ...(duplicates ? { duplicates } : {}) };
+    const rows = await run([{ kind: 'append', config }], {}, [right]);
+    assert.equal(rows.length, duplicates === 'dedupe' ? 4 : 8);
+    assert.equal(rows.filter(r => r.region === null).length, duplicates === 'dedupe' ? 1 : 2);
+    // Same group is not itself a duplicate: both East rows survive.
+    assert.equal(rows.filter(r => r.region === 'East').length, duplicates === 'dedupe' ? 2 : 4);
+    for (const dialect of ['duckdb', 'postgres']) {
+      const sources = [source, right].map(s => ({ ...s, connectorId: dialect === 'postgres' ? 'postgresql' : 'file' }));
+      const p = compilePrep(pipeline([{ kind: 'append', config }]), sources, { dialect });
+      assert.equal(p.sql.includes('UNION ALL'), duplicates !== 'dedupe');
+      for (const columns of [right.columns.slice(1), right.columns.map(c => ({ ...c, type: 'BOOLEAN' })), right.columns.map(c => ({ ...c, name: `other_${c.name}` }))]) {
+        assert.throws(() => compilePrep(pipeline([{ kind: 'append', config }]), [sources[0], { ...sources[1], columns }], { dialect }), e => e.code === 'PREP_SCHEMA_MISMATCH');
+      }
+    }
+  }
+  const absent = compilePrep(pipeline([{ kind: 'append', config: { source: 'right' } }]), [source, right]);
+  const keep = compilePrep(pipeline([{ kind: 'append', config: { source: 'right', duplicates: 'keep' } }]), [source, right]);
+  assert.equal(absent.sql, keep.sql);
+});

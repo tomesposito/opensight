@@ -21,6 +21,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Dataset preparation now offers structured and bounded advanced Window steps for ranking, running/moving calculations, lag/lead and buckets, a Keep first/latest row per group recipe, and optional full-row append deduplication (issue #278).
+
 - Persona Journey 11 covers notebook authoring, governed SQL totals, published run views, explicit re-runs after data changes, calibrated result byte limits and history eviction, plus the hosted availability boundary; it records the current hosted 503/error-banner regression against the designed unavailable notice (issue #277).
 
 - RDS, Aurora and Redshift auto-discovery is now implemented as a library discovery service over the RDS API (issue #274): DB instances and clusters in the configured region are classified by engine into the matching manual connector (PostgreSQL, MySQL, MariaDB, Redshift manual), returning endpoints and identifiers only — never credentials — and a discovered resource becomes a source config built from user-supplied environment variable names, validated by the manual connector's own rules. Fake SDK coverage verifies classification, pagination and the no-credentials rule; hosted provisioning and live AWS verification remain follow-on work.
