@@ -1,7 +1,7 @@
 import { PrepJoinBudget, diagnosePrepJoinDuckDb } from '@opensight/query-engine';
 import { disabledAnalytics, rowCountBucket } from './analytics.js';
 import { streamPrepDuckDb, previewPrepDuckDb, withPrepMemory, type PrepSink, type PrepReadLimits, type PrepMemoryTable } from '@opensight/query-engine';
-import { prepFail } from '@opensight/bundle-parser/prep';
+import { PrepError, prepFail } from '@opensight/bundle-parser/prep';
 import type { PrepSource, PrepPreview, PrepPreviewOptions } from '@opensight/query-engine';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { connectors, connectorState, connectConnector, ConnectorError, UploadStaging, UploadError, type UploadColumn } from '@opensight/query-engine';
@@ -90,8 +90,14 @@ export class ConnectorRoutes {
   }
   async joinDiagnostics(identity: Identity, raw: unknown, step: string, options: PrepPreviewOptions, tables: readonly PrepMemoryTable[] = [], budget = new PrepJoinBudget()) {
     const owner = JSON.stringify([identity.namespaceId, identity.userId]), session = this.sessions.get(owner);
-    if (!session) return withPrepMemory(tables, c => diagnosePrepJoinDuckDb(c, raw, tables.map(t => t.source), step, options, budget), { executionMs: budget.remaining(), check: () => budget.check() });
-    return this.queued(owner, async () => { budget.check(); return (await session).joinDiagnostics(raw, step, options, tables, budget); });
+    try {
+      if (!session) return await withPrepMemory(tables, c => diagnosePrepJoinDuckDb(c, raw, tables.map(t => t.source), step, options, budget), { executionMs: budget.remaining(), check: () => budget.check() });
+      return await this.queued(owner, async () => { budget.check(); return (await session).joinDiagnostics(raw, step, options, tables, budget); });
+    } catch (error) {
+      budget.check();
+      if (error instanceof PrepError || error instanceof UploadError) throw error;
+      return prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Bounded sample staging failed');
+    }
   }
   async previewPrep(identity: Identity, raw: unknown, options: PrepPreviewOptions, tables: readonly PrepMemoryTable[] = []): Promise<PrepPreview> {
     const owner = JSON.stringify([identity.namespaceId, identity.userId]), session = this.sessions.get(owner);

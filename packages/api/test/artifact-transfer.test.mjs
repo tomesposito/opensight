@@ -223,3 +223,15 @@ test('Issue #288 artifact samples use authenticated versioned ranges and never f
     }
   });
 });
+
+test('Issue #288 large durable samples retain exactly 10000 rows plus the probe', async t => {
+  await runtime(async (scope, invocation) => {
+    const large = { ...limits, rows: 20000 }, input = new BlazeTable({ maxBytes: large.decodedBytes, datasetBytes: large.decodedBytes, maxRows: large.rows, cellChars: large.cellChars });
+    input.start([{ name: 'id', type: 'INTEGER' }]); for (let i = 0; i < 10030; i++) input.row([i]);
+    const { transfer } = fakeAws(invocation), local = await transfer.encode(scope, input, large), reference = await transfer.upload(scope, identity, local);
+    t.mock.method(transfer, 'download', () => { throw Error('Full download forbidden'); });
+    t.mock.method(transfer, 'decode', () => { throw Error('Full decode forbidden'); });
+    const sample = await transfer.boundedSample(scope, identity, reference, large);
+    assert.equal(sample.rowCount, 10001); assert.equal(sample.value(10000, 0), 10000); assert.equal(reference.descriptor.rowCount, 10030);
+  });
+});

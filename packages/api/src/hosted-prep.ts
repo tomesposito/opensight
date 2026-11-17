@@ -222,7 +222,9 @@ export class HostedPrep {
             budget.check();
             if (table.rowCount > PREP_JOIN_SAMPLE_LIMIT + 1) prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Cache exceeded the bounded snapshot contract');
             scope.rows(table.rowCount);
-            d.materialized = { id: `cached_${tables.length}`, table: `cached_${tables.length}`, connectorId: 'file', columns: table.columns, security: 'unrestricted' };
+            let sampleId = `cached_${tables.length}`;
+            while (sources.some(s => s.id === sampleId) || datasets.some(d => d.materialized?.id === sampleId)) sampleId += '_';
+            d.materialized = { id: sampleId, table: `cached_${tables.length}`, connectorId: 'file', columns: table.columns, security: 'unrestricted' };
             tables.push(await wireTable(scope, table, d.materialized));
           }
         };

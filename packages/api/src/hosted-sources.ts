@@ -57,7 +57,13 @@ export class HostedSources {
     return this.readPayload(context, source);
   }
   async boundedSample(context: TenantContext, source: HostedSource): Promise<unknown> {
-    return this.readPayload(context, source, true);
+    const revisions = await this.metadata.revisions(context);
+    const verify = async () => {
+      await this.metadata.assertRevisions(context, revisions);
+      const current = await this.get(context, source.id);
+      if (current.version !== source.version) sourceError('METADATA_REVISED', 403);
+    };
+    await verify(); const sample = await this.readPayload(context, source, true); await verify(); return sample;
   }
   private async readPayload(context: TenantContext, source: HostedSource, bounded = false): Promise<unknown> {
     this.active(source);

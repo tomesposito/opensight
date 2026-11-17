@@ -171,3 +171,26 @@ test('Issue #288 stored sample corruption, generation replacement and legacy art
   try { await file.write(Buffer.from('!'), 0, 1, value.sample.offset); } finally { await file.close(); }
   await assert.rejects(files.boundedSample('snapshot', async () => value, limits, () => {}), { code: 'STORED_ARTIFACT_INVALID' });
 });
+
+import { PrepJoinBudget } from '@opensight/query-engine';
+test('Issue #288 uploaded samples withhold results after retirement and never publish partial counts after deadline', async t => {
+  for (const expiry of [false, true]) {
+    const f = await sourceFixture(t), context = await f.login(), file = await f.sources.upload(context, { ...upload(), base64: Buffer.from('id\n1\n1\n').toString('base64') });
+    const data = new HostedData(f.sources, undefined, f.budgets), prep = new HostedPrep(data);
+    const p = structuredClone(pipeline); p.input = file.id; p.steps[0].config.source = file.id;
+    if (expiry) {
+      let expired = false; const remaining = PrepJoinBudget.prototype.remaining, sample = data.boundedSample.bind(data);
+      const clock = t.mock.method(PrepJoinBudget.prototype, 'remaining', function () {
+        if (expired) throw Object.assign(new Error('Shared deadline expired'), { code: 'PREP_EXECUTION_FAILED' });
+        return remaining.call(this);
+      });
+      t.mock.method(data, 'boundedSample', async (...args) => { const result = await sample(...args); expired = true; return result; });
+      await assert.rejects(prep.joinDiagnostics(context, 'draft', { pipeline: p, through: 'join' }), { code: 'PREP_EXECUTION_FAILED' });
+      clock.mock.restore();
+    } else {
+      const sample = f.sources.boundedSample.bind(f.sources);
+      t.mock.method(f.sources, 'boundedSample', async (...args) => { const result = await sample(...args); await f.sources.retire(context, file.id, 1); return result; });
+      await assert.rejects(prep.joinDiagnostics(context, 'draft', { pipeline: p, through: 'join' }), { code: 'METADATA_REVISED' });
+    }
+  }
+});
