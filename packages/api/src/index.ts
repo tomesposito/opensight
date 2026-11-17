@@ -1,3 +1,4 @@
+import { workspaceDownloads } from './table-download.js';
 import { lookupMetrics } from './metric-consumption.js';
 import { assetKey } from './asset-model.js';
 import { metricRecord } from './metric-model.js';
@@ -50,6 +51,8 @@ export interface ApiOptions {
   /** Trusted local DuckDB path. Omit for ephemeral library/test staging. */
   localUploadPath?: string;
   prepStorePath?: string;
+  /** Trusted workspace download setting; defaults to OPENSIGHT_DOWNLOADS_ENABLED. */
+  downloadsEnabled?: boolean;
   /** Issue #161: governed input tables store; omit for ephemeral library use. */
   inputTableStorePath?: string;
   /** Local/organization notebook assets, runs and snapshots. */
@@ -124,7 +127,12 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   const connectorRoutes = new ConnectorRoutes(!!localIdentity, analytics);
   const prepRoutes = await PrepRoutes.create(connectorRoutes, options.prepStorePath, options.prepPostgresBindings);
   prepRoutes.analytics = analytics;
-  const inputTables = new InputTableRoutes(await InputTableStore.load(options.inputTableStorePath), {
+  prepRoutes.downloadUsage = options.hostedUsage;
+  prepRoutes.downloadsEnabled = options.downloadsEnabled ?? workspaceDownloads();
+  if (options.hostedUsage) prepRoutes.storageLimit = identity => options.hostedUsage!.entitlement({ tenantId: identity.namespaceId, namespaceId: identity.namespaceId }).storageBytes;
+  const inputTableStore = await InputTableStore.load(options.inputTableStorePath);
+  inputTableStore.onChange = (namespaceId, id) => prepRoutes.invalidateInputTable(namespaceId, id);
+  const inputTables = new InputTableRoutes(inputTableStore, {
     security, localIdentity,
     workspaceUserIds: identity => security ? security.store.read().users.filter(u => u.namespaceId === identity.namespaceId).map(u => u.id) : undefined,
   });
@@ -229,7 +237,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
         if (await inputTables.route(request, response, path, query, localIdentity ?? identity)) return;
       }
       const preparedResource = /^\/api\/(prep-sources|prep-datasets)(?:\/|$)/.test(path)
-        || /^\/api\/datasets\/[^/]+\/(prep(?:\/|$)|execution$|rows$)/.test(path)
+        || /^\/api\/datasets\/[^/]+\/(prep(?:\/|$)|execution$|rows$|publish$|download$)/.test(path)
         || /^\/api\/datasets\/(?!sales\/)[A-Za-z0-9_-]{1,128}\/refresh$/.test(path);
       // Preserve the unauthenticated fixture API's existing ID/method/404 validation.
       const preparedQuery = (!!security || !!localIdentity) && /^\/api\/datasets\/(?!sales\/)[A-Za-z0-9_-]{1,128}\/query$/.test(path);

@@ -1,3 +1,4 @@
+import { ComputedTable, type ComputedClient } from './ComputedTable.js';
 import { CalculationPromotion, PrepPromotions, type PromotionClient } from './PrepPromotions.js';
 import type { AuthorDataset } from './authoring.js';
 import { PrepSqlView } from './PrepSqlView.js';
@@ -13,7 +14,7 @@ import { prepCatalog, prepStepLabel, prepSchema, prepPlan, prepRefKey, prepRefLa
 import { PrepStepEditor, PrepSourcePicker } from './PrepStepEditor.js';
 import { PrepPreviewTable } from './PrepPreviewTable.js';
 import { loadDataCatalog } from './data-section.js';
-export type PrepClient = Pick<ReturnType<typeof createApiClient>, 'listPrepSources' | 'listPrepDatasets' | 'savePrep' | 'deletePrep' | 'previewPrep'> & Partial<ExecutionClient> & PromotionClient;
+export type PrepClient = Pick<ReturnType<typeof createApiClient>, 'listPrepSources' | 'listPrepDatasets' | 'savePrep' | 'deletePrep' | 'previewPrep'> & Partial<ExecutionClient> & PromotionClient & ComputedClient;
 const demoSource: PrepSourceSummary = { id: 'demo-sales', connectorId: 'file', available: true, columns: [{ name: 'region', type: 'STRING' }, { name: 'category', type: 'STRING' }, { name: 'revenue', type: 'DECIMAL' }, { name: 'order_date', type: 'DATETIME' }] };
 const demoLookup: PrepSourceSummary = { id: 'demo-regions', name: 'Regions (sample schema)', connectorId: 'file', available: true, columns: [{ name: 'region', type: 'STRING' }, { name: 'manager', type: 'STRING' }] };
 function fresh(hosted: boolean): BundleDataSet {
@@ -234,6 +235,7 @@ export function DataPrep({ client, initialSource, initialDatasetId, onSources, o
     {selectedStep?.kind === 'calculate' && <div className="prep-actions"><button disabled={!!client && (!storedResource || dirty || busy)} onClick={() => setPromotingCalc(selectedStep.id)}>Promote {selectedStep.config.name}</button><span>Promote the saved calculation to a governed metric draft.</span></div>}
     {promotingCalc && <CalculationPromotion client={client} datasetId={resource.dataSetId} calculationId={promotingCalc} onClose={() => { setPromotingCalc(undefined); }} />}
     {promotion && <PrepPromotions client={client} dataset={resource} sources={sources} propose={promotion === 'recipe'} onClose={() => setPromotion(undefined)} onCreated={r => { load(r); setReload(n => n + 1); setMessage('Prepared dataset created from a published template. Its steps are independently editable.'); }} />}
+    {executionFor({ dataset: resource.dataSetId })?.mode === 'STORED' && <ComputedTable key={resource.dataSetId} compact client={client} datasetId={resource.dataSetId} name={resource.name} status={executionFor({ dataset: resource.dataSetId })!} dirty={dirty} onChanged={() => setReload(n => n + 1)} />}
     <details className="prep-execution"><summary>Dataset execution · mode, refresh and cached output</summary><DatasetExecution key={resource.dataSetId} client={executionClient} datasetId={resource.dataSetId} saved={!!storedResource} dirty={dirty} onChanged={() => setReload(n => n + 1)} /></details>
     {message && <p role="status">{message}</p>}{error && <p className="prep-error" role="alert">{error}</p>}
     <div className="prep-workspace"><aside className="prep-sidebar" aria-label="Steps" tabIndex={-1} ref={stepsPanel}><h2>Steps</h2><p>Select a step to add a transformation</p>

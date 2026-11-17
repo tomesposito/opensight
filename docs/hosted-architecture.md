@@ -815,7 +815,6 @@ SR0 implementation decision register (issue #81; proposals, no AWS authorization
 | [D-87](itd/D-87-preserved-cleanup-maintenance.md) | Governed constraint maintenance | ✅ Preserve epoch and scheduled cleanup through a fenced additive constraint upgrade |
 | [D-89](itd/D-89-access-request-maintenance.md) | Access-request maintenance | ✅ Preserve scheduled cleanup through the exact registered access-request table transition |
 | [D-92](itd/D-92-ideas-analytics-maintenance.md) | Ideas and analytics maintenance | ✅ Bind the exact additive ideas table and analytics delivery-marker upgrade while preserving cleanup |
-| [D-94](itd/D-94-egress-receipt-maintenance.md) | Egress and AI receipt maintenance | ✅ Bind three private tables and the delivery dead-letter constraint while preserving retained rows, epochs and scheduled cleanup |
 
 Related confirmed deployment decision: [ITD D-18 — serverless development
 deployment](itd/D-18-serverless-development-deployment.md) (2026-10-10). Lambda

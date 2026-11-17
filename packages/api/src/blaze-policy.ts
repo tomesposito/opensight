@@ -31,7 +31,7 @@ export function materializationReason(id: string, datasets: readonly Dataset[]):
       if (typeof ref === 'string') { result.sources.add(`source:${ref}`); return; }
       const child = dataset(ref.dataset);
       result.reason ??= child.reason;
-      if (byId.get(ref.dataset)?.mode === 'BLAZE') result.sources.add(`dataset:${ref.dataset}`);
+      if (['BLAZE', 'STORED'].includes(byId.get(ref.dataset)?.mode ?? '')) result.sources.add(`dataset:${ref.dataset}`);
       else for (const source of child.sources) result.sources.add(source);
     };
     input(definition.pipeline.input);

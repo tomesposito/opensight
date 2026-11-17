@@ -164,3 +164,21 @@ test('Issue 190: Ask O schema follows the authorized dashboard recipe and reader
   const b = await missing.backend();
   await assert.rejects(b.questionSchema(dashboardVersion(await b.get('daily'))));
 });
+
+test('Issue 280: readers re-execute STORED recipes and never consume owner materializations', async t => {
+  const { StoredTableFiles } = await import('../dist/stored-tables.js');
+  const { dirname, join } = await import('node:path');
+  const f = await fixture(t);
+  f.data.storedFiles = new StoredTableFiles(join(dirname(f.path), 'computed'));
+  for (const id of ['left', 'sales']) {
+    await f.routes.prep.configure(await f.login(), id, { expectedVersion: 1, mode: 'STORED', intervalMinutes: null });
+    await f.routes.prep.execute(await f.login(), id, 'publish');
+  }
+  assert.deepEqual((await f.query('admin')).rows, [{ value: 903000 }]);
+  f.data.storedFiles.read = async () => assert.fail('Reader must never read owner stored rows');
+  f.data.storedFiles.write = async () => assert.fail('Reader must never publish owner stored rows');
+  assert.deepEqual((await f.query()).rows, [{ value: 10 }]);
+  const c = await f.login('other'), key = f.sources.key(c, 'source', 'orders'), source = await f.metadata.get(c, key);
+  await f.db.transaction(db => db.query("UPDATE h1_resources SET body = ?, version = version + 1 WHERE tenant_id = ? AND namespace_id = ? AND kind = 'source' AND owner_id = 'other' AND resource_id = 'orders'", [JSON.stringify({ ...source.body, policy: { rowLevel: true, rowRules: [] } }), c.tenantId, c.namespaceId]));
+  await assert.rejects(f.query(), denied);
+});

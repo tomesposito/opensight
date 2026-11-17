@@ -1292,22 +1292,6 @@ configuration is included. After reopening, any failure requires forward
 reconciliation so captured ideas, access requests and analytics are retained.
 See [D-92](docs/itd/D-92-ideas-analytics-maintenance.md).
 
-**Egress and AI receipt maintenance (D-94, frozen 2026-11-14):** Extend the
-fenced D-92 procedure only from the ideas inventory to that inventory plus
-`-egress-reservations-v1-ai-receipts-v1`. Add the three empty private tables
-`h8_egress_reservations`, `ai_answer_receipts`, and
-`ai_answer_receipt_reservations`, and extend the delivery-state constraint with
-`dead`. Preserve old rows, metadata, objects and cleanup schedules exactly.
-Verify private runtime grants, tenant denial, constraint validity and no runtime
-DDL. Bind exact releases, inventories, configuration and independent epoch;
-allow only the inventoried future unclaimed cleanup work. Preserve both epochs
-and registry history under complete drain, pinned registered backup, transactional
-migration, exact receipt replay and watchdog. Rehearse the deployed PostgreSQL
-shape and denial/rollback cases before promotion. Keep billing/signup configuration
-unchanged and Stripe in sandbox. After reopening, fail closed for forward
-reconciliation rather than restoring over new writes. See
-[D-94](docs/itd/D-94-egress-receipt-maintenance.md).
-
 **Access-request release packaging (frozen 2026-11-01, #176):** Include the
 marketing page's existing Apple touch icon in the bounded, attested frontend
 inventory. Verify that each local icon referenced by the marketing HTML is
@@ -2160,12 +2144,3 @@ branching changes user-visible UI. Update `docs/data-prep.md` (branching
 semantics, output selector, the 5-consumer limit row). No new dependency, AWS
 call, merge, publish or issue closure is part of this build; the sweep owner
 handles those.
-
-
-### D-94 held-maintenance correction (2026-11-14)
-
-The egress/AI-receipt transition also adds nullable text access-request columns
-`notify_claim_token` and `notify_claim_expires_at`. Follow the narrowly scoped
-registered-backup normalization and immutable runner reconciliation specified in
-[D-94](docs/itd/D-94-egress-receipt-maintenance.md). Every original row value remains
-exact and newly added values must be null; all other preservation gates remain.

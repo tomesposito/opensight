@@ -99,8 +99,21 @@ export async function initializeUsage(db: Database): Promise<void> {
   });
 }
 export async function resourceBytes(c: SqlConnection, scope: Scope): Promise<number> {
-  const rows = await c.query('SELECT body FROM h1_resources WHERE tenant_id = ? AND namespace_id = ?', [scope.tenantId, scope.namespaceId]);
-  return rows.reduce((n, r) => n + Buffer.byteLength(String(r.body), 'utf8'), 0);
+  const rows = await c.query('SELECT kind, body FROM h1_resources WHERE tenant_id = ? AND namespace_id = ?', [scope.tenantId, scope.namespaceId]);
+  return rows.reduce((n, r) => {
+    // Only prepared-dataset bodies are inspected, and never fatally: usage
+    // accounting must not parse (or fail on) unrelated assets (#172).
+    let artifact = 0;
+    if (r.kind === 'prepared-dataset') {
+      try {
+        const body = JSON.parse(String(r.body)) as { materialization?: { bytes?: unknown }; storedReservationBytes?: unknown };
+        const stored = typeof body.materialization?.bytes === 'number' && Number.isSafeInteger(body.materialization.bytes) && body.materialization.bytes >= 0 ? body.materialization.bytes : 0;
+        const reserved = typeof body.storedReservationBytes === 'number' && Number.isSafeInteger(body.storedReservationBytes) && body.storedReservationBytes >= 0 ? body.storedReservationBytes : 0;
+        artifact = Math.max(stored, reserved);
+      } catch { artifact = 0; }
+    }
+    return n + Buffer.byteLength(String(r.body), 'utf8') + artifact;
+  }, 0);
 }
 /** Limits are an immutable operator snapshot. Counters survive process restarts.
  * Storage uses the caller's H1 tenant transaction; no private SQL grants are needed. */
@@ -320,6 +333,18 @@ export class HostedUsage {
     }).catch((error: unknown) => {
       if (error instanceof MetadataError && ['TENANT_UNAVAILABLE', 'ENTITLEMENT_UNRESOLVED', 'USAGE_LIMIT_EXCEEDED'].includes(error.code)) throw error;
       throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+    });
+  }
+  /** Known-size downloads must fit the already reserved remainder before headers.
+   * Ordinary JSON responses retain the established one-crossing-response rule. */
+  async assertEgressSize(handle: EgressReservation, bytes: number): Promise<void> {
+    if (!Number.isSafeInteger(bytes) || bytes < 0) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+    if (handle.id === null) return;
+    await this.db.transaction(async c => {
+      await this.lockAiScope(c, handle.scope);
+      const row = (await c.query('SELECT reserved_bytes FROM h8_egress_reservations WHERE id = ? AND tenant_id = ? AND namespace_id = ?', [handle.id!, handle.scope.tenantId, handle.scope.namespaceId]))[0];
+      if (!row) throw new MetadataError('ENTITLEMENT_UNRESOLVED', 503);
+      if (bytes > usageInteger(row.reserved_bytes)) throw new MetadataError('USAGE_LIMIT_EXCEEDED', 429);
     });
   }
   /** Record actual bytes and remove the claim atomically. A failed transaction

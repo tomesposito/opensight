@@ -1,7 +1,7 @@
 import type { PrepColumn } from '@opensight/bundle-parser/prep';
 import type { PrepScalar, PrepSink } from '@opensight/query-engine';
 
-export type ExecutionMode = 'DIRECT_QUERY' | 'BLAZE';
+export type ExecutionMode = 'DIRECT_QUERY' | 'BLAZE' | 'STORED';
 export interface ExecutionSettings { mode: ExecutionMode; intervalMinutes: number | null }
 export interface CachedInput { datasetId: string; refreshedAt: string }
 export interface BlazeLimits { maxBytes: number; datasetBytes: number; maxRows: number; cellChars: number }
@@ -21,12 +21,13 @@ export function blazeLimits(env: NodeJS.ProcessEnv = process.env): BlazeLimits {
 export function executionSettings(raw: unknown): ExecutionSettings {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new BlazeError('BLAZE_CONFIG_INVALID', 'Expected execution settings');
   const v = raw as Record<string, unknown>;
-  if (Object.keys(v).some(k => !['mode', 'intervalMinutes'].includes(k)) || !['DIRECT_QUERY', 'BLAZE'].includes(String(v.mode)) || v.intervalMinutes !== null && (!Number.isSafeInteger(v.intervalMinutes) || Number(v.intervalMinutes) < 1 || Number(v.intervalMinutes) > 525600) || v.mode === 'DIRECT_QUERY' && v.intervalMinutes !== null) throw new BlazeError('BLAZE_CONFIG_INVALID', 'Expected DIRECT_QUERY or BLAZE and an interval of 1–525600 minutes or null; direct mode has no refresh schedule');
+  if (Object.keys(v).some(k => !['mode', 'intervalMinutes'].includes(k)) || !['DIRECT_QUERY', 'BLAZE', 'STORED'].includes(String(v.mode)) || v.intervalMinutes !== null && (!Number.isSafeInteger(v.intervalMinutes) || Number(v.intervalMinutes) < 1 || Number(v.intervalMinutes) > 525600) || v.mode !== 'BLAZE' && v.intervalMinutes !== null) throw new BlazeError('BLAZE_CONFIG_INVALID', 'Expected DIRECT_QUERY, BLAZE or STORED and an interval of 1–525600 minutes or null; direct and stored modes have no refresh schedule');
   return { mode: v.mode as ExecutionMode, intervalMinutes: v.intervalMinutes as number | null };
 }
 export const directSettings: ExecutionSettings = { mode: 'DIRECT_QUERY', intervalMinutes: null };
 export interface ExecutionStatus extends ExecutionSettings {
-  state: 'direct' | 'empty' | 'running' | 'ready' | 'error' | 'evicted' | 'invalidated';
+  state: 'direct' | 'empty' | 'running' | 'ready' | 'error' | 'evicted' | 'invalidated' | 'current' | 'stale' | 'refresh-failed';
+  failedAt?: string | null;
   lastRefreshedAt: string | null; rowCount: number | null; bytes: number; nextRefreshAt: string | null;
   error: { code: string; message: string; causeCode?: string } | null;
 }
