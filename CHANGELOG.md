@@ -103,6 +103,12 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Hosted servers now answer every `/api/notebooks*` path with 404
+  `RESOURCE_NOT_FOUND` instead of the generic 503 capability fallback
+  (#285), so the Notebooks page on a hosted server shows its designed
+  "Notebooks are not available on this server" notice instead of an
+  error banner. Hosted notebook support remains out of v1.
+
 - The generated connectors docs page is current again (#284): it now
   describes the shipped S3, MySQL/MariaDB, Redshift and Athena connectors
   instead of the pre-connector-batch text. The stale page also failed the

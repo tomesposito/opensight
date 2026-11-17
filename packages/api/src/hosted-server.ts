@@ -646,6 +646,11 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       if (await ai.route(request, response, path, context, recheck)) return;
       if (await data.route(request, response, path, context, recheck)) return;
       if (await v1.route(request, response, path, context, recheck)) return;
+      // Notebooks are local/organization-only in v1 (#281, #285): on a hosted
+      // server every notebook path answers 404 RESOURCE_NOT_FOUND — the
+      // contract the web page maps to its designed unavailable notice — rather
+      // than the generic 503 capability fallback, which it shows as an error.
+      if (path === '/api/notebooks' || path.startsWith('/api/notebooks/')) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
       throw new MetadataError('HOSTED_CAPABILITY_UNAVAILABLE', 503);
     })().catch((error: unknown) => {
       errors++; request.resume();
