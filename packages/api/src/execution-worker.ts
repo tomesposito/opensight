@@ -1,3 +1,4 @@
+import { diagnosePrepJoinDuckDb, PrepJoinBudget } from '@opensight/query-engine';
 import { readFileSync } from 'node:fs';
 import { Worker } from 'node:worker_threads';
 import { parseUpload, streamSourceMemory, withPrepMemory, streamPrepDuckDb, queryPrepared, queryPreparedVisual,
@@ -27,6 +28,10 @@ process.once('message', (request: WorkerRequest) => {
       output.setCachedInputs(task.cachedInputs);
       if (output.bytes !== task.decodedBytes) throw Object.assign(new Error(), { code: 'ARTIFACT_INVALID' });
       result = { columns: output.columns, rows: Array.from({ length: output.rowCount }, (_, r) => output.columns.map((_, c) => output.value(r, c))) };
+    } else if (task.kind === 'join-diagnostics') {
+      const budget = new PrepJoinBudget(() => performance.now(), Math.max(0, request.deadline - Date.now()));
+      result = await withPrepMemory(task.tables.map(table), c => diagnosePrepJoinDuckDb(c, task.pipeline, task.sources, task.step,
+        { datasets: task.datasets, datasetId: task.id }, budget), { memoryMb });
     } else if (task.kind === 'query') { const t = table(task.table); result = queryPrepared(t.source.columns, t.rowCount, t.value, task.query); }
     else if (task.kind === 'visual') { const t = table(task.table); result = queryPreparedVisual(t.source.columns, t.rowCount, t.value, task.analysis, task.visualId, task.dataSetArn, task.period); }
     else {
@@ -37,8 +42,8 @@ process.once('message', (request: WorkerRequest) => {
     }
     // Intermediate tables use working memory; final query payloads use the result budget.
     const bytes = Buffer.byteLength(JSON.stringify(result));
-    if (bytes > ((task.kind === 'query' || task.kind === 'visual') ? request.resultBytes : limits.datasetBytes)) throw Object.assign(new Error(), { code: 'TENANT_BUDGET_EXCEEDED' });
-    process.send?.({ result, bytes: (task.kind === 'query' || task.kind === 'visual') ? bytes * 4 : output.bytes }, () => process.disconnect?.());
+    if (bytes > ((task.kind === 'query' || task.kind === 'visual' || task.kind === 'join-diagnostics') ? request.resultBytes : limits.datasetBytes)) throw Object.assign(new Error(), { code: 'TENANT_BUDGET_EXCEEDED' });
+    process.send?.({ result, bytes: (task.kind === 'query' || task.kind === 'visual' || task.kind === 'join-diagnostics') ? bytes * 4 : output.bytes }, () => process.disconnect?.());
   })().catch((error: unknown) => {
     const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code
       : request.task.kind === 'parquet-read' || request.task.kind === 'parquet-write' ? 'ARTIFACT_INVALID' : 'WORKER_EXECUTION_FAILED';

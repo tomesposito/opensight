@@ -2,7 +2,7 @@ import { fork } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
 import type { PrepColumn, PrepPipeline } from '@opensight/bundle-parser/prep';
-import type { PrepSource, PrepDataset, SourceRead, PrepScalar, InteractiveQuery, UploadRequest, queryPrepared } from '@opensight/query-engine';
+import type { PrepJoinDiagnostics, PrepSource, PrepDataset, SourceRead, PrepScalar, InteractiveQuery, UploadRequest, queryPrepared } from '@opensight/query-engine';
 import { BlazeTable, type BlazeLimits, type CachedInput } from './blaze.js';
 import { MetadataError } from './metadata-db.js';
 import type { WorkScope } from './budgets.js';
@@ -12,6 +12,7 @@ export interface WireTable { source: PrepSource; rows: PrepScalar[][] }
 export type WorkerTask =
   | { kind: 'source'; read: SourceRead; table: WireTable }
   | { kind: 'prep'; pipeline: PrepPipeline; sources: PrepSource[]; datasets: PrepDataset[]; id: string; through?: string | null; tables: WireTable[] }
+  | { kind: 'join-diagnostics'; pipeline: PrepPipeline; sources: PrepSource[]; datasets: PrepDataset[]; id: string; step: string; tables: WireTable[] }
   | { kind: 'upload'; request: UploadRequest }
   | { kind: 'parquet-write'; path: string; columns: PrepColumn[]; rows: PrepScalar[][]; cachedInputs: CachedInput[] }
   | { kind: 'parquet-read'; path: string; columns: PrepColumn[]; rowCount: number; decodedBytes: number; cachedInputs: CachedInput[] }
@@ -31,7 +32,7 @@ export async function wireTable(scope: WorkScope, table: BlazeTable, source: Pre
 }
 /** A child owns all untrusted synchronous evaluation and native DuckDB allocation.
  * The parent kills and REAPS it before releasing admission, including IPC/parent death. */
-export async function containedWork<T extends TableResult | QueryResult | ParquetWriteResult = TableResult | QueryResult>(scope: WorkScope, task: WorkerTask, limits: BlazeLimits): Promise<T> {
+export async function containedWork<T extends TableResult | QueryResult | ParquetWriteResult | PrepJoinDiagnostics = TableResult | QueryResult>(scope: WorkScope, task: WorkerTask, limits: BlazeLimits, executionMs?: number): Promise<T> {
   scope.check();
   if (process.platform !== 'linux') throw new MetadataError('WORKER_CONTAINMENT_UNAVAILABLE', 503);
   // A procfs mounted in a different PID namespace cannot observe our children. Fail closed.
@@ -80,6 +81,6 @@ export async function containedWork<T extends TableResult | QueryResult | Parque
       catch (e) { reject(e); }
     });
     if (scope.signal.aborted) kill();
-    else child.send({ task, limits: { ...limits, datasetBytes: Math.min(limits.datasetBytes, remaining) }, memoryMb: scope.limits.duckdbMemoryMb, resultBytes: Math.min(scope.limits.resultBytes, remaining), deadline: Date.now() + Math.max(1, scope.limits.executionMs - (performance.now() - scope.started)), rssBytes: scope.limits.workerRssBytes } satisfies WorkerRequest, e => { if (e) { error = new MetadataError('WORKER_EXECUTION_FAILED', 503); child.kill('SIGKILL'); } });
+    else child.send({ task, limits: { ...limits, datasetBytes: Math.min(limits.datasetBytes, remaining) }, memoryMb: scope.limits.duckdbMemoryMb, resultBytes: Math.min(scope.limits.resultBytes, remaining), deadline: Date.now() + Math.max(1, Math.min(executionMs ?? scope.limits.executionMs, scope.limits.executionMs - (performance.now() - scope.started))), rssBytes: scope.limits.workerRssBytes } satisfies WorkerRequest, e => { if (e) { error = new MetadataError('WORKER_EXECUTION_FAILED', 503); child.kill('SIGKILL'); } });
   });
 }
