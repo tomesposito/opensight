@@ -12,8 +12,9 @@ unknown keys fail closed. Without a count, the original warning remains exactly:
 “no top-N/Other bucket is computed; all supplied result rows are shown.”
 No QuickSight default count is assumed.
 
-Groups follow first appearance in the existing display order. OpenSight still
-does not parse `smallMultiplesSort`; this is a documented QuickSight divergence.
+Groups follow first appearance in the existing display order unless
+`smallMultiplesSort` is set. [The small-multiples-sort slice](parity-sm-sort.md)
+resolves that former divergence: facet values sort before the first N are kept.
 The first N groups remain ordinary panels. With INCLUDE, all remaining groups
 merge into one extra panel titled `Other` (fixed English). Categories in that
 panel follow first appearance and measures sum, retaining null when every

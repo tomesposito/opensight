@@ -12,7 +12,7 @@ and definition format.
 | CARD TITLE | Title/subtitle text and visibility; title font size | Custom alt text; charts currently use the title for their accessible description |
 | CARD STYLE | — | Background, border and selection colors/opacity, border width, loading animation setting |
 | CARD LAYOUT | — | Per-card padding |
-| Multiples Options | Visible rows/columns, layout panel cap, panel title size/bold/italic/alignment, border/width/color, gutter/background; assigned facets also expose Number of panels displayed and Group the rest as Other | Panel-title underline and dashed/dotted borders are saved but render without underline/with solid borders |
+| Multiples Options | Visible rows/columns, layout panel cap, panel title size/bold/italic/alignment, border/width/color, gutter/background; assigned facets also expose Sort panels, Number of panels displayed and Group the rest as Other | Panel-title underline and dashed/dotted borders are saved but render without underline/with solid borders |
 | Group/Color | Field display name; explicit field sort; Number of slices displayed for pie or Number of categories displayed for bar/percentage bar, with an optional Other bucket | Separate group title is saved but not drawn |
 | Category limit | Number of categories displayed and optional Other for line, area and combo | — |
 | Legend | Visibility; Auto/Top/Bottom/Left/Right placement | Separate legend title and its typography; per-visual legend value typography |
@@ -26,7 +26,10 @@ to the analysis theme rather than naming an unavailable downloaded font.
 
 Multiples Options appears for bar, percentage bar, line, area, combo and pie,
 or for a retained Small multiples assignment. Supported kinds render facets and
-round-trip their field, layout settings and panel limit. Number of panels
+round-trip their field, layout settings, facet sort and panel limit. Sort panels
+offers None, Ascending or Descending for the assigned facet, before limiting.
+Removing or changing that field clears its sort. See [sort semantics](parity-sm-sort.md).
+Number of panels
 displayed accepts integers 1–100; invalid edits keep the last valid value and
 empty clears the limit. Remaining groups merge into Other unless excluded;
 the layout cap still applies afterward. See [panel-limit semantics](parity-sm-limit.md).
