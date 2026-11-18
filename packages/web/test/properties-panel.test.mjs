@@ -122,6 +122,8 @@ test('issue 57 section order and control names remain specific to each visual ki
     assert.equal(html.includes('<summary>Multiples Options</summary>'), ['bar', 'bar100', 'line', 'area', 'combo', 'pie'].includes(kind), kind);
     assert.equal(html.includes('<summary>Group/Color</summary>'), ['bar', 'bar100', 'pie'].includes(kind), kind);
     assert.equal(html.includes('Number of slices displayed'), kind === 'pie', kind);
+    assert.equal(html.includes('Number of categories displayed'), ['bar', 'bar100', 'line', 'area', 'combo'].includes(kind), kind);
+    assert.equal(html.includes('<summary>Category limit</summary>'), ['line', 'area', 'combo'].includes(kind), kind);
     assert.equal((html.match(/aria-label="Title"/g) ?? []).length, 1, `${kind}: card title has a unique accessible name`);
     if (kind === 'pie') {
       const sections = [...html.matchAll(/<summary[^>]*>([^<]+)<\/summary>/g)].map(match => match[1]);

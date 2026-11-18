@@ -135,7 +135,7 @@ const rejections = [
   ['string measure', input => { input.rows[0].revenue = '500'; }],
   ['duplicate aggregate category', input => { input.rows.push({ ...input.rows[0] }); }],
   ['unbound sort', input => { body(input).ChartConfiguration.SortConfiguration = { CategorySort: [{ FieldSort: { FieldId: 'missing', Direction: 'ASC' } }] }; }],
-  ['explicit top-N', input => { body(input).ChartConfiguration.SortConfiguration = { CategoryItemsLimit: { ItemsLimit: 1, OtherCategories: 'INCLUDE' } }; }],
+  ['out-of-range category limit', input => { body(input).ChartConfiguration.SortConfiguration = { CategoryItemsLimit: { ItemsLimit: 101, OtherCategories: 'INCLUDE' } }; }],
   ['actions', input => { body(input).Actions = [{ CustomActionId: 'click' }]; }],
 ];
 for (const [name, change] of rejections) {
