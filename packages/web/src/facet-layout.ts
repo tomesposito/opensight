@@ -1,13 +1,14 @@
 import type { AnalysisTheme } from './themes.js';
 import type { Cell, Field, MultiplesOptions, Row, VisualModel } from './model.js';
 import type { VisualKind } from './visual-catalog.js';
+import { compareCells } from './cell-sort.js';
 
 /** Visual kinds that render a Small multiples facet as a grid of per-facet panels. */
 export const FACETED_KINDS: readonly VisualKind[] = ['bar', 'bar100', 'line', 'area', 'combo', 'pie'] as const;
 
 export interface FacetGroup { value: Cell; rows: Row[] }
 
-/** Limit first-appearance groups before layout caps. The compiler supplies the
+/** Limit ordered groups before layout caps. The compiler supplies the
  * row merge so field bindings and category totals are shared by every renderer,
  * detailed tooltips and view-data. Unset/non-binding limits preserve the input. */
 export function applyFacetLimit(
@@ -21,8 +22,8 @@ export function applyFacetLimit(
   return kept;
 }
 
-/** Group rows by the facet dimension's cell value, in first-appearance order. */
-export function groupRowsByFacet(rows: Row[], facet: Field, cell: (row: Row, field: Field) => Cell): FacetGroup[] {
+/** Group rows by the facet cell, preserving first appearance unless sorted. */
+export function groupRowsByFacet(rows: Row[], facet: Field, cell: (row: Row, field: Field) => Cell, sort?: VisualModel['facetSort']): FacetGroup[] {
   const groups: FacetGroup[] = [];
   const seen = new Map<string, number>();
   for (const row of rows) {
@@ -32,7 +33,7 @@ export function groupRowsByFacet(rows: Row[], facet: Field, cell: (row: Row, fie
     if (i === undefined) { i = groups.length; seen.set(k, i); groups.push({ value, rows: [] }); }
     groups[i]!.rows.push(row);
   }
-  return groups;
+  return sort ? groups.sort((a, b) => compareCells(a.value, b.value, sort.direction)) : groups;
 }
 
 export interface FacetLayout {

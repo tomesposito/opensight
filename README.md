@@ -162,8 +162,8 @@ show **GROUP/COLOR**, **VALUE**, and **SMALL MULTIPLES**. Drag fields, use the
 pickers, or select a well and click a Data field. Empty VALUE wells show
 “Add a measure”; assigned pills show their field types. Small multiples render
 on bar, percentage bar, line, area, combo and pie visuals. Multiples Options can
-limit displayed panels and group remaining facets as Other; the limit and field
-round-trip through editable exports. See [field wells](docs/field-wells.md).
+sort panels by the facet field, limit displayed panels and group remaining facets
+as Other; the sort, limit and field round-trip through editable exports. See [field wells](docs/field-wells.md).
 
 ![Empty Author visual with GROUP/COLOR, VALUE and SMALL MULTIPLES field wells](docs/images/author-empty.png)
 

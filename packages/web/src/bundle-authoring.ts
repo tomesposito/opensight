@@ -1,6 +1,6 @@
 import { validOProvenance } from './o-provenance.js';
 import { importObjects, serializeObject, objectElementType, type SheetObject } from './sheet-objects.js';
-import { analysisDescriptionValid, layoutSettingsValid } from './authoring.js';
+import { analysisDescriptionValid, layoutSettingsValid, facetSortValid } from './authoring.js';
 import { projectInsightBody } from './insight-configuration.js';
 import { normalizeVisual, tooltipDetailKinds } from './compiler.js';
 import { FACETED_KINDS } from './facet-layout.js';
@@ -207,6 +207,15 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     Object.keys(facetLimitObj).every(key => key === 'itemsLimit' || key === 'otherCategories') &&
     (facetOtherCategories === undefined || facetOtherCategories === 'INCLUDE' || facetOtherCategories === 'EXCLUDE')
     ? { count: facetItemsLimit as number, includeOther: facetOtherCategories !== 'EXCLUDE' } : undefined;
+  const facetSorts = list(obj(config.sortConfiguration).smallMultiplesSort);
+  const facetSortWrapper = obj(facetSorts[0]), facetFs = obj(facetSortWrapper.fieldSort);
+  const facetField = obj(Object.values(obj(list(wells.smallMultiples)[0]))[0]);
+  const facetColumn = obj(facetField.column).columnName;
+  const facetSort = { fieldId: facetFs.fieldId, direction: facetFs.direction === undefined ? 'ASC' : facetFs.direction };
+  const importedFacetSort = FACETED_KINDS.includes(kind) && list(wells.smallMultiples).length === 1 && facetSorts.length === 1 &&
+    Object.keys(facetSortWrapper).every(key => key === 'fieldSort') && Object.keys(facetFs).every(key => key === 'fieldId' || key === 'direction') &&
+    facetSortValid(facetSort) && facetSort.fieldId === facetField.fieldId && typeof facetColumn === 'string'
+    ? { fieldId: facetColumn, direction: facetSort.direction } : undefined;
   // Waterfall breakdown items limit (BreakdownItemsLimit): top-N breakdown
   // values in display order, with the rest rolled into an "Other" bar unless
   // OtherCategories is EXCLUDE. Fail-closed on shape (a malformed limit stays
@@ -272,6 +281,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     // OpenSight extension: imported pie slice limit imports into the draft.
     ...(importedSliceLimit ? { sliceLimit: importedSliceLimit } : {}),
     ...(importedFacetLimit ? { facetLimit: importedFacetLimit } : {}),
+    ...(importedFacetSort ? { facetSort: importedFacetSort } : {}),
     // OpenSight extension: imported waterfall breakdown limit imports into the
     // draft. The compiler validates on import that a Breakdowns field exists.
     ...(importedBreakdownLimit ? { breakdownLimit: importedBreakdownLimit } : {}),
@@ -541,6 +551,15 @@ function projectVisual(visual: AuthorVisual, raw: BundleVisual, calculations: re
     Object.values(o).forEach(v => { if (Array.isArray(v)) v.forEach(assign); else if (v && typeof v === 'object') assign(v); });
   };
   assign(config.fieldWells);
+  // Keep the original facet field ID when editing a sort on an imported well.
+  // Draft wells use column names; native field IDs need not equal those names.
+  const facetFields = (value: unknown): Obj[] => Object.entries(obj(value)).flatMap(([key, child]) => key === 'smallMultiples'
+    ? list(child).map(wrapper => obj(Object.values(obj(wrapper))[0])) : facetFields(child));
+  const originalFacet = facetFields(originalWells).find(field => obj(field.column).columnName === visual.smallMultiples?.[0]);
+  if (typeof originalFacet?.fieldId === 'string') {
+    for (const field of facetFields(config.fieldWells)) field.fieldId = originalFacet.fieldId;
+    for (const wrapper of list(obj(config.sortConfiguration).smallMultiplesSort)) obj(obj(wrapper).fieldSort).fieldId = originalFacet.fieldId;
+  }
   if (visual.kind === 'insight') assign(body.insightConfiguration);
   if (visual.kind === 'kpi' && Object.hasOwn(originalWells, 'kpiFieldWells')) config.fieldWells = { kpiFieldWells: config.fieldWells };
   return projected;

@@ -14,6 +14,7 @@ import type { Cell, Field, FixtureVisual, MultiplesOptions, Row, VisualModel } f
 import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
 import { applyCategoryLimit, CATEGORY_LIMIT_KINDS } from './category-limit.js';
+import { compareCells } from './cell-sort.js';
 import { applyDisplayOptions, legendTextStyle } from './display-options.js';
 import { FACETED_KINDS, applyFacetLimit, facetLayout, facetPanelGrids, facetTitles, groupRowsByFacet, type FacetGroup } from './facet-layout.js';
 
@@ -464,8 +465,25 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   if (forecast && !dimensions[0]?.dateGranularity) warnings.push(`${cpath}.${forecastKey}: forecast ignored — the chart's category field is not a date dimension.`);
   const sort = object(config[key('sortConfiguration', 'SortConfiguration')] ?? {}, cpath);
   const sortsKey = key('categorySort', 'CategorySort');
+  const facetSortKey = key('smallMultiplesSort', 'SmallMultiplesSort');
   const breakdownLimitKey = key('breakdownItemsLimit', 'BreakdownItemsLimit');
-  keys(sort, ['radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration')], `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`);
+  keys(sort, ['radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration'), ...(FACETED_KINDS.includes(kind) ? [facetSortKey] : [])], `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`);
+  const facetSortPath = `${cpath}.${key('sortConfiguration', 'SortConfiguration')}.${facetSortKey}`;
+  const facetSorts = list(sort[facetSortKey], facetSortPath);
+  if (facetSorts.length > 1) fail(facetSortPath, 'only one field sort is supported');
+  let facetSort: VisualModel['facetSort'];
+  if (facetSorts.length) {
+    const wrapper = object(facetSorts[0], facetSortPath);
+    const fsKey = key('fieldSort', 'FieldSort');
+    keys(wrapper, [fsKey], facetSortPath);
+    const fs = object(wrapper[fsKey], facetSortPath);
+    keys(fs, [key('fieldId', 'FieldId'), key('direction', 'Direction')], facetSortPath);
+    const fieldId = text(fs[key('fieldId', 'FieldId')], facetSortPath);
+    if (!facet) fail(facetSortPath, 'small multiples sort requires a SmallMultiples field');
+    if (fieldId !== facet.id) fail(facetSortPath, 'small multiples sort must reference the SmallMultiples field');
+    const direction = enumValue(fs[key('direction', 'Direction')], ['ASC', 'DESC'], 'ASC', facetSortPath) as 'ASC' | 'DESC';
+    facetSort = { fieldId, direction };
+  }
   let sliceLimit: VisualModel['sliceLimit'];
   const categoryLimitKey = key('categoryItemsLimit', 'CategoryItemsLimit');
   if (sort[categoryLimitKey] !== undefined) {
@@ -545,6 +563,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     dimensions, rowDimensions, columnDimensions, measures, totals, subtotals, columnTotals, columnSubtotals, innerRadius, sort: fieldSort, warnings,
     ...(sliceLimit ? { sliceLimit } : {}),
     ...(facetLimit ? { facetLimit } : {}),
+    ...(facetSort ? { facetSort } : {}),
     ...(breakdownLimit ? { breakdownLimit } : {}),
     ...(facet ? { facet } : {}),
     ...(breakdown ? { breakdown } : {}),
@@ -602,13 +621,7 @@ export function compileVisual(input: Input): CompiledVisual {
   if (model.sort) {
     const sort = model.sort;
     const field = fields.find(f => f.id === sort.fieldId)!;
-    rows.sort((a, b) => {
-      const av = cell(a, field), bv = cell(b, field);
-      if (av === null) return bv === null ? 0 : 1;
-      if (bv === null) return -1;
-      const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av) < String(bv) ? -1 : String(av) > String(bv) ? 1 : 0;
-      return sort.direction === 'DESC' ? -cmp : cmp;
-    });
+    rows.sort((a, b) => compareCells(cell(a, field), cell(b, field), sort.direction));
   }
   if (model.dimensions[0] && !['box', 'histogram', 'scatter', 'pointMap', 'sankey'].includes(model.kind)) {
     // Validate source rows before limiting: collapsing or dropping rows must
@@ -619,13 +632,13 @@ export function compileVisual(input: Input): CompiledVisual {
     const categories = rows.map(row => JSON.stringify(keyFields.map(f => cell(row, f))));
     if (new Set(categories).size !== categories.length) fail(input.path, 'duplicate categories: expected aggregated result rows');
   }
-  // Compute facet limits once, before any of the three layout paths or per-panel
+  // Order and limit facets once, before any of the three layout paths or per-panel
   // slice limits. Explicit groups keep a retained literal "Other" facet distinct
   // from the extra panel, even though both have the fixed English title.
   let facetGroups: FacetGroup[] | undefined;
-  if (model.facet && model.facetLimit) {
+  if (model.facet && (model.facetSort || model.facetLimit)) {
     const facet = model.facet;
-    const groups = groupRowsByFacet(rows, facet, cell);
+    const groups = groupRowsByFacet(rows, facet, cell, model.facetSort);
     facetGroups = applyFacetLimit(groups, model.facetLimit, rest => {
       const merged = new Map<string, Record<string, Cell>>();
       for (const row of rest) {
@@ -650,7 +663,7 @@ export function compileVisual(input: Input): CompiledVisual {
       }
       return [...merged.values()];
     });
-    if (facetGroups !== groups) {
+    if (model.facetSort || facetGroups !== groups) {
       rows.length = 0;
       rows.push(...facetGroups.flatMap(group => group.rows));
     }

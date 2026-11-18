@@ -5,6 +5,7 @@ import type { MultiplesOptions as MultiplesOptionsState } from './model.js';
 import { hasDataLabels, hasLegend, LEGEND_POSITIONS, DATA_LABEL_POSITIONS, CARD_DEFAULTS, cleanCardStyle, cleanCardLayout, cleanAltText, altTextValid, type LegendPosition, type LegendTextStyle, type LegendTitle, type GroupTitle, type DataLabels, type DataLabelPosition, type CardStyle, type CardSwatch, type CardBorder } from './formatting.js';
 import { LIGHT_THEME } from './themes.js';
 import { CATEGORY_LIMIT_KINDS } from './category-limit.js';
+import { FACETED_KINDS } from './facet-layout.js';
 
 type SectionProps = { visual: AuthorVisual; dispatch: Dispatch<AuthorAction> };
 
@@ -115,6 +116,7 @@ export function MultiplesOptions({ visual, dispatch }: SectionProps) {
     if (/^\d+$/.test(trimmed) && Number(trimmed) >= 1) apply(Number(trimmed));
   };
   return <details className="property-section"><summary>Multiples Options</summary>
+    {FACETED_KINDS.includes(visual.kind) && !!visual.smallMultiples?.length && <FacetSortControls visual={visual} dispatch={dispatch} />}
     {!!visual.smallMultiples?.length && <FacetLimitControls visual={visual} dispatch={dispatch} />}
     <h4 className="property-caption">Layout</h4>
     <div className="property-inline">
@@ -238,6 +240,20 @@ function SliceLimitControls({ visual, dispatch }: SectionProps) {
     {limit && <label className="toggle"><input type="checkbox" aria-label="Group the rest as Other"
       checked={limit.includeOther} onChange={e => setLimit(String(limit.count), e.target.checked)} />Group the rest as “Other”</label>}
     <p className="field-hint">Top {limit?.count ?? 'N'} categories in display order{limit?.includeOther === false ? '; the rest are hidden' : pie ? '; the rest roll into an “Other” slice' : '; the rest roll into an “Other” category'}. Empty shows all rows.</p>
+  </div>;
+}
+
+function FacetSortControls({ visual, dispatch }: SectionProps) {
+  const fieldId = visual.smallMultiples![0]!;
+  const setSort = (direction: string) => {
+    if (direction === '') dispatch({ type: 'facet-sort', sort: undefined });
+    else if (direction === 'ASC' || direction === 'DESC') dispatch({ type: 'facet-sort', sort: { fieldId, direction } });
+  };
+  return <div className="property-control-row" role="group" aria-label="Small multiples sort controls">
+    <label>Sort panels by {fieldId}<select aria-label="Sort panels" value={visual.facetSort?.direction ?? ''}
+      onChange={e => setSort(e.target.value)}>
+      <option value="">None</option><option value="ASC">Ascending</option><option value="DESC">Descending</option>
+    </select></label>
   </div>;
 }
 

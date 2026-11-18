@@ -26,7 +26,7 @@ their granularity and measures retain their aggregation. The Data panel shows
 the dataset name, the existing truthful BLAZE/DIRECT QUERY execution badge,
 “Search fields”, and “+ Calculated field”; it does not claim SPICE execution.
 
-## Small multiples limit
+## Small multiples sorting and limits
 
 One dimension can be assigned to Small multiples. The optional `smallMultiples`
 array is validated in the existing version-2 draft format, saved by the same
@@ -38,11 +38,15 @@ Bar, percentage bar, line, area, combo and pie render one panel per facet and
 support JSON/.qs export and editable import. Other visual types retain the
 assignment in the draft but block preview/export with `SMALL_MULTIPLES_UNSUPPORTED`.
 
-With a facet assigned, Multiples Options offers **Number of panels displayed**
+With a facet assigned, Multiples Options offers **Sort panels by [field]**
+(None, Ascending or Descending), **Number of panels displayed**
 (1–100) and **Group the rest as Other**. The first N groups in display order
 remain; remaining groups merge into one Other panel or are excluded. Clearing
 the count removes the limit. The existing layout panel cap (at most 20) and
-visible grid capacity apply afterward. See [panel-limit semantics and review](parity-sm-limit.md).
+visible grid capacity apply afterward. Sorting runs before the first N are kept;
+nulls and the merged Other panel stay last. Removing or replacing the facet
+clears its sort. See [sort semantics](parity-sm-sort.md) and
+[panel-limit semantics and review](parity-sm-limit.md).
 
 ## Verification
 
