@@ -127,6 +127,8 @@ export interface AuthorVisual {
   sliceLimit?: SliceLimit;
   /** Small multiples panel limit, applied before the layout's panel cap. */
   facetLimit?: FacetLimit;
+  /** Order Small multiples panels by their assigned facet field. */
+  facetSort?: GroupSort;
   /** Waterfall breakdown limit: top-N breakdown values with an optional per-category
    *  "Other" delta bar. Renders through sortConfiguration. Waterfall only. */
   breakdownLimit?: BreakdownLimit;
@@ -231,6 +233,10 @@ export function groupSortValid(value: unknown): value is GroupSort {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const v = value as Record<string, unknown>;
   return Object.keys(v).length === 2 && typeof v.fieldId === 'string' && !!v.fieldId && !v.fieldId.includes('\0') && (v.direction === 'ASC' || v.direction === 'DESC');
+}
+/** Facet sorts share the field-sort shape; callers also check facet membership. */
+export function facetSortValid(value: unknown): value is GroupSort {
+  return groupSortValid(value);
 }
 /** Category limit: show the top N categories, rolling the rest into an
  *  "Other" bucket (QuickSight CategoryItemsLimit parity). Unset means no limit. */
@@ -365,6 +371,7 @@ export type AuthorAction =
   | { type: 'group-sort'; sort: GroupSort | undefined }
   | { type: 'slice-limit'; limit: SliceLimit | undefined }
   | { type: 'facet-limit'; limit: FacetLimit | undefined }
+  | { type: 'facet-sort'; sort: GroupSort | undefined }
   | { type: 'breakdown-limit'; limit: BreakdownLimit | undefined }
   | { type: 'legend-value-style'; style: LegendTextStyle | undefined }
   | { type: 'data-labels'; labels: DataLabels | undefined }
@@ -753,6 +760,13 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         else next.facetLimit = structuredClone(action.limit);
         return next;
       }
+      case 'facet-sort': {
+        if (action.sort !== undefined && (!facetSortValid(action.sort) || !FACETED_KINDS.includes(visual.kind) || action.sort.fieldId !== visual.smallMultiples?.[0])) return visual;
+        const next = { ...visual };
+        if (action.sort === undefined) delete next.facetSort;
+        else next.facetSort = structuredClone(action.sort);
+        return next;
+      }
       case 'breakdown-limit': {
         if (action.limit !== undefined && !breakdownLimitValid(action.limit)) return visual;
         const next = { ...visual };
@@ -896,6 +910,10 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   }).map((visual, index) => {
     const previous = sheet.visuals[index]!;
     let next = visual;
+    if (next.facetSort && next.facetSort.fieldId !== next.smallMultiples?.[0]) {
+      const { facetSort: _dropped, ...rest } = next;
+      next = rest;
+    }
     // A sort whose field left the visual's wells is stale: drop it rather than
     // keep an unbound reference (same leniency as tooltip hidden fields).
     if (next.groupSort && ![next.dimension, ...next.rows, ...next.columns, ...next.measures].includes(next.groupSort.fieldId)) {
@@ -1022,6 +1040,8 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
       ? { categoryItemsLimit: { itemsLimit: visual.sliceLimit.count, otherCategories: visual.sliceLimit.includeOther ? 'INCLUDE' : 'EXCLUDE' } } : {}),
     ...(visual.facetLimit && FACETED_KINDS.includes(visual.kind) && visual.smallMultiples?.length
       ? { smallMultiplesLimitConfiguration: { itemsLimit: visual.facetLimit.count, otherCategories: visual.facetLimit.includeOther ? 'INCLUDE' : 'EXCLUDE' } } : {}),
+    ...(visual.facetSort && FACETED_KINDS.includes(visual.kind) && visual.smallMultiples?.length
+      ? { smallMultiplesSort: [{ fieldSort: { fieldId: visual.facetSort.fieldId, direction: visual.facetSort.direction } }] } : {}),
     ...(visual.breakdownLimit && visual.kind === 'waterfall' && visual.breakdowns?.length
       ? { breakdownItemsLimit: { itemsLimit: visual.breakdownLimit.count, otherCategories: visual.breakdownLimit.includeOther ? 'INCLUDE' : 'EXCLUDE' } } : {}),
   };
@@ -1187,7 +1207,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported || unresolvedAllowed ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['o', 'id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'breakdowns', 'multiplesOptions', 'groupSort', 'sliceLimit', 'facetLimit', 'breakdownLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', 'forecast', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['o', 'id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'breakdowns', 'multiplesOptions', 'groupSort', 'sliceLimit', 'facetLimit', 'facetSort', 'breakdownLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', 'forecast', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if (v.o !== undefined && !validOProvenance(v.o)) return fail();
       if (v.referenceLines !== undefined && (!Array.isArray(v.referenceLines) || !v.referenceLines.every(referenceLineValid))) return fail();
       if (v.forecast !== undefined && !forecastConfigValid(v.forecast)) return fail();
@@ -1197,6 +1217,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       if (v.groupSort !== undefined && !groupSortValid(v.groupSort)) return fail();
       if (v.sliceLimit !== undefined && !sliceLimitValid(v.sliceLimit)) return fail();
       if (v.facetLimit !== undefined && !facetLimitValid(v.facetLimit)) return fail();
+      if (v.facetSort !== undefined && (!facetSortValid(v.facetSort) || v.facetSort.fieldId !== (v.smallMultiples as string[] | undefined)?.[0])) return fail();
       if (v.breakdownLimit !== undefined && !breakdownLimitValid(v.breakdownLimit)) return fail();
       if ((v.kind === 'radar' || v.kind === 'sankey') && !v.imported && (v.rows.length > 1 || v.columns.length > 1)) return fail();
       if (singleMeasure(v.kind as VisualKind) && v.measures.length > 1 || noDimensions(v.kind as VisualKind) && v.dimension !== null || v.kind !== 'pie' && v.donut || !splitDimensions(v.kind as VisualKind) && v.columns.length || (grouped(v.kind as VisualKind) ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
