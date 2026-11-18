@@ -26,6 +26,7 @@ import type { QsBundle } from '@opensight/bundle-parser';
 import type { PrepColumn } from '@opensight/bundle-parser/prep';
 import { normalizeVisual, tooltipDetailKinds } from './compiler.js';
 import { FACETED_KINDS } from './facet-layout.js';
+import { CATEGORY_LIMIT_KINDS } from './category-limit.js';
 
 export const SALES_FIELDS = [
   { name: 'order_id', role: 'dimension', type: 'INTEGER' },
@@ -122,7 +123,7 @@ export interface AuthorVisual {
   multiplesOptions?: MultiplesOptions;
   /** Group/Color sort: sort the slices/segments by one bound field. Renders through sortConfiguration. */
   groupSort?: GroupSort;
-  /** Pie slice limit: top-N categories with an optional "Other" bucket. Renders through sortConfiguration. */
+  /** Category limit: top-N categories with an optional "Other" bucket. Renders through sortConfiguration. */
   sliceLimit?: SliceLimit;
   /** Small multiples panel limit, applied before the layout's panel cap. */
   facetLimit?: FacetLimit;
@@ -231,10 +232,10 @@ export function groupSortValid(value: unknown): value is GroupSort {
   const v = value as Record<string, unknown>;
   return Object.keys(v).length === 2 && typeof v.fieldId === 'string' && !!v.fieldId && !v.fieldId.includes('\0') && (v.direction === 'ASC' || v.direction === 'DESC');
 }
-/** Pie slice limit: show the top N categories, rolling the rest into an
+/** Category limit: show the top N categories, rolling the rest into an
  *  "Other" bucket (QuickSight CategoryItemsLimit parity). Unset means no limit. */
 export interface SliceLimit { count: number; includeOther: boolean }
-/** Fail-closed structural validation for the pie slice limit. */
+/** Fail-closed structural validation for the category limit. */
 export function sliceLimitValid(value: unknown): value is SliceLimit {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const v = value as Record<string, unknown>;
@@ -1017,7 +1018,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   const sortConfiguration = {
     ...(visual.groupSort && ['bar', 'bar100', 'pie'].includes(visual.kind)
       ? { categorySort: [{ fieldSort: { fieldId: visual.groupSort.fieldId, direction: visual.groupSort.direction } }] } : {}),
-    ...(visual.sliceLimit && visual.kind === 'pie'
+    ...(visual.sliceLimit && CATEGORY_LIMIT_KINDS.includes(visual.kind)
       ? { categoryItemsLimit: { itemsLimit: visual.sliceLimit.count, otherCategories: visual.sliceLimit.includeOther ? 'INCLUDE' : 'EXCLUDE' } } : {}),
     ...(visual.facetLimit && FACETED_KINDS.includes(visual.kind) && visual.smallMultiples?.length
       ? { smallMultiplesLimitConfiguration: { itemsLimit: visual.facetLimit.count, otherCategories: visual.facetLimit.includeOther ? 'INCLUDE' : 'EXCLUDE' } } : {}),

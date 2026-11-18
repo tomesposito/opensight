@@ -71,10 +71,10 @@ test('compiler parses CategoryItemsLimit into the model; bad shapes fail closed'
   const degenerateModel = normalizeVisual('api', degenerate.definition);
   assert.equal(degenerateModel.sliceLimit, undefined);
   assert.ok(degenerateModel.warnings.some(w => /no slice limit specified/));
-  // Slice limits on non-pie visuals fail with a located diagnostic (fail-closed).
-  const bar = structuredClone(fixtures[1].sheets[0].visuals.find(v => Object.hasOwn(v.definition, 'BarChartVisual')));
-  bar.definition.BarChartVisual.ChartConfiguration.SortConfiguration = { CategoryItemsLimit: { ItemsLimit: 3, OtherCategories: 'INCLUDE' } };
-  assert.throws(() => normalizeVisual('api', bar.definition), /only computed for pie visuals/);
+  // Unsupported kinds keep the existing located diagnostic (fail-closed).
+  const funnel = buildAuthorVisual({ ...selected(pieDraft()), kind: 'funnel' });
+  funnel.definition.funnelChartVisual.chartConfiguration.sortConfiguration = { categoryItemsLimit: { itemsLimit: 3, otherCategories: 'INCLUDE' } };
+  assert.throws(() => normalizeVisual('bundle', funnel.definition), /only computed for pie visuals/);
   // Out-of-range or mistyped counts fail with a located diagnostic.
   for (const shape of [{ ItemsLimit: 0 }, { ItemsLimit: 101 }, { ItemsLimit: '3' }, { ItemsLimit: 2.5 }]) {
     const bad = pieFixture();

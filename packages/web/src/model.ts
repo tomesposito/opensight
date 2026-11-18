@@ -64,9 +64,9 @@ export interface VisualModel {
    *  issue #235). A non-date category retains the config with a warning. */
   forecast?: import('./forecast.js').ForecastConfig;
   sort?: { fieldId: string; direction: 'ASC' | 'DESC' };
-  /** Pie slice limit (QuickSight CategoryItemsLimit): show the top N categories,
+  /** Category limit (QuickSight CategoryItemsLimit): show the top N categories,
    *  rolling the rest into an "Other" bucket when includeOther. Applied per facet
-   *  group for faceted pies. Absent means no limit: all result rows are shown. */
+   *  group for category-axis charts and pies. Absent means no limit. */
   sliceLimit?: { count: number; includeOther: boolean };
   /** SmallMultiplesLimitConfiguration: retain the first N facet groups, then
    *  optionally merge the remaining groups into one "Other" panel. Applied

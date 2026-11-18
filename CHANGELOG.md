@@ -23,6 +23,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Bar, 100% stacked bar, line, area and combo charts now compute category limits with optional Other buckets, per-panel display-order semantics, editable Properties controls and native/bundle round-trips (phase-plan fallback: parity-category-limit; no GitHub issue).
+
 - Insight anomaly computations now detect unusually high or low dated values with deterministic median/MAD statistics, optional direction and sensitivity filters, and an **Anomaly (date required)** authoring preset. Native and bundle configurations round-trip; insufficient data is reported honestly. This is statistical detection, not QuickSight's ML (phase-plan fallback: insight-anomaly; no GitHub issue).
 
 - Prep join diagnostics show matched output rows, unmatched rows per side, and fan-out multiplicities on bounded preview samples with explicit truncation provenance (#286). Local DuckDB/PostgreSQL and hosted admitted SQL sources share the same counts and one ten-second deadline; unsupported full-payload/cache inputs report a named unavailable error, and the static demo remains schema-only.

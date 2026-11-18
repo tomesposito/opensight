@@ -4,6 +4,7 @@ import { GRID_COLUMNS, defaultMultiplesOptions, hasSmallMultiplesWell, breakdown
 import type { MultiplesOptions as MultiplesOptionsState } from './model.js';
 import { hasDataLabels, hasLegend, LEGEND_POSITIONS, DATA_LABEL_POSITIONS, CARD_DEFAULTS, cleanCardStyle, cleanCardLayout, cleanAltText, altTextValid, type LegendPosition, type LegendTextStyle, type LegendTitle, type GroupTitle, type DataLabels, type DataLabelPosition, type CardStyle, type CardSwatch, type CardBorder } from './formatting.js';
 import { LIGHT_THEME } from './themes.js';
+import { CATEGORY_LIMIT_KINDS } from './category-limit.js';
 
 type SectionProps = { visual: AuthorVisual; dispatch: Dispatch<AuthorAction> };
 
@@ -217,24 +218,26 @@ function TextStyling({ label, size, value, onChange }: { label: string; size: nu
   </>;
 }
 
-/** Pie slice-limit controls (QuickSight CategoryItemsLimit parity): the top N
- *  categories in display order; the rest roll into an "Other" slice or are
+/** Category-limit controls (QuickSight CategoryItemsLimit parity): the top N
+ *  categories in display order; the rest roll into an "Other" bucket or are
  *  hidden. Fail-closed: out-of-range input keeps the last valid limit; clearing
  *  the input removes the limit (all rows shown). */
 function SliceLimitControls({ visual, dispatch }: SectionProps) {
   const limit = visual.sliceLimit;
+  const pie = visual.kind === 'pie';
+  const label = pie ? 'Number of slices displayed' : 'Number of categories displayed';
   const setLimit = (raw: string, includeOther?: boolean) => {
     if (raw.trim() === '') { dispatch({ type: 'slice-limit', limit: undefined }); return; }
     const next: SliceLimit = { count: Number(raw), includeOther: includeOther ?? limit?.includeOther ?? true };
     if (!sliceLimitValid(next)) return; // keep the last valid limit
     dispatch({ type: 'slice-limit', limit: next });
   };
-  return <div className="property-control-row" role="group" aria-label="Slice limit controls">
-    <label>Number of slices displayed<input type="number" aria-label="Number of slices displayed" min={1} max={100}
+  return <div className="property-control-row" role="group" aria-label={pie ? 'Slice limit controls' : 'Category limit controls'}>
+    <label>{label}<input type="number" aria-label={label} min={1} max={100}
       placeholder="All rows" value={limit?.count ?? ''} onChange={e => setLimit(e.target.value)} /></label>
     {limit && <label className="toggle"><input type="checkbox" aria-label="Group the rest as Other"
       checked={limit.includeOther} onChange={e => setLimit(String(limit.count), e.target.checked)} />Group the rest as “Other”</label>}
-    <p className="field-hint">Top {limit?.count ?? 'N'} categories in display order{limit?.includeOther === false ? '; the rest are hidden' : '; the rest roll into an “Other” slice'}. Empty shows all rows.</p>
+    <p className="field-hint">Top {limit?.count ?? 'N'} categories in display order{limit?.includeOther === false ? '; the rest are hidden' : pie ? '; the rest roll into an “Other” slice' : '; the rest roll into an “Other” category'}. Empty shows all rows.</p>
   </div>;
 }
 
@@ -290,7 +293,10 @@ export function BreakdownOptions({ visual, dispatch }: SectionProps) {
 }
 
 export function GroupColorOptions({ visual, dispatch }: SectionProps) {
-  if (!['bar', 'bar100', 'pie'].includes(visual.kind)) return null;
+  if (!CATEGORY_LIMIT_KINDS.includes(visual.kind)) return null;
+  if (!['bar', 'bar100', 'pie'].includes(visual.kind)) return <details className="property-section"><summary>Category limit</summary>
+    <SliceLimitControls visual={visual} dispatch={dispatch} />
+  </details>;
   const field = visual.dimension;
   const names = visual.formatting?.names;
   const title: GroupTitle = visual.formatting?.groupTitle ?? {};
@@ -345,7 +351,7 @@ export function GroupColorOptions({ visual, dispatch }: SectionProps) {
       </div>}
     </div> : <p className="field-hint">Assign a Group/Color field or a measure to sort the slices.</p>}
     <p className="field-hint">The default order follows the dataset's dimension order; a chosen sort applies to the rendered slices.</p>
-    {visual.kind === 'pie' && <SliceLimitControls visual={visual} dispatch={dispatch} />}
+    <SliceLimitControls visual={visual} dispatch={dispatch} />
   </details>;
 }
 
