@@ -464,8 +464,25 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   if (forecast && !dimensions[0]?.dateGranularity) warnings.push(`${cpath}.${forecastKey}: forecast ignored — the chart's category field is not a date dimension.`);
   const sort = object(config[key('sortConfiguration', 'SortConfiguration')] ?? {}, cpath);
   const sortsKey = key('categorySort', 'CategorySort');
+  const facetSortKey = key('smallMultiplesSort', 'SmallMultiplesSort');
   const breakdownLimitKey = key('breakdownItemsLimit', 'BreakdownItemsLimit');
-  keys(sort, ['radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration')], `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`);
+  keys(sort, ['radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration'), ...(FACETED_KINDS.includes(kind) ? [facetSortKey] : [])], `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`);
+  const facetSortPath = `${cpath}.${key('sortConfiguration', 'SortConfiguration')}.${facetSortKey}`;
+  const facetSorts = list(sort[facetSortKey], facetSortPath);
+  if (facetSorts.length > 1) fail(facetSortPath, 'only one field sort is supported');
+  let facetSort: VisualModel['facetSort'];
+  if (facetSorts.length) {
+    const wrapper = object(facetSorts[0], facetSortPath);
+    const fsKey = key('fieldSort', 'FieldSort');
+    keys(wrapper, [fsKey], facetSortPath);
+    const fs = object(wrapper[fsKey], facetSortPath);
+    keys(fs, [key('fieldId', 'FieldId'), key('direction', 'Direction')], facetSortPath);
+    const fieldId = text(fs[key('fieldId', 'FieldId')], facetSortPath);
+    if (!facet) fail(facetSortPath, 'small multiples sort requires a SmallMultiples field');
+    if (fieldId !== facet.id) fail(facetSortPath, 'small multiples sort must reference the SmallMultiples field');
+    const direction = enumValue(fs[key('direction', 'Direction')], ['ASC', 'DESC'], 'ASC', facetSortPath) as 'ASC' | 'DESC';
+    facetSort = { fieldId, direction };
+  }
   let sliceLimit: VisualModel['sliceLimit'];
   const categoryLimitKey = key('categoryItemsLimit', 'CategoryItemsLimit');
   if (sort[categoryLimitKey] !== undefined) {
@@ -545,6 +562,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     dimensions, rowDimensions, columnDimensions, measures, totals, subtotals, columnTotals, columnSubtotals, innerRadius, sort: fieldSort, warnings,
     ...(sliceLimit ? { sliceLimit } : {}),
     ...(facetLimit ? { facetLimit } : {}),
+    ...(facetSort ? { facetSort } : {}),
     ...(breakdownLimit ? { breakdownLimit } : {}),
     ...(facet ? { facet } : {}),
     ...(breakdown ? { breakdown } : {}),

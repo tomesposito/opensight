@@ -72,6 +72,8 @@ export interface VisualModel {
    *  optionally merge the remaining groups into one "Other" panel. Applied
    *  before layout caps; absent means every supplied facet is retained. */
   facetLimit?: { count: number; includeOther: boolean };
+  /** SmallMultiplesSort: order facet values before panel limits; nulls stay last. */
+  facetSort?: { fieldId: string; direction: 'ASC' | 'DESC' };
   /** Waterfall breakdown limit (QuickSight BreakdownItemsLimit): show the top N
    *  breakdown values in first-appearance order, rolling the rest into a per-category
    *  "Other" delta bar when includeOther. Waterfall with a Breakdowns field only.
