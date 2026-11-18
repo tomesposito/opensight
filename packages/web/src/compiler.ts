@@ -14,6 +14,7 @@ import type { Cell, Field, FixtureVisual, MultiplesOptions, Row, VisualModel } f
 import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
 import { applyCategoryLimit, CATEGORY_LIMIT_KINDS } from './category-limit.js';
+import { compareCells } from './cell-sort.js';
 import { applyDisplayOptions, legendTextStyle } from './display-options.js';
 import { FACETED_KINDS, applyFacetLimit, facetLayout, facetPanelGrids, facetTitles, groupRowsByFacet, type FacetGroup } from './facet-layout.js';
 
@@ -620,13 +621,7 @@ export function compileVisual(input: Input): CompiledVisual {
   if (model.sort) {
     const sort = model.sort;
     const field = fields.find(f => f.id === sort.fieldId)!;
-    rows.sort((a, b) => {
-      const av = cell(a, field), bv = cell(b, field);
-      if (av === null) return bv === null ? 0 : 1;
-      if (bv === null) return -1;
-      const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av) < String(bv) ? -1 : String(av) > String(bv) ? 1 : 0;
-      return sort.direction === 'DESC' ? -cmp : cmp;
-    });
+    rows.sort((a, b) => compareCells(cell(a, field), cell(b, field), sort.direction));
   }
   if (model.dimensions[0] && !['box', 'histogram', 'scatter', 'pointMap', 'sankey'].includes(model.kind)) {
     // Validate source rows before limiting: collapsing or dropping rows must
@@ -637,13 +632,13 @@ export function compileVisual(input: Input): CompiledVisual {
     const categories = rows.map(row => JSON.stringify(keyFields.map(f => cell(row, f))));
     if (new Set(categories).size !== categories.length) fail(input.path, 'duplicate categories: expected aggregated result rows');
   }
-  // Compute facet limits once, before any of the three layout paths or per-panel
+  // Order and limit facets once, before any of the three layout paths or per-panel
   // slice limits. Explicit groups keep a retained literal "Other" facet distinct
   // from the extra panel, even though both have the fixed English title.
   let facetGroups: FacetGroup[] | undefined;
-  if (model.facet && model.facetLimit) {
+  if (model.facet && (model.facetSort || model.facetLimit)) {
     const facet = model.facet;
-    const groups = groupRowsByFacet(rows, facet, cell);
+    const groups = groupRowsByFacet(rows, facet, cell, model.facetSort);
     facetGroups = applyFacetLimit(groups, model.facetLimit, rest => {
       const merged = new Map<string, Record<string, Cell>>();
       for (const row of rest) {
@@ -668,7 +663,7 @@ export function compileVisual(input: Input): CompiledVisual {
       }
       return [...merged.values()];
     });
-    if (facetGroups !== groups) {
+    if (model.facetSort || facetGroups !== groups) {
       rows.length = 0;
       rows.push(...facetGroups.flatMap(group => group.rows));
     }
