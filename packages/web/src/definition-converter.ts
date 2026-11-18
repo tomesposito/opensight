@@ -125,10 +125,11 @@ const visualBody: Schema = {
   DataSetIdentifier: ['dataSetIdentifier'],
   InsightConfiguration: ['insightConfiguration', {
     CustomNarrative: ['customNarrative', members('Narrative')], Interactions: ['interactions', interactions],
-    Computations: ['computations', Object.fromEntries(['TotalAggregation', 'MaximumMinimum', 'TopBottomRanked', 'GrowthRate', 'PeriodOverPeriod', 'MetricComparison', 'Forecast', 'PeriodToDate', 'TopBottomMovers', 'UniqueValues'].map(name => [name, [name[0]!.toLowerCase() + name.slice(1), {
+    Computations: ['computations', Object.fromEntries(['TotalAggregation', 'MaximumMinimum', 'TopBottomRanked', 'GrowthRate', 'PeriodOverPeriod', 'MetricComparison', 'Forecast', 'PeriodToDate', 'TopBottomMovers', 'UniqueValues', 'Anomaly'].map(name => [name, [name[0]!.toLowerCase() + name.slice(1), {
       ...members('ComputationId Name Type ResultSize PeriodSize PeriodsForward PeriodsBackward PredictionInterval Seasonality CustomSeasonalityValue LowerBoundary UpperBoundary'),
       ...(name === 'Forecast' ? { ForecastProperties: ['forecastProperties', members('PeriodsForward PeriodsBackward PredictionInterval Seasonality CustomSeasonalityValue LowerBoundary UpperBoundary')] as Rule } : {}),
       ...(name === 'PeriodToDate' ? members('PeriodTimeGranularity') : {}),
+      ...(name === 'Anomaly' ? { AnomalyDetection: ['anomalyDetection', members('Direction MinSensitivityPercentage')] as Rule } : {}),
       ...(name === 'TopBottomMovers' ? members('MoverSize SortOrder') : {}),
       Time: ['time', dimension], Category: ['category', dimension], Value: ['value', measure], FromValue: ['fromValue', measure], TargetValue: ['targetValue', measure],
     }] as Rule]))],
