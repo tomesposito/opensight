@@ -4,6 +4,7 @@ import { analysisDescriptionValid, layoutSettingsValid } from './authoring.js';
 import { projectInsightBody } from './insight-configuration.js';
 import { normalizeVisual, tooltipDetailKinds } from './compiler.js';
 import { FACETED_KINDS } from './facet-layout.js';
+import { CATEGORY_LIMIT_KINDS } from './category-limit.js';
 import { themeValid, paletteValid } from './themes.js';
 import { formattingValid, gaugeValid, binsValid, legendPositionValid, hasReferenceLines } from './formatting.js';
 import { EXTRA_VISUALS, extraKind, variantKinds } from './visual-catalog.js';
@@ -188,13 +189,13 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const importedGroupSort = sortWrappers.length === 1 && ['bar', 'bar100', 'pie'].includes(kind) &&
     sortFieldId !== undefined && sortDirection !== undefined && sortBound.includes(sortFieldId)
     ? { fieldId: sortFieldId, direction: sortDirection } : undefined;
-  // OpenSight extension: an imported pie slice limit becomes editable draft state
+  // An imported category limit becomes editable draft state
   // (like the Group/Color sort). Unrecognized shapes stay retained read-only
   // through the differences check.
   const limitObj = obj(obj(config.sortConfiguration).categoryItemsLimit);
   const itemsLimit = limitObj.itemsLimit;
   const otherCategories = limitObj.otherCategories;
-  const importedSliceLimit = kind === 'pie' && Number.isInteger(itemsLimit) && (itemsLimit as number) >= 1 && (itemsLimit as number) <= 100 &&
+  const importedSliceLimit = CATEGORY_LIMIT_KINDS.includes(kind) && Number.isInteger(itemsLimit) && (itemsLimit as number) >= 1 && (itemsLimit as number) <= 100 &&
     (otherCategories === undefined || otherCategories === 'INCLUDE' || otherCategories === 'EXCLUDE')
     ? { count: itemsLimit as number, includeOther: otherCategories !== 'EXCLUDE' } : undefined;
   // Small multiples panel limits become editable for the faceted kinds. The
