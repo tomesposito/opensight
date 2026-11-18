@@ -70,3 +70,15 @@ test('API client uses the same dedicated join-diagnostics operation and exact bo
   assert.match(String(requests[0][0]), /\/api\/datasets\/draft\/prep\/join-diagnostics$/);
   assert.equal(requests[0][1].method, 'POST'); assert.deepEqual(JSON.parse(requests[0][1].body), { pipeline, through: 'j' });
 });
+
+for (const kind of ['file', 's3', 'input-table', 'BLAZE', 'STORED']) test(`Issue #288 ${kind} inputs display preview-based diagnostics with the existing result contract`, async t => {
+  const prepared = ['BLAZE', 'STORED'].includes(kind), ref = prepared ? { dataset: 'snapshot' } : `${kind}-left`;
+  const p = { ...pipeline, input: ref }, summary = { ...sources[0], id: `${kind}-left`, connectorId: kind === 's3' ? 's3' : 'file',
+    ...(prepared ? { ref, execution: { mode: kind } } : {}) };
+  // Snapshot columns are authoritative even when the old recipe's source is unavailable.
+  const context = prepared ? { datasets: [{ dataSetId: 'snapshot', opensightPrep: { version: 1, input: 'old-source', steps: [] } }] } : undefined;
+  const calls = [], client = { async joinDiagnostics(...args) { calls.push(args); return result; } };
+  const ui = await mount(t, { pipeline: p, sources: [summary, sources[1]], context, client }); await wait();
+  assert.equal(calls.length, 1); assert.deepEqual(calls[0], ['draft', p, 'j']);
+  assert.match(content(ui.toJSON()), /Preview-based/); assert.match(content(ui.toJSON()), /Matched output rows6/); assert.match(content(ui.toJSON()), /Truncated sample: left/);
+});

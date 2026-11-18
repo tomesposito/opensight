@@ -38,7 +38,8 @@ function fakeAws(invocation) {
       objects.set(p.Key, { bytes, VersionId: version, ContentLength: bytes.length, ContentType: p.ContentType, ChecksumSHA256: p.ChecksumSHA256 });
       return { VersionId: version, ChecksumSHA256: p.ChecksumSHA256 };
     }
-    const object = objects.get(p.Key); assert.ok(object); assert.equal(p.VersionId, object.VersionId); assert.equal(p.ChecksumMode, 'ENABLED');
+    const object = objects.get(p.Key); assert.ok(object); assert.equal(p.VersionId, object.VersionId); if (!p.Range) assert.equal(p.ChecksumMode, 'ENABLED');
+    if (p.Range) { const [, start, end] = /^bytes=(\d+)-(\d+)$/.exec(p.Range); const bytes = object.bytes.subarray(Number(start), Number(end) + 1); return { ...object, ContentLength: bytes.length, ContentRange: `bytes ${start}-${end}/${object.bytes.length}`, Body: Readable.from([bytes]) }; }
     return { ...object, ...(command.constructor.name === 'GetObjectCommand' ? { Body: Readable.from([object.bytes]) } : {}) };
   } } };
   return { aws, calls, objects, transfer: new ArtifactTransfer(aws, { bucket: 'synthetic-artifacts', prefix: 'artifacts/v1' }) };
@@ -151,6 +152,7 @@ test('SR2b S3 rejects wrong headers, truncated/extra/corrupt streams and invalid
       assert.deepEqual(await readdir(root), baseline);
     }
     const bad = Buffer.from('synthetic invalid parquet'), descriptor = { ...reference.descriptor, encodedBytes: bad.length, sha256: createHash('sha256').update(bad).digest('hex') };
+    delete descriptor.sample; // Deliberately malformed legacy artifact; validate Parquet at decode.
     aws.s3.send = async () => ({ VersionId: reference.version, ContentType: 'application/vnd.apache.parquet', ContentLength: bad.length,
       ChecksumSHA256: Buffer.from(descriptor.sha256, 'hex').toString('base64'), Body: Readable.from([bad]) });
     const corrupt = await transfer.download(scope, identity, { ...reference, descriptor }, limits);
@@ -199,5 +201,47 @@ test('SR2d planned writes expose the exact cleanup key before PUT and cannot be 
     await assert.rejects(transfer.upload(scope, identity, local, plan), { code: 'ARTIFACT_WRITE_HANDLE_INVALID' });
     assert.equal(calls.filter(c => c.constructor.name === 'PutObjectCommand').length, 1);
     await local.close();
+  });
+});
+
+test('Issue #288 artifact samples use authenticated versioned ranges and never full download/decode', async t => {
+  await runtime(async (scope, invocation) => {
+    const { transfer, calls, aws } = fakeAws(invocation), input = table(), local = await transfer.encode(scope, input, limits), ref = await transfer.upload(scope, identity, local);
+    t.mock.method(transfer, 'download', () => { throw Error('Full download forbidden'); });
+    t.mock.method(transfer, 'decode', () => { throw Error('Full decode forbidden'); });
+    const sampled = await transfer.boundedSample(scope, identity, ref, limits);
+    assert.deepEqual(sampled.rows(), input.rows()); assert.ok(Object.is(sampled.value(3, 2), -0));
+    assert.deepEqual(sampled.cachedInputs, provenance);
+    assert.equal(calls.at(-1).input.Range, `bytes=${ref.descriptor.sample.offset}-${ref.descriptor.sample.offset + ref.descriptor.sample.bytes - 1}`);
+    const legacy = structuredClone(ref); delete legacy.descriptor.sample;
+    await assert.rejects(transfer.boundedSample(scope, identity, legacy, limits), { code: 'UNSUPPORTED_PREP_STEP' });
+    const send = aws.s3.send;
+    for (const change of [r => ({ ...r, VersionId: 'changed' }), r => ({ ...r, ContentRange: undefined }),
+      r => ({ ...r, Body: Readable.from([Buffer.alloc(r.ContentLength)]) }), r => ({ ...r, Body: Readable.from([Buffer.alloc(r.ContentLength + 1)]) })]) {
+      aws.s3.send = async command => { const r = await send(command); if (!command.input.Range) return r; r.Body.destroy(); return change({ ...r, Body: Readable.from([r.bytes.subarray(ref.descriptor.sample.offset, ref.descriptor.sample.offset + ref.descriptor.sample.bytes)]) }); };
+      await assert.rejects(transfer.boundedSample(scope, identity, ref, limits), { code: 'ARTIFACT_INVALID' });
+    }
+  });
+});
+
+test('Issue #288 large durable samples retain exactly 10000 rows plus the probe', async t => {
+  await runtime(async (scope, invocation) => {
+    const large = { ...limits, rows: 20000 }, input = new BlazeTable({ maxBytes: large.decodedBytes, datasetBytes: large.decodedBytes, maxRows: large.rows, cellChars: large.cellChars });
+    input.start([{ name: 'id', type: 'INTEGER' }]); for (let i = 0; i < 10030; i++) input.row([i]);
+    const { transfer } = fakeAws(invocation), local = await transfer.encode(scope, input, large), reference = await transfer.upload(scope, identity, local);
+    t.mock.method(transfer, 'download', () => { throw Error('Full download forbidden'); });
+    t.mock.method(transfer, 'decode', () => { throw Error('Full decode forbidden'); });
+    const sample = await transfer.boundedSample(scope, identity, reference, large);
+    assert.equal(sample.rowCount, 10001); assert.equal(sample.value(10000, 0), 10000); assert.equal(reference.descriptor.rowCount, 10030);
+  });
+});
+
+test('Issue #288 bounded artifact strings match Parquet UTF-8 normalization exactly', async () => {
+  await runtime(async (scope, invocation) => {
+    const input = table([['\ud800'], ['\udc00'], ['ok 🛰\u0000']], [{ name: 'text', type: 'STRING' }]);
+    const { transfer } = fakeAws(invocation), local = await transfer.encode(scope, input, limits), reference = await transfer.upload(scope, identity, local);
+    const full = await transfer.decode(scope, local, limits), sample = await transfer.boundedSample(scope, identity, reference, limits);
+    assert.deepEqual(sample.rows(), full.rows());
+    assert.deepEqual(sample.rows(), [{ text: '�' }, { text: '�' }, { text: 'ok 🛰\u0000' }]);
   });
 });

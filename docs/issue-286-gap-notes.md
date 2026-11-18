@@ -1,5 +1,8 @@
 # Issue #286 — join diagnostics verification and bounded-reader gaps
 
+The bounded-reader follow-up is documented in [issue #288](issue-288-gap-notes.md).
+The unsupported cases below describe the original #286 checkpoint.
+
 ## Stopped sub-items: inputs without a bounded reader
 
 Diagnostics deliberately return `UNSUPPORTED_PREP_STEP` for these inputs;

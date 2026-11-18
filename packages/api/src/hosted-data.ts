@@ -1,3 +1,4 @@
+import { artifactScalar } from '@opensight/query-engine';
 import { PREP_JOIN_SAMPLE_LIMIT, PrepJoinBudget } from '@opensight/query-engine';
 import { prepFail } from '@opensight/bundle-parser/prep';
 import { StoredTableFiles } from './stored-tables.js';
@@ -221,7 +222,6 @@ export class HostedData {
   }
   assertBoundedSample(a: Admission): void {
     if (a.physical.security !== 'unrestricted' || a.tenantPredicate || a.deniedColumns.length) sourceError('PREP_SECURITY_REJECTED', 403);
-    if (!isQueryConnectorId(a.source.binding.connectorId)) prepFail('UNSUPPORTED_PREP_STEP', '$.joinDiagnostics', 'Bounded diagnostics are unavailable for uploaded file and S3 payloads');
   }
   /** SQL LIMIT is applied at the source, before any table is staged in the worker. */
   async boundedSample(context: TenantContext, a: Admission, budget: PrepJoinBudget): Promise<BlazeTable> {
@@ -229,6 +229,17 @@ export class HostedData {
     const scope = this.scope(context), read = this.read(a);
     this.plan(context, read); budget.check(); await this.finish(context, [a]);
     const table = new BlazeTable(this.limits(context)), sink = this.sink(context, table, true);
+    if (!isQueryConnectorId(a.source.binding.connectorId)) {
+      const payload = object(await this.sources.boundedSample(context, a.source), ['rows']); budget.check();
+      if (!Array.isArray(payload.rows) || payload.rows.length !== Math.min(a.source.binding.rowCount!, PREP_JOIN_SAMPLE_LIMIT + 1)) sourceError('SOURCE_SECRET_UNAVAILABLE', 503);
+      sink.start(a.source.binding.columns);
+      for (const row of payload.rows) {
+        budget.check();
+        if (!Array.isArray(row) || row.length !== table.columns.length) sourceError('SOURCE_SECRET_UNAVAILABLE', 503);
+        sink.row(row.map((value, i) => artifactScalar(value, table.columns[i]!)));
+      }
+      await this.finish(context, [a]); budget.check(); return table;
+    }
     const connection = await this.connection(context, a); budget.check();
     await this.streamer(a)(read, connection, { ...this.limits(context), maxRows: PREP_JOIN_SAMPLE_LIMIT }, {
       ...sink, row: values => {

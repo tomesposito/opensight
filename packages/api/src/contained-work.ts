@@ -20,7 +20,7 @@ export type WorkerTask =
   | { kind: 'query'; table: WireTable; query: InteractiveQuery };
 export interface WorkerRequest { task: WorkerTask; limits: BlazeLimits; memoryMb: number; resultBytes: number; deadline: number; rssBytes: number }
 export interface TableResult { columns: PrepColumn[]; rows: PrepScalar[][] }
-export interface ParquetWriteResult { rowCount: number; decodedBytes: number }
+export interface ParquetWriteResult { rowCount: number; decodedBytes: number; sample: import('@opensight/query-engine').ArtifactSample }
 export type QueryResult = ReturnType<typeof queryPrepared>;
 export async function wireTable(scope: WorkScope, table: BlazeTable, source: PrepSource): Promise<WireTable> {
   scope.memory(table.bytes); const rows: PrepScalar[][] = [];

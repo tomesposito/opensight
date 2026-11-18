@@ -1,5 +1,6 @@
 import type { PrepColumn } from '@opensight/bundle-parser/prep';
 import type { PrepScalar, PrepSink } from '@opensight/query-engine';
+import { PREP_JOIN_SAMPLE_LIMIT } from '@opensight/query-engine';
 
 export type ExecutionMode = 'DIRECT_QUERY' | 'BLAZE' | 'STORED';
 export interface ExecutionSettings { mode: ExecutionMode; intervalMinutes: number | null }
@@ -58,6 +59,11 @@ export class BlazeTable implements PrepSink {
   }
   value = (row: number, column: number): PrepScalar => this.vectors[column]![row]!;
   rows(limit = this.rowCount): Record<string, PrepScalar>[] { return Array.from({ length: Math.min(limit, this.rowCount) }, (_, r) => Object.fromEntries(this.columns.map((c, i) => [c.name, this.value(r, i)]))); }
+  boundedSample(limits: BlazeLimits, check: () => void): BlazeTable {
+    const table = new BlazeTable(limits); table.start(this.columns); table.setCachedInputs(this.cachedInputs);
+    for (let r = 0; r < Math.min(this.rowCount, PREP_JOIN_SAMPLE_LIMIT + 1); r++) { check(); table.row(this.columns.map((_, c) => this.value(r, c))); }
+    return table;
+  }
 }
 interface Entry { status: ExecutionStatus; generation: number; table?: BlazeTable; used: number }
 export class BlazeStore {
@@ -84,6 +90,13 @@ export class BlazeStore {
     if (e.status.mode === 'BLAZE') { e.status.state = 'invalidated'; e.status.error = { code: 'BLAZE_INVALIDATED', message: 'Dataset or dependency changed; refresh required' }; }
   }
   read(key: string): { table: BlazeTable; refreshedAt: string } {
+    return this.snapshot(key);
+  }
+  boundedSample(key: string, check: () => void): { table: BlazeTable; refreshedAt: string } {
+    check(); const { table, refreshedAt } = this.snapshot(key);
+    return { table: table.boundedSample(this.limits, check), refreshedAt };
+  }
+  private snapshot(key: string): { table: BlazeTable; refreshedAt: string } {
     const e = this.entry(key);
     if (e.status.mode !== 'BLAZE') throw new BlazeError('BLAZE_MODE_REQUIRED', 'Dataset is not in Blaze mode');
     if (e.status.state !== 'ready' || !e.table) {

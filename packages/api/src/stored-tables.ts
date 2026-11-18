@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rm, stat } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
-import { artifactColumns, readArtifactParquet, writeArtifactParquet } from '@opensight/query-engine';
+import { artifactColumns, artifactSample, decodeArtifactSample, readArtifactParquet, writeArtifactParquet, type ArtifactSample } from '@opensight/query-engine';
+import { prepFail } from '@opensight/bundle-parser/prep';
 import type { PrepColumn } from '@opensight/bundle-parser/prep';
 import { BlazeError, BlazeTable, type BlazeLimits, type ExecutionStatus } from './blaze.js';
 import { MetadataError } from './metadata-db.js';
@@ -13,12 +14,13 @@ export interface StoredMaterialization {
   error: { code: string; message: string } | null; failedAt: string | null;
   /** Definition/source revision fingerprint, excluding materialization status writes. */
   stamp: string;
+  sample?: ArtifactSample;
 }
 export function storedMaterialization(raw: unknown): StoredMaterialization {
   const bad = (): never => { throw new BlazeError('STORED_ARTIFACT_INVALID', 'Stored table metadata is invalid'); };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return bad();
   const v = raw as Record<string, unknown>;
-  if (Object.keys(v).some(k => !['generation', 'columns', 'rowCount', 'bytes', 'sha256', 'lastRefreshedAt', 'state', 'error', 'failedAt', 'stamp'].includes(k))
+  if (Object.keys(v).some(k => !['generation', 'columns', 'rowCount', 'bytes', 'sha256', 'lastRefreshedAt', 'state', 'error', 'failedAt', 'stamp', 'sample'].includes(k))
     || typeof v.generation !== 'string' || !/^[a-f0-9-]{36}$/.test(v.generation)
     || !Number.isSafeInteger(v.rowCount) || Number(v.rowCount) < 0 || !Number.isSafeInteger(v.bytes) || Number(v.bytes) < 1
     || typeof v.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(v.sha256)
@@ -26,7 +28,7 @@ export function storedMaterialization(raw: unknown): StoredMaterialization {
     || !['current', 'stale', 'refresh-failed'].includes(String(v.state)) || typeof v.stamp !== 'string'
     || v.failedAt !== null && (typeof v.failedAt !== 'string' || !Number.isFinite(Date.parse(v.failedAt)))) return bad();
   if (v.error !== null && (!v.error || typeof v.error !== 'object' || !('code' in v.error) || typeof v.error.code !== 'string' || !('message' in v.error) || typeof v.error.message !== 'string')) return bad();
-  try { artifactColumns(v.columns); } catch { return bad(); }
+  try { artifactColumns(v.columns); if (v.sample !== undefined) artifactSample(v.sample, Number(v.bytes)); } catch { return bad(); }
   return structuredClone(raw) as StoredMaterialization;
 }
 export function storedStatus(value?: StoredMaterialization): ExecutionStatus {
@@ -71,13 +73,13 @@ export class StoredTableFiles {
     await mkdir(resolve(path, '..'), { recursive: true, mode: 0o700 });
     try {
       const rows = Array.from({ length: table.rowCount }, (_, r) => table.columns.map((_, c) => table.value(r, c)));
-      await writeArtifactParquet(path, table.columns, rows, 128);
+      const sample = await writeArtifactParquet(path, table.columns, rows, 128);
       const bytes = (await stat(path)).size;
       if (bytes > capacity) throw new BlazeError('STORED_ARTIFACT_TOO_LARGE', 'Encoded table exceeds its admitted storage capacity');
       const file = await open(path, 'r'); try { await file.sync(); } finally { await file.close(); }
       const dir = await open(resolve(path, '..'), 'r'); try { await dir.sync(); } finally { await dir.close(); }
       return { generation, columns: table.columns, rowCount: table.rowCount, bytes, sha256: createHash('sha256').update(await readFile(path)).digest('hex'),
-        lastRefreshedAt: new Date().toISOString(), state: 'current', error: null, failedAt: null, stamp };
+        lastRefreshedAt: new Date().toISOString(), state: 'current', error: null, failedAt: null, stamp, sample };
     } catch (error) { await rm(path, { force: true }); throw error; }
   }
   async read(key: string, value: StoredMaterialization | undefined, limits: BlazeLimits): Promise<BlazeTable> {
@@ -99,6 +101,37 @@ export class StoredTableFiles {
   async readCurrent(key: string, current: () => Promise<StoredMaterialization | undefined>, limits: BlazeLimits): Promise<BlazeTable> {
     this.readers.set(key, (this.readers.get(key) ?? 0) + 1);
     try { return await this.read(key, await current(), limits); } finally { await this.release(key); }
+  }
+  async boundedSample(key: string, current: () => Promise<StoredMaterialization | undefined>, limits: BlazeLimits, check: () => void): Promise<BlazeTable> {
+    this.readers.set(key, (this.readers.get(key) ?? 0) + 1);
+    try {
+      check(); const value = await current();
+      if (!value) throw new BlazeError('STORED_NOT_PUBLISHED', 'Publish this dataset before reading its stored table');
+      const checked = storedMaterialization(value), sample = checked.sample;
+      if (!sample) prepFail('UNSUPPORTED_PREP_STEP', '$.joinDiagnostics', 'Stored artifact has no bounded sample; explicitly refresh it');
+      if (sample.bytes > storedCapacity(limits)) throw new BlazeError('STORED_ARTIFACT_TOO_LARGE', 'Stored sample exceeds its admitted capacity');
+      const table = new BlazeTable(limits);
+      try {
+        const file = await open(this.path(key, checked.generation), 'r');
+        try {
+          if ((await file.stat()).size !== checked.bytes) throw Error();
+          const bytes = Buffer.alloc(sample.bytes); let offset = 0;
+          while (offset < bytes.length) {
+            check(); const read = await file.read(bytes, offset, bytes.length - offset, sample.offset + offset);
+            if (!read.bytesRead) throw Error(); offset += read.bytesRead;
+          }
+          table.start(checked.columns);
+          for (const row of decodeArtifactSample(bytes, sample, checked.columns, checked.rowCount)) { check(); table.row(row); }
+        } finally { await file.close(); }
+      } catch (error) {
+        check();
+        if (error instanceof BlazeError) throw error;
+        throw new BlazeError('STORED_ARTIFACT_INVALID', 'Stored sample is missing or corrupt; explicitly refresh to replace it');
+      }
+      check();
+      if (JSON.stringify(await current()) !== JSON.stringify(value)) throw new BlazeError('STORED_DEFINITION_CHANGED', 'Stored snapshot changed during diagnostics');
+      return table;
+    } finally { await this.release(key); }
   }
   private async release(key: string): Promise<void> {
     const remaining = this.readers.get(key)! - 1;

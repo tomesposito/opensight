@@ -103,3 +103,27 @@ test('SR2c final hosted publication rechecks a dependency changed after hydratio
     await assert.rejects(data.execute(context, f.target().id, 'query', { mode: 'BLAZE', query }), { code: 'BLAZE_INVALIDATED' });
   });
 });
+
+test('Issue #288 durable nested snapshots use bounded artifact reads and retain manifest verification', async t => {
+  const f = await manifestFixture(t), storage = objectStorage(), context = f.contexts[0];
+  const budgets = new TenantBudgets(f.budgets, c => f.metadata.assertContext(c)), prep = new HostedPrep(new HostedData(f.sources, undefined, budgets));
+  await prep.save(context, 'snapshot', { name: 'Snapshot', pipeline: { version: 1, input: f.target().id, steps: [] }, expectedVersion: 0 });
+  await prep.configure(context, 'snapshot', { mode: 'BLAZE', intervalMinutes: null, expectedVersion: 1 });
+  await budgets.shutdown(); await f.open();
+  const target = { kind: 'prepared-dataset', id: 'snapshot', version: 2 };
+  await invoke(f, storage, target, ({ data }) => new HostedPrep(data).execute(context, 'snapshot', 'refresh'), { definitions: [f.target()] });
+  const pipeline = { version: 1, input: { dataset: 'snapshot' }, steps: [{ id: 'join', kind: 'join', config: { source: { dataset: 'snapshot' }, joinType: 'inner', prefix: 'r_', keys: [{ left: 'region', right: 'region' }] } }] };
+  for (const revoke of [false, true]) await invoke(f, storage, undefined, async ({ data, cache, attempt }) => {
+    t.mock.method(cache, 'read', () => { throw Error('Full cache read forbidden'); });
+    t.mock.method(data, 'table', () => { throw Error('Recomputation forbidden'); });
+    const before = storage.calls.length;
+    if (revoke) storage.beforeGet = () => f.coordinator.revoke(attempt);
+    const result = new HostedPrep(data).joinDiagnostics(context, 'draft', { pipeline, through: 'join' });
+    if (revoke) await assert.rejects(result, { code: 'ATTEMPT_REVOKED' });
+    else {
+      const counts = await result; assert.equal(counts.matchedRows, 5); assert.equal(counts.fanOut, true); assert.equal(counts.leftRowsSampled, 3);
+      assert.equal(counts.leftTruncated, false);
+    }
+    const gets = storage.calls.slice(before).filter(c => c.constructor.name === 'GetObjectCommand'); assert.equal(gets.length, 1); assert.ok(gets[0].input.Range);
+  });
+});

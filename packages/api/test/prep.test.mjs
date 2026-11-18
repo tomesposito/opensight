@@ -197,7 +197,7 @@ test('join diagnostics API bounds source samples and reports exact fan-out witho
   assert.equal(bounded.body.leftRowsSampled, 0); assert.equal(bounded.body.leftTruncated, true); assert.equal(bounded.body.matchedRows, 0);
   await call('/api/datasets/cached-diagnostics/prep', 'PUT', { name: 'Cached', pipeline: { version: 1, input: left, steps: [] } });
   await call('/api/datasets/cached-diagnostics/execution', 'PUT', { mode: 'BLAZE', intervalMinutes: null });
-  assert.equal((await call(path, 'POST', { pipeline: { ...pipeline, input: { dataset: 'cached-diagnostics' } }, through: 'join' })).body.errorCode, 'UNSUPPORTED_PREP_STEP');
+  assert.equal((await call(path, 'POST', { pipeline: { ...pipeline, input: { dataset: 'cached-diagnostics' } }, through: 'join' })).body.errorCode, 'BLAZE_INVALIDATED');
   const preview = await call('/api/datasets/diagnostics/prep/preview', 'POST', { pipeline, through: 'join', limit: 1 });
   assert.equal(preview.body.returnedRows, 1); assert.equal(preview.body.limit, 1);
   for (const user of ['other-author', 'tenant-author']) assert.equal((await call(path, 'POST', { pipeline, through: 'join' }, user)).body.errorCode, 'PREP_SOURCE_NOT_FOUND');
@@ -208,4 +208,26 @@ test('join diagnostics API bounds source samples and reports exact fan-out witho
   }
   assert.equal((await call(path, 'POST', { pipeline, through: 'missing' })).body.errorCode, 'PREP_NOT_FOUND');
   assert.equal((await call(path, 'POST', { pipeline, through: 'join', limit: 100000 })).body.errorCode, 'INVALID_PREP_PIPELINE');
+});
+
+import { BlazeStore } from '../dist/blaze.js';
+import { StoredTableFiles } from '../dist/stored-tables.js';
+for (const mode of ['BLAZE', 'STORED']) test(`Issue #288 local nested ${mode} diagnostics preserve snapshots and fan-out without full readers`, async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'opensight-bounded-')); t.after(() => rm(dir, { recursive: true, force: true }));
+  const call = await api(t, true, { prepStorePath: join(dir, 'prep.json') });
+  const source = (await call('/api/uploads', 'POST', csv('id\n1\n1\n' + Array(10028).fill('2').join('\n') + '\n'))).body.id;
+  const cached = '/api/datasets/sample-cache';
+  assert.equal((await call(`${cached}/prep`, 'PUT', { name: 'Snapshot', pipeline: { version: 1, input: source, steps: [] } })).status, 201);
+  assert.equal((await call(`${cached}/execution`, 'PUT', { mode, intervalMinutes: null })).status, 200);
+  const refreshed = await call(`${cached}/${mode === 'STORED' ? 'publish' : 'refresh'}`, 'POST', {}); assert.equal(refreshed.status, 200, JSON.stringify(refreshed.body));
+  const parent = { version: 1, input: { dataset: 'sample-cache' }, steps: [] };
+  assert.equal((await call('/api/datasets/wrapper/prep', 'PUT', { name: 'Wrapper', pipeline: parent })).status, 201);
+  const blaze = t.mock.method(BlazeStore.prototype, 'read', () => { throw Error('Full cache read forbidden'); });
+  const stored = t.mock.method(StoredTableFiles.prototype, 'read', () => { throw Error('Full stored read forbidden'); });
+  const p = joined({ dataset: 'wrapper' }, { dataset: 'wrapper' });
+  const result = await call('/api/datasets/draft/prep/join-diagnostics', 'POST', { pipeline: p, through: 'join' });
+  assert.equal(result.status, 200, JSON.stringify(result.body)); assert.equal(result.body.matchedRows, 4 + 9998 ** 2);
+  assert.equal(result.body.fanOut, true); assert.equal(result.body.leftRowsSampled, 10000);
+  assert.equal(result.body.leftTruncated, true); assert.equal(result.body.rightTruncated, true);
+  assert.equal(blaze.mock.callCount(), 0); assert.equal(stored.mock.callCount(), 0);
 });

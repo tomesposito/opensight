@@ -80,7 +80,7 @@ export function prepPlan(pipeline: PrepPipeline, sources: readonly PrepSourceSum
   const dialect = sourceDialect === 'mysql' || sourceDialect === 'redshift' ? 'duckdb' : sourceDialect;
   const bindings = prepBindings(sources).map(s => s.connectorId === 'mysql' || s.connectorId === 'mariadb' || s.connectorId === 'redshift-manual' ? { ...s, connectorId: 'file' } : s);
   const datasets = context.datasets?.filter(d => d.opensightPrep).map(d => {
-    const cached = sources.find(s => typeof s.ref === 'object' && 'dataset' in s.ref && s.ref.dataset === d.dataSetId && s.execution?.mode === 'BLAZE');
+    const cached = sources.find(s => typeof s.ref === 'object' && 'dataset' in s.ref && s.ref.dataset === d.dataSetId && (s.execution?.mode === 'BLAZE' || s.execution?.mode === 'STORED'));
     const materialized: PrepSource | undefined = cached ? { id: `cached-${cached.id}`, table: `cached-${cached.id}`, connectorId: 'file', columns: cached.columns, security: cached.available ? 'unrestricted' : 'protected' } : undefined;
     return { id: d.dataSetId, pipeline: d.opensightPrep!, ...(materialized ? { materialized } : {}) };
   });

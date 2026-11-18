@@ -52,16 +52,21 @@ test('hosted diagnostics deny foreign, protected and invalid joins before source
   await assert.rejects(f.prep.joinDiagnostics(f.context, 'draft', { pipeline: bad, through: 'join' }), { code: 'INVALID_PREP_PIPELINE' });
   assert.equal(f.calls.length, 0);
 });
-test('hosted uploads and cached prepared inputs stop before full payload/cache reads', async t => {
-  const f = await fixture(t, { left: [1], right: [1] });
-  const file = await f.sources.upload(f.context, { ...upload(), base64: Buffer.from('id\n1\n2\n').toString('base64') });
+test('hosted file samples preserve fan-out and probes without opening the full payload', async t => {
+  const f = await fixture(t, { left: [1], right: [1,1,1,3] });
+  const file = await f.sources.upload(f.context, { ...upload(), base64: Buffer.from('id\n' + [1,1,...Array(10028).fill(2)].join('\n') + '\n').toString('base64') });
+  const right = await f.sources.upload(f.context, { ...upload(), base64: Buffer.from('id\n1\n1\n1\n3\n').toString('base64') });
   const payload = t.mock.method(f.sources, 'payload', async () => { throw Error('Must not read full payload'); });
-  await assert.rejects(f.prep.joinDiagnostics(f.context, 'draft', { pipeline: { ...pipeline, input: file.id }, through: 'join' }), { code: 'UNSUPPORTED_PREP_STEP' });
+  const p = structuredClone(pipeline); p.input = file.id; p.steps[0].config.source = right.id;
+  const result = await f.prep.joinDiagnostics(f.context, 'draft', { pipeline: p, through: 'join' });
+  assert.equal(result.matchedRows, 6); assert.equal(result.fanOut, true);
+  assert.equal(result.leftRowsSampled, 10000); assert.equal(result.leftTruncated, true); assert.equal(result.rightTruncated, false);
   assert.equal(payload.mock.callCount(), 0);
-  await f.prep.save(f.context, 'cached', { name: 'Cached', pipeline: { version: 1, input: 'left', steps: [] }, expectedVersion: 0 });
-  await f.prep.configure(f.context, 'cached', { mode: 'BLAZE', intervalMinutes: null, expectedVersion: 1 });
-  await assert.rejects(f.prep.joinDiagnostics(f.context, 'draft', { pipeline: { ...pipeline, input: { dataset: 'cached' } }, through: 'join' }), { code: 'UNSUPPORTED_PREP_STEP' });
-  assert.equal(payload.mock.callCount(), 0); assert.equal(f.calls.length, 0);
+  const source = await f.sources.get(f.context, file.id), key = f.sources.key(f.context, 'secret', source.secretId + '_sample');
+  const sample = await f.metadata.get(f.context, key);
+  await f.metadata.put(f.context, key, { ...sample.body, ciphertext: (sample.body.ciphertext[0] === 'A' ? 'B' : 'A') + sample.body.ciphertext.slice(1) }, sample.version);
+  await assert.rejects(f.prep.joinDiagnostics(f.context, 'draft', { pipeline: p, through: 'join' }), { code: 'SOURCE_SECRET_UNAVAILABLE' });
+  assert.equal(payload.mock.callCount(), 0);
 });
 test('hosted bounded reader refuses a source that exceeds its contract; no partial counts escape', async t => {
   const f = await sourceFixture(t), context = await f.login();
@@ -108,5 +113,84 @@ test('runtime ingress and serverless allowlists admit only the POST diagnostics 
     assert.equal(adaptGatewayRequest(event(`/api${path}`, 'POST'), runtimeEnv()).path, path);
     assert.throws(() => adaptGatewayRequest(event(`/api${path}`, 'GET'), runtimeEnv()), { code: 'HOSTED_REQUEST_INVALID' });
     assert.equal(serverlessDataPath(`${path}/unexpected`), false);
+  }
+});
+
+import { fixture as s3Fixture, registration as s3Registration } from './source-s3-helpers.mjs';
+import { S3Client } from '@aws-sdk/client-s3';
+import { Readable as Stream } from 'node:stream';
+test('hosted S3 uploads use their persisted bounded sample, with fan-out and no later S3/full payload read', async t => {
+  const f = await s3Fixture(t), context = await f.login();
+  const sdk = t.mock.method(S3Client.prototype, 'send', async () => ({ Body: Stream.from([Buffer.from('id\n1\n1\n2\n')]) }));
+  await f.sources.create(context, 's3-left', s3Registration());
+  await f.sources.create(context, 's3-right', s3Registration());
+  const before = sdk.mock.callCount();
+  t.mock.method(f.sources, 'payload', async () => { throw Error('Full payload forbidden'); });
+  const p = structuredClone(pipeline); p.input = 's3-left'; p.steps[0].config.source = 's3-right';
+  const result = await new HostedPrep(new HostedData(f.sources, undefined, f.budgets)).joinDiagnostics(context, 'draft', { pipeline: p, through: 'join' });
+  assert.equal(result.matchedRows, 5); assert.equal(result.fanOut, true); assert.equal(result.leftRowsSampled, 3); assert.equal(result.leftTruncated, false);
+  assert.equal(sdk.mock.callCount(), before);
+});
+
+import { mkdtemp, rm, open } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
+import { StoredTableFiles } from '../dist/stored-tables.js';
+import { BlazeTable, blazeLimits } from '../dist/blaze.js';
+for (const mode of ['BLAZE', 'STORED']) test(`Issue #288 hosted nested ${mode} keeps snapshot semantics, probes and fan-out`, async t => {
+  const f = await sourceFixture(t), context = await f.login(), dir = await mkdtemp(join(tmpdir(), 'bounded-hosted-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await f.sources.create(context, 'left', { ...registration(), columns });
+  let current = [1,1,...Array(10028).fill(2)], reads = 0;
+  const data = new HostedData(f.sources, async (_r, _c, _l, sink) => { reads++; sink.start(columns); for (const id of current) sink.row([id]); }, f.budgets);
+  data.storedFiles = new StoredTableFiles(dir); const prep = new HostedPrep(data);
+  await prep.save(context, 'snapshot', { name: 'Snapshot', pipeline: { version: 1, input: 'left', steps: [] }, expectedVersion: 0 });
+  await prep.configure(context, 'snapshot', { mode, intervalMinutes: null, expectedVersion: 1 });
+  await prep.save(context, 'wrapper', { name: 'Wrapper', pipeline: { version: 1, input: { dataset: 'snapshot' }, steps: [] }, expectedVersion: 0 });
+  await prep.execute(context, 'snapshot', mode === 'STORED' ? 'publish' : 'refresh');
+  current = [9]; const before = reads;
+  t.mock.method(data, 'raw', () => { throw Error('Recipe recomputation forbidden'); });
+  t.mock.method(data, 'table', () => { throw Error('Recipe recomputation forbidden'); });
+  t.mock.method(data.cache, 'read', () => { throw Error('Full cache read forbidden'); });
+  t.mock.method(data.storedFiles, 'read', () => { throw Error('Full stored read forbidden'); });
+  const p = structuredClone(pipeline); p.input = { dataset: 'wrapper' }; p.steps[0].config.source = { dataset: 'wrapper' };
+  const result = await prep.joinDiagnostics(context, 'draft', { pipeline: p, through: 'join' });
+  assert.equal(result.matchedRows, 4 + 9998 ** 2); assert.equal(result.fanOut, true);
+  assert.equal(result.leftRowsSampled, 10000); assert.equal(result.leftTruncated, true); assert.equal(result.rightTruncated, true); assert.equal(reads, before);
+});
+test('Issue #288 stored sample corruption, generation replacement and legacy artifacts fail closed', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'bounded-stored-')); t.after(() => rm(dir, { recursive: true, force: true }));
+  const files = new StoredTableFiles(dir), limits = blazeLimits(), table = new BlazeTable(limits); table.start(columns); table.row([1]); table.row([1]);
+  const value = await files.write('snapshot', table, 'stamp', limits.datasetBytes), legacy = { ...value }; delete legacy.sample;
+  t.mock.method(files, 'read', () => { throw Error('Full read forbidden'); });
+  await assert.rejects(files.boundedSample('snapshot', async () => legacy, limits, () => {}), { code: 'UNSUPPORTED_PREP_STEP' });
+  let calls = 0;
+  await assert.rejects(files.boundedSample('snapshot', async () => ++calls === 1 ? value : { ...value, stamp: 'changed' }, limits, () => {}), { code: 'STORED_DEFINITION_CHANGED' });
+  const path = join(dir, createHash('sha256').update('snapshot').digest('hex'), `${value.generation}.parquet`), file = await open(path, 'r+');
+  try { await file.write(Buffer.from('!'), 0, 1, value.sample.offset); } finally { await file.close(); }
+  await assert.rejects(files.boundedSample('snapshot', async () => value, limits, () => {}), { code: 'STORED_ARTIFACT_INVALID' });
+});
+
+import { PrepJoinBudget } from '@opensight/query-engine';
+test('Issue #288 uploaded samples withhold results after retirement and never publish partial counts after deadline', async t => {
+  for (const expiry of [false, true]) {
+    const f = await sourceFixture(t), context = await f.login(), file = await f.sources.upload(context, { ...upload(), base64: Buffer.from('id\n1\n1\n').toString('base64') });
+    const data = new HostedData(f.sources, undefined, f.budgets), prep = new HostedPrep(data);
+    const p = structuredClone(pipeline); p.input = file.id; p.steps[0].config.source = file.id;
+    if (expiry) {
+      let expired = false; const remaining = PrepJoinBudget.prototype.remaining, sample = data.boundedSample.bind(data);
+      const clock = t.mock.method(PrepJoinBudget.prototype, 'remaining', function () {
+        if (expired) throw Object.assign(new Error('Shared deadline expired'), { code: 'PREP_EXECUTION_FAILED' });
+        return remaining.call(this);
+      });
+      t.mock.method(data, 'boundedSample', async (...args) => { const result = await sample(...args); expired = true; return result; });
+      await assert.rejects(prep.joinDiagnostics(context, 'draft', { pipeline: p, through: 'join' }), { code: 'PREP_EXECUTION_FAILED' });
+      clock.mock.restore();
+    } else {
+      const sample = f.sources.boundedSample.bind(f.sources);
+      t.mock.method(f.sources, 'boundedSample', async (...args) => { const result = await sample(...args); await f.sources.retire(context, file.id, 1); return result; });
+      await assert.rejects(prep.joinDiagnostics(context, 'draft', { pipeline: p, through: 'join' }), { code: 'METADATA_REVISED' });
+    }
   }
 });

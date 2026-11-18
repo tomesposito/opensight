@@ -4,6 +4,7 @@ interface Entry { tenant: string; stamp: string; bytes: number; table?: BlazeTab
 export interface HostedCacheAdapter {
   invalidate(key: string): void | Promise<void>;
   read(scope: WorkScope, key: string, stamp: string): BlazeTable | Promise<BlazeTable>;
+  boundedSample?(scope: WorkScope, key: string, stamp: string): BlazeTable | Promise<BlazeTable>;
   refresh(scope: WorkScope, key: string, stamp: string, load: () => Promise<BlazeTable>): Promise<void>;
   verify?(): Promise<void>;
 }
@@ -24,6 +25,14 @@ export class HostedCache implements HostedCacheAdapter {
   }
   invalidate(key: string): void { this.entries.delete(key); }
   read(scope: WorkScope, key: string, stamp: string): BlazeTable {
+    return this.snapshot(scope, key, stamp);
+  }
+  boundedSample(scope: WorkScope, key: string, stamp: string): BlazeTable {
+    const table = this.snapshot(scope, key, stamp).boundedSample({ maxBytes: scope.limits.workingBytes, datasetBytes: scope.limits.workingBytes,
+      maxRows: scope.limits.sourceRows, cellChars: scope.limits.cellChars }, () => scope.check());
+    scope.memory(table.bytes); return table;
+  }
+  private snapshot(scope: WorkScope, key: string, stamp: string): BlazeTable {
     scope.check(); const e = this.entries.get(key);
     if (!e || e.tenant !== scope.tenantId || e.stamp !== stamp) { if (e?.tenant === scope.tenantId) this.entries.delete(key); budgetError('BLAZE_NOT_READY'); }
     if (!e.table) budgetError(e.error);

@@ -1,4 +1,4 @@
-import { compilePrepJoinSample, diagnosePrepJoinPostgres } from '@opensight/query-engine';
+import { compilePrepJoinSample, diagnosePrepJoinPostgres, PrepJoinBudget, PREP_JOIN_SAMPLE_LIMIT } from '@opensight/query-engine';
 import { tableDownload, tableDownloadFormat, sendTableDownload } from './table-download.js';
 import type { HostedUsage } from './hosted-usage.js';
 import { StoredTableFiles, storedMaterialization, storedFailure, storedStatus, storedCapacity, checkStoredQuota, type StoredMaterialization } from './stored-tables.js';
@@ -89,6 +89,9 @@ export class PrepRoutes {
   /** Issue #161: governed input tables exposed as prep sources (reference form `input-table-<id>`). */
   inputTableSources?: (identity: Identity) => PrepSource[];
   inputTableTables?: (identity: Identity) => PrepMemoryTable[];
+  /** Optional bounded contract; old full-table hooks remain preview-only. Return only
+   * requested sources, with at most limit rows, including the truncation probe. */
+  inputTableSamples?: (identity: Identity, sourceIds: readonly string[], limit: number) => PrepMemoryTable[];
   private readonly blaze = new BlazeStore();
   private readonly configured = new Map<string, string>();
   private requirement(identity: Identity, id: string, state = this.store.read()): string | null {
@@ -145,7 +148,7 @@ export class PrepRoutes {
     };
     visit(id, 0);
   }
-  private async resolve(identity: Identity, pipeline: PrepPipeline, id: string) {
+  private async resolve(identity: Identity, pipeline: PrepPipeline, id: string, budget?: PrepJoinBudget) {
     this.graph(identity, id, pipeline);
     const datasets = this.datasets(identity), tables: PrepMemoryTable[] = [], cachedInputs = new Map<string, CachedInput>(), visited = new Set<string>();
     const visit = async (ref: PrepInput): Promise<void> => {
@@ -157,8 +160,8 @@ export class PrepRoutes {
       const stored = this.find(identity, d.id);
       if (stored.execution?.mode === 'STORED' || this.blaze.status(key).mode === 'BLAZE') {
         const { table, refreshedAt } = stored.execution?.mode === 'STORED'
-          ? { table: await this.files.read(key, stored.materialization, this.blaze.limits), refreshedAt: stored.materialization!.lastRefreshedAt }
-          : this.blaze.read(key);
+          ? { table: budget ? await this.files.boundedSample(key, async () => this.find(identity, d.id).materialization, this.blaze.limits, () => budget.check()) : await this.files.read(key, stored.materialization, this.blaze.limits), refreshedAt: stored.materialization!.lastRefreshedAt }
+          : budget ? this.blaze.boundedSample(key, () => budget.check()) : this.blaze.read(key);
         const source: PrepSource = { id: `blaze_${randomUUID().replaceAll('-', '')}`, table: `blaze_${randomUUID().replaceAll('-', '')}`, connectorId: 'file', columns: table.columns, security: 'unrestricted' };
         d.materialized = source; tables.push({ source, rowCount: table.rowCount, value: table.value });
         const add = (input: CachedInput) => {
@@ -175,7 +178,7 @@ export class PrepRoutes {
     // so a foreign reference stays unresolved and context() fails closed below.
     const referenced = new Set(this.references(pipeline).filter((r): r is string => typeof r === 'string'));
     for (const dataset of datasets.filter(d => visited.has(d.id) && !d.materialized)) for (const ref of this.references(dataset.pipeline)) if (typeof ref === 'string') referenced.add(ref);
-    for (const table of this.inputTableTables?.(identity) ?? []) if (referenced.has(table.source.id) && !tables.some(t => t.source.id === table.source.id)) tables.push(table);
+    for (const table of (budget ? [] : this.inputTableTables?.(identity)) ?? []) if (referenced.has(table.source.id) && !tables.some(t => t.source.id === table.source.id)) tables.push(table);
     return { ...await this.context(identity, pipeline.input, datasets), datasets, tables, cachedInputs: [...cachedInputs.values()] };
   }
   private async materialize(identity: Identity, id: string, table: BlazeTable): Promise<void> {
@@ -419,24 +422,27 @@ export class PrepRoutes {
         const id = diagnostics[1]!, body = prepObject(await readBody(request), ['pipeline', 'through'], '$');
         const pipeline = validatePrepPipeline(Object.hasOwn(body, 'pipeline') ? body.pipeline : this.find(identity, id).resource.opensightPrep);
         const step = prepName(body.through, '$.through');
-        this.graph(identity, id, pipeline);
-        const datasets = this.datasets(identity), context = await this.context(identity, pipeline.input, datasets);
-        const options = { datasets, datasetId: id };
+        const budget = new PrepJoinBudget();
+        const context = await this.resolve(identity, pipeline, id, budget), options = { datasets: context.datasets, datasetId: id };
         const plan = compilePrepJoinSample(pipeline, context.sources, step, { ...options, dialect: context.dialect });
-        // Cached recipes and governed in-memory tables have no bounded staging reader.
-        // Reject before resolve() can materialize or read an entire cache artifact.
-        const visited = new Set<string>();
-        const check = (p: PrepPipeline): void => {
-          for (const ref of this.references(p)) if (typeof ref !== 'string' && !visited.has(ref.dataset)) {
-            visited.add(ref.dataset); const entry = this.find(identity, ref.dataset);
-            if (entry.execution?.mode === 'STORED' || this.blaze.status(this.key(identity, ref.dataset)).mode === 'BLAZE') prepFail('UNSUPPORTED_PREP_STEP', '$.joinDiagnostics', 'Bounded diagnostics are unavailable for cached prepared inputs');
-            check(entry.resource.opensightPrep!);
+        const tables = context.tables.filter(t => plan.sampleSources.some(s => s.id === t.source.id));
+        const governed = plan.sampleSources.filter(s => s.id.startsWith('input-table-'));
+        if (governed.length) {
+          if (!this.inputTableSamples) prepFail('UNSUPPORTED_PREP_STEP', '$.joinDiagnostics', 'Governed input-table hook has no bounded sample contract');
+          budget.check(); const samples = this.inputTableSamples(identity, governed.map(s => s.id), PREP_JOIN_SAMPLE_LIMIT + 1); budget.check();
+          if (samples.length !== governed.length || governed.some(s => samples.filter(t => t.source.id === s.id).length !== 1)) prepFail('PREP_SOURCE_NOT_FOUND', '$.joinDiagnostics', 'Bounded input-table sample is missing or ambiguous');
+          for (const table of samples) {
+            const source = governed.find(s => s.id === table.source.id)!;
+            if (source.table !== table.source.table || source.schema !== table.source.schema || source.connectorId !== table.source.connectorId || source.security !== table.source.security
+              || source.columns.length !== table.source.columns.length || source.columns.some((c, i) => c.name !== table.source.columns[i]?.name || c.type !== table.source.columns[i]?.type)) prepFail('PREP_SCHEMA_MISMATCH', '$.joinDiagnostics', 'Bounded input-table schema changed');
+            tables.push(table);
           }
-        };
-        check(pipeline);
-        if (plan.sampleSources.some(s => s.id.startsWith('input-table-'))) prepFail('UNSUPPORTED_PREP_STEP', '$.joinDiagnostics', 'Bounded diagnostics are unavailable for governed input tables');
-        const result = context.binding ? await diagnosePrepJoinPostgres(pipeline, context.sources, context.binding.config, step, options)
-          : await this.connectors.joinDiagnostics(identity, pipeline, step, options);
+        }
+        if (tables.some(t => !Number.isSafeInteger(t.rowCount) || t.rowCount < 0 || t.rowCount > PREP_JOIN_SAMPLE_LIMIT + 1)) prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Reader exceeded the bounded sample contract');
+        budget.check();
+        const result = context.binding ? await diagnosePrepJoinPostgres(pipeline, context.sources, context.binding.config, step, options, budget)
+          : await this.connectors.joinDiagnostics(identity, pipeline, step, options, tables, budget);
+        budget.check();
         send(response, 200, result); return;
       }
       const match = /^\/api\/datasets\/([A-Za-z0-9_-]{1,128})\/prep(?:\/(preview))?$/.exec(path);

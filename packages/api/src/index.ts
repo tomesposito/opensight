@@ -138,6 +138,7 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
   });
   prepRoutes.inputTableSources = identity => inputTables.prepSourcesFor(identity);
   prepRoutes.inputTableTables = identity => inputTables.prepTablesFor(identity);
+  prepRoutes.inputTableSamples = (identity, ids, limit) => inputTables.prepSamplesFor(identity, ids, limit);
   const notebooks = new NotebookRoutes(await NotebookStore.load(options.notebookStorePath), {
     security, localIdentity,
     accessStamp: identity => createHash('sha256').update(JSON.stringify(security ? { role: security.user(identity).role, context: security.context(identity) } : identity)).digest('hex'),

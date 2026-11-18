@@ -1,6 +1,35 @@
 import { DuckDBInstance, DOUBLE, INTEGER, VARCHAR, BOOLEAN, type DuckDBConnection } from '@duckdb/node-api';
 import type { PrepColumn } from '@opensight/bundle-parser/prep';
 import type { PrepScalar, PrepSink } from './prep-stream.js';
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { serialize, deserialize } from 'node:v8';
+import { PREP_JOIN_SAMPLE_LIMIT } from './prep-join-diagnostics.js';
+
+export interface ArtifactSample { offset: number; bytes: number; sha256: string }
+/** Independently authenticated, bounded snapshot stored in Parquet key/value metadata.
+ * V8 framing preserves scalar types (including -0); never deserialize before hashing. */
+export function artifactSample(raw: unknown, encodedBytes: number): ArtifactSample {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return invalid();
+  const v = raw as Record<string, unknown>;
+  if (Object.keys(v).sort().join() !== 'bytes,offset,sha256' || !Number.isSafeInteger(v.offset) || Number(v.offset) < 4
+    || !Number.isSafeInteger(v.bytes) || Number(v.bytes) < 1 || Number(v.offset) + Number(v.bytes) > encodedBytes - 8
+    || typeof v.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(v.sha256)) invalid();
+  return { offset: Number(v.offset), bytes: Number(v.bytes), sha256: String(v.sha256) };
+}
+export function decodeArtifactSample(bytes: Buffer, sample: ArtifactSample, columns: PrepColumn[], rowCount: number): PrepScalar[][] {
+  if (bytes.length !== sample.bytes || createHash('sha256').update(bytes).digest('hex') !== sample.sha256) invalid();
+  let value: unknown;
+  try { value = deserialize(Buffer.from(bytes.toString('ascii'), 'base64')); } catch { return invalid(); }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return invalid();
+  const v = value as Record<string, unknown>;
+  if (v.rowCount !== rowCount || JSON.stringify(v.columns) !== JSON.stringify(columns) || !Array.isArray(v.rows)
+    || v.rows.length !== Math.min(rowCount, PREP_JOIN_SAMPLE_LIMIT + 1)) invalid();
+  return v.rows.map((row: unknown) => {
+    if (!Array.isArray(row) || row.length !== columns.length) return invalid();
+    return columns.map((c, i) => artifactScalar(row[i], c));
+  });
+}
 
 export class ArtifactFormatError extends Error {
   readonly code = 'ARTIFACT_INVALID';
@@ -51,8 +80,12 @@ export async function withArtifactFile<T>(path: string, memoryMb: number, run: (
   } finally { instance.closeSync(); }
 }
 
-export async function writeArtifactParquet(path: string, columns: PrepColumn[], rows: readonly PrepScalar[][], memoryMb: number): Promise<void> {
+export async function writeArtifactParquet(path: string, columns: PrepColumn[], rows: readonly PrepScalar[][], memoryMb: number): Promise<ArtifactSample> {
   const checked = artifactColumns(columns), fields = physical(checked);
+  // DuckDB VARCHAR uses UTF-8: lone UTF-16 surrogates become U+FFFD at the
+  // binding boundary. Persist the same scalars that the Parquet snapshot stores.
+  const sampled = rows.slice(0, PREP_JOIN_SAMPLE_LIMIT + 1).map(row => row.map(value => typeof value === 'string' ? Buffer.from(value, 'utf8').toString('utf8') : value));
+  const sample = Buffer.from(serialize({ columns: checked, rowCount: rows.length, rows: sampled }).toString('base64'));
   await withArtifactFile(path, memoryMb, async c => {
     await c.run(`CREATE TABLE materialized (${fields.map(f => `${f.name} ${f.type}`).join(',')})`);
     for (let offset = 0; offset < rows.length; offset += 32) {
@@ -71,8 +104,11 @@ export async function writeArtifactParquet(path: string, columns: PrepColumn[], 
       const bindings = fields.map(f => f.type === 'DOUBLE' ? DOUBLE : f.type === 'VARCHAR' ? VARCHAR : f.type === 'BOOLEAN' ? BOOLEAN : INTEGER);
       await c.run(`INSERT INTO materialized VALUES ${slots.join(',')}`, values, Array.from({ length: count }, () => bindings).flat());
     }
-    await c.run('COPY materialized TO $1 (FORMAT PARQUET, COMPRESSION ZSTD)', [path]);
+    await c.run('COPY materialized TO $1 (FORMAT PARQUET, COMPRESSION ZSTD, KV_METADATA {opensight_join_sample: $2})', [path, sample.toString('ascii')]);
   });
+  // This full read is write-time only. Diagnostics fetch exactly this authenticated range.
+  const file = await readFile(path), offset = file.lastIndexOf(sample);
+  return artifactSample({ offset, bytes: sample.length, sha256: createHash('sha256').update(sample).digest('hex') }, file.length);
 }
 
 export async function readArtifactParquet(path: string, columns: PrepColumn[], rowCount: number, cellChars: number, sink: PrepSink, memoryMb: number): Promise<void> {
