@@ -13,6 +13,7 @@ import type { Cell, Field, FixtureVisual, MultiplesOptions, Row, VisualModel } f
 
 import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
+import { applyCategoryLimit, CATEGORY_LIMIT_KINDS } from './category-limit.js';
 import { applyDisplayOptions, legendTextStyle } from './display-options.js';
 import { FACETED_KINDS, applyFacetLimit, facetLayout, facetPanelGrids, facetTitles, groupRowsByFacet, type FacetGroup } from './facet-layout.js';
 
@@ -474,7 +475,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     const count = limit[key('itemsLimit', 'ItemsLimit')];
     if (count === undefined) {
       warnings.push(`${cpath}.${categoryLimitKey}: no slice limit specified; all supplied result rows are shown.`);
-    } else if (kind !== 'pie') {
+    } else if (!CATEGORY_LIMIT_KINDS.includes(kind)) {
       fail(`${cpath}.${categoryLimitKey}`, 'slice limits are only computed for pie visuals');
     } else if (!Number.isInteger(count) || (count as number) < 1 || (count as number) > 100) {
       fail(`${cpath}.${categoryLimitKey}`, 'slice limit count must be an integer between 1 and 100');
@@ -654,48 +655,19 @@ export function compileVisual(input: Input): CompiledVisual {
       rows.push(...facetGroups.flatMap(group => group.rows));
     }
   }
-  // Pie slice limit (QuickSight CategoryItemsLimit parity): keep the top N rows
-  // in display order per facet group, rolling the rest into one "Other" bucket
-  // (per-measure SUM, null when every contributing value is null) or dropping
-  // them when Other is excluded. Unset limit: all supplied rows are shown.
-  if (model.sliceLimit && model.kind === 'pie' && model.dimensions[0]) {
-    const limit = model.sliceLimit;
-    const category = model.dimensions[0];
-    const keyOf = (row: Row) => model.facet ? JSON.stringify(cell(row, model.facet)) : '';
-    const groups = new Map<string, Row[]>();
-    for (const row of rows) {
-      const k = keyOf(row);
-      if (!groups.has(k)) groups.set(k, []);
-      groups.get(k)!.push(row);
-    }
+  // CategoryItemsLimit runs after facet limits and before every row consumer.
+  // Rank category values (not individual rows) within each explicit panel.
+  if (model.sliceLimit && CATEGORY_LIMIT_KINDS.includes(model.kind) && model.dimensions[0]) {
+    const groups = facetGroups ?? (model.facet ? groupRowsByFacet(rows, model.facet, cell) : [{ value: null, rows }]);
     const limited: Row[] = [];
-    for (const group of facetGroups?.map(group => group.rows) ?? groups.values()) {
-      const start = limited.length;
-      if (group.length <= limit.count) { limited.push(...group); continue; }
-      const kept = group.slice(0, limit.count), rest = group.slice(limit.count);
-      // Fold a retained literal "Other" into this facet's bucket (#126).
-      // One row/name keeps series, legends, tooltips, tables and label-based
-      // selections consistent while preserving totals. Do not promote another
-      // row into its place; EXCLUDE leaves the retained rows unchanged.
-      for (const row of kept) {
-        if (limit.includeOther && cell(row, category) === 'Other') rest.push(row);
-        else limited.push(row);
-      }
-      if (limit.includeOther) {
-        const other: Record<string, Cell> = { ...kept[0]! };
-        const alias = (f: Field) => Object.hasOwn(input.bindings, f.id) ? input.bindings[f.id]! : f.column;
-        other[alias(category)] = 'Other';
-        for (const measure of model.measures) {
-          const values = rest.map(r => number(r, measure)).filter((v): v is number => v !== null);
-          other[alias(measure)] = values.length ? values.reduce((a, b) => a + b, 0) : null;
-        }
-        // Tooltip extra fields are per-row adornments, not additive facts: the
-        // Other bucket has no meaningful value for them, so they read as empty
-        // rather than inheriting one slice's value.
-        for (const extra of extraFields) other[alias(extra)] = null;
-        limited.push(other);
-      }
-      if (facetGroups) group.splice(0, group.length, ...limited.slice(start));
+    for (const group of groups) {
+      const result = applyCategoryLimit(group.rows, model.sliceLimit, {
+        category: model.dimensions[0],
+        remainingDimensions: [...model.dimensions.slice(1), ...(model.facet ? [model.facet] : [])],
+        measures: model.measures, extraFields, cell, number, column: extraColumn,
+      });
+      limited.push(...result);
+      group.rows = result;
     }
     rows.length = 0;
     rows.push(...limited);
