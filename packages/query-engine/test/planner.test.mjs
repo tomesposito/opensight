@@ -187,6 +187,48 @@ test('issue #257: forecast stays line-only and requires a date dimension', () =>
 const insightDateField = (fieldId = 'order_date', columnName = 'order_date', grain = 'MONTH') => ({ DateDimensionField: { FieldId: fieldId, Column: { DataSetIdentifier: 'sales_data', ColumnName: columnName }, ...(grain ? { DateGranularity: grain } : {}) } });
 const insightCatField = (fieldId = 'region', columnName = 'region') => ({ CategoricalDimensionField: { FieldId: fieldId, Column: { DataSetIdentifier: 'sales_data', ColumnName: columnName } } });
 const insightValueField = (fieldId = 'revenue', columnName = 'revenue', aggregation = 'SUM') => ({ NumericalMeasureField: { FieldId: fieldId, Column: { DataSetIdentifier: 'sales_data', ColumnName: columnName }, AggregationFunction: { SimpleNumericalAggregation: aggregation } } });
+const anomalyComputation = (patch = {}) => ({ Anomaly: { ComputationId: 'anomaly', Time: insightDateField(), Value: insightValueField(), ...patch } });
+
+test('anomaly planning binds a date dimension and SUM measure on local and prepared paths', () => {
+  for (const AnomalyDetection of [undefined, {}, { Direction: 'HIGHER', MinSensitivityPercentage: 0 }, { Direction: 'LOWER', MinSensitivityPercentage: 100 }, { Direction: 'BOTH', MinSensitivityPercentage: 2.5 }]) {
+    const r = insightRequest([anomalyComputation({ Name: 'Revenue anomalies', ...(AnomalyDetection === undefined ? {} : { AnomalyDetection }) })]);
+    const before = structuredClone(r), p = planVisual(r);
+    assert.equal(p.sql, planVisual(request('revenue-trend')).sql);
+    assert.deepEqual(p.dimensions.map(d => [d.columnName, d.outputName, d.granularity]), [['order_date', 'month', 'MONTH']]);
+    assert.deepEqual(p.measures.map(m => [m.columnName, m.outputName, m.aggregation]), [['revenue', 'revenue', 'SUM']]);
+    const analysis = structuredClone(r.analysis); analysis.Definition.FilterGroups = [];
+    const prepared = planPreparedVisual([{ name: 'order_date', type: 'DATETIME' }, { name: 'revenue', type: 'DECIMAL' }], analysis, 'insight-1', r.localData.dataSetArn);
+    assert.deepEqual(prepared.dimensions.map(d => d.outputName), ['month']);
+    assert.deepEqual(prepared.measures.map(m => m.aggregation), ['SUM']);
+    assert.deepEqual(r, before);
+  }
+  const mixed = planVisual(insightRequest([anomalyComputation(),
+    { Forecast: { ComputationId: 'fc', Time: insightDateField(), Value: insightValueField() } },
+    { PeriodToDate: { ComputationId: 'ptd', Time: insightDateField(), Value: insightValueField() } },
+  ]));
+  assert.equal(mixed.dimensions.length, 1); assert.equal(mixed.measures.length, 1);
+});
+
+test('anomaly planning rejects malformed detection config and unresolved or unsupported bindings', () => {
+  for (const AnomalyDetection of [null, [], 1, 'invalid',
+    ...['UP', 'higher', null, 1].map(Direction => ({ Direction })),
+    ...[-1, 101, Infinity, -Infinity, NaN, null, '5'].map(MinSensitivityPercentage => ({ MinSensitivityPercentage })),
+  ]) assert.throws(() => planVisual(insightRequest([anomalyComputation({ AnomalyDetection })])), { code: 'INVALID_INPUT' });
+  for (const [patch, code] of [
+    [{ ComputationId: 'bad id' }, 'INVALID_INPUT'], [{ Name: 1 }, 'INVALID_INPUT'],
+    [{ Future: true }, 'UNSUPPORTED_FEATURE'], [{ AnomalyDetection: { Future: true } }, 'UNSUPPORTED_FEATURE'],
+    [{ AnomalyDetection: { direction: 'HIGHER' } }, 'UNSUPPORTED_FEATURE'],
+    [{ Time: insightCatField() }, 'UNSUPPORTED_FEATURE'],
+    [{ Value: insightValueField('revenue', 'revenue', 'AVG') }, 'UNSUPPORTED_FEATURE'],
+    [{ Value: insightValueField('missing', 'missing') }, 'UNRESOLVED_BINDING'],
+  ]) assert.throws(() => planVisual(insightRequest([anomalyComputation(patch)])), { code });
+  assert.throws(() => planVisual(insightRequest([anomalyComputation(), anomalyComputation()])), { code: 'INVALID_INPUT' });
+  assert.throws(() => planVisual(insightRequest([anomalyComputation(), anomalyComputation({ ComputationId: 'other', Value: insightValueField('revenue', 'profit') })])), { code: 'UNRESOLVED_BINDING' });
+  assert.throws(() => planVisual(insightRequest([anomalyComputation(), { TopBottomMovers: { ComputationId: 'm', Type: 'TOP', Category: insightCatField(), Time: insightDateField(), Value: insightValueField() } }])), { code: 'UNSUPPORTED_FEATURE' });
+  const custom = insightRequest([anomalyComputation()]);
+  custom.analysis.Definition.Sheets[0].Visuals[0].InsightVisual.InsightConfiguration.CustomNarrative = { Narrative: '${anomaly.result}' };
+  assert.throws(() => planVisual(custom), { code: 'UNSUPPORTED_FEATURE' });
+});
 function insightRequest(computations, visualId = 'insight-1') {
   const r = request('revenue-trend');
   r.analysis.Definition.Sheets[0].Visuals = [{ InsightVisual: { VisualId: visualId, InsightConfiguration: { Computations: computations } } }];
@@ -255,7 +297,7 @@ test('issue #257: malformed insight configurations fail closed', () => {
     [[{ Forecast: { ComputationId: 'a', Time: insightDateField(), Value: insightValueField(), Future: true } }], 'UNSUPPORTED_FEATURE'],
     [[{ Forecast: { ComputationId: 'a', Time: insightDateField(), Value: insightValueField(), ForecastProperties: { PeriodsForward: 101 } } }], 'INVALID_INPUT'],
     [[{ Forecast: { ComputationId: 'a', Time: insightDateField(), Value: insightValueField(), ForecastProperties: { Seasonality: 'CUSTOM' } } }], 'INVALID_INPUT'],
-    [[{ Anomaly: { ComputationId: 'a' } }], 'UNSUPPORTED_FEATURE'],
+    [[{ Anomaly: { ComputationId: 'a' } }], 'INVALID_INPUT'],
     [[{ TotalAggregation: { ComputationId: 'a', Value: insightValueField() } }], 'UNSUPPORTED_FEATURE'],
     [[{ FutureComputation: { ComputationId: 'a' } }], 'UNSUPPORTED_FEATURE'],
     [[{ TopBottomMovers: { ComputationId: 'a', Category: insightCatField(), Time: insightDateField(), Value: insightValueField() } }], 'INVALID_INPUT'],

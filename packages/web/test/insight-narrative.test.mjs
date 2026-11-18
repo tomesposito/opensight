@@ -44,7 +44,7 @@ test('every unsupported computation and missing binding fails closed even on emp
   const cases = [
     [withComputation('forecast'), 'INSIGHT_TIME_REQUIRED'],
     [withComputation('periodToDate'), 'INSIGHT_TIME_REQUIRED'],
-    [withComputation('anomaly'), 'INSIGHT_ANOMALY_UNSUPPORTED'],
+    [withComputation('anomaly'), 'INSIGHT_TIME_REQUIRED'],
     [withComputation('topBottomMovers', { type: 'TOP' }), 'INSIGHT_CATEGORY_REQUIRED'],
     [{ ...base, computations: { customNarrative: { narrative: '${forecast.result}' } } }, 'INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED'],
     [withComputation('periodOverPeriod'), 'INSIGHT_TIME_REQUIRED'], [withComputation('growthRate'), 'INSIGHT_TIME_REQUIRED'],
