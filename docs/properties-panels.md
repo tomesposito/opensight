@@ -13,7 +13,8 @@ and definition format.
 | CARD STYLE | — | Background, border and selection colors/opacity, border width, loading animation setting |
 | CARD LAYOUT | — | Per-card padding |
 | Multiples Options | Visible rows/columns, layout panel cap, panel title size/bold/italic/alignment, border/width/color, gutter/background; assigned facets also expose Number of panels displayed and Group the rest as Other | Panel-title underline and dashed/dotted borders are saved but render without underline/with solid borders |
-| Group/Color | Field display name in generated titles and result tables; clearing restores the source name | Separate group title, text styling, Author sort editing, slice limit |
+| Group/Color | Field display name; explicit field sort; Number of slices displayed for pie or Number of categories displayed for bar/percentage bar, with an optional Other bucket | Separate group title is saved but not drawn |
+| Category limit | Number of categories displayed and optional Other for line, area and combo | — |
 | Legend | Visibility; Auto/Top/Bottom/Left/Right placement | Separate legend title and its typography; per-visual legend value typography |
 | Data labels | Visibility; decimal precision, including clearing back to automatic | Independent category/metric controls, position, typography and overlap |
 
@@ -33,10 +34,13 @@ Unsupported kinds retain the field but block preview/export with
 `SMALL_MULTIPLES_UNSUPPORTED` until it is removed.
 
 Group/Color appears for the visual types with that well: bar, percentage bar
-and pie. Slice count is pie-specific. The field-name input is disabled until
+and pie. Pie keeps its slice wording; the other category-axis charts use
+category wording. Invalid counts keep the last valid value; clearing removes
+the limit. See [category-limit semantics](parity-category-limit.md).
+The field-name input is disabled until
 a grouping field is assigned. It edits the existing display-name map, never
-the source column or field binding. Sort editing remains unavailable in the
-Author model; imported sort settings are retained by the existing bundle path.
+the source column or field binding. Group/Color sort uses a bound dimension
+or measure with an explicit direction and round-trips through the bundle path.
 
 Legend and Data labels retain the existing visual-kind capability gates.
 Auto legend position renders at the bottom, as before; explicitly saved

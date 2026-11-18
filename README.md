@@ -176,9 +176,11 @@ with the draft and supports Undo/Redo; available sample data stays unselected.
 The Properties dock groups card title/style/layout, Multiples Options,
 Group/Color, Legend and Data labels. Existing title, display-name, legend and
 label settings work; unsupported controls are disabled with visible reasons.
+Bar, percentage bar, line, area and combo charts also expose a category count
+and optional Other bucket; pie retains its slice-limit controls.
 See [properties controls and limits](docs/properties-panels.md).
 
-![Group/Color properties with a working display name and explicit unsupported controls](docs/images/properties-panels.png)
+![Group/Color properties with a category limit and optional Other bucket](docs/images/properties-panels.png)
 
 Radar uses Category axes, an optional Color split, and one or more Values
 measures. Nulls remain gaps; unsupported native options appear in the import
