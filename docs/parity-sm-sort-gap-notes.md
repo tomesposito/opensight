@@ -71,3 +71,21 @@ opens Multiples Options, as explicitly ruled in the brief. Existing README
 feature screenshots do not show that section; the two new captures above show
 its updated controls. No dependencies, AWS calls, deployment, merge or push
 were added, and `SOLUTION_DESIGN.md` is unchanged.
+
+## Full root verification
+
+The final full root run exited **0**: **5,838 passed / 0 failed / 37 skipped**,
+5,875 total tests, with no cancellations or todos. All 37 skips require live
+PostgreSQL (35 API, 2 query engine). This includes all 2,878 web tests, 32 Python
+SDK tests and 110 root conformance/site tests. No brief item is unfinished.
+
+```sh
+OPENSIGHT_CHROMIUM="$HOME/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell" TZ=UTC npm test
+```
+
+The full log is `/tmp/opensight-sm-sort-root.log`; exact workspace counts are
+in `/tmp/opensight-sm-sort-test-counts.json`. The sandbox hid isolated child-test
+results in the first focused attempt, so focused checks used Node's existing
+`--test-isolation=none` option. The full root suite and offline browser captures
+ran outside that sandbox using the installed Playwright shell; no download or
+dependency change was needed.
