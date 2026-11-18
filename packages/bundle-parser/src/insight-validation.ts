@@ -37,6 +37,28 @@ function validateForecast(value: unknown, path: string, key: (name: string) => s
   if (typeof lower === 'number' && typeof upper === 'number' && lower > upper) invalid(p, 'lower boundary must not exceed upper boundary');
 }
 
+function validateAnomaly(value: unknown, path: string, key: (name: string) => string): void {
+  const invalid = (p: string, message: string): never => fail(p, `INSIGHT_COMPUTATION_INVALID: ${message}`);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return invalid(path, 'expected an object');
+  const body = value as Record<string, unknown>;
+  const allowed = (raw: Record<string, unknown>, names: string[], p: string) => {
+    for (const name of Object.keys(raw)) if (!names.map(key).includes(name)) fail(`${p}.${name}`, 'INSIGHT_CONFIGURATION_UNSUPPORTED: unsupported anomaly property');
+  };
+  allowed(body, ['computationId', 'name', 'time', 'value', 'anomalyDetection'], path);
+  const id = body[key('computationId')];
+  if (typeof id !== 'string' || !/^[\w-]{1,512}$/.test(id)) invalid(`${path}.${key('computationId')}`, 'a computationId is required');
+  if (body[key('name')] !== undefined && typeof body[key('name')] !== 'string') invalid(`${path}.${key('name')}`, 'name must be a string');
+  const detection = body[key('anomalyDetection')];
+  if (detection === undefined) return;
+  const p = `${path}.${key('anomalyDetection')}`;
+  if (!detection || typeof detection !== 'object' || Array.isArray(detection)) return invalid(p, 'expected an object');
+  const raw = detection as Record<string, unknown>;
+  allowed(raw, ['direction', 'minSensitivityPercentage'], p);
+  const direction = raw[key('direction')], percentage = raw[key('minSensitivityPercentage')];
+  if (direction !== undefined && !['HIGHER', 'LOWER', 'BOTH'].includes(direction as string)) invalid(`${p}.${key('direction')}`, 'direction must be HIGHER, LOWER or BOTH');
+  if (percentage !== undefined && (typeof percentage !== 'number' || !Number.isFinite(percentage) || percentage < 0 || percentage > 100)) invalid(`${p}.${key('minSensitivityPercentage')}`, 'minSensitivityPercentage must be a finite number between 0 and 100');
+}
+
 function validatePeriodToDate(value: unknown, path: string, key: (name: string) => string): void {
   const invalid = (p: string, message: string): never => fail(p, `INSIGHT_COMPUTATION_INVALID: ${message}`);
   if (!value || typeof value !== 'object' || Array.isArray(value)) return invalid(path, 'expected an object');
@@ -89,10 +111,10 @@ export function validateInsightConfiguration(value: unknown, path: string, api =
     if (entries.length !== 1) fail(p, 'INSIGHT_COMPUTATION_INVALID: expected exactly one computation variant');
     const [kind, raw] = entries[0]!;
     kinds.push(kind);
-    if (/anomaly/i.test(kind)) fail(p, 'INSIGHT_ANOMALY_UNSUPPORTED: anomaly computations are not supported');
-    const known = ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison', 'forecast', 'periodToDate', 'topBottomMovers', 'uniqueValues'].map(key);
+    const known = ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison', 'forecast', 'periodToDate', 'topBottomMovers', 'uniqueValues', 'anomaly'].map(key);
     if (!known.includes(kind)) fail(`${p}.${kind}`, 'INSIGHT_COMPUTATION_UNKNOWN: unknown computation type');
     if (kind === key('forecast')) { validateForecast(raw, `${p}.${kind}`, key); return; }
+    if (kind === key('anomaly')) { validateAnomaly(raw, `${p}.${kind}`, key); return; }
     if (kind === key('periodToDate')) { validatePeriodToDate(raw, `${p}.${kind}`, key); return; }
     if (kind === key('uniqueValues')) { validateUniqueValues(raw, `${p}.${kind}`, key); return; }
     if (kind === key('topBottomMovers')) { validateTopBottomMovers(raw, `${p}.${kind}`, key); return; }
