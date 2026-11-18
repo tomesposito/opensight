@@ -299,18 +299,25 @@ function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: re
     const ep = `${cp}.Computations[${i}]`;
     const [kind, c] = variant(value, ep);
     const kp = `${ep}.${kind}`;
-    if (!['Forecast', 'PeriodToDate', 'UniqueValues', 'TopBottomMovers'].includes(kind)) {
-      fail('UNSUPPORTED_FEATURE', kp, /anomaly/i.test(kind) ? 'anomaly computations are not supported' : 'insight computation is not executable in the native planning slice');
+    if (!['Forecast', 'PeriodToDate', 'UniqueValues', 'TopBottomMovers', 'Anomaly'].includes(kind)) {
+      fail('UNSUPPORTED_FEATURE', kp, 'insight computation is not executable in the native planning slice');
     }
     kinds.push(kind);
     const id = c.ComputationId;
     if (typeof id !== 'string' || !/^[\w-]{1,512}$/.test(id)) fail('INVALID_INPUT', `${kp}.ComputationId`, 'a computationId is required');
     unique(computationIds, id, `${kp}.ComputationId`);
     if (c.Name !== undefined && typeof c.Name !== 'string') fail('INVALID_INPUT', `${kp}.Name`, 'name must be a string');
-    if (kind === 'Forecast' || kind === 'PeriodToDate') {
-      keys(c, kind === 'Forecast' ? ['ComputationId', 'Name', 'Time', 'Value', 'ForecastProperties'] : ['ComputationId', 'Name', 'Time', 'Value', 'PeriodTimeGranularity'], kp);
+    if (kind === 'Forecast' || kind === 'PeriodToDate' || kind === 'Anomaly') {
+      keys(c, ['ComputationId', 'Name', 'Time', 'Value', kind === 'Forecast' ? 'ForecastProperties' : kind === 'PeriodToDate' ? 'PeriodTimeGranularity' : 'AnomalyDetection'], kp);
       if (kind === 'Forecast' && c.ForecastProperties !== undefined) forecastConfigurationCount([c.ForecastProperties], `${kp}.ForecastProperties`);
       if (kind === 'PeriodToDate' && c.PeriodTimeGranularity !== undefined && !['DAY', 'MONTH', 'QUARTER', 'YEAR'].includes(c.PeriodTimeGranularity as string)) fail('INVALID_INPUT', `${kp}.PeriodTimeGranularity`, 'periodTimeGranularity must be DAY, MONTH, QUARTER or YEAR');
+      if (kind === 'Anomaly' && c.AnomalyDetection !== undefined) {
+        const p = `${kp}.AnomalyDetection`, detection = object(c.AnomalyDetection, p);
+        keys(detection, ['Direction', 'MinSensitivityPercentage'], p);
+        if (detection.Direction !== undefined && !['HIGHER', 'LOWER', 'BOTH'].includes(detection.Direction as string)) fail('INVALID_INPUT', `${p}.Direction`, 'direction must be HIGHER, LOWER or BOTH');
+        const percentage = detection.MinSensitivityPercentage;
+        if (percentage !== undefined && (typeof percentage !== 'number' || !Number.isFinite(percentage) || percentage < 0 || percentage > 100)) fail('INVALID_INPUT', `${p}.MinSensitivityPercentage`, 'minSensitivityPercentage must be a finite number between 0 and 100');
+      }
       if (c.Time !== undefined) timeIds.add(addDimension(insightDimension(c.Time, `${kp}.Time`, binder, 'date')).fieldId);
       if (c.Value !== undefined) addMeasure(insightMeasure(c.Value, `${kp}.Value`, binder));
     } else if (kind === 'UniqueValues') {
@@ -338,8 +345,8 @@ function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: re
   } else {
     if (dimensionsById.size !== 1) fail('INVALID_INPUT', cp, 'insight computations must derive exactly one dimension');
     dimensions = [...dimensionsById.values()];
-    if ((kinds.includes('Forecast') || kinds.includes('PeriodToDate')) && dimensions[0]!.granularity === undefined) {
-      fail('UNSUPPORTED_FEATURE', cp, 'forecast and period-to-date computations require a date dimension');
+    if (kinds.some(kind => ['Forecast', 'PeriodToDate', 'Anomaly'].includes(kind)) && dimensions[0]!.granularity === undefined) {
+      fail('UNSUPPORTED_FEATURE', cp, 'forecast, period-to-date and anomaly computations require a date dimension');
     }
   }
   const measures = [...measuresById.values()];

@@ -18,6 +18,20 @@ export const UNIQUE_VALUES_MAX_TEXT_CHARS = 1000;
 export interface InsightRow { category: Cell; time?: Cell; values: (number | null)[] }
 export interface InsightInput { category?: Field; time?: Field; measures: Field[]; computations?: unknown; formatting?: VisualFormatting }
 
+function finiteAnomalyValue(n: number): number {
+  if (!Number.isFinite(n)) return insightFail('INSIGHT_VALUE_INVALID', 'nonfinite anomaly arithmetic');
+  return n;
+}
+
+/** Nonempty finite series; midpoint avoids overflowing a sum of large values. */
+function median(values: readonly number[]): number {
+  const sorted = [...values].sort((a, b) => a === b ? 0 : a < b ? -1 : 1);
+  const middle = Math.floor(sorted.length / 2), upper = sorted[middle]!;
+  if (sorted.length % 2) return upper;
+  const lower = sorted[middle - 1]!;
+  return finiteAnomalyValue(Math.sign(lower) === Math.sign(upper) ? lower + (upper - lower) / 2 : lower / 2 + upper / 2);
+}
+
 /** Pure post-processing of authorized, aggregated rows, shared by every renderer. */
 export function insightNarrative(rows: readonly InsightRow[], input: InsightInput): InsightNarrative {
   const requests = normalizeInsight(input.computations ?? {}, input.category ? [input.category, ...(input.time ? [input.time] : [])] : [], input.measures);
@@ -30,7 +44,7 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
   };
   const label = (c: Cell) => c === null ? '(null)' : String(c);
   for (const r of rows) if (r.values.length !== input.measures.length || r.values.some(n => n !== null && (typeof n !== 'number' || !Number.isFinite(n)))) insightFail('INSIGHT_VALUE_INVALID', 'each measure must be a finite number or null');
-  const duplicateCode = requests.some(r => r.kind === 'forecast' || r.kind === 'periodToDate') ? 'INSIGHT_VALUE_INVALID' : 'INSIGHT_CATEGORY_INVALID';
+  const duplicateCode = requests.some(r => r.kind === 'forecast' || r.kind === 'periodToDate' || r.kind === 'anomaly') ? 'INSIGHT_VALUE_INVALID' : 'INSIGHT_CATEGORY_INVALID';
   if (requests.some(r => r.kind === 'topBottomMovers')) {
     // Movers rows are grouped by (category, period): categories repeat across periods, pairs must not.
     if (new Set(rows.map(r => JSON.stringify([r.category, r.time]))).size !== rows.length) insightFail('INSIGHT_VALUE_INVALID', 'expected unique aggregated category/period rows');
@@ -47,8 +61,8 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
     try { return aggregateValue('sum', groups.map(r => r.values[index]!)) as number | null; }
     catch { return insightFail('INSIGHT_VALUE_INVALID', 'nonfinite total'); }
   };
-  const paragraphs = requests.filter(request => rows.length || request.kind === 'periodToDate').map(request => {
-    const name = request.kind === 'uniqueValues' ? '' : fieldName(input.measures[request.measure]!, input.formatting), total = request.kind === 'forecast' || request.kind === 'periodToDate' || request.kind === 'uniqueValues' || request.kind === 'topBottomMovers' ? null : sum(request.measure);
+  const paragraphs = requests.filter(request => rows.length || request.kind === 'periodToDate' || request.kind === 'anomaly').map(request => {
+    const name = request.kind === 'uniqueValues' ? '' : fieldName(input.measures[request.measure]!, input.formatting), total = request.kind === 'forecast' || request.kind === 'periodToDate' || request.kind === 'uniqueValues' || request.kind === 'topBottomMovers' || request.kind === 'anomaly' ? null : sum(request.measure);
     const numeric = rows.filter(r => r.values[request.measure] !== null);
     let parts: NarrativePart[];
     if (request.kind === 'uniqueValues') {
@@ -178,6 +192,40 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
         parts.push(text('.'));
       }
       if (excluded) parts.push(text(` ${excluded} categor${excluded === 1 ? 'y' : 'ies'} excluded (no value in both periods${request.sortOrder === 'PERCENT_DIFFERENCE' ? ' or no computable percent change' : ''}).`));
+    } else if (request.kind === 'anomaly') {
+      // Decode every period before excluding nulls, so duplicate or invalid
+      // periods cannot disappear behind a missing measure.
+      const dated = datedRows().filter(({ row }) => row.values[request.measure] !== null);
+      const heading = `Statistical anomaly detection for ${name} by ${fieldName(input.category!, input.formatting)}: `;
+      if (dated.length < 5) parts = [text(`${heading}unavailable (not enough data points to detect anomalies; at least 5 non-null points required).`)];
+      else {
+        const center = median(dated.map(({ row }) => row.values[request.measure]! as number));
+        const points = dated.map(({ row, date }) => ({ date, n: row.values[request.measure]! as number,
+          deviation: finiteAnomalyValue(row.values[request.measure]! - center) }));
+        const spread = median(points.map(point => Math.abs(point.deviation)));
+        const { direction, minSensitivityPercentage } = request.anomalyDetection;
+        // A zero median cannot scale a percentage; skip only that extra filter.
+        const minimum = center === 0 || minSensitivityPercentage === undefined ? 0
+          : finiteAnomalyValue((minSensitivityPercentage / 100) * Math.abs(center));
+        const anomalies = points.filter(({ deviation }) => {
+          // MAD=0 has an explicit infinite-deviation rule; do not manufacture
+          // an Infinity that could mask an unrelated arithmetic overflow.
+          const candidate = spread === 0 ? deviation !== 0 : Math.abs(finiteAnomalyValue(0.6745 * deviation / spread)) >= 3.5;
+          return candidate && Math.abs(deviation) >= minimum
+            && (direction === 'BOTH' || (direction === 'HIGHER' ? deviation > 0 : deviation < 0));
+        });
+        parts = [text(heading)];
+        if (!anomalies.length) parts.push(text('no anomalies detected'));
+        anomalies.slice(0, 5).forEach(({ date, n, deviation }, index) => {
+          const iso = date.toISOString(), grain = input.category!.dateGranularity!;
+          const period = grain === 'YEAR' ? iso.slice(0, 4) : grain === 'MONTH' ? iso.slice(0, 7)
+            : grain === 'QUARTER' ? `${iso.slice(0, 4)}-Q${Math.floor(date.getUTCMonth() / 3) + 1}` : iso.slice(0, 10);
+          if (index) parts.push(text('; '));
+          parts.push(text(`${period} (`), value(n), text(`, unusually ${deviation > 0 ? 'high' : 'low'})`));
+        });
+        if (anomalies.length > 5) parts.push(text(`; and ${anomalies.length - 5} more`));
+        parts.push(text('.'));
+      }
     } else if (request.kind === 'forecast') {
       const dated = datedRows(), grain = input.category!.dateGranularity!, config = request.forecast;
       const result = numeric.length >= MIN_FORECAST_POINTS && config.periodsForward > 0
@@ -209,7 +257,7 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
       }
     }
     const nulls = rows.length - numeric.length;
-    if (nulls && ['totalAggregation', 'maximumMinimum', 'topBottomRanked'].includes(request.kind)) parts.push(text(` ${nulls} null group${nulls === 1 ? '' : 's'} excluded.`));
+    if (nulls && ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'anomaly'].includes(request.kind)) parts.push(text(` ${nulls} null group${nulls === 1 ? '' : 's'} excluded.`));
     return { id: request.id, parts };
   });
   return { paragraphs, text: paragraphs.map(p => p.parts.map(part => part.text).join('')).join('\n\n') };

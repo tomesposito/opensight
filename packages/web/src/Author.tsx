@@ -798,6 +798,7 @@ function InsightOptions({ visual, dispatch }: { visual: AuthorVisual; dispatch: 
       <option value="totalAggregation">Total aggregation</option><option value="topBottomRanked">Top and bottom ranked</option>
       <option value="growthRate">Growth rate (date required)</option><option value="periodOverPeriod">Period over period (date required)</option>
       <option value="forecast">Forecast (date required)</option>
+      <option value="anomaly">Anomaly (date required)</option>
       <option value="periodToDate">Period to date (date required)</option>
       <option value="uniqueValues">Unique values</option>
       <option value="metricComparison">Metric comparison (two measures)</option>

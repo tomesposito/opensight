@@ -13,15 +13,28 @@ export function insightObject(value: unknown): Obj {
 const allowed = (value: Obj, names: string[]) => {
   for (const name of Object.keys(value)) if (!names.includes(name)) insightFail('INSIGHT_CONFIGURATION_UNSUPPORTED', `unsupported property ${name}`);
 };
-const variants = ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison', 'forecast', 'periodToDate', 'uniqueValues', 'topBottomMovers'] as const;
+const variants = ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison', 'forecast', 'periodToDate', 'uniqueValues', 'topBottomMovers', 'anomaly'] as const;
 type Kind = typeof variants[number];
+interface AnomalyDetection { direction: 'HIGHER' | 'LOWER' | 'BOTH'; minSensitivityPercentage?: number }
 export type InsightRequest = { id: string; measure: number } & (
-  { kind: Exclude<Kind, 'forecast' | 'periodToDate' | 'uniqueValues' | 'topBottomMovers'>; target?: number; type?: string; size?: number }
+  { kind: Exclude<Kind, 'forecast' | 'periodToDate' | 'uniqueValues' | 'topBottomMovers' | 'anomaly'>; target?: number; type?: string; size?: number }
   | { kind: 'forecast'; forecast: ForecastConfig }
+  | { kind: 'anomaly'; anomalyDetection: AnomalyDetection }
   | { kind: 'periodToDate'; periodTimeGranularity: NonNullable<Field['dateGranularity']> }
   | { kind: 'uniqueValues' }
   | { kind: 'topBottomMovers'; type: 'TOP' | 'BOTTOM'; size: number; sortOrder: 'PERCENT_DIFFERENCE' | 'ABSOLUTE_DIFFERENCE' }
 );
+
+function anomalyDetection(value: unknown): AnomalyDetection {
+  if (value !== undefined && (!value || typeof value !== 'object' || Array.isArray(value))) insightFail('INSIGHT_COMPUTATION_INVALID', 'anomalyDetection must be an object');
+  const raw = (value ?? {}) as Obj;
+  allowed(raw, ['direction', 'minSensitivityPercentage']);
+  const direction = raw.direction === undefined ? 'BOTH' : raw.direction;
+  if (direction !== 'HIGHER' && direction !== 'LOWER' && direction !== 'BOTH') return insightFail('INSIGHT_COMPUTATION_INVALID', 'direction must be HIGHER, LOWER or BOTH');
+  const percentage = raw.minSensitivityPercentage;
+  if (percentage !== undefined && (typeof percentage !== 'number' || !Number.isFinite(percentage) || percentage < 0 || percentage > 100)) return insightFail('INSIGHT_COMPUTATION_INVALID', 'minSensitivityPercentage must be a finite number between 0 and 100');
+  return { direction, ...(percentage !== undefined ? { minSensitivityPercentage: percentage } : {}) };
+}
 
 function periodTimeGranularity(value: unknown): NonNullable<Field['dateGranularity']> | undefined {
   if (value === undefined) return;
@@ -67,8 +80,8 @@ function computations(config: unknown): [Kind, Obj][] | undefined {
     const entries = Object.entries(insightObject(raw));
     if (entries.length !== 1) return insightFail('INSIGHT_COMPUTATION_INVALID', 'expected exactly one computation variant');
     const [kind, value] = entries[0]!;
-    if (/anomaly/i.test(kind)) insightFail('INSIGHT_ANOMALY_UNSUPPORTED', 'anomaly computations are not supported');
     if (!variants.includes(kind as Kind)) insightFail('INSIGHT_COMPUTATION_UNSUPPORTED', `unsupported computation ${kind}`);
+    if (kind === 'anomaly' && (!value || typeof value !== 'object' || Array.isArray(value))) insightFail('INSIGHT_COMPUTATION_INVALID', 'anomaly must be an object');
     if (kind === 'forecast' && (!value || typeof value !== 'object' || Array.isArray(value))) insightFail('INSIGHT_COMPUTATION_INVALID', 'forecast must be an object');
     if (kind === 'periodToDate' && (!value || typeof value !== 'object' || Array.isArray(value))) insightFail('INSIGHT_COMPUTATION_INVALID', 'periodToDate must be an object');
     if (kind === 'uniqueValues' && (!value || typeof value !== 'object' || Array.isArray(value))) insightFail('INSIGHT_COMPUTATION_INVALID', 'uniqueValues must be an object');
@@ -79,10 +92,12 @@ function computations(config: unknown): [Kind, Obj][] | undefined {
     const specific = kind === 'totalAggregation' ? ['value'] : kind === 'maximumMinimum' ? ['time', 'value', 'type']
       : kind === 'topBottomRanked' ? ['category', 'value', 'type', 'resultSize'] : kind === 'metricComparison' ? ['time', 'fromValue', 'targetValue']
       : kind === 'growthRate' ? ['time', 'value', 'periodSize'] : kind === 'forecast' ? ['time', 'value', 'forecastProperties']
+      : kind === 'anomaly' ? ['time', 'value', 'anomalyDetection']
       : kind === 'periodToDate' ? ['time', 'value', 'periodTimeGranularity'] : kind === 'uniqueValues' ? ['category']
       : kind === 'topBottomMovers' ? ['time', 'category', 'value', 'type', 'moverSize', 'sortOrder'] : ['time', 'value'];
     allowed(body, ['computationId', 'name', ...specific]);
     if (kind === 'forecast') forecastProperties(body.forecastProperties);
+    if (kind === 'anomaly') anomalyDetection(body.anomalyDetection);
     if (kind === 'periodToDate') periodTimeGranularity(body.periodTimeGranularity);
     if (kind === 'topBottomMovers') moversProperties(body);
     return [kind as Kind, body];
@@ -199,6 +214,10 @@ export function normalizeInsight(config: unknown, dimensions: Field[], measures:
       if (categoryIndex !== 0 || timeIndex !== 1) insightFail('INSIGHT_FIELD_UNBOUND', 'movers category and time must bind the category dimension first and the time dimension second, in wells order');
       if (!dimensions[timeIndex]!.dateGranularity) insightFail('INSIGHT_TIME_REQUIRED', 'movers computations require a date/time dimension');
       return { kind, id, measure, type: c.type as 'TOP' | 'BOTTOM', size: Number(c.moverSize ?? 3), sortOrder: (c.sortOrder as 'PERCENT_DIFFERENCE' | 'ABSOLUTE_DIFFERENCE' | undefined) ?? 'PERCENT_DIFFERENCE' };
+    }
+    if (kind === 'anomaly') {
+      if (!dimensions[0]!.dateGranularity) insightFail('INSIGHT_TIME_REQUIRED', 'anomaly computations require a date/time dimension');
+      return { kind, id, measure, anomalyDetection: anomalyDetection(c.anomalyDetection) };
     }
     if (kind === 'forecast') {
       if (!dimensions[0]!.dateGranularity) insightFail('INSIGHT_TIME_REQUIRED', 'forecast computations require a date/time dimension');

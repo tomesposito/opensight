@@ -5,14 +5,51 @@ const bundle = computations => ({ resourceType: 'analysis', analysisId: 'insight
   dataSetIdentifierDeclarations: [], sheets: [{ sheetId: 's', visuals: [{ insightVisual: { visualId: 'v', insightConfiguration: { computations } } }] }],
 } });
 const api = value => Array.isArray(value) ? value.map(api) : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k[0].toUpperCase() + k.slice(1), api(v)])) : value;
+test('anomaly parser retains valid bodies and option boundaries unchanged in both dialects', () => {
+  for (const anomalyDetection of [undefined, {}, { direction: 'HIGHER', minSensitivityPercentage: 0 }, { direction: 'LOWER', minSensitivityPercentage: 100 }, { direction: 'BOTH', minSensitivityPercentage: 2.5 }]) {
+    const raw = bundle([{ anomaly: { computationId: 'anomaly_1-test', name: 'Revenue anomalies',
+      time: { dateDimensionField: { fieldId: 'date', column: { columnName: 'date', dataSetIdentifier: 'sales' }, dateGranularity: 'DAY' } },
+      value: { numericalMeasureField: { fieldId: 'revenue', column: { columnName: 'revenue', dataSetIdentifier: 'sales' }, aggregationFunction: { simpleNumericalAggregation: 'SUM' } } },
+      ...(anomalyDetection === undefined ? {} : { anomalyDetection }),
+    } }]);
+    assert.deepEqual(parseBundleResource(raw), raw);
+    const native = api(raw); native.ResourceType = 'Analysis';
+    assert.deepEqual(parseSyntheticAnalysis(native), native);
+  }
+  assert.doesNotThrow(() => parseBundleResource(bundle([{ anomaly: { computationId: 'a'.repeat(512) } }])));
+});
+
+test('anomaly parser rejects malformed bodies, detection options and unknown keys in both dialects', () => {
+  const invalid = [null, [], 1, 'invalid',
+    ...['higher', 'UP', null, 1, {}].map(direction => ({ direction })),
+    ...[-1, 100.1, NaN, Infinity, -Infinity, '5', null].map(minSensitivityPercentage => ({ minSensitivityPercentage })),
+  ];
+  const bodies = [
+    ...[null, [], 1, 'invalid', {}, { computationId: '' }, { computationId: 'bad id' }, { computationId: 'a'.repeat(513) }, { computationId: 'a', name: 1 },
+      ...invalid.map(anomalyDetection => ({ computationId: 'a', anomalyDetection })),
+    ].map(body => [body, /INSIGHT_COMPUTATION_INVALID/]),
+    ...[{ future: true }, { direction: 'BOTH' }, { anomalyDetection: { future: true } }].map(extra => [{ computationId: 'a', ...extra }, /INSIGHT_CONFIGURATION_UNSUPPORTED/]),
+  ];
+  for (const [body, error] of bodies) {
+    const raw = bundle([{ anomaly: body }]);
+    assert.throws(() => parseBundleResource(raw), error);
+    const native = api(raw); native.ResourceType = 'Analysis';
+    assert.throws(() => parseSyntheticAnalysis(native), error);
+  }
+  assert.throws(() => parseBundleResource(bundle([{ anomaly: { computationId: 'a', anomalyDetection: { Direction: 'HIGHER' } } }])), /INSIGHT_CONFIGURATION_UNSUPPORTED/);
+  const mixed = [{ anomaly: { computationId: 'a' } }, { topBottomMovers: { computationId: 'm', type: 'TOP' } }];
+  assert.throws(() => parseBundleResource(bundle(mixed)), /INSIGHT_COMPUTATION_INVALID/);
+  const native = api(bundle(mixed)); native.ResourceType = 'Analysis';
+  assert.throws(() => parseSyntheticAnalysis(native), /INSIGHT_COMPUTATION_INVALID/);
+});
 test('insight parser retains other known computations and their unsupported properties', () => {
   for (const kind of ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison']) {
     const raw = bundle([{ [kind]: { computationId: 'c', futureOption: 'preserved' } }]);
     assert.deepEqual(parseBundleResource(raw), raw);
   }
 });
-test('insight parser rejects unknown, malformed and anomaly computations by name in both dialects', () => {
-  for (const [computations, error] of [[[{ futureComputation: {} }], /INSIGHT_COMPUTATION_UNKNOWN/], [[{}], /INSIGHT_COMPUTATION_INVALID/], [[{ anomaly: {} }], /INSIGHT_ANOMALY_UNSUPPORTED/], [[{ totalAggregation: {} }], /computationId/i]]) {
+test('insight parser rejects unknown and malformed computations by name in both dialects', () => {
+  for (const [computations, error] of [[[{ futureComputation: {} }], /INSIGHT_COMPUTATION_UNKNOWN/], [[{}], /INSIGHT_COMPUTATION_INVALID/], [[{ anomaly: {} }], /INSIGHT_COMPUTATION_INVALID/], [[{ totalAggregation: {} }], /computationId/i]]) {
     assert.throws(() => parseBundleResource(bundle(computations)), error);
     const raw = api(bundle(computations)); raw.ResourceType = 'Analysis';
     assert.throws(() => parseSyntheticAnalysis(raw), error);

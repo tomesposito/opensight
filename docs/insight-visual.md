@@ -29,6 +29,7 @@ JSON remains available for unchanged export, including blocked features.
 | GrowthRate / PeriodOverPeriod | Latest date period versus the preceding calendar period at the bound DAY, MONTH, QUARTER or YEAR grain. Growth PeriodSize is limited to 2. |
 | MetricComparison | Aggregate FromValue minus aggregate TargetValue, plus percent difference. Requires two distinct bound measures. |
 | Forecast | Statistical forecast of the bound measure, using the shared chart exponential-smoothing engine. Requires a date dimension; reports the forward horizon at its grain, final projected period/value and prediction-interval range. |
+| Anomaly | Deterministic statistical check of the bound measure over a date dimension, using the median and median absolute deviation (MAD). Lists up to five unusually high or low periods chronologically and discloses any remaining count. This is not ML. |
 | PeriodToDate | SUM of the bound measure's groups in the UTC calendar period containing the latest dated row. PeriodTimeGranularity accepts DAY, MONTH, QUARTER or YEAR and defaults to the bound date grain. A finer period than the bound grain is unavailable. |
 | UniqueValues | The distinct values of the bound category, listed in deterministic typed order. Binds no measure: a visual whose computations are all UniqueValues executes with no Values measure. |
 | TopBottomMovers | TOP or BOTTOM categories by change in the bound measure between the latest dated period and the preceding calendar period. Binds two dimensions (category and time); a visual whose computations include any TopBottomMovers must contain only TopBottomMovers computations. MoverSize defaults to 3 and accepts 1–20; SortOrder is PERCENT_DIFFERENCE (default) or ABSOLUTE_DIFFERENCE. |
@@ -36,7 +37,52 @@ JSON remains available for unchanged export, including blocked features.
 With no explicit computations, the summary includes total, highest and lowest
 contributors, plus a period comparison for date fields and a metric comparison
 when two measures are bound. The Properties panel can select a total, ranked
-list, growth, period, forecast, period to date, unique values or metric comparison and configure rank count and decimals.
+list, growth, period, forecast, anomaly, period to date, unique values or metric comparison and configure rank count and decimals.
+
+Anomaly computations accept `computationId`, optional string `name`, `time`,
+`value` and optional `anomalyDetection`. Native PascalCase imports use `Anomaly`,
+`AnomalyDetection`, `Direction` and `MinSensitivityPercentage`; both dialects
+round-trip without injecting defaults. As with the sibling computations, `name`
+is preserved as metadata; sentences use the bound field's display name. The
+**Anomaly (date required)** preset uses computation ID `anomaly` and leaves
+detection options absent. Unknown properties, malformed IDs, non-object options,
+invalid directions and invalid percentages fail closed before querying.
+
+Rows are aggregated at the bound DAY, MONTH, QUARTER or YEAR grain and decoded
+and sorted with the shared chronological period decoder. Duplicate decoded
+periods raise `INSIGHT_VALUE_INVALID`, including duplicates with null values;
+invalid dates raise `INSIGHT_TIME_REQUIRED`. Null measure values are excluded
+and their count disclosed. Missing periods are not filled. At least five
+non-null points are required; fewer points produce an unavailable sentence
+stating there are not enough data points to detect anomalies.
+
+The center is the median of the entire non-null series. The spread is MAD,
+the median of the absolute deviations from that center. Even-length medians
+average the middle two values. A candidate satisfies the Iglewicz–Hoaglin
+threshold `abs(0.6745 * (value - median) / MAD) >= 3.5`. When MAD is zero,
+values equal to the median are never candidates and all other values are
+candidates under the explicit infinite-deviation rule. Nonfinite input or
+arithmetic otherwise raises `INSIGHT_VALUE_INVALID`.
+
+`anomalyDetection.direction` accepts `HIGHER`, `LOWER` or `BOTH` (default).
+HIGHER keeps positive deviations and LOWER keeps negative deviations. Optional
+`minSensitivityPercentage` is a finite number from 0 through 100 inclusive:
+candidates must also satisfy
+`abs(value - median) >= (percentage / 100) * abs(median)`. An absent percentage
+adds no filter. When the median is zero, this percentage test is skipped because
+it cannot be scaled; the robust-deviation and direction tests still apply.
+
+The sentence starts `Statistical anomaly detection for <measure> by <time>:`.
+Candidates appear chronologically as `<period> (<value>, unusually high/low)`,
+with at most five listed and `and N more` when needed. No candidates produces
+`no anomalies detected`. Values use the common number formatter and configured
+precision. The narrative function reports the insufficient-data reason even for
+zero rows; the visual retains its existing empty-result state. Anomaly can
+combine with other supported computations sharing its dimension and measure
+bindings, except TopBottomMovers, whose two-dimension collection remains exclusive.
+QuickSight uses ML anomaly detection; OpenSight uses deterministic robust
+statistics and labels it statistical. No ML-result, exact-wording or
+visual-fidelity parity is claimed. Custom narrative templates remain unsupported.
 
 UniqueValues computations accept `computationId`, optional string `name` and
 `category` only; any other property (including `value` or `time`) fails closed.
@@ -152,13 +198,13 @@ ECharts rich-text templates.
 
 ## Unsupported features and errors
 
-Anomaly computations are unsupported. All native custom-narrative
+All native custom-narrative
 templates are currently unsupported, including placeholders referencing forecasts
 or other computations. No template HTML is evaluated. Future
 computation variants cannot execute.
 Native interactions and additional options also fail closed.
 
-Named diagnostics include `INSIGHT_ANOMALY_UNSUPPORTED`, `INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED`,
+Named diagnostics include `INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED`,
 `INSIGHT_TIME_REQUIRED`, `INSIGHT_CATEGORY_REQUIRED`, `INSIGHT_CATEGORY_INVALID`, `INSIGHT_VALUES_REQUIRED`,
 `INSIGHT_FIELD_UNBOUND`, `INSIGHT_PERIOD_UNSUPPORTED`, `INSIGHT_VALUE_INVALID`,
 `INSIGHT_COMPUTATION_INVALID`, `INSIGHT_CONFIGURATION_INVALID` and `INSIGHT_CONFIGURATION_UNSUPPORTED`.
