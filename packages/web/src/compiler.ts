@@ -272,7 +272,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const extra = extraKind(kind) ? EXTRA_VISUALS[kind] : undefined;
   const common = [key('fieldWells', 'FieldWells')];
   if (kind !== 'insight' && kind !== 'kpi' && kind !== 'table' && kind !== 'pivot') common.push(key('sortConfiguration', 'SortConfiguration'), key('dataLabels', 'DataLabels'), key('tooltip', 'Tooltip'), key('legend', 'Legend'));
-  if (kind === 'table') common.push(key('sortConfiguration', 'SortConfiguration'));
+  if (kind === 'table' || kind === 'pivot') common.push(key('sortConfiguration', 'SortConfiguration'));
   if (kind === 'pie') common.push(key('donutOptions', 'DonutOptions'));
   if (FACETED_KINDS.includes(kind)) common.push(key('opensightMultiplesOptions', 'OpenSightMultiplesOptions'));
   if (kind === 'bar' || kind === 'bar100') common.push(key('orientation', 'Orientation'), key('barsArrangement', 'BarsArrangement'));
@@ -464,11 +464,26 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const forecast = parsedForecast.forecast;
   if (parsedForecast.extra > 0) warnings.push(`${cpath}.${forecastKey}: ${parsedForecast.extra} additional forecast configuration${parsedForecast.extra === 1 ? '' : 's'} ignored; only the first is applied.`);
   if (forecast && !dimensions[0]?.dateGranularity) warnings.push(`${cpath}.${forecastKey}: forecast ignored — the chart's category field is not a date dimension.`);
-  const sort = object(config[key('sortConfiguration', 'SortConfiguration')] ?? {}, cpath);
+  const sortPath = `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`;
+  const sortRaw = config[key('sortConfiguration', 'SortConfiguration')];
+  const sort = object(kind === 'pivot' ? (sortRaw === undefined ? {} : sortRaw) : sortRaw ?? {}, kind === 'pivot' ? sortPath : cpath);
   const sortsKey = kind === 'table' ? key('rowSort', 'RowSort') : key('categorySort', 'CategorySort');
   const facetSortKey = key('smallMultiplesSort', 'SmallMultiplesSort');
   const breakdownLimitKey = key('breakdownItemsLimit', 'BreakdownItemsLimit');
-  keys(sort, ['table', 'radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration'), ...(FACETED_KINDS.includes(kind) ? [facetSortKey] : [])], `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`);
+  const fieldSortOptionsKey = key('fieldSortOptions', 'FieldSortOptions');
+  keys(sort, kind === 'pivot' ? [fieldSortOptionsKey] : ['table', 'radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration'), ...(FACETED_KINDS.includes(kind) ? [facetSortKey] : [])], sortPath);
+  const seenPivotSorts = new Set<string>();
+  const fieldSortOptions = list(sort[fieldSortOptionsKey], `${sortPath}.${fieldSortOptionsKey}`).map((entry, index) => {
+    const entryPath = `${sortPath}.${fieldSortOptionsKey}[${index}]`;
+    const fs = object(entry, entryPath);
+    keys(fs, [key('fieldId', 'FieldId'), key('sortDirection', 'SortDirection')], entryPath);
+    const fieldId = text(fs[key('fieldId', 'FieldId')], entryPath);
+    if (![...rowDimensions, ...columnDimensions].some(field => field.id === fieldId)) fail(entryPath, 'pivot field sort must reference a bound row or column dimension');
+    if (seenPivotSorts.has(fieldId)) fail(entryPath, 'duplicate pivot field sort');
+    seenPivotSorts.add(fieldId);
+    const direction = enumValue(fs[key('sortDirection', 'SortDirection')], ['ASC', 'DESC'], 'ASC', entryPath) as 'ASC' | 'DESC';
+    return { fieldId, direction };
+  });
   const facetSortPath = `${cpath}.${key('sortConfiguration', 'SortConfiguration')}.${facetSortKey}`;
   const facetSorts = list(sort[facetSortKey], facetSortPath);
   if (facetSorts.length > 1) fail(facetSortPath, 'only one field sort is supported');
@@ -565,6 +580,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     ...(sliceLimit ? { sliceLimit } : {}),
     ...(facetLimit ? { facetLimit } : {}),
     ...(facetSort ? { facetSort } : {}),
+    ...(fieldSortOptions.length ? { fieldSortOptions } : {}),
     ...(breakdownLimit ? { breakdownLimit } : {}),
     ...(facet ? { facet } : {}),
     ...(breakdown ? { breakdown } : {}),
@@ -1265,7 +1281,7 @@ function periodLabel(date: Date, grain: 'DAY' | 'MONTH' | 'QUARTER' | 'YEAR', ra
 
 interface AxisEntry { cells: Cell[]; kind: 'detail' | 'subtotal' | 'total' }
 /** Hierarchical axes preserve typed keys (null, strings and numbers never collide). */
-function axisEntries(paths: Cell[][], depth: number, subtotals: boolean, totals: boolean): AxisEntry[] {
+function axisEntries(paths: Cell[][], depth: number, subtotals: boolean, totals: boolean, directions: ('ASC' | 'DESC' | undefined)[] = []): AxisEntry[] {
   if (!depth) return [{ cells: [], kind: 'detail' }];
   const result: AxisEntry[] = [];
   const visit = (prefix: Cell[], candidates: Cell[][]) => {
@@ -1276,7 +1292,10 @@ function axisEntries(paths: Cell[][], depth: number, subtotals: boolean, totals:
       const group = groups.get(key) ?? [];
       group.push(path); groups.set(key, group);
     }
-    for (const group of groups.values()) visit([...prefix, group[0]![prefix.length]!], group);
+    const siblings = [...groups.values()];
+    const direction = directions[prefix.length];
+    if (direction) siblings.sort((a, b) => compareCells(a[0]![prefix.length]!, b[0]![prefix.length]!, direction));
+    for (const group of siblings) visit([...prefix, group[0]![prefix.length]!], group);
     if (subtotals && prefix.length) result.push({ cells: prefix, kind: 'subtotal' });
   };
   visit([], paths);
@@ -1318,8 +1337,9 @@ function compilePivotTable(model: VisualModel, rows: Row[], cell: (row: Row, fie
   const rowFields = model.rowDimensions, columnFields = model.columnDimensions;
   const rowPaths = rows.map(row => rowFields.map(f => cell(row, f)));
   const colPaths = rows.map(row => columnFields.map(f => cell(row, f)));
-  const rowAxis = axisEntries(rowPaths, rowFields.length, model.subtotals, model.totals);
-  const colAxis = axisEntries(colPaths, columnFields.length, model.columnSubtotals, model.columnTotals);
+  const directions = (fields: Field[]) => fields.map(field => model.fieldSortOptions?.find(sort => sort.fieldId === field.id)?.direction);
+  const rowAxis = axisEntries(rowPaths, rowFields.length, model.subtotals, model.totals, directions(rowFields));
+  const colAxis = axisEntries(colPaths, columnFields.length, model.columnSubtotals, model.columnTotals, directions(columnFields));
   const label = (entry: AxisEntry, fields: Field[], visible = false): string => entry.kind === 'total' ? 'Grand total' : [
     ...entry.cells.map((value, i) => `${visible && model.formatting?.columnNamesVisible === false ? '' : `${fieldName(fields[i]!, model.formatting)}: `}${displayCell(value)}`),
     ...(entry.kind === 'subtotal' ? ['Subtotal'] : []),

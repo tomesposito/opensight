@@ -18,11 +18,11 @@ async function mount(t, initial) {
   const tab = name => renderer.root.findAllByProps({ role: 'tab' }).find(n => n.props.children === name);
   const panel = () => renderer.root.findAllByProps({ role: 'tabpanel' }).find(n => !n.props.hidden);
   const click = async name => { const button = panel().findAllByType('button').find(n => n.props.children === name); assert.ok(button, name); await act(() => button.props.onClick()); };
-  const change = async (label, value, kind = 'input') => { const n = panel().findAllByType('label').find(n => n.children.includes(label)); assert.ok(n, label); await act(() => n.findByType(kind).props.onChange({ target: { value, checked: value } })); };
+  const change = async (label, value, kind = 'input') => { const n = panel().findAllByType('label').find(n => n.children.includes(label) && n.findAllByType(kind).length); assert.ok(n, label); await act(() => n.findByType(kind).props.onChange({ target: { value, checked: value } })); };
   const clickAnywhere = async name => { const button = renderer.root.findAllByType('button').find(n => n.props.children === name); assert.ok(button, name); await act(() => button.props.onClick()); };
   return { renderer, state: () => state, dispatch: async action => act(() => dispatch(action)), tab, panel, click, clickAnywhere, change, switch: async name => act(() => tab(name).props.onClick()) };
 }
-const visualSections = ['Display settings', 'Placement', 'Pivot options', 'Headers', 'Cells', 'Total', 'Subtotal', 'Row names', 'Column names', 'Value names', 'Conditional formatting', 'Visual palette', 'Analysis theme'];
+const visualSections = ['Display settings', 'Field sort', 'Placement', 'Pivot options', 'Headers', 'Cells', 'Total', 'Subtotal', 'Row names', 'Column names', 'Value names', 'Conditional formatting', 'Visual palette', 'Analysis theme'];
 const interactionSections = ['Filters', 'Actions', 'Drill-down hierarchy', 'Parameter bindings'];
 
 test('every reference section uses uniform details; tabs expose the correct panel and keyboard navigation', async t => {
@@ -77,6 +77,7 @@ test('section visibility remains specific to each kind; no selected visual retai
   for (const { kind } of VISUAL_TYPES) {
     const html = renderToStaticMarkup(createElement(AuthorCanvas, { draft: add(kind), dispatch() {} }));
     assert.equal(html.includes('<summary>Pivot options</summary>'), kind === 'pivot', kind);
+    assert.equal(html.includes('<summary>Field sort</summary>'), kind === 'pivot', kind);
     for (const title of ['Headers', 'Cells', 'Total', 'Subtotal']) assert.equal(html.includes(`<summary>${title}</summary>`), ['pivot', 'table'].includes(kind), `${kind}: ${title}`);
     assert.ok(html.includes('aria-label="Properties tabs"'));
   }

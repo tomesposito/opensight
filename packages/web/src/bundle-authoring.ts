@@ -1,6 +1,6 @@
 import { validOProvenance } from './o-provenance.js';
 import { importObjects, serializeObject, objectElementType, type SheetObject } from './sheet-objects.js';
-import { analysisDescriptionValid, layoutSettingsValid, facetSortValid } from './authoring.js';
+import { analysisDescriptionValid, layoutSettingsValid, facetSortValid, pivotFieldSortsValid } from './authoring.js';
 import { projectInsightBody } from './insight-configuration.js';
 import { normalizeVisual, tooltipDetailKinds } from './compiler.js';
 import { FACETED_KINDS } from './facet-layout.js';
@@ -193,6 +193,14 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     // identify that same bound field; otherwise retain the table sort read-only.
     (kind !== 'table' || wellFields.get(sortFieldId) === sortFieldId)
     ? { fieldId: sortFieldId, direction: sortDirection } : undefined;
+  // Pivot sorts have no export-time ID rewrite. Only explicit, valid entries
+  // whose native IDs also identify the draft dimension names become editable.
+  const pivotSortsRaw = obj(config.sortConfiguration).fieldSortOptions;
+  const pivotSorts = Array.isArray(pivotSortsRaw) ? pivotSortsRaw.map(entry => ({ fieldId: obj(entry).fieldId, direction: obj(entry).sortDirection })) : undefined;
+  const importedPivotSorts = kind === 'pivot' && Array.isArray(pivotSortsRaw) &&
+    pivotSortsRaw.every(entry => Object.keys(obj(entry)).every(key => key === 'fieldId' || key === 'sortDirection')) &&
+    pivotFieldSortsValid(pivotSorts) && pivotSorts.every(sort => [...rows, ...columns].includes(sort.fieldId) && wellFields.get(sort.fieldId) === sort.fieldId)
+    ? pivotSorts : undefined;
   // An imported category limit becomes editable draft state
   // (like the Group/Color sort). Unrecognized shapes stay retained read-only
   // through the differences check.
@@ -282,6 +290,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     ...(FACETED_KINDS.includes(kind) && wells.smallMultiples !== undefined ? { smallMultiples: names(wells.smallMultiples) } : {}),
     // OpenSight extension: imported Group/Color sort imports into the draft.
     ...(importedGroupSort ? { groupSort: importedGroupSort } : {}),
+    ...(importedPivotSorts ? { pivotFieldSorts: importedPivotSorts } : {}),
     // OpenSight extension: imported pie slice limit imports into the draft.
     ...(importedSliceLimit ? { sliceLimit: importedSliceLimit } : {}),
     ...(importedFacetLimit ? { facetLimit: importedFacetLimit } : {}),
@@ -320,7 +329,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   // blocking diagnostic here instead of executing sanitized in the preview.
   const forecastChecked = (kind === 'line' || kind === 'area') && config.forecastConfigurations !== undefined;
   const issuesBeforeNormalize = issues.length;
-  if (kind === 'insight' || kind === 'radar' || kind === 'sankey' || kind === 'waterfall' || forecastChecked) {
+  if (kind === 'insight' || kind === 'radar' || kind === 'sankey' || kind === 'waterfall' || forecastChecked || kind === 'pivot' && config.sortConfiguration !== undefined) {
     try { normalizeVisual('bundle', checked); }
     catch (error) { issues.push(error instanceof Error ? `${error.name}: ${error.message}` : String(error)); }
   }

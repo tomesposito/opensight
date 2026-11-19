@@ -14,6 +14,7 @@ and definition format.
 | CARD LAYOUT | — | Per-card padding |
 | Multiples Options | Visible rows/columns, layout panel cap, panel title size/bold/italic/alignment, border/width/color, gutter/background; assigned facets also expose Sort panels, Number of panels displayed and Group the rest as Other | Panel-title underline and dashed/dotted borders are saved but render without underline/with solid borders |
 | Group/Color | Field display name; explicit field sort; Number of slices displayed for pie or Number of categories displayed for bar/percentage bar, with an optional Other bucket | Separate group title is saved but not drawn |
+| Field sort (pivot) | Default, Ascending or Descending per row/column dimension, with display names | Sort by measure |
 | Row sort (table) | Default order or one groupBy dimension/measure, with ascending/descending buttons and display names | Multiple sort entries |
 | Category limit | Number of categories displayed and optional Other for line, area and combo | — |
 | Legend | Visibility; Auto/Top/Bottom/Left/Right placement | Separate legend title and its typography; per-visual legend value typography |
@@ -49,6 +50,10 @@ or measure with an explicit direction and round-trips through the bundle path.
 Tables expose Row sort in place of Group/Color. Choosing a dimension defaults
 to ascending and a measure to descending; Default order clears the sort.
 Removing the sorted field clears its state. See [table row sort semantics](parity-table-row-sort.md).
+
+Pivots expose Field sort with independent Default, Ascending and Descending
+controls for each assigned row/column dimension. Removing a field clears its
+sort. See [pivot field sort semantics](parity-pivot-field-sort.md).
 
 Legend and Data labels retain the existing visual-kind capability gates.
 Auto legend position renders at the bottom, as before; explicitly saved
