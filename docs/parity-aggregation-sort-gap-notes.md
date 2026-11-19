@@ -84,5 +84,42 @@ The static artifact is a local demo, not a deployed server.
 
 ## Full root verification
 
-Pending the full `TZ=UTC npm test` run after media work completes. Only tests
-requiring a live PostgreSQL instance may be skipped.
+```sh
+OPENSIGHT_CHROMIUM="$HOME/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell" TZ=UTC npm test
+```
+
+The complete root run exited **0**: **6,084 passed / 0 failed / 37 skipped**
+(**6,121 tests**, no cancellations or todos). All 37 skips require live
+PostgreSQL: 35 in API and 2 in query engine. All **3,124 web tests** passed,
+including the **124 new aggregation-sort tests**. Strict TypeScript passed.
+The H4 measured two-tenant flood/timing check passed. No media work ran
+concurrently with the full suite.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 1,500 | 0 | 35 |
+| Bundle parser | 213 | 0 | 0 |
+| CLI | 73 | 0 | 0 |
+| Embedding SDK | 10 | 0 | 0 |
+| Headless SDK | 28 | 0 | 0 |
+| Python SDK | 32 | 0 | 0 |
+| MCP server | 74 | 0 | 0 |
+| O interpreter | 42 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 867 | 0 | 2 |
+| Web | 3,124 | 0 | 0 |
+| Root checks | 110 | 0 | 0 |
+| **Total** | **6,084** | **0** | **37** |
+
+Full log: `/tmp/opensight-aggregation-sort-root.log`; exit status:
+`/tmp/opensight-aggregation-sort-root.exit`; machine-readable totals:
+`/tmp/opensight-aggregation-sort-test-counts.json`.
+
+The full suite ran once to completion outside the process sandbox with the
+installed headless shell. The earlier sandbox limitation affected only the
+focused browser regression, not this root run. No tests were removed, weakened
+or skipped to bypass the environment.
+
+All ten requested checkpoints are committed on `work/parity-aggregation-sort`.
+The working tree is clean; no merge, push or GitHub action was performed.
+`SOLUTION_DESIGN.md`, dependency manifests and lockfiles remain unchanged.
