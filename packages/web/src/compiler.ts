@@ -669,7 +669,43 @@ export function compileVisual(input: Input): CompiledVisual {
     const field = fields.find(f => f.id === sort.fieldId)!;
     rows.sort((a, b) => compareCells(cell(a, field), cell(b, field), sort.direction));
   }
-  if (model.dimensions[0] && !['box', 'histogram', 'scatter', 'pointMap', 'sankey'].includes(model.kind)) {
+  if (model.aggregationSort) {
+    const sort = model.aggregationSort;
+    const category = model.dimensions[0]!;
+    const measure = model.measures.find(f => f.id === sort.measureFieldId)!;
+    const facets = model.facet ? groupRowsByFacet(rows, model.facet, cell) : [{ value: null, rows: [...rows] }];
+    const ordered: Row[] = [];
+    for (const facet of facets) {
+      const categories = new Map<Cell, Row[]>();
+      for (const row of facet.rows) {
+        const value = cell(row, category);
+        const group = categories.get(value) ?? [];
+        group.push(row);
+        categories.set(value, group);
+      }
+      const ranked = [...categories.values()].map(group => {
+        const values = group.map(row => number(row, measure)).filter((value): value is number => value !== null);
+        let aggregate: number | null = null;
+        if (values.length) {
+          switch (sort.aggregation) {
+            case 'SUM': aggregate = values.reduce((a, b) => a + b, 0); break;
+            case 'AVERAGE': aggregate = values.reduce((a, b) => a + b, 0) / values.length; break;
+            case 'MIN': aggregate = values.reduce((a, b) => Math.min(a, b)); break;
+            case 'MAX': aggregate = values.reduce((a, b) => Math.max(a, b)); break;
+            case 'COUNT': aggregate = values.length; break;
+            case 'DISTINCT_COUNT': aggregate = new Set(values).size; break;
+          }
+          if (!Number.isFinite(aggregate)) fail(input.path, 'aggregation sort result must be finite');
+        }
+        return { group, aggregate };
+      });
+      ranked.sort((a, b) => compareCells(a.aggregate, b.aggregate, sort.direction));
+      for (const { group } of ranked) ordered.push(...group);
+    }
+    rows.length = 0;
+    rows.push(...ordered);
+  }
+  if (!model.aggregationSort && model.dimensions[0] && !['box', 'histogram', 'scatter', 'pointMap', 'sankey'].includes(model.kind)) {
     // Validate source rows before limiting: collapsing or dropping rows must
     // not hide genuinely duplicated categories (#126).
     // Faceted pies group by (facet, category); waterfall breakdowns group by
