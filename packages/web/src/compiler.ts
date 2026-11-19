@@ -466,7 +466,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   if (forecast && !dimensions[0]?.dateGranularity) warnings.push(`${cpath}.${forecastKey}: forecast ignored — the chart's category field is not a date dimension.`);
   const sortPath = `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`;
   const sortRaw = config[key('sortConfiguration', 'SortConfiguration')];
-  const sort = object(sortRaw === undefined ? {} : sortRaw, sortPath);
+  const sort = object(kind === 'pivot' ? (sortRaw === undefined ? {} : sortRaw) : sortRaw ?? {}, kind === 'pivot' ? sortPath : cpath);
   const sortsKey = kind === 'table' ? key('rowSort', 'RowSort') : key('categorySort', 'CategorySort');
   const facetSortKey = key('smallMultiplesSort', 'SmallMultiplesSort');
   const breakdownLimitKey = key('breakdownItemsLimit', 'BreakdownItemsLimit');
