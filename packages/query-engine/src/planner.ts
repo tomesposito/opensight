@@ -1,3 +1,4 @@
+import { parseKpiOptions } from './kpi-options.js';
 import { redshiftGranularity, redshiftTimestamp } from './redshift-sql.js';
 import { definitionParameters, validateDefinitionControls } from './definition-parameters.js';
 import { rowFilterSql } from './row-filter.js';
@@ -378,7 +379,7 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
   // ForecastConfigurations and the line Type are line-family only (issue #257):
   // on any other visual kind they remain unrecognized and fail closed above.
   const lineFamily = kind === 'LineChartVisual';
-  keys(config, ['FieldWells', 'Legend', 'DataLabels', 'Tooltip', 'Orientation', 'BarsArrangement', 'DonutOptions', 'TotalOptions', 'OpenSightSubtotalOptions', ...(lineFamily ? ['ForecastConfigurations', 'Type'] : []), ...(kind === 'KPIVisual' ? ['SortConfiguration'] : [])], cp);
+  keys(config, ['FieldWells', 'Legend', 'DataLabels', 'Tooltip', 'Orientation', 'BarsArrangement', 'DonutOptions', 'TotalOptions', 'OpenSightSubtotalOptions', ...(lineFamily ? ['ForecastConfigurations', 'Type'] : []), ...(kind === 'KPIVisual' ? ['SortConfiguration', 'KPIOptions'] : [])], cp);
   if (lineFamily && config.Type !== undefined && !['LINE', 'AREA', 'STACKED_AREA'].includes(config.Type as string)) fail('UNSUPPORTED_FEATURE', `${cp}.Type`, 'line chart type must be LINE, AREA or STACKED_AREA');
   const forecastCount = lineFamily ? forecastConfigurationCount(config.ForecastConfigurations, `${cp}.ForecastConfigurations`) : 0;
   let wp = `${cp}.FieldWells`;
@@ -442,6 +443,7 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
   });
   if (!measures.length) fail('INVALID_INPUT', `${wp}.Values`, 'at least one explicit measure is required');
   if (kind === 'KPIVisual') {
+    if (config.KPIOptions !== undefined) parseKpiOptions(config.KPIOptions, true, `${cp}.KPIOptions`, (path, message) => fail('UNSUPPORTED_FEATURE', path, message));
     if (dimensions.length > 1) fail('UNSUPPORTED_FEATURE', wp, 'KPI supports exactly one trend dimension');
     if (dimensions.length && (measures.length !== 1 || measures[0]!.aggregation !== 'SUM')) fail('UNSUPPORTED_FEATURE', wp, 'trended KPI requires one SUM measure');
     if (config.SortConfiguration !== undefined) {

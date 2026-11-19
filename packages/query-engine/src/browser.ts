@@ -27,3 +27,5 @@ export * from './governed-metrics.js';
 
 export { suggestPrepJoinKeys } from './prep-join.js';
 export type { PrepJoinDiagnostics } from './prep-join-diagnostics.js';
+
+export { parseKpiOptions, type KpiOptions } from './kpi-options.js';

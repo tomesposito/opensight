@@ -126,3 +126,38 @@ test('KPI comparison uses the last two groups, including null and zero edge case
   assert.equal(kpiComparison([0, 15], 'DIFFERENCE'), 15);
   for (const values of [[], [1], [null, 1], [1, null]]) assert.equal(kpiComparison(values, 'DIFFERENCE'), null);
 });
+for (const source of ['bundle', 'api']) {
+  test(`${source}: minimal KPI options render area, hidden sparkline and configured comparisons`, () => {
+    const v = input(); v.rows = [{ period: 'B', revenue: 15 }, { period: 'A', revenue: 10 }];
+    config(v).kpiOptions = { sparkline: { type: 'AREA', visibility: 'VISIBLE' }, comparison: { comparisonMethod: 'PERCENT_DIFFERENCE' }, primaryValueDisplayType: 'ACTUAL', progressBar: { visibility: 'VISIBLE' }, trendArrows: { visibility: 'VISIBLE' } };
+    let c = compileVisual(dialect(v, source));
+    assert.equal(c.option.graphic[0].style.text, '25'); assert.equal(c.option.graphic[1].style.text, '50%');
+    assert.ok(c.option.series[0].areaStyle); assert.ok(c.model.warnings.some(w => w.includes('targetValues')));
+    assert.deepEqual(c.model.kpiOptions, config(v).kpiOptions);
+    config(v).kpiOptions.primaryValueDisplayType = 'COMPARISON';
+    assert.equal(compileVisual(dialect(v, source)).option.graphic[0].style.text, '50%');
+    config(v).kpiOptions.comparison.comparisonMethod = 'DIFFERENCE';
+    config(v).kpiOptions.sparkline.visibility = 'HIDDEN';
+    c = compileVisual(dialect(v, source));
+    assert.equal(c.option.graphic[0].style.text, '5'); assert.equal(c.option.series, undefined);
+    config(v).sortConfiguration = { trendGroupSort: [sort('DESC')] };
+    assert.equal(compileVisual(dialect(v, source)).option.graphic[0].style.text, '-5');
+  });
+  test(`${source}: unavailable comparisons fall back to ACTUAL with a warning`, () => {
+    const v = input(); config(v).kpiOptions = { primaryValueDisplayType: 'COMPARISON', comparison: { comparisonMethod: 'PERCENT_DIFFERENCE' } };
+    for (const rows of [[{ period: 'A', revenue: 10 }], [{ period: 'A', revenue: 0 }, { period: 'B', revenue: 10 }], [{ period: 'A', revenue: null }, { period: 'B', revenue: 10 }]]) {
+      v.rows = rows; const c = compileVisual(dialect(v, source));
+      assert.equal(c.option.graphic[0].style.text, '10');
+      assert.ok(c.model.warnings.some(w => w.includes('falling back to ACTUAL')));
+    }
+  });
+  test(`${source}: KPI options reject malformed shapes, enums and unknown keys`, () => {
+    const invalid = [null, [], { unknown: true }, { primaryValueDisplayType: 'OTHER' },
+      ...['sparkline', 'comparison', 'progressBar', 'trendArrows'].flatMap(key => [null, [], { extra: 1 }].map(value => ({ [key]: value }))),
+      { sparkline: { type: 'BAR' } }, { sparkline: { visibility: 'yes' } }, { comparison: {} }, { comparison: { comparisonMethod: 'PERCENT' } },
+      { progressBar: { visibility: null } }, { trendArrows: { visibility: 'yes' } }];
+    for (const options of invalid) { const v = input(); config(v).kpiOptions = options; assert.throws(() => normalize(dialect(v, source)), CompileError, JSON.stringify(options)); }
+    const v = input(); config(v).fieldWells.targetValues = config(v).fieldWells.values;
+    assert.throws(() => normalize(dialect(v, source)), /field well not supported/);
+  });
+}
