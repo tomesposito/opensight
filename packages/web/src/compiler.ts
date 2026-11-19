@@ -1281,7 +1281,7 @@ function periodLabel(date: Date, grain: 'DAY' | 'MONTH' | 'QUARTER' | 'YEAR', ra
 
 interface AxisEntry { cells: Cell[]; kind: 'detail' | 'subtotal' | 'total' }
 /** Hierarchical axes preserve typed keys (null, strings and numbers never collide). */
-function axisEntries(paths: Cell[][], depth: number, subtotals: boolean, totals: boolean): AxisEntry[] {
+function axisEntries(paths: Cell[][], depth: number, subtotals: boolean, totals: boolean, directions: ('ASC' | 'DESC' | undefined)[] = []): AxisEntry[] {
   if (!depth) return [{ cells: [], kind: 'detail' }];
   const result: AxisEntry[] = [];
   const visit = (prefix: Cell[], candidates: Cell[][]) => {
@@ -1292,7 +1292,10 @@ function axisEntries(paths: Cell[][], depth: number, subtotals: boolean, totals:
       const group = groups.get(key) ?? [];
       group.push(path); groups.set(key, group);
     }
-    for (const group of groups.values()) visit([...prefix, group[0]![prefix.length]!], group);
+    const siblings = [...groups.values()];
+    const direction = directions[prefix.length];
+    if (direction) siblings.sort((a, b) => compareCells(a[0]![prefix.length]!, b[0]![prefix.length]!, direction));
+    for (const group of siblings) visit([...prefix, group[0]![prefix.length]!], group);
     if (subtotals && prefix.length) result.push({ cells: prefix, kind: 'subtotal' });
   };
   visit([], paths);
@@ -1334,8 +1337,9 @@ function compilePivotTable(model: VisualModel, rows: Row[], cell: (row: Row, fie
   const rowFields = model.rowDimensions, columnFields = model.columnDimensions;
   const rowPaths = rows.map(row => rowFields.map(f => cell(row, f)));
   const colPaths = rows.map(row => columnFields.map(f => cell(row, f)));
-  const rowAxis = axisEntries(rowPaths, rowFields.length, model.subtotals, model.totals);
-  const colAxis = axisEntries(colPaths, columnFields.length, model.columnSubtotals, model.columnTotals);
+  const directions = (fields: Field[]) => fields.map(field => model.fieldSortOptions?.find(sort => sort.fieldId === field.id)?.direction);
+  const rowAxis = axisEntries(rowPaths, rowFields.length, model.subtotals, model.totals, directions(rowFields));
+  const colAxis = axisEntries(colPaths, columnFields.length, model.columnSubtotals, model.columnTotals, directions(columnFields));
   const label = (entry: AxisEntry, fields: Field[], visible = false): string => entry.kind === 'total' ? 'Grand total' : [
     ...entry.cells.map((value, i) => `${visible && model.formatting?.columnNamesVisible === false ? '' : `${fieldName(fields[i]!, model.formatting)}: `}${displayCell(value)}`),
     ...(entry.kind === 'subtotal' ? ['Subtotal'] : []),
