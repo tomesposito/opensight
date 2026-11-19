@@ -36,7 +36,7 @@ test('empty and newly emptied canvases retain ordered, labeled, keyboard-native 
   }
 });
 
-for (const [kind, well] of [['bar', 'Group/Color'], ['line', 'X-axis'], ['pie', 'Group/Color'], ['kpi', null], ['table', 'Group-by']]) {
+for (const [kind, well] of [['bar', 'Group/Color'], ['line', 'X-axis'], ['pie', 'Group/Color'], ['kpi', 'Trend group'], ['table', 'Group-by']]) {
   test(`${kind} configuration exposes its wells, removable assignments and move boundaries`, () => {
     const html = renderCanvas(add(kind));
     assert.match(html, /aria-expanded="true"/);
@@ -44,10 +44,11 @@ for (const [kind, well] of [['bar', 'Group/Color'], ['line', 'X-axis'], ['pie', 
     assert.match(html, /aria-label="Remove revenue from Values?"/);
     assert.match(html, /disabled="" aria-label="Move Visual 1 up"/);
     assert.match(html, /disabled="" aria-label="Move Visual 1 down"/);
-    if (well) assert.ok(html.includes(`<legend>${well.toUpperCase()}`));
-    else {
+    assert.ok(html.includes(`<legend>${well.toUpperCase()}`));
+    if (kind === 'kpi') {
       assert.doesNotMatch(html, /Assign dimension/);
-      assert.match(html, /disabled="" aria-label="Assign region"/);
+      assert.doesNotMatch(html, /disabled="" aria-label="Assign region"/);
+      assert.match(html, /aria-label="Assign Trend group"/);
     }
     assert.equal(html.includes('Donut</label>'), kind === 'pie');
   });
@@ -65,7 +66,7 @@ test('only the selected card exposes configuration and titles are escaped', () =
 });
 
 test('Data hints name the actual dimension well, including specialized visual types', () => {
-  for (const [kind, label] of [['bar', 'Group/Color'], ['line', 'X-axis'], ['table', 'Group-by'], ['pivot', 'Rows'], ['radar', 'Category'], ['pointMap', 'Latitude'], ['box', 'Group / sample dimensions'], ['kpi', 'unavailable for this visual']]) {
+  for (const [kind, label] of [['bar', 'Group/Color'], ['line', 'X-axis'], ['table', 'Group-by'], ['pivot', 'Rows'], ['radar', 'Category'], ['pointMap', 'Latitude'], ['box', 'Group / sample dimensions'], ['kpi', 'Trend group']]) {
     const html = renderCanvas(add(kind));
     assert.ok(html.includes(`Dimensions: ${label}. Measures: VALUE.`), kind);
   }

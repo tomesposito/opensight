@@ -288,10 +288,14 @@ export function kpiTrendSortValid(value: unknown): value is GroupSort {
   return groupSortValid(value) && !!value.fieldId.trim() && value.fieldId === value.fieldId.trim();
 }
 function cleanKpiTrend(visual: AuthorVisual): AuthorVisual {
+  const dropOptions = visual.kind !== 'kpi' && Object.hasOwn(visual, 'kpiOptions');
+  const dropTrend = Object.hasOwn(visual, 'trendField') && (visual.kind !== 'kpi' || !visual.trendField);
+  const dropSort = Object.hasOwn(visual, 'kpiTrendSort') && (!visual.kpiTrendSort || visual.kind !== 'kpi' || !visual.trendField || visual.kpiTrendSort.fieldId !== visual.trendField);
+  if (!dropOptions && !dropTrend && !dropSort) return visual;
   const next = { ...visual };
-  if (next.kind !== 'kpi') delete next.kpiOptions;
-  if (next.kind !== 'kpi' || !next.trendField) delete next.trendField;
-  if (next.kpiTrendSort && (next.kind !== 'kpi' || next.kpiTrendSort.fieldId !== next.trendField)) delete next.kpiTrendSort;
+  if (dropOptions) delete next.kpiOptions;
+  if (dropTrend) delete next.trendField;
+  if (dropSort) delete next.kpiTrendSort;
   return next;
 }
 function cleanPivotRowSort(visual: AuthorVisual): AuthorVisual {

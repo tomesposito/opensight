@@ -175,7 +175,7 @@ const sortedDraft = () => authorReducer(trendDraft(), { type: 'kpi-trend-sort', 
 test('KPI trend authoring validates edits/storage and preserves the last valid state', () => {
   const d = sortedDraft(); assert.deepEqual(parseDraft(JSON.stringify(d)), d);
   for (const sort of [null, [], {}, { ...draftSort(), extra: 1 }, { fieldId: ' ', direction: 'ASC' }, { fieldId: 'region\0', direction: 'ASC' }, { fieldId: 'region', direction: 'DOWN' }, draftSort('missing'), draftSort('revenue')]) {
-    assert.deepEqual(selected(authorReducer(d, { type: 'kpi-trend-sort', sort })), selected(d));
+    assert.equal(selected(authorReducer(d, { type: 'kpi-trend-sort', sort })), selected(d));
     const bad = structuredClone(d); selected(bad).kpiTrendSort = sort; assert.throws(() => parseDraft(JSON.stringify(bad)));
   }
   assert.equal(kpiTrendSortValid({ fieldId: ' ', direction: 'ASC' }), false);
@@ -332,5 +332,30 @@ test('date trend imports preserve default DAY and explicit MONTH through preview
     const imported = importBundle(bundle);
     assert.equal(normalizeVisual('bundle', serializeVisual(selected(imported))).trendDimension.dateGranularity, grain ?? 'DAY');
     assert.deepEqual(exportBundle(imported), bundle);
+  }
+});
+import { interpretQuestion } from '@opensight/o-interpreter';
+import { dataFields } from '../build/test/authoring.js';
+test('O-generated replacement clears stale trend sorts before draft validation', () => {
+  const d = sortedDraft(), visual = selected(d);
+  visual.o = { question: 'sum revenue', interpretation: interpretQuestion('sum revenue', dataFields([])).interpretations[0] };
+  for (const replacement of [{ ...visual, trendField: undefined }, { ...visual, trendField: 'order_date' }, { ...visual, kind: 'bar', dimension: 'region' }]) {
+    const next = authorReducer(d, { type: 'o-replace', id: visual.id, visual: replacement, calculatedFields: [] });
+    assert.equal(selected(next).kpiTrendSort, undefined);
+    assert.equal(selected(next).kind, replacement.kind);
+    assert.doesNotThrow(() => parseDraft(JSON.stringify(next)));
+  }
+});
+test('unsupported KPI options stay verbatim with diagnostics, including through unrelated edits', () => {
+  for (const options of [null, { unknown: true }, { comparison: { comparisonMethod: 'UNSUPPORTED' } }, { sparkline: { type: 'BAR' } }]) {
+    const bundle = exportBundle(trendDraft()); bundleConfig(bundle).kpiOptions = options;
+    if (options === null) { assert.throws(() => importBundle(bundle), /expected an object/); continue; }
+    const imported = importBundle(bundle);
+    assert.ok(selected(imported).imported.issues.some(i => i.includes('CompileError')));
+    assert.equal(selected(imported).kpiOptions, undefined);
+    assert.deepEqual(exportBundle(imported), bundle);
+    assert.deepEqual(bundleConfig(exportBundle(authorReducer(imported, { type: 'title', title: 'Retained KPI' }))).kpiOptions, options);
+    const bad = trendDraft(); selected(bad).kpiOptions = options;
+    assert.throws(() => parseDraft(JSON.stringify(bad)));
   }
 });

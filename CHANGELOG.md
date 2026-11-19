@@ -23,6 +23,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- KPIs support an optional date/categorical Trend group, typed ascending/descending TrendGroupSort, grouped SUM totals, line/area sparklines, last-group comparisons and editable bundle/native round-trips (phase-plan fallback: parity-kpi-trend-group-sort; no GitHub issue).
+
 - Pivots can sort outer row groups by a bound measure aggregate, with stable ties, nulls last, unchanged totals/subtotals, editable Row sort controls and draft/native/bundle round-trips (phase-plan fallback: parity-pivot-row-sort; no GitHub issue).
 
 - Pivots can sort outer column groups by a bound measure aggregate, with stable ties, nulls last, unchanged totals/subtotals, editable Column sort controls and draft/native/bundle round-trips (phase-plan fallback: parity-pivot-column-sort; no GitHub issue).

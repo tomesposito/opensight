@@ -96,6 +96,10 @@ how to build and open it.
 Author on a QuickSight-style canvas: 23 visual types (bar, line, pie/donut,
 KPI, table, pivot, radar, sankey, waterfall, insight, scatter, combo, maps and more), parameters and controls,
 filter actions, drill-down, themes, and `.qs` bundle import/export round trips.
+KPIs support an optional [Trend group and Trend sort](docs/parity-kpi-trend-group-sort.md),
+with grouped SUM totals, line/area sparklines and last-group comparisons.
+
+![KPI trend group and descending sort in the analysis editor](docs/images/kpi-trend-sort.png)
 
 The static demo, and local **Try sample data**, show a sales dashboard using pinned synthetic sample results
 (fixed East-region filter; no live query). Choose **Author** to build an analysis,

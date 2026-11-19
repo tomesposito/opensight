@@ -65,9 +65,12 @@ for (const source of ['bundle', 'api']) {
       const value = { ...input(), definition: serializeVisual(selected(authorReducer(emptyDraft(), { type: 'add', kind }))) };
       config(value).sortConfiguration = { rowSort: [] };
       assert.throws(() => normalize(dialect(value, source)), /unsupported property/);
-      if (kind !== 'bar') {
+      if (kind === 'insight') {
         config(value).sortConfiguration = {};
         assert.throws(() => normalize(dialect(value, source)), /unsupported property/);
+      } else if (kind === 'kpi') {
+        config(value).sortConfiguration = {};
+        assert.doesNotThrow(() => normalize(dialect(value, source)));
       }
     }
     // Pivots accept rowSort in the ColumnSort shape (parity-pivot-row-sort);
