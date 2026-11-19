@@ -15,6 +15,7 @@ export interface AggregationSort {
   measureFieldId: string;
 }
 export type PivotColumnSort = Omit<AggregationSort, 'fieldId'>;
+export type PivotRowSort = Omit<AggregationSort, 'fieldId'>;
 export interface Field {
   id: string;
   column: string;
@@ -76,6 +77,8 @@ export interface VisualModel {
   aggregationSort?: AggregationSort;
   /** Aggregate ordering of the outermost pivot column groups. */
   columnSort?: PivotColumnSort;
+  /** Aggregate ordering of the outermost pivot row groups. */
+  rowSort?: PivotRowSort;
   /** Independent sibling ordering at each pivot row/column dimension level. */
   fieldSortOptions?: { fieldId: string; direction: 'ASC' | 'DESC' }[];
   /** Category limit (QuickSight CategoryItemsLimit): show the top N categories,
