@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { compileVisual, normalizeVisual, CompileError } from '../build/test/compiler.js';
-import { activeSheet, authorReducer, emptyDraft, serializeVisual } from '../build/test/authoring.js';
+import { activeSheet, authorReducer, emptyDraft, groupSortValid, parseDraft, serializeVisual } from '../build/test/authoring.js';
 import { projectDefinition } from '../build/test/definition-converter.js';
 import { baselineInputs, input } from './fixtures/table-row-sort-inputs.mjs';
 
@@ -129,4 +129,44 @@ for (const [name, value] of Object.entries(baselineInputs())) test(`unset rowSor
   assert.equal(createHash('sha256').update(bytes).digest('hex'), baseline.hashes[name]);
   config(value).sortConfiguration = { rowSort: [] };
   assert.deepEqual(compileVisual(value), compiled);
+});
+
+const tableDraft = () => authorReducer(authorReducer(emptyDraft(), { type: 'add', kind: 'table' }), { type: 'assign', field: 'category', well: 'rows' });
+const invalidDraftSorts = [null, [], 'sort', {}, { fieldId: 'region' }, { direction: 'ASC' },
+  { fieldId: '', direction: 'ASC' }, { fieldId: 'region\0', direction: 'ASC' }, { fieldId: 'region', direction: 'asc' }, { fieldId: 'region', direction: 'ASC', extra: 1 }];
+test('table group-sort reducer and draft storage round-trip, clone and validate the shared shape', () => {
+  const sort = { fieldId: 'region', direction: 'DESC' };
+  const draft = authorReducer(tableDraft(), { type: 'group-sort', sort });
+  sort.direction = 'ASC';
+  assert.deepEqual(selected(draft).groupSort, { fieldId: 'region', direction: 'DESC' });
+  assert.deepEqual(parseDraft(JSON.stringify(draft)), draft);
+  for (const bad of invalidDraftSorts) {
+    assert.equal(groupSortValid(bad), false);
+    assert.deepEqual(selected(authorReducer(draft, { type: 'group-sort', sort: bad })), selected(draft));
+    const tampered = structuredClone(draft);
+    selected(tampered).groupSort = bad;
+    assert.throws(() => parseDraft(JSON.stringify(tampered)));
+  }
+  assert.equal(selected(authorReducer(draft, { type: 'group-sort', sort: undefined })).groupSort, undefined);
+});
+test('removing each table groupBy dimension or measure clears its sort and preserves unrelated sorts', () => {
+  const base = tableDraft();
+  const visual = selected(base);
+  assert.ok(visual.rows.length >= 2);
+  for (const fieldId of [...visual.rows, ...visual.measures]) {
+    const draft = authorReducer(base, { type: 'group-sort', sort: { fieldId, direction: 'ASC' } });
+    const well = visual.rows.includes(fieldId) ? 'rows' : 'values';
+    assert.equal(selected(authorReducer(draft, { type: 'unassign', field: fieldId, well })).groupSort, undefined);
+    assert.equal(selected(authorReducer(draft, { type: 'unassign', field: fieldId })).groupSort, undefined);
+    const other = [...visual.rows, ...visual.measures].find(f => f !== fieldId);
+    assert.deepEqual(selected(authorReducer(draft, { type: 'unassign', field: other })).groupSort, selected(draft).groupSort);
+  }
+});
+test('table serialization emits only rowSort while bar/bar100/pie retain categorySort', () => {
+  for (const kind of ['table', 'bar', 'bar100', 'pie']) {
+    const draft = authorReducer(authorReducer(emptyDraft(), { type: 'add', kind }), { type: 'group-sort', sort: { fieldId: 'revenue', direction: 'DESC' } });
+    const value = { definition: serializeVisual(selected(draft)) };
+    assert.deepEqual(config(value).sortConfiguration, { [kind === 'table' ? 'rowSort' : 'categorySort']: sortBy('revenue', 'DESC') });
+    assert.deepEqual(normalizeVisual('bundle', value.definition).sort, { fieldId: 'revenue', direction: 'DESC' });
+  }
 });
