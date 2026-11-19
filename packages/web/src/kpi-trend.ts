@@ -19,3 +19,13 @@ export function orderKpiTrend(rows: readonly Row[], field: Field, direction: 'AS
   });
   return keyed.sort((a, b) => compareCells(a.key, b.key, direction)).map(({ row }) => row);
 }
+
+/** Compare the final two ordered groups; null/zero bases do not invent a value. */
+export function kpiComparison(values: readonly (number | null)[], method: 'DIFFERENCE' | 'PERCENT_DIFFERENCE'): number | null {
+  if (values.length < 2) return null;
+  const current = values.at(-1)!, previous = values.at(-2)!;
+  if (current === null || previous === null || method === 'PERCENT_DIFFERENCE' && previous === 0) return null;
+  const difference = current - previous;
+  const result = method === 'DIFFERENCE' ? difference : difference / previous * 100;
+  return Number.isFinite(result) ? result : null;
+}

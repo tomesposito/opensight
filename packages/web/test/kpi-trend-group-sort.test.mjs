@@ -82,3 +82,47 @@ test('KPI query groups by the date or category trend well', () => {
   assert.deepEqual(buildAuthorQuery({ ...v, trendField: 'region' }).dimensions, [{ fieldId: 'region', columnName: 'region' }]);
   assert.deepEqual(buildAuthorQuery({ ...v, trendField: 'order_date' }).dimensions, [{ fieldId: 'order_date', columnName: 'order_date', granularity: 'MONTH' }]);
 });
+import { kpiComparison } from '../build/test/kpi-trend.js';
+test('trended KPI sums grouped SUM values, draws ordered gaps and exposes the ordered data', () => {
+  const v = input(); v.rows = [{ period: 'C', revenue: 12 }, { period: null, revenue: null }, { period: 'A', revenue: 3 }, { period: 'B', revenue: null }];
+  const before = structuredClone(v), result = compileVisual(v);
+  assert.equal(result.option.graphic[0].style.text, '15');
+  assert.deepEqual(result.option.series[0].data, [3, null, 12, null]);
+  assert.equal(result.option.series[0].connectNulls, false);
+  assert.deepEqual(result.table.rows, [['A', 3], ['B', null], ['C', 12], [null, null]]);
+  assert.equal(result.table.dimensionCount, 1);
+  assert.deepEqual(v, before);
+  assert.deepEqual(compileVisual(sorted(v)).option.series[0].data, [12, null, 3, null]);
+});
+test('single/empty/unavailable and all-null KPI groups never invent zeros or a sparkline', () => {
+  for (const [rows, label] of [[[{ period: 'A', revenue: null }], 'No value'], [[], 'No results'], [null, 'Needs data'], [[{ period: 'A', revenue: 7 }], '7']]) {
+    const v = input(); v.rows = rows;
+    const result = compileVisual(v);
+    assert.equal(result.option.graphic[0].style.text, label);
+    assert.equal(result.option.series, undefined);
+  }
+  const v = input(); v.rows = [{ period: 'A', revenue: null }, { period: 'B', revenue: null }];
+  assert.equal(compileVisual(v).option.graphic[0].style.text, 'No value');
+  v.rows = [{ period: 'A', revenue: Number.MAX_VALUE }, { period: 'B', revenue: Number.MAX_VALUE }];
+  assert.throws(() => compileVisual(v), /total must be finite/);
+  v.rows = [{ period: 'A', revenue: 1 }, { period: 'A', revenue: 2 }];
+  assert.throws(() => compileVisual(v), /duplicate trend groups/);
+  v.rows = [{ period: 'A', revenue: 1 }, { period: 'B', revenue: 2 }]; delete config(v).fieldWells.trendGroups;
+  assert.throws(() => compileVisual(v), /exactly one aggregate row/);
+});
+test('trended KPI refuses non-SUM governed metric bindings', () => {
+  for (const source of ['bundle', 'api']) for (const agg of ['AVG', 'MIN', 'MAX', 'COUNT', 'DISTINCT_COUNT']) {
+    const v = input(), measure = config(v).fieldWells.values[0].numericalMeasureField;
+    measure.column.columnName = '__metric_average'; measure.aggregationFunction.simpleNumericalAggregation = agg;
+    assert.throws(() => normalize(dialect(v, source)), /trended KPI requires an explicit SUM/);
+    delete config(v).fieldWells.trendGroups;
+    assert.doesNotThrow(() => normalize(dialect(v, source)));
+  }
+});
+test('KPI comparison uses the last two groups, including null and zero edge cases', () => {
+  assert.equal(kpiComparison([100, 10, 15], 'DIFFERENCE'), 5);
+  assert.equal(kpiComparison([100, 10, 15], 'PERCENT_DIFFERENCE'), 50);
+  assert.equal(kpiComparison([0, 15], 'PERCENT_DIFFERENCE'), null);
+  assert.equal(kpiComparison([0, 15], 'DIFFERENCE'), 15);
+  for (const values of [[], [1], [null, 1], [1, null]]) assert.equal(kpiComparison(values, 'DIFFERENCE'), null);
+});

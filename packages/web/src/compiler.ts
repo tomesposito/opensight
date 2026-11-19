@@ -318,6 +318,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
       const agg = object(f[aggKey], `${fp}.${aggKey}`);
       const sumKey = key('simpleNumericalAggregation', 'SimpleNumericalAggregation');
       keys(agg, [sumKey], fp);
+      if (kind === 'kpi' && list(wells[key('trendGroups', 'TrendGroups')], fp).length && agg[sumKey] !== 'SUM') fail(`${fp}.${aggKey}`, 'trended KPI requires an explicit SUM result binding');
       if (agg[sumKey] !== 'SUM' && !(String(object(f[key('column', 'Column')], fp)[key('columnName', 'ColumnName')]).startsWith('__metric_') && ['AVG', 'COUNT', 'MIN', 'MAX', 'DISTINCT_COUNT'].includes(String(agg[sumKey])))) fail(`${fp}.${aggKey}`, 'only explicit SUM result bindings are supported');
     }
     if (name === key('dateDimensionField', 'DateDimensionField')) enumValue(f[key('dateGranularity', 'DateGranularity')], ['DAY', 'MONTH', 'QUARTER', 'YEAR'], 'DAY', `${fp}.${key('dateGranularity', 'DateGranularity')}`);
@@ -978,12 +979,22 @@ export function compileVisual(input: Input): CompiledVisual {
     }
     option.legend = { show: model.legend, bottom: 0 };
   } else if (model.kind === 'kpi') {
-    if (rows.length > 1) fail(input.path, 'KPI expects exactly one aggregate row, not a client-side sum');
+    if (!model.trendDimension && rows.length > 1) fail(input.path, 'KPI expects exactly one aggregate row, not a client-side sum');
     const row = rows[0];
-    const value = row ? number(row, model.measures[0]!) : null;
+    const values = rows.map(row => number(row, model.measures[0]!));
+    const value = model.trendDimension ? values.reduce<number | null>((sum, value) => value === null ? sum : (sum ?? 0) + value, null) : row ? number(row, model.measures[0]!) : null;
+    if (value !== null && !Number.isFinite(value)) fail(input.path, 'KPI total must be finite');
+    const sparkline = !!model.trendDimension && rows.length >= 2;
     const label = state === 'unavailable' ? DATA_REQUIRED_LABEL : state === 'empty' ? 'No results' : value === null ? 'No value' : formatMetric(value, model.formatting?.metricFormats?.[model.measures[0]!.column]) ?? displayCell(value);
     option.tooltip = { show: false };
-    option.graphic = [{ type: 'text', left: 'center', top: 'middle', style: { text: label, fill: (model.palette ?? theme.palette)[0], fontSize: value === null ? 22 : 56, fontWeight: 600, fontFamily: theme.fontFamily } }];
+    option.graphic = [{ type: 'text', left: 'center', top: sparkline ? '12%' : 'middle', style: { text: label, fill: (model.palette ?? theme.palette)[0], fontSize: value === null ? 22 : 56, fontWeight: 600, fontFamily: theme.fontFamily } }];
+    if (sparkline) {
+      option.grid = { left: 24, right: 24, top: '60%', bottom: 16 };
+      option.xAxis = { type: 'category', show: false, boundaryGap: false, data: rows.map(row => displayCell(cell(row, model.trendDimension!))) };
+      option.yAxis = { type: 'value', show: false, scale: true };
+      option.series = [{ type: 'line', data: values, connectNulls: false, showSymbol: false, silent: true, lineStyle: { width: 2 } }];
+    }
+
   }
   applyDisplayOptions(model, option, theme);
   if (model.tooltip && model.tooltipDetail?.type === 'detailed') {
