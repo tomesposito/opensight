@@ -193,7 +193,12 @@ const visualBody: Schema = {
       FieldSortOptions: ['fieldSortOptions', members('FieldId SortDirection')],
       ColumnSort: ['columnSort', { ...members('Direction'), SortBy: ['sortBy', column],
         AggregationFunction: ['aggregationFunction', sortAggregation] }],
-      CategorySort: ['categorySort', sort], TrendGroupSort: ['trendGroupSort', sort], RowSort: ['rowSort', sort],
+      CategorySort: ['categorySort', sort], TrendGroupSort: ['trendGroupSort', sort],
+      // Table RowSort entries are sort wrappers; pivot RowSort entries are
+      // ColumnSort-shaped. The key sets are disjoint, so one union schema
+      // converts both without touching the other shape's entries.
+      RowSort: ['rowSort', { ...sort, ...members('Direction'), SortBy: ['sortBy', column],
+        AggregationFunction: ['aggregationFunction', sortAggregation] }],
       SmallMultiplesSort: ['smallMultiplesSort', sort],
       CategoryItemsLimit: ['categoryItemsLimit', limit], SmallMultiplesLimitConfiguration: ['smallMultiplesLimitConfiguration', limit],
       BreakdownItemsLimit: ['breakdownItemsLimit', limit],
