@@ -39,8 +39,48 @@ process sandbox runs that test successfully. No tests were removed or weakened.
 
 ## Demo and reference captures
 
-Pending the freshly rebuilt static demo and offline browser acceptance. The
-static artifact is a local demo, not a deployed server.
+`npm run build:demo --workspace @opensight/web` passed, including strict
+TypeScript and all embed builds. The requested `build-demo-shim.mjs` passed,
+writing the local shimmed artifact (2,511,591 characters). Build log:
+`/tmp/opensight-aggregation-sort-demo-build.log`.
+
+`packages/web/scripts/capture-aggregation-sort.mjs` passed with **zero page
+errors and zero external requests**. It loads the rebuilt static demo from
+`file://` and blocks external HTTP/HTTPS. Command:
+
+```sh
+OPENSIGHT_CHROMIUM="$HOME/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell" node packages/web/scripts/capture-aggregation-sort.mjs
+```
+
+Captures ran outside the process sandbox with the installed Playwright shell.
+Both 1440×1000 themes retain 12px Arial controls and no horizontal overflow.
+Acceptance verifies measure-mode defaults, ascending/descending ordering,
+all six aggregation choices, top-N composition, field-mode restoration,
+save/reload and removal of the sorted measure. The actual demo categories
+change Hardware (200), Software (300) to Software (300), Hardware (200);
+top one retains Software (300). No sample values or visual state were injected.
+
+Artifacts under `.opensight/parity-aggregation-sort/browser/` include
+`bar-default.png`, `bar-measure-light.png`, `bar-measure-dark.png`,
+`bar-top-one.png`, `bar-readme.png` and `acceptance.json`. Log:
+`/tmp/opensight-aggregation-sort-capture.log`. Review copies:
+[light](images/parity-aggregation-sort-light.png),
+[dark](images/parity-aggregation-sort-dark.png).
+
+Visual comparison against local `qs-2026/qs-properties-group-color.jpg`
+confirms the retained Data → Visuals → canvas flow, docked Group/Color
+properties, compact labels and disclosure sections. Measure, aggregation and
+direction controls remain legible in both themes. The narrow initial card,
+large gallery and explanatory offline chrome remain existing differences.
+The reference does not expose its sort editor; exact sort-editor geometry and
+broader visual fidelity remain unmeasured. No GitHub issues were filed, per
+this slice's offline boundaries.
+
+The README Group/Color screenshot (`docs/images/properties-panels.png`) was
+refreshed because the Sort mode selector is visible on that surface. The hero
+GIF's dashboard, O question/answer, data preparation and data-source surfaces
+have no visible delta from this change; the GIF is unchanged as requested.
+The static artifact is a local demo, not a deployed server.
 
 ## Full root verification
 
