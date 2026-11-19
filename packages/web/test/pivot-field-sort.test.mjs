@@ -302,3 +302,18 @@ test('Properties lists each dimension by display name, sets/replaces/clears inde
     assert.equal(renderer.root.findAllByType('details').length, 0);
   }
 });
+
+test('visual and sheet remaps remove sorts whose dimensions leave the wells', () => {
+  const bundle = exportBundle(pivotDraft());
+  const field = bundleConfig(bundle).fieldWells.pivotTableAggregatedFieldWells.rows[0].categoricalDimensionField;
+  field.fieldId = field.column.columnName = 'unavailable';
+  bundleConfig(bundle).sortConfiguration = { fieldSortOptions: [sortBy('unavailable'), sortBy('category', 'DESC')] };
+  const imported = importBundle(bundle);
+  selected(imported).imported.local = false;
+  for (const action of [{ type: 'remap', id: selected(imported).id }, { type: 'sheet-remap', id: activeSheet(imported).id }]) {
+    const remapped = authorReducer(imported, action);
+    assert.deepEqual(selected(remapped).rows, []);
+    assert.deepEqual(selected(remapped).pivotFieldSorts, [{ fieldId: 'category', direction: 'DESC' }]);
+    assert.deepEqual(parseDraft(JSON.stringify(remapped)), JSON.parse(JSON.stringify(remapped)));
+  }
+});

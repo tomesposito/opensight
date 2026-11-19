@@ -245,6 +245,14 @@ export function pivotFieldSortsValid(value: unknown): value is GroupSort[] {
   return Array.isArray(value) && value.every(sort => groupSortValid(sort) && !!sort.fieldId.trim() && sort.fieldId === sort.fieldId.trim()) &&
     new Set(value.map(sort => sort.fieldId)).size === value.length;
 }
+function cleanPivotFieldSorts(visual: AuthorVisual): AuthorVisual {
+  if (!visual.pivotFieldSorts) return visual;
+  const sorts = visual.kind === 'pivot' ? visual.pivotFieldSorts.filter(sort => [...visual.rows, ...visual.columns].includes(sort.fieldId)) : [];
+  if (visual.kind === 'pivot' && sorts.length === visual.pivotFieldSorts.length) return visual;
+  const next: AuthorVisual = { ...visual, pivotFieldSorts: sorts };
+  if (!sorts.length) delete next.pivotFieldSorts;
+  return next;
+}
 /** Category limit: show the top N categories, rolling the rest into an
  *  "Other" bucket (QuickSight CategoryItemsLimit parity). Unset means no limit. */
 export interface SliceLimit { count: number; includeOther: boolean }
@@ -925,11 +933,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     return visual;
   }).map((visual, index) => {
     const previous = sheet.visuals[index]!;
-    let next = visual;
-    if (next.pivotFieldSorts && (next.kind !== 'pivot' || next.pivotFieldSorts.some(sort => ![...next.rows, ...next.columns].includes(sort.fieldId)))) {
-      next = { ...next, pivotFieldSorts: next.kind === 'pivot' ? next.pivotFieldSorts.filter(sort => [...next.rows, ...next.columns].includes(sort.fieldId)) : [] };
-      if (!next.pivotFieldSorts!.length) delete next.pivotFieldSorts;
-    }
+    let next = cleanPivotFieldSorts(visual);
     if (next.facetSort && next.facetSort.fieldId !== next.smallMultiples?.[0]) {
       const { facetSort: _dropped, ...rest } = next;
       next = rest;
@@ -969,7 +973,7 @@ export function remapVisual(visual: AuthorVisual): AuthorVisual {
     if (!field) { missing.add(f.columnName); return []; }
     return [{ ...f, columnName: field.name }];
   });
-  return { ...visual, rows, columns, dimension, measures, tooltipExtraFields, tooltipHiddenFields, filters, imported: { ...visual.imported, local: true, remapped: true, unmappedFields: [...missing] } };
+  return cleanPivotFieldSorts({ ...visual, rows, columns, dimension, measures, tooltipExtraFields, tooltipHiddenFields, filters, imported: { ...visual.imported, local: true, remapped: true, unmappedFields: [...missing] } });
 }
 export function authorVisualProblem(visual: AuthorVisual): string | undefined {
   if (visual.imported) {
