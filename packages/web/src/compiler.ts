@@ -591,12 +591,12 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
       const aggregation = enumValue(text(numerical[simpleKey], ap), [...SORT_AGGREGATIONS], 'SUM', ap) as typeof SORT_AGGREGATIONS[number];
       aggregationSort = { fieldId, direction, aggregation, measureFieldId: measure.id };
     } else {
-    const fs = object(wrapper[fsKey], cpath);
-    keys(fs, [key('fieldId', 'FieldId'), key('direction', 'Direction')], cpath);
-    const fieldId = text(fs[key('fieldId', 'FieldId')], cpath);
-    if (!fields.some(f => f.id === fieldId)) fail(cpath, 'sort references an unbound field');
-    const direction = enumValue(fs[key('direction', 'Direction')], ['ASC', 'DESC'], 'ASC', cpath) as 'ASC' | 'DESC';
-    fieldSort = { fieldId, direction };
+      const fs = object(wrapper[fsKey], cpath);
+      keys(fs, [key('fieldId', 'FieldId'), key('direction', 'Direction')], cpath);
+      const fieldId = text(fs[key('fieldId', 'FieldId')], cpath);
+      if (!fields.some(f => f.id === fieldId)) fail(cpath, 'sort references an unbound field');
+      const direction = enumValue(fs[key('direction', 'Direction')], ['ASC', 'DESC'], 'ASC', cpath) as 'ASC' | 'DESC';
+      fieldSort = { fieldId, direction };
     }
   }
   return {

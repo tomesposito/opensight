@@ -774,7 +774,8 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         return next;
       }
       case 'group-sort': {
-        if (action.sort !== undefined && !groupSortValid(action.sort)) return visual;
+        if (action.sort !== undefined && (!groupSortValid(action.sort) ||
+          ![visual.dimension, ...visual.rows, ...visual.columns, ...visual.measures].includes(action.sort.fieldId))) return visual;
         const next = { ...visual };
         delete next.aggregationSort;
         if (action.sort === undefined) delete next.groupSort;

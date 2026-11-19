@@ -629,6 +629,9 @@ function exportVisual(v: AuthorVisual, raw: BundleVisual | undefined, calculatio
     const config = obj(body.chartConfiguration);
     config.fieldWells = copy(obj(generated).fieldWells); body.chartConfiguration = config;
     rebind(config.fieldWells, LOCAL_IDENTIFIER);
+    for (const wrapper of list(obj(config.sortConfiguration).categorySort)) {
+      if (obj(wrapper).aggregationSort !== undefined) rebind(obj(wrapper).aggregationSort, LOCAL_IDENTIFIER);
+    }
   }
   if (changedKind && !usesRemappedDataset(meta)) rebind(obj(body.chartConfiguration).fieldWells, meta.dataSets[0]?.identifier ?? 'sales_data');
   return { [changedKind ? Object.keys(serializeVisual(v, true, calculations))[0]! : meta.variant]: body };
