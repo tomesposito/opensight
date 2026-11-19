@@ -7,6 +7,13 @@ import type { FilterAction, NavigationAction, UrlAction } from './interactions.j
 
 export type Cell = string | number | boolean | null;
 export type Row = Readonly<Record<string, Cell>>;
+export const SORT_AGGREGATIONS = ['SUM', 'AVERAGE', 'MIN', 'MAX', 'COUNT', 'DISTINCT_COUNT'] as const;
+export interface AggregationSort {
+  fieldId: string;
+  direction: 'ASC' | 'DESC';
+  aggregation: typeof SORT_AGGREGATIONS[number];
+  measureFieldId: string;
+}
 export interface Field {
   id: string;
   column: string;
@@ -64,6 +71,8 @@ export interface VisualModel {
    *  issue #235). A non-date category retains the config with a warning. */
   forecast?: import('./forecast.js').ForecastConfig;
   sort?: { fieldId: string; direction: 'ASC' | 'DESC' };
+  /** Order category groups by an aggregate of a bound measure's result values. */
+  aggregationSort?: AggregationSort;
   /** Independent sibling ordering at each pivot row/column dimension level. */
   fieldSortOptions?: { fieldId: string; direction: 'ASC' | 'DESC' }[];
   /** Category limit (QuickSight CategoryItemsLimit): show the top N categories,
