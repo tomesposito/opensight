@@ -222,3 +222,87 @@ test('Target value well accepts only measures and uses measure labels', () => {
   const select = /<select[^>]*aria-label="Assign Target value"[\s\S]*?<\/select>/.exec(html)[0];
   assert.match(select, /value="revenue"/); assert.match(select, /value="profit"/); assert.doesNotMatch(select, /value="region"|value="order_date"/);
 });
+import { exportBundle, importBundle } from '../build/test/bundle-authoring.js';
+const bundleVisual = b => b.members[0].resource.definition.sheets[0].visuals[0];
+const bundleConfig = b => bundleVisual(b).kpiVisual.chartConfiguration;
+const importDialect = (bundle, source) => {
+  const copy = structuredClone(bundle);
+  if (source === 'api') copy.members[0].resource.definition = convertDefinition(projectDefinition(copy.members[0].resource.definition));
+  return importBundle(copy);
+};
+for (const source of ['bundle', 'api']) for (const wrapped of [false, true]) test(`${source}, wrapped=${wrapped}: target imports survive storage, edit, clearing and both dialect exports`, () => {
+  const b = exportBundle(targetDraft()); const c = bundleConfig(b);
+  c.fieldWells.targetValues[0].numericalMeasureField.fieldId = 'native-target';
+  c.kpiOptions = { progressBar: { visibility: 'VISIBLE' }, trendArrows: { visibility: 'HIDDEN' } };
+  if (wrapped) c.fieldWells = { kpiFieldWells: c.fieldWells };
+  const d = importDialect(b, source);
+  assert.equal(selected(d).targetField, 'profit'); assert.deepEqual(selected(d).imported.issues, []);
+  assert.deepEqual(parseDraft(JSON.stringify(d)), JSON.parse(JSON.stringify(d)));
+  assert.deepEqual(bundleVisual(exportBundle(d)), bundleVisual(b));
+  assert.ok(compileVisual(buildAuthorPreview(selected(d))).kpiTarget.progress);
+  const edited = authorReducer(d, { type: 'title', title: 'Target KPI' });
+  assert.equal(normalizeVisual('bundle', bundleVisual(exportBundle(edited))).targetMeasure.id, 'native-target');
+  const replaced = authorReducer(d, { type: 'assign', well: 'target', field: 'revenue' });
+  assert.equal(selected(importBundle(exportBundle(replaced))).targetField, 'revenue');
+  assert.doesNotThrow(() => normalizeVisual('bundle', bundleVisual(exportBundle(replaced))));
+  const cleared = authorReducer(d, { type: 'unassign', well: 'target', field: 'profit' });
+  assert.equal(normalizeVisual('bundle', bundleVisual(exportBundle(cleared))).targetMeasure, undefined);
+  assert.equal(selected(importBundle(exportBundle(cleared))).targetField, undefined);
+  for (const candidate of [d, edited, replaced, cleared]) {
+    const definition = exportBundle(candidate).members[0].resource.definition;
+    assert.deepEqual(convertDefinition(projectDefinition(definition)), definition);
+  }
+});
+for (const source of ['bundle', 'api']) test(`${source}: malformed, unbound and non-SUM trended targets retain diagnostics and verbatim export`, () => {
+  const base = exportBundle(authorReducer(targetDraft(), { type: 'assign', well: 'trend', field: 'region' }));
+  const target = bundleConfig(base).fieldWells.targetValues[0];
+  for (const targets of [null, {}, [null], [{}]]) {
+    const b = structuredClone(base); bundleConfig(b).fieldWells.targetValues = targets;
+    assert.throws(() => importDialect(b, source), /expected an array|expected an object|expected exactly one variant/);
+  }
+  for (const targets of [[{ numericalMeasureField: { ...target.numericalMeasureField, unsupported: true } }], [target, target], [{ numericalMeasureField: { ...target.numericalMeasureField, column: { ...target.numericalMeasureField.column, dataSetIdentifier: 'missing' } } }], [{ numericalMeasureField: { ...target.numericalMeasureField, column: { ...target.numericalMeasureField.column, columnName: '__metric_goal' }, aggregationFunction: { simpleNumericalAggregation: 'AVG' } } }], [{ numericalMeasureField: { ...target.numericalMeasureField, aggregationFunction: undefined } }]]) {
+    const b = structuredClone(base); bundleConfig(b).fieldWells.targetValues = targets;
+    // JSON models omit undefined properties, matching storage/import envelopes.
+    const canonical = JSON.parse(JSON.stringify(b)); const d = importDialect(canonical, source);
+    assert.ok(selected(d).imported.issues.length, JSON.stringify(targets)); assert.equal(selected(d).targetField, undefined);
+    assert.deepEqual(bundleVisual(exportBundle(d)), bundleVisual(canonical));
+    assert.deepEqual(bundleConfig(exportBundle(authorReducer(d, { type: 'title', title: 'Retained target' }))).fieldWells.targetValues, bundleConfig(canonical).fieldWells.targetValues);
+    assert.doesNotThrow(() => parseDraft(JSON.stringify(d)));
+  }
+});
+for (const type of ['remap', 'sheet-remap']) test(`${type}: targets rebind surviving columns and clear stale references`, () => {
+  const b = exportBundle(targetDraft()); b.members[0].resource.definition.dataSetIdentifierDeclarations[0].dataSetArn = 'urn:synthetic:kpi-source';
+  bundleConfig(b).fieldWells.targetValues[0].numericalMeasureField.fieldId = 'native-target';
+  const d = importBundle(b); selected(d).imported.local = false;
+  const action = { type, id: type === 'remap' ? selected(d).id : activeSheet(d).id };
+  const mapped = authorReducer(d, action); assert.equal(selected(mapped).targetField, 'profit');
+  const target = normalizeVisual('bundle', bundleVisual(exportBundle(mapped))).targetMeasure;
+  assert.equal(target.id, 'native-target'); assert.equal(target.dataSet, 'opensight_local_sales');
+  bundleConfig(b).fieldWells.targetValues[0].numericalMeasureField.column.columnName = 'missing';
+  const stale = importBundle(b); selected(stale).imported.local = false;
+  const clean = authorReducer(stale, action); assert.equal(selected(clean).targetField, undefined);
+  assert.equal(normalizeVisual('bundle', bundleVisual(exportBundle(clean))).targetMeasure, undefined);
+  assert.doesNotThrow(() => parseDraft(JSON.stringify(clean)));
+});
+test('constructed reduced fixture uses real targetValues shape with progress and trend arrows in both dialects', () => {
+  // Constructed reduced fixture: existing bundle KPI wells, explicit SUM bindings and supported options only.
+  const v = input(true); v.rows = [{ period: '2026-01', revenue: 20, budget: 25 }, { period: '2026-02', revenue: 30, budget: 25 }];
+  config(v).kpiOptions = { progressBar: {}, trendArrows: {}, comparison: { comparisonMethod: 'DIFFERENCE' } };
+  for (const source of ['bundle', 'api']) {
+    const c = compileVisual(dialect(v, source)); assert.equal(c.kpiTarget.value, 50); assert.equal(c.kpiTarget.progress.ratio, 1); assert.equal(c.kpiTrendArrow.direction, 'up');
+  }
+  assert.deepEqual(convertDefinition(projectDefinition(definition(v.definition))), definition(v.definition));
+});
+for (const source of ['bundle', 'api']) test(`${source}: nontrended governed target preserves its explicit aggregation without summing averages`, () => {
+  const b = exportBundle(targetDraft()); const f = bundleConfig(b).fieldWells.targetValues[0].numericalMeasureField;
+  f.column.columnName = '__metric_goal'; f.aggregationFunction.simpleNumericalAggregation = 'AVG';
+  const d = importDialect(b, source); assert.equal(selected(d).targetAggregation, 'AVG'); assert.deepEqual(selected(d).imported.issues, []);
+  assert.deepEqual(parseDraft(JSON.stringify(d)), JSON.parse(JSON.stringify(d)));
+  assert.equal(buildAuthorQuery(selected(d)).measures[1].aggregation, 'AVG');
+  assert.equal(config({ definition: serializeVisual(selected(d)) }).fieldWells.targetValues[0].numericalMeasureField.aggregationFunction.simpleNumericalAggregation, 'AVG');
+  assert.equal(selected(authorReducer(d, { type: 'assign', well: 'trend', field: 'region' })), selected(d));
+  const changed = authorReducer(d, { type: 'assign', well: 'target', field: 'profit' }); assert.equal(selected(changed).targetAggregation, undefined);
+  assert.equal(bundleConfig(exportBundle(changed)).fieldWells.targetValues[0].numericalMeasureField.aggregationFunction.simpleNumericalAggregation, 'SUM');
+  const cleared = authorReducer(d, { type: 'unassign', well: 'target', field: '__metric_goal' }); assert.equal(selected(cleared).targetAggregation, undefined);
+  const bad = structuredClone(d); selected(bad).trendField = 'region'; assert.throws(() => parseDraft(JSON.stringify(bad)));
+});

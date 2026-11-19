@@ -77,7 +77,7 @@ export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly Ca
     ({ fieldId: name, columnName: name, ...(dataFields(calculations, dataset).find(f => f.name === name)?.type === 'DATETIME' ? { granularity: visual.dateGrain ?? 'MONTH' } : {}) });
   return {
     dimensions: [...dimensions.map(dimensionDescriptor), ...facetNames.map(dimensionDescriptor), ...breakdownNames.map(dimensionDescriptor)],
-    measures: [...measures.map((name, index) => ({ fieldId: index >= visual.measures.length ? kpiTargetFieldId(visual)! : name, columnName: name, aggregation: dataset?.metrics?.find(m => metricColumn(m.id) === name)?.defaultAggregation ?? 'SUM' })),
+    measures: [...measures.map((name, index) => ({ fieldId: index >= visual.measures.length ? kpiTargetFieldId(visual)! : name, columnName: name, aggregation: (index >= visual.measures.length ? visual.targetAggregation : undefined) ?? dataset?.metrics?.find(m => metricColumn(m.id) === name)?.defaultAggregation ?? 'SUM' })),
       // A uniqueValues-only insight groups by category alone; the planner still
       // requires one explicit measure, so carry a COUNT like buildDistinctQuery
       // does — it is discarded by the compiler, never shown as narrative data.

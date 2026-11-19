@@ -215,7 +215,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     }
   })() : undefined;
   let kpiTrendProblem: string | undefined;
-  const kpiChecked = kind === 'kpi' && (config.sortConfiguration !== undefined || config.kpiOptions !== undefined || wells.trendGroups !== undefined);
+  const kpiChecked = kind === 'kpi' && (config.sortConfiguration !== undefined || config.kpiOptions !== undefined || wells.trendGroups !== undefined || wells.targetValues !== undefined);
   const importedKpi = kpiChecked ? (() => {
     try {
       const { actions: _actions, columnHierarchies: _hierarchies, ...kpiBody } = body;
@@ -223,7 +223,11 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
       const rawSort = obj(config.sortConfiguration).trendGroupSort;
       const explicit = obj(obj(list(rawSort)[0]).fieldSort).direction;
       if (model.trendGroupSort && explicit === undefined) kpiTrendProblem = 'Trend sort: retained, read-only; requires an explicit direction on KPI';
+      const targetAggregation = obj(obj(obj(list(wells.targetValues)[0]).numericalMeasureField).aggregationFunction).simpleNumericalAggregation as AuthorVisual['targetAggregation'];
       return {
+        ...(model.targetMeasure ? { targetField: model.targetMeasure.column,
+          ...(targetAggregation !== 'SUM' ? { targetAggregation } : {}),
+        } : {}),
         ...(model.trendDimension ? { trendField: model.trendDimension.column } : {}),
         ...(model.trendGroupSort && explicit !== undefined ? { kpiTrendSort: { ...model.trendGroupSort, fieldId: model.trendDimension!.column } } : {}),
         ...(model.kpiOptions ? { kpiOptions: model.kpiOptions } : {}),
@@ -668,6 +672,10 @@ function projectVisual(visual: AuthorVisual, raw: BundleVisual, calculations: re
     for (const field of trendFields(config.fieldWells)) field.fieldId = originalTrend.fieldId;
     for (const wrapper of list(obj(config.sortConfiguration).trendGroupSort)) obj(obj(wrapper).fieldSort).fieldId = originalTrend.fieldId;
   }
+  const targetFields = (value: unknown): Obj[] => Object.entries(obj(value)).flatMap(([key, child]) => key === 'targetValues'
+    ? list(child).map(wrapper => obj(Object.values(obj(wrapper))[0])) : targetFields(child));
+  const originalTarget = targetFields(originalWells).find(field => obj(field.column).columnName === visual.targetField);
+  if (typeof originalTarget?.fieldId === 'string') for (const field of targetFields(config.fieldWells)) field.fieldId = originalTarget.fieldId;
   if (visual.kind === 'insight') assign(body.insightConfiguration);
   if (visual.kind === 'kpi' && Object.hasOwn(originalWells, 'kpiFieldWells')) config.fieldWells = { kpiFieldWells: config.fieldWells };
   return projected;
