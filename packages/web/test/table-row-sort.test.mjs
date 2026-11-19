@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { compileVisual, normalizeVisual, CompileError } from '../build/test/compiler.js';
 import { activeSheet, authorReducer, emptyDraft, groupSortValid, parseDraft, serializeVisual } from '../build/test/authoring.js';
+import { exportBundle, importBundle } from '../build/test/bundle-authoring.js';
 import { projectDefinition } from '../build/test/definition-converter.js';
 import { baselineInputs, input } from './fixtures/table-row-sort-inputs.mjs';
 
@@ -168,5 +169,32 @@ test('table serialization emits only rowSort while bar/bar100/pie retain categor
     const value = { definition: serializeVisual(selected(draft)) };
     assert.deepEqual(config(value).sortConfiguration, { [kind === 'table' ? 'rowSort' : 'categorySort']: sortBy('revenue', 'DESC') });
     assert.deepEqual(normalizeVisual('bundle', value.definition).sort, { fieldId: 'revenue', direction: 'DESC' });
+  }
+});
+
+test('table bundle import accepts every groupBy dimension and measure with explicit direction', () => {
+  const base = tableDraft();
+  for (const fieldId of [...selected(base).rows, ...selected(base).measures]) for (const direction of ['ASC', 'DESC']) {
+    const draft = authorReducer(base, { type: 'group-sort', sort: { fieldId, direction } });
+    const bundle = exportBundle(draft), imported = importBundle(bundle);
+    assert.deepEqual(selected(imported).groupSort, { fieldId, direction });
+    assert.deepEqual(selected(imported).imported.issues, []);
+    assert.deepEqual(parseDraft(JSON.stringify(imported)), JSON.parse(JSON.stringify(imported)));
+    assert.deepEqual(exportBundle(imported), bundle);
+    const edited = authorReducer(imported, { type: 'group-sort', sort: { fieldId, direction: direction === 'ASC' ? 'DESC' : 'ASC' } });
+    assert.deepEqual(selected(importBundle(exportBundle(edited))).groupSort, selected(edited).groupSort);
+    const cleared = authorReducer(imported, { type: 'group-sort', sort: undefined });
+    assert.equal(selected(importBundle(exportBundle(cleared))).groupSort, undefined);
+  }
+});
+test('malformed, unbound, missing-direction and multiple imported row sorts stay retained read-only', () => {
+  for (const rowSort of [...malformed, [{ fieldSort: { fieldId: 'region' } }]]) {
+    const bundle = exportBundle(tableDraft());
+    const raw = bundle.members[0].resource.definition.sheets[0].visuals[0];
+    raw.tableVisual.chartConfiguration.sortConfiguration = { rowSort };
+    const imported = importBundle(bundle);
+    assert.equal(selected(imported).groupSort, undefined, JSON.stringify(rowSort));
+    assert.ok(selected(imported).imported.issues.length, JSON.stringify(rowSort));
+    assert.deepEqual(exportBundle(imported), bundle);
   }
 });
