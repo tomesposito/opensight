@@ -473,7 +473,8 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const breakdownLimitKey = key('breakdownItemsLimit', 'BreakdownItemsLimit');
   const fieldSortOptionsKey = key('fieldSortOptions', 'FieldSortOptions');
   const columnSortKey = key('columnSort', 'ColumnSort');
-  keys(sort, kind === 'pivot' ? [fieldSortOptionsKey, columnSortKey] : ['table', 'radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration'), ...(FACETED_KINDS.includes(kind) ? [facetSortKey] : [])], sortPath);
+  const pivotRowSortKey = key('rowSort', 'RowSort');
+  keys(sort, kind === 'pivot' ? [fieldSortOptionsKey, columnSortKey, pivotRowSortKey] : ['table', 'radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration'), ...(FACETED_KINDS.includes(kind) ? [facetSortKey] : [])], sortPath);
   const columnSortPath = `${sortPath}.${columnSortKey}`;
   const columnSorts = list(sort[columnSortKey], columnSortPath);
   if (columnSorts.length > 1) fail(columnSortPath, 'only one column sort is supported');
@@ -500,6 +501,33 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
       aggregation = enumValue(text(numerical[simpleKey], columnSortPath), [...SORT_AGGREGATIONS], 'SUM', columnSortPath) as typeof SORT_AGGREGATIONS[number];
     }
     columnSort = { measureFieldId: measure.id, direction, aggregation };
+  }
+  const rowSortPath = `${sortPath}.${pivotRowSortKey}`;
+  const pivotRowSorts = kind === 'pivot' ? list(sort[pivotRowSortKey], rowSortPath) : [];
+  if (pivotRowSorts.length > 1) fail(rowSortPath, 'only one row sort is supported');
+  let rowSort: VisualModel['rowSort'];
+  if (pivotRowSorts.length) {
+    const rs = object(pivotRowSorts[0], rowSortPath);
+    keys(rs, [key('sortBy', 'SortBy'), key('direction', 'Direction'), key('aggregationFunction', 'AggregationFunction')], rowSortPath);
+    if (!rowDimensions.length) fail(rowSortPath, 'row sort requires a Rows dimension');
+    const direction = enumValue(rs[key('direction', 'Direction')], ['ASC', 'DESC'], 'ASC', rowSortPath) as 'ASC' | 'DESC';
+    const column = object(rs[key('sortBy', 'SortBy')], `${rowSortPath}.sortBy`);
+    keys(column, [key('dataSetIdentifier', 'DataSetIdentifier'), key('columnName', 'ColumnName')], rowSortPath);
+    const columnName = text(column[key('columnName', 'ColumnName')], rowSortPath);
+    const dataSet = text(column[key('dataSetIdentifier', 'DataSetIdentifier')], rowSortPath);
+    const measure = measures.find(field => field.column === columnName && field.dataSet === dataSet);
+    if (!measure) fail(rowSortPath, 'row sort sortBy must identify a bound measure');
+    let aggregation: typeof SORT_AGGREGATIONS[number] = 'SUM';
+    if (rs[key('aggregationFunction', 'AggregationFunction')] !== undefined) {
+      const agg = object(rs[key('aggregationFunction', 'AggregationFunction')], `${rowSortPath}.aggregationFunction`);
+      const numericalKey = key('numericalAggregationFunction', 'NumericalAggregationFunction');
+      keys(agg, [numericalKey], rowSortPath);
+      const numerical = object(agg[numericalKey], `${rowSortPath}.${numericalKey}`);
+      const simpleKey = key('simpleNumericalAggregation', 'SimpleNumericalAggregation');
+      keys(numerical, [simpleKey], rowSortPath);
+      aggregation = enumValue(text(numerical[simpleKey], rowSortPath), [...SORT_AGGREGATIONS], 'SUM', rowSortPath) as typeof SORT_AGGREGATIONS[number];
+    }
+    rowSort = { measureFieldId: measure.id, direction, aggregation };
   }
   const seenPivotSorts = new Set<string>();
   const fieldSortOptions = list(sort[fieldSortOptionsKey], `${sortPath}.${fieldSortOptionsKey}`).map((entry, index) => {
@@ -638,6 +666,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     ...(facetSort ? { facetSort } : {}),
     ...(aggregationSort ? { aggregationSort } : {}),
     ...(columnSort ? { columnSort } : {}),
+    ...(rowSort ? { rowSort } : {}),
     ...(fieldSortOptions.length ? { fieldSortOptions } : {}),
     ...(breakdownLimit ? { breakdownLimit } : {}),
     ...(facet ? { facet } : {}),
@@ -1362,7 +1391,7 @@ function periodLabel(date: Date, grain: 'DAY' | 'MONTH' | 'QUARTER' | 'YEAR', ra
   return iso.slice(0, 10);
 }
 
-/** Shared result-value aggregation for category and pivot column ordering. */
+/** Shared result-value aggregation for category and pivot column/row ordering. */
 function aggregateSortValues(values: number[], aggregation: typeof SORT_AGGREGATIONS[number], path: string): number | null {
   if (!values.length) return null;
   let result: number;
@@ -1438,7 +1467,24 @@ function compilePivotTable(model: VisualModel, rows: Row[], cell: (row: Row, fie
   const rowPaths = rows.map(row => rowFields.map(f => cell(row, f)));
   const colPaths = rows.map(row => columnFields.map(f => cell(row, f)));
   const directions = (fields: Field[]) => fields.map(field => model.fieldSortOptions?.find(sort => sort.fieldId === field.id)?.direction);
-  const rowAxis = axisEntries(rowPaths, rowFields.length, model.subtotals, model.totals, directions(rowFields));
+  let rowOuterOrder: ((a: Cell, b: Cell) => number) | undefined;
+  if (model.rowSort) {
+    const sort = model.rowSort;
+    const measure = model.measures.find(field => field.id === sort.measureFieldId)!;
+    const groups = new Map<Cell, number[]>();
+    for (const row of rows) {
+      const key = cell(row, rowFields[0]!);
+      const values = groups.get(key) ?? [];
+      const value = number(row, measure);
+      if (value !== null) values.push(value);
+      groups.set(key, values);
+    }
+    const aggregates = new Map([...groups].map(([key, values]) => [key, aggregateSortValues(values, sort.aggregation, path)]));
+    // Only the first row level overrides fieldSortOptions. Stable sorting
+    // preserves first appearance for ties; all inner and column sorts still apply.
+    rowOuterOrder = (a, b) => compareCells(aggregates.get(a)!, aggregates.get(b)!, sort.direction);
+  }
+  const rowAxis = axisEntries(rowPaths, rowFields.length, model.subtotals, model.totals, directions(rowFields), rowOuterOrder);
   let outerOrder: ((a: Cell, b: Cell) => number) | undefined;
   if (model.columnSort) {
     const sort = model.columnSort;

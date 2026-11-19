@@ -31,7 +31,8 @@ multiple entries, unknown keys at any level, unbound measures, unsupported
 aggregations and invalid directions raise named `CompileError`s.
 
 Other visual kinds reject `columnSort`, including an empty list. Pivots still
-reject category/row sorts and their previous unsupported configuration shapes.
+reject category sorts and the table wrapper row-sort shape; the ColumnSort-shaped
+pivot `RowSort` shipped separately as `parity-pivot-row-sort`.
 `fieldSortOptions` may coexist with `columnSort`.
 
 ## Ordering and values

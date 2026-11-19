@@ -61,15 +61,20 @@ for (const source of ['bundle', 'api']) {
       config(value)[key] = {};
       assert.throws(() => normalize(dialect(value, source)), /unsupported property/);
     }
-    for (const kind of ['bar', 'pivot', 'kpi', 'insight']) {
+    for (const kind of ['bar', 'kpi', 'insight']) {
       const value = { ...input(), definition: serializeVisual(selected(authorReducer(emptyDraft(), { type: 'add', kind }))) };
       config(value).sortConfiguration = { rowSort: [] };
       assert.throws(() => normalize(dialect(value, source)), /unsupported property/);
-      if (kind !== 'bar' && kind !== 'pivot') {
+      if (kind !== 'bar') {
         config(value).sortConfiguration = {};
         assert.throws(() => normalize(dialect(value, source)), /unsupported property/);
       }
     }
+    // Pivots accept rowSort in the ColumnSort shape (parity-pivot-row-sort);
+    // the table wrapper shape stays an unsupported property there.
+    const pivotValue = { ...input(), definition: serializeVisual(selected(authorReducer(emptyDraft(), { type: 'add', kind: 'pivot' }))) };
+    config(pivotValue).sortConfiguration = { rowSort: [{ fieldSort: { fieldId: 'region', direction: 'ASC' } }] };
+    assert.throws(() => normalize(dialect(pivotValue, source)), /unsupported property/);
   });
 }
 

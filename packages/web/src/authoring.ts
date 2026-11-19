@@ -6,7 +6,7 @@ import { rebindInsight, topBottomMoversTimeColumn, validateInsightConfiguration 
 import { paletteValid, themeValid, type AnalysisTheme } from './themes.js';
 import { formattingValid, gaugeValid, binsValid, legendPositionValid, legendTitleValid, groupTitleValid, altTextValid, cleanAltText, legendTextStyleValid, dataLabelsValid, cardStyleValid, cardLayoutValid, rowGroupPathValid, type LegendPosition, type LegendTitle, type GroupTitle, type LegendTextStyle, type DataLabels, type CardStyle, type CardLayout, type VisualFormatting } from './formatting.js';
 import type { Cell, MultiplesOptions } from './model.js';
-import { SORT_AGGREGATIONS, type AggregationSort, type PivotColumnSort } from './model.js';
+import { SORT_AGGREGATIONS, type AggregationSort, type PivotColumnSort, type PivotRowSort } from './model.js';
 import { EXTRA_VISUALS, extraKind, type VisualKind } from './visual-catalog.js';
 export type { VisualKind } from './visual-catalog.js';
 import { unresolvedFieldDiagnostics } from './unresolved-fields.js';
@@ -128,6 +128,7 @@ export interface AuthorVisual {
   /** Sort each pivot row/column dimension by its own values. */
   pivotFieldSorts?: GroupSort[];
   pivotColumnSort?: PivotColumnSort;
+  pivotRowSort?: PivotRowSort;
   /** Category limit: top-N categories with an optional "Other" bucket. Renders through sortConfiguration. */
   sliceLimit?: SliceLimit;
   /** Small multiples panel limit, applied before the layout's panel cap. */
@@ -276,6 +277,17 @@ function cleanPivotColumnSort(visual: AuthorVisual): AuthorVisual {
   delete next.pivotColumnSort;
   return next;
 }
+/** Row sorts share the column-sort shape; the draft measure is bound the same way. */
+export function pivotRowSortValid(value: unknown): value is PivotRowSort {
+  return pivotColumnSortValid(value);
+}
+function cleanPivotRowSort(visual: AuthorVisual): AuthorVisual {
+  const sort = visual.pivotRowSort;
+  if (!sort || visual.kind === 'pivot' && visual.rows.length > 0 && visual.measures.includes(sort.measureFieldId)) return visual;
+  const next = { ...visual };
+  delete next.pivotRowSort;
+  return next;
+}
 function cleanPivotFieldSorts(visual: AuthorVisual): AuthorVisual {
   if (!visual.pivotFieldSorts) return visual;
   const sorts = visual.kind === 'pivot' ? visual.pivotFieldSorts.filter(sort => [...visual.rows, ...visual.columns].includes(sort.fieldId)) : [];
@@ -417,6 +429,7 @@ export type AuthorAction =
   | { type: 'group-sort'; sort: GroupSort | undefined }
   | { type: 'aggregation-sort'; sort: AggregationSort | undefined }
   | { type: 'pivot-column-sort'; sort: PivotColumnSort | undefined }
+  | { type: 'pivot-row-sort'; sort: PivotRowSort | undefined }
   | { type: 'pivot-field-sorts'; sorts: GroupSort[] | undefined }
   | { type: 'slice-limit'; limit: SliceLimit | undefined }
   | { type: 'facet-limit'; limit: FacetLimit | undefined }
@@ -633,8 +646,8 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     const previous = sheet.visuals.find(v => v.id === action.id);
     if (!previous?.o || !validOProvenance(action.visual.o)) return draft;
     const { kind, dimension, rows, columns, measures, filters, dateGrain, donut, o } = action.visual;
-    const visual = cleanPivotColumnSort(structuredClone({ ...previous, kind, dimension, rows, columns, measures, filters, dateGrain, donut, o,
-      title: previous.title === oTitle(previous.o.interpretation) ? oTitle(o.interpretation) : previous.title }));
+    const visual = cleanPivotRowSort(cleanPivotColumnSort(structuredClone({ ...previous, kind, dimension, rows, columns, measures, filters, dateGrain, donut, o,
+      title: previous.title === oTitle(previous.o.interpretation) ? oTitle(o.interpretation) : previous.title })));
     const calculatedFields = structuredClone(draft.calculatedFields);
     for (const c of action.calculatedFields) {
       const existing = calculatedFields.find(f => f.name === c.name);
@@ -816,6 +829,14 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         else next.pivotColumnSort = structuredClone(action.sort);
         return next;
       }
+      case 'pivot-row-sort': {
+        if (action.sort !== undefined && (!pivotRowSortValid(action.sort) || visual.kind !== 'pivot' ||
+          !visual.rows.length || !visual.measures.includes(action.sort.measureFieldId))) return visual;
+        const next = { ...visual };
+        if (action.sort === undefined) delete next.pivotRowSort;
+        else next.pivotRowSort = structuredClone(action.sort);
+        return next;
+      }
       case 'pivot-field-sorts': {
         if (action.sorts !== undefined && (!pivotFieldSortsValid(action.sorts) || visual.kind !== 'pivot' ||
           action.sorts.some(sort => ![...visual.rows, ...visual.columns].includes(sort.fieldId)))) return visual;
@@ -987,7 +1008,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     return visual;
   }).map((visual, index) => {
     const previous = sheet.visuals[index]!;
-    let next = cleanAggregationSort(cleanPivotColumnSort(cleanPivotFieldSorts(visual)));
+    let next = cleanAggregationSort(cleanPivotRowSort(cleanPivotColumnSort(cleanPivotFieldSorts(visual))));
     if (next.facetSort && next.facetSort.fieldId !== next.smallMultiples?.[0]) {
       const { facetSort: _dropped, ...rest } = next;
       next = rest;
@@ -1027,7 +1048,7 @@ export function remapVisual(visual: AuthorVisual): AuthorVisual {
     if (!field) { missing.add(f.columnName); return []; }
     return [{ ...f, columnName: field.name }];
   });
-  return cleanAggregationSort(cleanPivotColumnSort(cleanPivotFieldSorts({ ...visual, rows, columns, dimension, measures, tooltipExtraFields, tooltipHiddenFields, filters, imported: { ...visual.imported, local: true, remapped: true, unmappedFields: [...missing] } })));
+  return cleanAggregationSort(cleanPivotRowSort(cleanPivotColumnSort(cleanPivotFieldSorts({ ...visual, rows, columns, dimension, measures, tooltipExtraFields, tooltipHiddenFields, filters, imported: { ...visual.imported, local: true, remapped: true, unmappedFields: [...missing] } }))));
 }
 export function authorVisualProblem(visual: AuthorVisual): string | undefined {
   if (visual.imported) {
@@ -1158,12 +1179,17 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
     case 'line': return { lineChartVisual: { ...body, chartConfiguration: { ...display, ...groupSortConfig, ...(visual.multiplesOptions ? { opensightMultiplesOptions: visual.multiplesOptions } : {}), ...(visual.forecast?.enabled ? { forecastConfigurations: [serializeForecast(visual.forecast)] } : {}), fieldWells: { lineChartAggregatedFieldWells: { category, values, ...multiples } } } } };
     case 'table': return { tableVisual: { ...body, chartConfiguration: { ...tableTotals, ...groupSortConfig, fieldWells: { tableAggregatedFieldWells: { groupBy: category, values } } } } };
     case 'pivot': return { pivotTableVisual: { ...body, chartConfiguration: { ...pivotTotals,
-      ...(visual.pivotFieldSorts || visual.pivotColumnSort ? { sortConfiguration: {
+      ...(visual.pivotFieldSorts || visual.pivotColumnSort || visual.pivotRowSort ? { sortConfiguration: {
         ...(visual.pivotFieldSorts ? { fieldSortOptions: visual.pivotFieldSorts.map(({ fieldId, direction }) => ({ fieldId, sortDirection: direction })) } : {}),
         ...(visual.pivotColumnSort ? { columnSort: [{
           sortBy: { dataSetIdentifier: 'sales_data', columnName: visual.pivotColumnSort.measureFieldId },
           direction: visual.pivotColumnSort.direction,
           aggregationFunction: { numericalAggregationFunction: { simpleNumericalAggregation: visual.pivotColumnSort.aggregation } },
+        }] } : {}),
+        ...(visual.pivotRowSort ? { rowSort: [{
+          sortBy: { dataSetIdentifier: 'sales_data', columnName: visual.pivotRowSort.measureFieldId },
+          direction: visual.pivotRowSort.direction,
+          aggregationFunction: { numericalAggregationFunction: { simpleNumericalAggregation: visual.pivotRowSort.aggregation } },
         }] } : {}),
       } } : {}),
       fieldWells: { pivotTableAggregatedFieldWells: { rows: visual.rows.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), columns: visual.columns.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), values } } } } };
@@ -1299,7 +1325,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported || unresolvedAllowed ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['o', 'id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'breakdowns', 'multiplesOptions', 'groupSort', 'aggregationSort', 'pivotFieldSorts', 'pivotColumnSort', 'sliceLimit', 'facetLimit', 'facetSort', 'breakdownLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', 'forecast', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['o', 'id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'breakdowns', 'multiplesOptions', 'groupSort', 'aggregationSort', 'pivotFieldSorts', 'pivotColumnSort', 'pivotRowSort', 'sliceLimit', 'facetLimit', 'facetSort', 'breakdownLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', 'forecast', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if (v.o !== undefined && !validOProvenance(v.o)) return fail();
       if (v.referenceLines !== undefined && (!Array.isArray(v.referenceLines) || !v.referenceLines.every(referenceLineValid))) return fail();
       if (v.forecast !== undefined && !forecastConfigValid(v.forecast)) return fail();
@@ -1309,6 +1335,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       if (v.groupSort !== undefined && !groupSortValid(v.groupSort)) return fail();
       if (v.aggregationSort !== undefined && (!aggregationSortValid(v.aggregationSort) || v.groupSort !== undefined || !['bar', 'bar100', 'pie'].includes(String(v.kind)) || v.aggregationSort.fieldId !== v.dimension || !(v.measures as string[]).includes(v.aggregationSort.measureFieldId))) return fail();
       if (v.pivotColumnSort !== undefined && (!pivotColumnSortValid(v.pivotColumnSort) || v.kind !== 'pivot' || !(v.columns as string[]).length || !(v.measures as string[]).includes(v.pivotColumnSort.measureFieldId))) return fail();
+      if (v.pivotRowSort !== undefined && (!pivotRowSortValid(v.pivotRowSort) || v.kind !== 'pivot' || !(v.rows as string[]).length || !(v.measures as string[]).includes(v.pivotRowSort.measureFieldId))) return fail();
       if (v.pivotFieldSorts !== undefined && (!pivotFieldSortsValid(v.pivotFieldSorts) || v.kind !== 'pivot' || v.pivotFieldSorts.some(sort => ![...v.rows as string[], ...v.columns as string[]].includes(sort.fieldId)))) return fail();
       if (v.sliceLimit !== undefined && !sliceLimitValid(v.sliceLimit)) return fail();
       if (v.facetLimit !== undefined && !facetLimitValid(v.facetLimit)) return fail();
