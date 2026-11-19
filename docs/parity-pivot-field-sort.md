@@ -50,6 +50,7 @@ preserve the last valid state.
 Draft `pivotFieldSorts` stores unique `{fieldId, direction}` entries. Storage and
 the reducer validate the structure, direction and dimension membership. Removing
 a sorted field clears only that entry; moving it between the two axes keeps it.
+Dataset remapping also clears entries whose dimensions leave the wells.
 Changing away from pivot clears the pivot sorts. Authored pivots serialize this
 state only as `fieldSortOptions`; other kinds never emit it.
 
@@ -75,3 +76,5 @@ and subtotal combination, authoring/storage, native/bundle round-trips, import
 retention and Properties controls. Forty-eight full-output SHA-256 baselines
 were captured from `809591f0` before compiler changes, including function source,
 for populated, empty and unavailable rows across all total/subtotal combinations.
+
+See [verification and captures](parity-pivot-field-sort-gap-notes.md).
