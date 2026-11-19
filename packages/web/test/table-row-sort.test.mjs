@@ -8,7 +8,7 @@ import { TableSortOptions } from '../build/test/PropertiesSections.js';
 import { compileVisual, normalizeVisual, CompileError } from '../build/test/compiler.js';
 import { activeSheet, authorReducer, emptyDraft, groupSortValid, parseDraft, serializeVisual } from '../build/test/authoring.js';
 import { exportBundle, importBundle } from '../build/test/bundle-authoring.js';
-import { projectDefinition } from '../build/test/definition-converter.js';
+import { convertDefinition, projectDefinition } from '../build/test/definition-converter.js';
 import { baselineInputs, input } from './fixtures/table-row-sort-inputs.mjs';
 
 const config = value => Object.values(value.definition)[0].chartConfiguration;
@@ -237,5 +237,38 @@ test('Row sort controls list table fields, use display names, default directions
   for (const kind of ['bar', 'pivot', 'kpi', 'insight']) {
     await act(() => dispatch({ type: 'kind', kind }));
     assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Sort rows by' }).length, 0);
+  }
+});
+
+test('native RowSort and internal rowSort round-trip through the existing definition converter', () => {
+  const value = sorted(input(), 'region', 'DESC');
+  const internal = definition(value.definition);
+  const native = projectDefinition(internal);
+  assert.deepEqual(native.Sheets[0].Visuals[0].TableVisual.ChartConfiguration.SortConfiguration,
+    { RowSort: [{ FieldSort: { FieldId: 'region', Direction: 'DESC' } }] });
+  assert.deepEqual(convertDefinition(native), internal);
+  assert.deepEqual(compileVisual(dialect(value, 'api')).table, compileVisual(value).table);
+});
+test('row sorting resolves bound field IDs and result aliases independently of column names', () => {
+  const value = input();
+  config(value).fieldWells.tableAggregatedFieldWells.groupBy[1].categoricalDimensionField.fieldId = 'region-id';
+  value.bindings = { 'region-id': 'region_alias' };
+  value.rows = value.rows.map(({ region, ...row }) => ({ ...row, region_alias: region }));
+  for (const source of ['bundle', 'api']) {
+    const compiled = compileVisual(dialect(sorted(value, 'region-id', 'DESC'), source));
+    assert.deepEqual(compiled.table.rows.map(r => r[1]), ['West', 'West', 'North', 'East', 'East']);
+    assert.throws(() => normalize(dialect(sorted(value, 'region', 'DESC'), source)), /unbound field/);
+  }
+});
+test('bundle imports with unmapped native field IDs stay read-only and round-trip verbatim', () => {
+  const bundle = exportBundle(tableDraft());
+  const body = bundle.members[0].resource.definition.sheets[0].visuals[0].tableVisual;
+  body.chartConfiguration.fieldWells.tableAggregatedFieldWells.groupBy[0].categoricalDimensionField.fieldId = 'region-id';
+  for (const fieldId of ['region-id', 'region']) {
+    body.chartConfiguration.sortConfiguration = { rowSort: sortBy(fieldId, 'DESC') };
+    const imported = importBundle(bundle);
+    assert.equal(selected(imported).groupSort, undefined);
+    assert.ok(selected(imported).imported.issues.length);
+    assert.deepEqual(exportBundle(imported), bundle);
   }
 });

@@ -188,7 +188,10 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const sortDirection = sortFs.direction === 'ASC' ? 'ASC' as const : sortFs.direction === 'DESC' ? 'DESC' as const : undefined;
   const importedGroupSort = sortWrappers.length === 1 && ['bar', 'bar100', 'pie', 'table'].includes(kind) &&
     Object.keys(obj(sortWrappers[0])).every(key => key === 'fieldSort') && Object.keys(sortFs).every(key => key === 'fieldId' || key === 'direction') &&
-    sortFieldId !== undefined && sortDirection !== undefined && sortBound.includes(sortFieldId)
+    sortFieldId !== undefined && sortDirection !== undefined && sortBound.includes(sortFieldId) &&
+    // Group sorts have no native-ID export rewrite. A column name must also
+    // identify that same bound field; otherwise retain the table sort read-only.
+    (kind !== 'table' || wellFields.get(sortFieldId) === sortFieldId)
     ? { fieldId: sortFieldId, direction: sortDirection } : undefined;
   // An imported category limit becomes editable draft state
   // (like the Group/Color sort). Unrecognized shapes stay retained read-only
