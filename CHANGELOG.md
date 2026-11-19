@@ -23,6 +23,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Pivots can sort outer column groups by a bound measure aggregate, with stable ties, nulls last, unchanged totals/subtotals, editable Column sort controls and draft/native/bundle round-trips (phase-plan fallback: parity-pivot-column-sort; no GitHub issue).
+
 - Category sorting by a bound measure aggregate (Sum, Average, Min, Max, Count or Distinct count), with stable per-facet ordering before category limits and editable bar/bar100/pie Properties controls (phase-plan fallback `parity-aggregation-sort`; no GitHub issue).
 
 - Pivots can sort each row or column dimension ascending or descending by its own values, with nulls last, unchanged totals/subtotals, editable Field sort controls and draft/native/bundle round-trips (phase-plan fallback: parity-pivot-field-sort; no GitHub issue).

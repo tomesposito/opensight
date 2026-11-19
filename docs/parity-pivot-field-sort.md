@@ -5,7 +5,8 @@ no GitHub issue. No new dependencies, configuration or hosted service is needed.
 
 ## Configuration and validation
 
-Pivot configuration accepts only `fieldSortOptions` inside `sortConfiguration`:
+This slice adds `fieldSortOptions` inside `sortConfiguration`. Pivots also
+accept [ColumnSort](parity-pivot-column-sort.md) as a separate measure-based sort:
 
 ```json
 {"sortConfiguration":{"fieldSortOptions":[{"fieldId":"region","sortDirection":"ASC"},{"fieldId":"category","sortDirection":"DESC"}]}}
@@ -65,9 +66,10 @@ not an object is rejected by the existing bundle-envelope validator.
 
 ## Limits and verification
 
-Sorting is by each dimension's own values only; **sort-by-measure is not
-supported**. Pivot `ColumnSort` / `RowLabelSort` and KPI `TrendGroupSort` remain
-unsupported. This slice makes no broader QuickSight fidelity claim.
+Field sorting orders each dimension by its own values.
+[Pivot ColumnSort](parity-pivot-column-sort.md) now supports sorting outer column
+groups by a bound measure aggregate and supersedes field sorting at that level.
+Pivot `RowLabelSort` and KPI `TrendGroupSort` remain unsupported. This slice makes no broader QuickSight fidelity claim.
 
 `packages/web/test/pivot-field-sort.test.mjs` is picked up by the existing web
 `test/*.test.mjs` glob, reached by root `npm test`. It covers both dialects,

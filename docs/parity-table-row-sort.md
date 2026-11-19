@@ -23,7 +23,8 @@ and multiple entries raise a named `CompileError`.
 
 Tables reject category, category-limit, facet and breakdown sort settings.
 Other visual kinds reject `rowSort`. KPI and insight reject `sortConfiguration`
-entirely. Pivot accepts only [dimension field sorts](parity-pivot-field-sort.md);
+entirely. Pivot accepts [dimension field sorts](parity-pivot-field-sort.md) and
+[measure-based ColumnSort](parity-pivot-column-sort.md);
 table dataLabels, tooltip and legend gates are unchanged.
 
 ## Ordering
@@ -64,8 +65,9 @@ identify the same native field cannot bypass import validation.
 ## Limits and verification
 
 Only a **single sort entry** is supported, matching the existing categorySort
-limit. Pivot `ColumnSort`/`RowLabelSort` and KPI `TrendGroupSort` remain unsupported
-and fail closed. No broader QuickSight fidelity claim is made.
+limit. [Pivot ColumnSort](parity-pivot-column-sort.md) now supports ordering outer
+column groups by a measure. Pivot `RowLabelSort` and KPI `TrendGroupSort` remain
+unsupported and fail closed. No broader QuickSight fidelity claim is made.
 
 `packages/web/test/table-row-sort.test.mjs` is included by the existing web
 `test/*.test.mjs` glob, reached by root `npm test`. It covers both dialects,
