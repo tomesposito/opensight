@@ -118,6 +118,7 @@ export interface AuthorVisual {
   subtitle?: string; subtitleVisible?: boolean;
   dimension: string | null; measures: string[]; rows: string[]; columns: string[];
   trendField?: string;
+  targetField?: string;
   kpiTrendSort?: GroupSort;
   kpiOptions?: KpiOptions;
   smallMultiples?: string[];

@@ -78,3 +78,26 @@ for (const source of ['bundle', 'api']) {
     }
   });
 }
+import { buildAuthorQuery } from '../build/test/author-query.js';
+import { publishedBindings } from '../build/test/published-dashboard.js';
+import { activeSheet, authorReducer, emptyDraft } from '../build/test/authoring.js';
+const selected = d => activeSheet(d).visuals.find(v => v.id === activeSheet(d).selectedId);
+const kpiDraft = () => authorReducer(emptyDraft(), { type: 'add', kind: 'kpi' });
+test('author target queries preserve trend grain and calculated dependencies; missing target fails closed', () => {
+  const visual = { ...selected(kpiDraft()), measures: ['revenue'], targetField: 'profit' };
+  for (const trendField of [undefined, 'region', 'order_date']) {
+    const query = buildAuthorQuery({ ...visual, trendField });
+    assert.deepEqual(query.measures, ['revenue', 'profit'].map(name => ({ fieldId: name, columnName: name, aggregation: 'SUM' })));
+    assert.deepEqual(query.dimensions, trendField ? [{ fieldId: trendField, columnName: trendField, ...(trendField === 'order_date' ? { granularity: 'MONTH' } : {}) }] : []);
+  }
+  const calculations = [{ name: 'goal', expression: '{profit} * 2', role: 'measure' }];
+  assert.deepEqual(buildAuthorQuery({ ...visual, targetField: 'goal' }, calculations).calculatedFields, [{ name: 'goal', expression: '{profit} * 2' }]);
+  assert.equal(buildAuthorQuery(visual, [], [], { id: 'd', name: 'Data', columns: [{ name: 'revenue', type: 'DECIMAL' }] }), null);
+});
+test('published bindings include distinct native target IDs and date trend aliases', () => {
+  for (const source of ['bundle', 'api']) {
+    const v = input(true); config(v).fieldWells.trendGroups = [{ dateDimensionField: { ...dimension().categoricalDimensionField, dateGranularity: 'MONTH' } }];
+    assert.deepEqual(publishedBindings(dialect(v, source)), { value: 'value', target: 'target', period: 'month' });
+    assert.equal(compileVisual({ ...dialect(v, source), bindings: publishedBindings(dialect(v, source)), rows: [{ month: '2026-01', value: 4, target: 8 }] }).kpiTarget.value, 8);
+  }
+});

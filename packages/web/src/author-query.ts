@@ -63,7 +63,8 @@ export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly Ca
   // Waterfall breakdowns group by (dimension, breakdown): the query groups at
   // that grain so the renderer can interleave per-breakdown delta bars.
   const breakdownNames = visual.kind === 'waterfall' ? visual.breakdowns ?? [] : [];
-  const relevant = queryDependencies([...dimensions, ...facetNames, ...breakdownNames, ...visual.measures, ...visual.tooltipExtraFields.map(e => e.field), ...visual.filters.map(f => f.columnName), ...(visual.interactionFilters ?? []).map(f => f.columnName)], calculations);
+  const measures = [...visual.measures, ...(visual.kind === 'kpi' && visual.targetField ? [visual.targetField] : [])];
+  const relevant = queryDependencies([...dimensions, ...facetNames, ...breakdownNames, ...measures, ...visual.tooltipExtraFields.map(e => e.field), ...visual.filters.map(f => f.columnName), ...(visual.interactionFilters ?? []).map(f => f.columnName)], calculations);
   const names = new Set([...visual.filters.flatMap(f => f.parameterName ? [f.parameterName] : []), ...relevant.flatMap(c => [...c.expression.matchAll(/\$\{([^}]+)\}/g)].map(m => m[1]!))]);
   const used = parameters.filter(p => names.has(p.name));
   const dynamic = (visual.interactionFilters ?? []).map((filter, i) => {
@@ -76,7 +77,7 @@ export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly Ca
     ({ fieldId: name, columnName: name, ...(dataFields(calculations, dataset).find(f => f.name === name)?.type === 'DATETIME' ? { granularity: visual.dateGrain ?? 'MONTH' } : {}) });
   return {
     dimensions: [...dimensions.map(dimensionDescriptor), ...facetNames.map(dimensionDescriptor), ...breakdownNames.map(dimensionDescriptor)],
-    measures: [...visual.measures.map(name => ({ fieldId: name, columnName: name, aggregation: dataset?.metrics?.find(m => metricColumn(m.id) === name)?.defaultAggregation ?? 'SUM' })),
+    measures: [...measures.map(name => ({ fieldId: name, columnName: name, aggregation: dataset?.metrics?.find(m => metricColumn(m.id) === name)?.defaultAggregation ?? 'SUM' })),
       // A uniqueValues-only insight groups by category alone; the planner still
       // requires one explicit measure, so carry a COUNT like buildDistinctQuery
       // does — it is discarded by the compiler, never shown as narrative data.
