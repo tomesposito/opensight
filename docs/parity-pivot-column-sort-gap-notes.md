@@ -61,3 +61,47 @@ The script waits for autosave before taking comparison screenshots. An initial
 bar-dark mismatch was confined to autosave status chrome (bounds x16–1262,
 y88–185); seven other pairs already matched exactly. Waiting for the same
 settled state makes the comparison meaningful without hiding any UI.
+
+## Capture results and reference comparison
+
+The final capture run passed with **zero page errors and zero external
+requests**. All eight bar/line/table/pie light/dark screenshot pairs are
+byte-identical to the pre-slice demo after autosave settles. The acceptance
+script records their SHA-256 hashes and the pivot's before/after table values.
+
+The requested evidence directory contains:
+
+- `pivot-column-sort-light.png` and `pivot-column-sort-dark.png`: 1440×900
+  Properties captures showing Sum ascending, Software before Hardware.
+- `pivot-default.png`: the default column order.
+- `before-{bar,line,table,pie}-{light,dark}.png` and matching `after-*` files.
+- `baseline.json` and `acceptance.json`: hashes, typography, geometry, actual
+  rows, zero-error/request counts, save/reload and stale-measure cleanup results.
+
+The pivot aggregates across East and West: Hardware totals 550, Software 350.
+Descending retains Hardware first; ascending moves Software first. The rows
+remain East then West; the cells move intact from `[200,300]` / `[350,50]` to
+`[300,200]` / `[50,350]`. All six aggregation choices, clearing, save/reload and
+measure removal passed in the browser. Controls use 12px Arial with no page
+horizontal overflow. Visual review found that the shared button style did not
+highlight a selected direction in light chrome; a rule scoped to Column sort
+now makes that state visible, with browser assertions for both themes.
+
+Compared visually with local
+`lookfeel-references/qs-2026/qs-properties-group-color.jpg`: the Data → Visuals →
+canvas order, docked Properties, compact type and disclosure sections remain.
+The new controls are legible in both themes. The existing narrow card, gallery
+and explanatory offline chrome remain differences. No supplied reference shows
+pivot ColumnSort itself; exact geometry and broader visual fidelity remain
+unmeasured. No issue was filed under this slice's offline/no-GitHub boundary.
+Capture artifacts remain outside the repo as explicitly required by the brief.
+
+Final capture command:
+
+```sh
+OPENSIGHT_CHROMIUM="$HOME/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell" node packages/web/scripts/capture-pivot-column-sort.mjs
+```
+
+Logs: `/tmp/opensight-column-sort-before-capture.log` and
+`/tmp/opensight-column-sort-capture.log`. The pre-slice run uses `--baseline`
+and `OPENSIGHT_DEMO=/tmp/opensight-before-column-sort.html`.

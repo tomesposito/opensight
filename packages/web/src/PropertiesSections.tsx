@@ -331,7 +331,7 @@ export function PivotColumnSortOptions({ visual, dispatch }: SectionProps) {
           const aggregation = SORT_AGGREGATIONS.find(value => value === e.target.value);
           if (aggregation) setSort(sort.measureFieldId, { aggregation });
         }}>{SORT_AGGREGATIONS.map(value => <option key={value} value={value}>{aggregationNames[value]}</option>)}</select></label>
-        <div className="property-inline" role="group" aria-label="Column sort direction">
+        <div className="property-inline pivot-column-sort-direction" role="group" aria-label="Column sort direction">
           {(['ASC', 'DESC'] as const).map(direction => <button type="button" key={direction}
             aria-label={`Column sort ${direction === 'ASC' ? 'ascending' : 'descending'}`} aria-pressed={sort.direction === direction}
             onClick={() => setSort(sort.measureFieldId, { direction })}>{direction === 'ASC' ? '↑' : '↓'}</button>)}
