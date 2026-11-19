@@ -1,3 +1,4 @@
+import { parseKpiOptions } from './kpi-options.js';
 import { redshiftGranularity, redshiftTimestamp } from './redshift-sql.js';
 import { definitionParameters, validateDefinitionControls } from './definition-parameters.js';
 import { rowFilterSql } from './row-filter.js';
@@ -378,20 +379,21 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
   // ForecastConfigurations and the line Type are line-family only (issue #257):
   // on any other visual kind they remain unrecognized and fail closed above.
   const lineFamily = kind === 'LineChartVisual';
-  keys(config, ['FieldWells', 'Legend', 'DataLabels', 'Tooltip', 'Orientation', 'BarsArrangement', 'DonutOptions', 'TotalOptions', 'OpenSightSubtotalOptions', ...(lineFamily ? ['ForecastConfigurations', 'Type'] : [])], cp);
+  keys(config, ['FieldWells', 'Legend', 'DataLabels', 'Tooltip', 'Orientation', 'BarsArrangement', 'DonutOptions', 'TotalOptions', 'OpenSightSubtotalOptions', ...(lineFamily ? ['ForecastConfigurations', 'Type'] : []), ...(kind === 'KPIVisual' ? ['SortConfiguration', 'KPIOptions'] : [])], cp);
   if (lineFamily && config.Type !== undefined && !['LINE', 'AREA', 'STACKED_AREA'].includes(config.Type as string)) fail('UNSUPPORTED_FEATURE', `${cp}.Type`, 'line chart type must be LINE, AREA or STACKED_AREA');
   const forecastCount = lineFamily ? forecastConfigurationCount(config.ForecastConfigurations, `${cp}.ForecastConfigurations`) : 0;
   let wp = `${cp}.FieldWells`;
   let wells = object(config.FieldWells, wp);
-  const expectedKind = wellKinds[kind];
+  const expectedKind = kind === 'KPIVisual' && Object.hasOwn(wells, 'KPIFieldWells') ? 'KPIFieldWells' : wellKinds[kind];
   if (expectedKind) {
     const [wellKind, wellBody] = variant(wells, wp);
     equals(wellKind, expectedKind, wp);
     wells = wellBody;
     wp += `.${wellKind}`;
   }
-  const dimKey = kind === 'TableVisual' ? 'GroupBy' : 'Category';
-  keys(wells, kind === 'KPIVisual' ? ['Values'] : [dimKey, 'Values'], wp);
+  const dimKey = kind === 'KPIVisual' ? 'TrendGroups' : kind === 'TableVisual' ? 'GroupBy' : 'Category';
+  keys(wells, kind === 'KPIVisual' ? ['Values', 'TrendGroups', 'TargetValues'] : [dimKey, 'Values'], wp);
+  if (kind === 'KPIVisual') emptyArray(wells.TargetValues, `${wp}.TargetValues`);
   const ids = new Set<string>();
   const outputs = new Set<string>();
   // Field IDs are stable output names; one month dimension keeps the fixture's 'month' alias.
@@ -412,7 +414,7 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
     const binding = binder.bind(name, fp), type = binding.scalarType;
     if (binding.level === 'aggregate' || binding.level === 'table') fail('TYPE_MISMATCH', fp, 'an aggregate calculation cannot be a grouping dimension');
     const month = kind === 'DateDimensionField';
-    const grain = month ? string(f.DateGranularity, `${fp}.DateGranularity`) : undefined;
+    const grain = month ? string(visual.kind === 'KPIVisual' ? f.DateGranularity ?? 'DAY' : f.DateGranularity, `${fp}.DateGranularity`) : undefined;
     if (grain && !['YEAR', 'QUARTER', 'MONTH', 'DAY'].includes(grain)) fail('UNSUPPORTED_FEATURE', `${fp}.DateGranularity`, 'unsupported date granularity');
     if (type !== (month ? 'datetime' : 'string')) fail('TYPE_MISMATCH', fp, 'dimension type does not match column type');
     return { fieldId, outputName: outputName(fieldId, grain, fp), columnName: name,
@@ -440,6 +442,26 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
       aggregation: aggregationValue as Aggregation, path: fp };
   });
   if (!measures.length) fail('INVALID_INPUT', `${wp}.Values`, 'at least one explicit measure is required');
+  if (kind === 'KPIVisual') {
+    if (config.KPIOptions !== undefined) parseKpiOptions(config.KPIOptions, true, `${cp}.KPIOptions`, (path, message) => fail('UNSUPPORTED_FEATURE', path, message));
+    if (dimensions.length > 1) fail('UNSUPPORTED_FEATURE', wp, 'KPI supports exactly one trend dimension');
+    if (dimensions.length && (measures.length !== 1 || measures[0]!.aggregation !== 'SUM')) fail('UNSUPPORTED_FEATURE', wp, 'trended KPI requires one SUM measure');
+    if (config.SortConfiguration !== undefined) {
+      const sp = `${cp}.SortConfiguration`, sort = object(config.SortConfiguration, sp);
+      keys(sort, ['TrendGroupSort'], sp);
+      if (sort.TrendGroupSort !== undefined) {
+        const entries = array(sort.TrendGroupSort, `${sp}.TrendGroupSort`);
+        if (entries.length !== 1) fail('INVALID_INPUT', sp, 'expected exactly one trend group sort');
+        const wrapper = object(entries[0], sp);
+        keys(wrapper, ['FieldSort'], sp);
+        const fs = object(wrapper.FieldSort, sp);
+        keys(fs, ['FieldId', 'Direction'], sp);
+        if (!dimensions.length || fs.FieldId !== dimensions[0]!.fieldId) fail('INVALID_INPUT', sp, 'trend group sort must reference the bound trend dimension');
+        if (fs.Direction !== undefined && fs.Direction !== 'ASC' && fs.Direction !== 'DESC') fail('INVALID_INPUT', sp, 'invalid trend sort direction');
+      }
+    }
+  }
+
   // A forecast is computed over a time series: without a date dimension there
   // is no series to project, so the configuration cannot execute as defined.
   if (forecastCount && !dimensions.some(d => d.granularity !== undefined)) fail('UNSUPPORTED_FEATURE', `${cp}.ForecastConfigurations`, 'forecast configurations require a date dimension');

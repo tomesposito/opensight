@@ -39,7 +39,7 @@ const cases = [
   ['ambiguous visual', r => { r.analysis.Definition.Sheets[0].Visuals[3].BarChartVisual = {}; }, 'INVALID_INPUT', '.Visuals[3]'],
   ['unknown visual', r => { r.analysis.Definition.Sheets[0].Visuals[3] = { PivotTableVisual: body(r) }; }, 'UNSUPPORTED_FEATURE', '.PivotTableVisual'],
   ['missing field wells', r => { delete body(r).ChartConfiguration.FieldWells; }, 'INVALID_INPUT', '.FieldWells'],
-  ['sorting', r => { body(r).ChartConfiguration.SortConfiguration = {}; }, 'UNSUPPORTED_FEATURE', '.SortConfiguration'],
+  ['unsupported KPI category sorting', r => { body(r).ChartConfiguration.SortConfiguration = { CategorySort: [] }; }, 'UNSUPPORTED_FEATURE', '.SortConfiguration.CategorySort'],
   ['actions', r => { body(r).Actions = [{}]; }, 'UNSUPPORTED_FEATURE', '.Actions'],
   ['empty measures', r => { wells(r).Values = []; }, 'INVALID_INPUT', '.Values'],
   ['null measure', r => { wells(r).Values = [null]; }, 'INVALID_INPUT', '.Values[0]'],

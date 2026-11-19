@@ -29,7 +29,7 @@ export function buildAuthorPreview(visual: AuthorVisual): FixtureVisual {
   // at the visual's grain; failures yield no rows.
   const faceted = FACETED_KINDS.includes(visual.kind) && !!visual.smallMultiples?.length;
   const brokenDown = visual.kind === 'waterfall' && !!visual.breakdowns?.length;
-  const rows = visual.tooltipExtraFields.length || faceted || brokenDown
+  const rows = visual.tooltipExtraFields.length || faceted || brokenDown || visual.kind === 'kpi' && !!visual.trendField
     ? (() => { const request = buildAuthorQuery(visual); return request ? executeFixtureQuery(request).rows : null; })()
     : !authorVisualProblem(visual) && !visual.filters.length && visual.measures.length === 1 && visual.measures[0] === 'revenue' && grain
       ? oracles.get(grain) ?? null : null;

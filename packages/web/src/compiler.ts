@@ -1,6 +1,6 @@
 import { validOProvenance } from './o-provenance.js';
 import { formatMetric } from './governed-metrics.js';
-import { formatNumber, groupedPeriodDate, shiftDate, resultDate } from '@opensight/query-engine/browser';
+import { parseKpiOptions, formatNumber, groupedPeriodDate, shiftDate, resultDate } from '@opensight/query-engine/browser';
 import { computeForecast, forecastConfigValid, MIN_FORECAST_POINTS, prepareChronological, type ForecastConfig } from './forecast.js';
 import { convertDefinition } from './definition-converter.js';
 import { InsightError, projectInsightBody, normalizeInsight, uniqueValuesOnly, topBottomMoversOnly } from './insight-configuration.js';
@@ -15,6 +15,7 @@ import { SORT_AGGREGATIONS } from './model.js';
 import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
 import { applyCategoryLimit, CATEGORY_LIMIT_KINDS } from './category-limit.js';
+import { kpiComparison, orderKpiTrend } from './kpi-trend.js';
 import { compareCells } from './cell-sort.js';
 import { applyDisplayOptions, legendTextStyle } from './display-options.js';
 import { FACETED_KINDS, applyFacetLimit, facetLayout, facetPanelGrids, facetTitles, groupRowsByFacet, type FacetGroup } from './facet-layout.js';
@@ -273,7 +274,8 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const extra = extraKind(kind) ? EXTRA_VISUALS[kind] : undefined;
   const common = [key('fieldWells', 'FieldWells')];
   if (kind !== 'insight' && kind !== 'kpi' && kind !== 'table' && kind !== 'pivot') common.push(key('sortConfiguration', 'SortConfiguration'), key('dataLabels', 'DataLabels'), key('tooltip', 'Tooltip'), key('legend', 'Legend'));
-  if (kind === 'table' || kind === 'pivot') common.push(key('sortConfiguration', 'SortConfiguration'));
+  if (kind === 'table' || kind === 'pivot' || kind === 'kpi') common.push(key('sortConfiguration', 'SortConfiguration'));
+  if (kind === 'kpi') common.push(key('kpiOptions', 'KPIOptions'));
   if (kind === 'pie') common.push(key('donutOptions', 'DonutOptions'));
   if (FACETED_KINDS.includes(kind)) common.push(key('opensightMultiplesOptions', 'OpenSightMultiplesOptions'));
   if (kind === 'bar' || kind === 'bar100') common.push(key('orientation', 'Orientation'), key('barsArrangement', 'BarsArrangement'));
@@ -287,7 +289,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const fpath = `${cpath}.${key('fieldWells', 'FieldWells')}`;
   const outer = object(config[key('fieldWells', 'FieldWells')], fpath);
   const wellsKey = extra ? (extra.wells ? key(extra.wells, extra.wells[0]!.toUpperCase() + extra.wells.slice(1)) : '') : kind === 'pie' ? key('pieChartAggregatedFieldWells', 'PieChartAggregatedFieldWells')
-    : { bar: key('barChartAggregatedFieldWells', 'BarChartAggregatedFieldWells'), line: key('lineChartAggregatedFieldWells', 'LineChartAggregatedFieldWells'), table: key('tableAggregatedFieldWells', 'TableAggregatedFieldWells'), pivot: key('pivotTableAggregatedFieldWells', 'PivotTableAggregatedFieldWells'), kpi: '' }[kind as 'bar' | 'line' | 'table' | 'pivot' | 'kpi'];
+    : { bar: key('barChartAggregatedFieldWells', 'BarChartAggregatedFieldWells'), line: key('lineChartAggregatedFieldWells', 'LineChartAggregatedFieldWells'), table: key('tableAggregatedFieldWells', 'TableAggregatedFieldWells'), pivot: key('pivotTableAggregatedFieldWells', 'PivotTableAggregatedFieldWells'), kpi: Object.hasOwn(outer, key('kpiFieldWells', 'KPIFieldWells')) ? key('kpiFieldWells', 'KPIFieldWells') : '' }[kind as 'bar' | 'line' | 'table' | 'pivot' | 'kpi'];
   if (wellsKey) keys(outer, [wellsKey], fpath);
   const wells = wellsKey ? object(outer[wellsKey], `${fpath}.${wellsKey}`) : outer;
   const wpath = wellsKey ? `${fpath}.${wellsKey}` : fpath;
@@ -298,9 +300,9 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   // kinds; every other kind still rejects the well.
   const smallMultiplesKey = key('smallMultiples', 'SmallMultiples');
   const faceted = FACETED_KINDS.includes(kind);
-  const unused = [key('colors', 'Colors'), key('targetValues', 'TargetValues'), key('trendGroups', 'TrendGroups'), ...(faceted ? [] : [smallMultiplesKey])];
+  const unused = [key('colors', 'Colors'), key('targetValues', 'TargetValues'), ...(kind === 'kpi' ? [] : [key('trendGroups', 'TrendGroups')]), ...(faceted ? [] : [smallMultiplesKey])];
   const wellKey = (name: string) => key(name, kind === 'waterfall' && name === 'category' ? 'Categories' : name.startsWith('opensight') ? `OpenSight${name.slice(9)}` : name[0]!.toUpperCase() + name.slice(1));
-  keys(wells, [...(extra ? [...extra.dimensions, ...extra.measures].map(wellKey) : [categoryKey, valueKey]), ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...(kind === 'waterfall' ? [key('breakdowns', 'Breakdowns')] : []), ...(faceted ? [smallMultiplesKey] : []), ...unused], wpath);
+  keys(wells, [...(extra ? [...extra.dimensions, ...extra.measures].map(wellKey) : [categoryKey, valueKey]), ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...(kind === 'kpi' ? [key('trendGroups', 'TrendGroups')] : []), ...(kind === 'waterfall' ? [key('breakdowns', 'Breakdowns')] : []), ...(faceted ? [smallMultiplesKey] : []), ...unused], wpath);
   for (const name of unused) if (list(wells[name], `${wpath}.${name}`).length) fail(`${wpath}.${name}`, 'field well not supported');
   const field = (value: unknown, measure: boolean, fp: string): Field => {
     const wrapper = object(value, fp);
@@ -317,6 +319,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
       const agg = object(f[aggKey], `${fp}.${aggKey}`);
       const sumKey = key('simpleNumericalAggregation', 'SimpleNumericalAggregation');
       keys(agg, [sumKey], fp);
+      if (kind === 'kpi' && list(wells[key('trendGroups', 'TrendGroups')], fp).length && agg[sumKey] !== 'SUM') fail(`${fp}.${aggKey}`, 'trended KPI requires an explicit SUM result binding');
       if (agg[sumKey] !== 'SUM' && !(String(object(f[key('column', 'Column')], fp)[key('columnName', 'ColumnName')]).startsWith('__metric_') && ['AVG', 'COUNT', 'MIN', 'MAX', 'DISTINCT_COUNT'].includes(String(agg[sumKey])))) fail(`${fp}.${aggKey}`, 'only explicit SUM result bindings are supported');
     }
     if (name === key('dateDimensionField', 'DateDimensionField')) enumValue(f[key('dateGranularity', 'DateGranularity')], ['DAY', 'MONTH', 'QUARTER', 'YEAR'], 'DAY', `${fp}.${key('dateGranularity', 'DateGranularity')}`);
@@ -334,6 +337,15 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const rowDimensions = dimensionNames.flatMap(name => list(wells[name], `${wpath}.${name}`).map((v, i) => field(v, false, `${wpath}.${name}[${i}]`)));
   const columnDimensions = kind === 'pivot' ? list(wells[key('columns', 'Columns')], wpath).map((v, i) => field(v, false, `${wpath}.columns[${i}]`)) : [];
   const dimensions = [...rowDimensions, ...columnDimensions];
+  const trendKey = key('trendGroups', 'TrendGroups');
+  const trends = kind === 'kpi' ? list(wells[trendKey], `${wpath}.${trendKey}`) : [];
+  if (trends.length > 1) fail(`${wpath}.${trendKey}`, 'KPI supports exactly one trend dimension');
+  let trendDimension: Field | undefined;
+  if (trends.length) {
+    const tp = `${wpath}.${trendKey}[0]`;
+    keys(object(trends[0], tp), [key('categoricalDimensionField', 'CategoricalDimensionField'), key('dateDimensionField', 'DateDimensionField')], tp);
+    trendDimension = field(trends[0], false, tp);
+  }
   const measures = measureNames.flatMap(name => list(wells[name], `${wpath}.${name}`).map((v, i) => field(v, true, `${wpath}.${name}[${i}]`)));
   // Small multiples: one facet dimension, rendered as a grid of per-facet panels.
   let facet: Field | undefined;
@@ -386,10 +398,14 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     if (kind === 'kpi' ? dimensions.length !== 0 : kind === 'pivot' || kind === 'table' ? dimensions.length < 1 : dimensions.length !== 1) fail(wpath, kind === 'kpi' ? 'KPI must have no category' : 'exactly one category/group field is supported');
     if (!measures.length || ((kind === 'pie' || kind === 'kpi') && measures.length !== 1)) fail(wpath, 'expected supported number of measures (pie/KPI: one)');
   }
-  const fields = [...dimensions, ...(breakdown ? [breakdown] : []), ...(facet ? [facet] : []), ...measures];
+  const fields = [...dimensions, ...(trendDimension ? [trendDimension] : []), ...(breakdown ? [breakdown] : []), ...(facet ? [facet] : []), ...measures];
   if (new Set(fields.map(f => f.id)).size !== fields.length) fail(wpath, 'duplicate field IDs');
   if (new Set(fields.map(f => f.dataSet)).size !== 1) fail(wpath, 'multiple datasets are unsupported');
   const warnings: string[] = extra ? [`${p}: ${extra.note}`] : [];
+  const kpiOptions = kind === 'kpi' && config[key('kpiOptions', 'KPIOptions')] !== undefined
+    ? parseKpiOptions(config[key('kpiOptions', 'KPIOptions')], !bundle, `${cpath}.${key('kpiOptions', 'KPIOptions')}`, fail) : undefined;
+  if (kpiOptions?.progressBar?.visibility === 'VISIBLE') warnings.push('KPI progressBar is retained but cannot render without supported targetValues.');
+  if (kpiOptions?.trendArrows?.visibility === 'VISIBLE') warnings.push('KPI trendArrows are retained but are not rendered in this slice.');
   const gauge = object(config[key('opensightGauge', 'OpenSightGauge')] ?? {}, cpath);
   keys(gauge, ['min', 'max'], cpath);
   const gaugeMin = gauge.min ?? 0, gaugeMax = gauge.max ?? 100, bins = config[key('opensightBins', 'OpenSightBins')] ?? 10;
@@ -467,14 +483,32 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   if (forecast && !dimensions[0]?.dateGranularity) warnings.push(`${cpath}.${forecastKey}: forecast ignored — the chart's category field is not a date dimension.`);
   const sortPath = `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`;
   const sortRaw = config[key('sortConfiguration', 'SortConfiguration')];
-  const sort = object(kind === 'pivot' ? (sortRaw === undefined ? {} : sortRaw) : sortRaw ?? {}, kind === 'pivot' ? sortPath : cpath);
+  const sort = object(kind === 'pivot' || kind === 'kpi' ? (sortRaw === undefined ? {} : sortRaw) : sortRaw ?? {}, kind === 'pivot' ? sortPath : cpath);
   const sortsKey = kind === 'table' ? key('rowSort', 'RowSort') : key('categorySort', 'CategorySort');
   const facetSortKey = key('smallMultiplesSort', 'SmallMultiplesSort');
   const breakdownLimitKey = key('breakdownItemsLimit', 'BreakdownItemsLimit');
   const fieldSortOptionsKey = key('fieldSortOptions', 'FieldSortOptions');
   const columnSortKey = key('columnSort', 'ColumnSort');
   const pivotRowSortKey = key('rowSort', 'RowSort');
-  keys(sort, kind === 'pivot' ? [fieldSortOptionsKey, columnSortKey, pivotRowSortKey] : ['table', 'radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration'), ...(FACETED_KINDS.includes(kind) ? [facetSortKey] : [])], sortPath);
+  keys(sort, kind === 'kpi' ? [key('trendGroupSort', 'TrendGroupSort')] : kind === 'pivot' ? [fieldSortOptionsKey, columnSortKey, pivotRowSortKey] : ['table', 'radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration'), ...(FACETED_KINDS.includes(kind) ? [facetSortKey] : [])], sortPath);
+  const trendSortKey = key('trendGroupSort', 'TrendGroupSort');
+  const trendSortPath = `${sortPath}.${trendSortKey}`;
+  let trendGroupSort: VisualModel['trendGroupSort'];
+  if (sort[trendSortKey] !== undefined) {
+    const entries = list(sort[trendSortKey], trendSortPath);
+    if (entries.length !== 1) fail(trendSortPath, 'expected exactly one trend group sort');
+    const wrapper = object(entries[0], `${trendSortPath}[0]`);
+    const fsKey = key('fieldSort', 'FieldSort'), asKey = key('aggregationSort', 'AggregationSort');
+    keys(wrapper, [fsKey, asKey], trendSortPath);
+    if (Object.keys(wrapper).length !== 1) fail(trendSortPath, 'expected exactly one fieldSort or aggregationSort');
+    if (Object.hasOwn(wrapper, asKey)) fail(trendSortPath, 'aggregationSort is unsupported for KPI trend');
+    const fs = object(wrapper[fsKey], `${trendSortPath}.${fsKey}`);
+    keys(fs, [key('fieldId', 'FieldId'), key('direction', 'Direction')], trendSortPath);
+    const fieldId = text(fs[key('fieldId', 'FieldId')], trendSortPath);
+    if (!trendDimension || fieldId !== trendDimension.id) fail(trendSortPath, 'trend group sort must reference the bound trend dimension');
+    const direction = enumValue(fs[key('direction', 'Direction')], ['ASC', 'DESC'], 'ASC', trendSortPath) as 'ASC' | 'DESC';
+    trendGroupSort = { fieldId, direction };
+  }
   const columnSortPath = `${sortPath}.${columnSortKey}`;
   const columnSorts = list(sort[columnSortKey], columnSortPath);
   if (columnSorts.length > 1) fail(columnSortPath, 'only one column sort is supported');
@@ -669,6 +703,9 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     ...(rowSort ? { rowSort } : {}),
     ...(fieldSortOptions.length ? { fieldSortOptions } : {}),
     ...(breakdownLimit ? { breakdownLimit } : {}),
+    ...(trendDimension ? { trendDimension } : {}),
+    ...(trendGroupSort ? { trendGroupSort } : {}),
+    ...(kpiOptions ? { kpiOptions } : {}),
     ...(facet ? { facet } : {}),
     ...(breakdown ? { breakdown } : {}),
     ...(forecast ? { forecast } : {}),
@@ -689,7 +726,7 @@ export function compileVisual(input: Input): CompiledVisual {
   if (input.theme !== undefined && !themeValid(input.theme)) fail(input.path, 'invalid analysis theme');
   const theme = input.theme ?? LIGHT_THEME;
   const model = normalizeVisual(input.source, input.definition, input.path);
-  const fields = [...model.dimensions, ...(model.breakdown ? [model.breakdown] : []), ...(model.facet ? [model.facet] : []), ...model.measures];
+  const fields = [...model.dimensions, ...(model.trendDimension ? [model.trendDimension] : []), ...(model.breakdown ? [model.breakdown] : []), ...(model.facet ? [model.facet] : []), ...model.measures];
   // Extra tooltip fields ride the result rows as additional measures; they never join the wells,
   // the series, or the data table. Their column alias is the field id (the query plans outputName = fieldId).
   const extraFields: Field[] = (model.tooltipExtraFields ?? []).map(e =>
@@ -721,6 +758,10 @@ export function compileVisual(input: Input): CompiledVisual {
   const availableExtras = extraFields.filter(field => rows.every(row => Object.hasOwn(row, extraColumn(field))));
   for (const e of model.tooltipExtraFields ?? []) {
     if (!availableExtras.some(f => f.id === e.id)) model.warnings.push(`${input.path}: tooltip field '${e.id}' has no data in this result and will not be shown.`);
+  }
+  if (model.trendDimension) {
+    const ordered = orderKpiTrend(rows, model.trendDimension, model.trendGroupSort?.direction ?? 'ASC', cell, message => fail(input.path, message));
+    rows.splice(0, rows.length, ...ordered);
   }
   if (model.sort) {
     const sort = model.sort;
@@ -944,12 +985,27 @@ export function compileVisual(input: Input): CompiledVisual {
     }
     option.legend = { show: model.legend, bottom: 0 };
   } else if (model.kind === 'kpi') {
-    if (rows.length > 1) fail(input.path, 'KPI expects exactly one aggregate row, not a client-side sum');
+    if (!model.trendDimension && rows.length > 1) fail(input.path, 'KPI expects exactly one aggregate row, not a client-side sum');
     const row = rows[0];
-    const value = row ? number(row, model.measures[0]!) : null;
+    const values = rows.map(row => number(row, model.measures[0]!));
+    const value = model.trendDimension ? values.reduce<number | null>((sum, value) => value === null ? sum : (sum ?? 0) + value, null) : row ? number(row, model.measures[0]!) : null;
+    if (value !== null && !Number.isFinite(value)) fail(input.path, 'KPI total must be finite');
+    const sparkline = !!model.trendDimension && rows.length >= 2 && model.kpiOptions?.sparkline?.visibility !== 'HIDDEN';
+    const comparison = model.trendDimension && model.kpiOptions?.comparison ? kpiComparison(values, model.kpiOptions.comparison.comparisonMethod) : null;
+    const comparisonLabel = comparison === null ? undefined : `${displayCell(comparison)}${model.kpiOptions?.comparison?.comparisonMethod === 'PERCENT_DIFFERENCE' ? '%' : ''}`;
+    const primaryComparison = model.kpiOptions?.primaryValueDisplayType === 'COMPARISON';
+    if (primaryComparison && comparison === null) model.warnings.push('KPI COMPARISON is unavailable; falling back to ACTUAL.');
     const label = state === 'unavailable' ? DATA_REQUIRED_LABEL : state === 'empty' ? 'No results' : value === null ? 'No value' : formatMetric(value, model.formatting?.metricFormats?.[model.measures[0]!.column]) ?? displayCell(value);
     option.tooltip = { show: false };
-    option.graphic = [{ type: 'text', left: 'center', top: 'middle', style: { text: label, fill: (model.palette ?? theme.palette)[0], fontSize: value === null ? 22 : 56, fontWeight: 600, fontFamily: theme.fontFamily } }];
+    option.graphic = [{ type: 'text', left: 'center', top: sparkline ? '12%' : 'middle', style: { text: primaryComparison && comparisonLabel !== undefined ? comparisonLabel : label, fill: (model.palette ?? theme.palette)[0], fontSize: value === null ? 22 : 56, fontWeight: 600, fontFamily: theme.fontFamily } }];
+    if (comparisonLabel !== undefined && !primaryComparison) option.graphic.push({ type: 'text', left: 'center', top: sparkline ? '42%' : '70%', style: { text: comparisonLabel, fill: theme.textColor, fontSize: 20, fontFamily: theme.fontFamily } });
+    if (sparkline) {
+      option.grid = { left: 24, right: 24, top: '60%', bottom: 16 };
+      option.xAxis = { type: 'category', show: false, boundaryGap: false, data: rows.map(row => displayCell(cell(row, model.trendDimension!))) };
+      option.yAxis = { type: 'value', show: false, scale: true };
+      option.series = [{ type: 'line', data: values, connectNulls: false, showSymbol: false, silent: true, lineStyle: { width: 2 }, ...(model.kpiOptions?.sparkline?.type === 'AREA' ? { areaStyle: { opacity: 0.2 } } : {}) }];
+    }
+
   }
   applyDisplayOptions(model, option, theme);
   if (model.tooltip && model.tooltipDetail?.type === 'detailed') {
@@ -1105,7 +1161,7 @@ export function compileVisual(input: Input): CompiledVisual {
       };
     }
   }
-  return { model, option, state, ...(forecastNote ? { forecastNote } : {}), ...(narrative ? { narrative } : {}), table: { columns: fields.map(f => fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
+  return { model, option, state, ...(forecastNote ? { forecastNote } : {}), ...(narrative ? { narrative } : {}), table: { ...(model.trendDimension ? { dimensionCount: 1 } : {}), columns: fields.map(f => fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
     ...(model.formatting ? { visibleColumns: fields.map(f => (model.measures.includes(f) ? model.formatting?.valueNamesVisible : model.formatting?.rowNamesVisible) === false ? '' : fieldName(f, model.formatting)) } : {}),
   } };
 }
