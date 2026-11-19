@@ -1,0 +1,17 @@
+{
+  "commit": "ddb9ea7689d32281384e75b2ee438d66d143b3d1",
+  "hashes": {
+    "totals-false/subtotals-false/rows": "a985eac4dd31563d67386be2d5324ed99cdc26bad14d2083736a0b4a2f4827d3",
+    "totals-false/subtotals-false/empty": "fe1ee10dddff0bce70e6fec2aa968821dfbec98f2ae0b2893d19bd4969d14f54",
+    "totals-false/subtotals-false/unavailable": "02fed262fc5d0ccdd8641057e44b48a32123cbb76f4116d59dc96ff746431c13",
+    "totals-false/subtotals-true/rows": "b9baa8184d46d98129442cafd231cab3c6c572feabc8156936c888d8446a808f",
+    "totals-false/subtotals-true/empty": "e5c8c8d18f2ca21056ed5dc67bd5c33b19adcc1e53b3edb69b23f239b1a32eda",
+    "totals-false/subtotals-true/unavailable": "960be48140698f749a3b66997b2db4647a897081cdee1f7b864e28d9911d71f9",
+    "totals-true/subtotals-false/rows": "9a889fdc0acf0248a64c2b9f6c602007197ddc701bb7aa769c66bb2f1fb7c678",
+    "totals-true/subtotals-false/empty": "96727020e608ceb29b50895371cb442da01c7a164a0118a8615b99089b62103d",
+    "totals-true/subtotals-false/unavailable": "eeca8eabb3d6fe3ee9b38060c7e60927ce79461c31346c55b07eaa8910957f56",
+    "totals-true/subtotals-true/rows": "b23ee675fbd4473b78a0d8eb305cf03732814c64566919b8e2a0a604c4aeae51",
+    "totals-true/subtotals-true/empty": "638b953fee8f0d010a58c9c5eacb06f9b7c5f484b695908680056cbef4ab9a06",
+    "totals-true/subtotals-true/unavailable": "e920931070ed2e756f88a8d499127071cebec4129ec653befb19fa0873cd13c6"
+  }
+}

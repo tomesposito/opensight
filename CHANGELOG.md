@@ -23,6 +23,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Tables can sort rows ascending or descending by any bound dimension or measure, with nulls last, intact totals/subtotal groups, editable Row sort controls and draft/native/bundle round-trips (phase-plan fallback: parity-table-row-sort; no GitHub issue).
+
 - Small multiples panels can sort ascending or descending by their facet field before panel limits select the first N, with Other kept last, editable Multiples Options controls and draft/native/bundle round-trips (phase-plan fallback: parity-sm-sort; no GitHub issue).
 
 - Bar, 100% stacked bar, line, area and combo charts now compute category limits with optional Other buckets, per-panel display-order semantics, editable Properties controls and native/bundle round-trips (phase-plan fallback: parity-category-limit; no GitHub issue).

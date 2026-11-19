@@ -121,7 +121,7 @@ export interface AuthorVisual {
   breakdowns?: string[];
   /** Multiples Options panel state (pie small multiples). Inert until a facet is set. */
   multiplesOptions?: MultiplesOptions;
-  /** Group/Color sort: sort the slices/segments by one bound field. Renders through sortConfiguration. */
+  /** Group/Color or table row sort by one bound field. Renders through sortConfiguration. */
   groupSort?: GroupSort;
   /** Category limit: top-N categories with an optional "Other" bucket. Renders through sortConfiguration. */
   sliceLimit?: SliceLimit;
@@ -1034,8 +1034,8 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   // Sort and limits share SortConfiguration; each limit serializes only for
   // its supported kind and (where required) an assigned field well.
   const sortConfiguration = {
-    ...(visual.groupSort && ['bar', 'bar100', 'pie'].includes(visual.kind)
-      ? { categorySort: [{ fieldSort: { fieldId: visual.groupSort.fieldId, direction: visual.groupSort.direction } }] } : {}),
+    ...(visual.groupSort && ['bar', 'bar100', 'pie', 'table'].includes(visual.kind)
+      ? { [visual.kind === 'table' ? 'rowSort' : 'categorySort']: [{ fieldSort: { fieldId: visual.groupSort.fieldId, direction: visual.groupSort.direction } }] } : {}),
     ...(visual.sliceLimit && CATEGORY_LIMIT_KINDS.includes(visual.kind)
       ? { categoryItemsLimit: { itemsLimit: visual.sliceLimit.count, otherCategories: visual.sliceLimit.includeOther ? 'INCLUDE' : 'EXCLUDE' } } : {}),
     ...(visual.facetLimit && FACETED_KINDS.includes(visual.kind) && visual.smallMultiples?.length
@@ -1073,7 +1073,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
     } } };
     case 'bar': return { barChartVisual: { ...body, chartConfiguration: { ...display, orientation: visual.horizontal ? 'HORIZONTAL' : 'VERTICAL', barsArrangement: visual.stacked ? 'STACKED' : 'CLUSTERED', ...groupSortConfig, ...(visual.multiplesOptions ? { opensightMultiplesOptions: visual.multiplesOptions } : {}), fieldWells: { barChartAggregatedFieldWells: { category, values, ...multiples } } } } };
     case 'line': return { lineChartVisual: { ...body, chartConfiguration: { ...display, ...groupSortConfig, ...(visual.multiplesOptions ? { opensightMultiplesOptions: visual.multiplesOptions } : {}), ...(visual.forecast?.enabled ? { forecastConfigurations: [serializeForecast(visual.forecast)] } : {}), fieldWells: { lineChartAggregatedFieldWells: { category, values, ...multiples } } } } };
-    case 'table': return { tableVisual: { ...body, chartConfiguration: { ...tableTotals, fieldWells: { tableAggregatedFieldWells: { groupBy: category, values } } } } };
+    case 'table': return { tableVisual: { ...body, chartConfiguration: { ...tableTotals, ...groupSortConfig, fieldWells: { tableAggregatedFieldWells: { groupBy: category, values } } } } };
     case 'pivot': return { pivotTableVisual: { ...body, chartConfiguration: { ...pivotTotals, fieldWells: { pivotTableAggregatedFieldWells: { rows: visual.rows.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), columns: visual.columns.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), values } } } } };
     case 'kpi': return { kpiVisual: { ...body, chartConfiguration: { fieldWells: { values } } } };
   }

@@ -177,17 +177,21 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const total = obj(config.totalOptions);
   const subtitle = obj(body.subtitle), legendPosition = obj(config.legend).position;
   const validLines = list(body.opensightReferenceLines).map(serializedReferenceLine).filter((line): line is { value: number; label: string; color: string } => line !== undefined);
-  // OpenSight extension: an imported Group/Color sort becomes editable draft state
-  // (bar/bar100/pie only — the panel scope of this slice; other kinds keep the
+  // An imported Group/Color or table row sort becomes editable draft state
+  // (bar/bar100/pie/table only; other kinds keep the
   // retained passthrough behavior). Multi-sort configurations stay unmapped.
   const sortDimension = noDimensions(kind) ? null : rows[0] ?? null;
   const sortBound = [sortDimension, ...(grouped(kind) ? rows : []), ...columns, ...measures].filter((f): f is string => f !== null);
-  const sortWrappers = list(obj(config.sortConfiguration).categorySort);
+  const sortWrappers = list(obj(config.sortConfiguration)[kind === 'table' ? 'rowSort' : 'categorySort']);
   const sortFs = sortWrappers.length === 1 ? obj(obj(sortWrappers[0]).fieldSort) : {};
   const sortFieldId = typeof sortFs.fieldId === 'string' && sortFs.fieldId && !sortFs.fieldId.includes('\0') ? sortFs.fieldId : undefined;
   const sortDirection = sortFs.direction === 'ASC' ? 'ASC' as const : sortFs.direction === 'DESC' ? 'DESC' as const : undefined;
-  const importedGroupSort = sortWrappers.length === 1 && ['bar', 'bar100', 'pie'].includes(kind) &&
-    sortFieldId !== undefined && sortDirection !== undefined && sortBound.includes(sortFieldId)
+  const importedGroupSort = sortWrappers.length === 1 && ['bar', 'bar100', 'pie', 'table'].includes(kind) &&
+    Object.keys(obj(sortWrappers[0])).every(key => key === 'fieldSort') && Object.keys(sortFs).every(key => key === 'fieldId' || key === 'direction') &&
+    sortFieldId !== undefined && sortDirection !== undefined && sortBound.includes(sortFieldId) &&
+    // Group sorts have no native-ID export rewrite. A column name must also
+    // identify that same bound field; otherwise retain the table sort read-only.
+    (kind !== 'table' || wellFields.get(sortFieldId) === sortFieldId)
     ? { fieldId: sortFieldId, direction: sortDirection } : undefined;
   // An imported category limit becomes editable draft state
   // (like the Group/Color sort). Unrecognized shapes stay retained read-only
