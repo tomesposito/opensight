@@ -472,7 +472,35 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const facetSortKey = key('smallMultiplesSort', 'SmallMultiplesSort');
   const breakdownLimitKey = key('breakdownItemsLimit', 'BreakdownItemsLimit');
   const fieldSortOptionsKey = key('fieldSortOptions', 'FieldSortOptions');
-  keys(sort, kind === 'pivot' ? [fieldSortOptionsKey] : ['table', 'radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration'), ...(FACETED_KINDS.includes(kind) ? [facetSortKey] : [])], sortPath);
+  const columnSortKey = key('columnSort', 'ColumnSort');
+  keys(sort, kind === 'pivot' ? [fieldSortOptionsKey, columnSortKey] : ['table', 'radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration'), ...(FACETED_KINDS.includes(kind) ? [facetSortKey] : [])], sortPath);
+  const columnSortPath = `${sortPath}.${columnSortKey}`;
+  const columnSorts = list(sort[columnSortKey], columnSortPath);
+  if (columnSorts.length > 1) fail(columnSortPath, 'only one column sort is supported');
+  let columnSort: VisualModel['columnSort'];
+  if (columnSorts.length) {
+    const cs = object(columnSorts[0], columnSortPath);
+    keys(cs, [key('sortBy', 'SortBy'), key('direction', 'Direction'), key('aggregationFunction', 'AggregationFunction')], columnSortPath);
+    if (!columnDimensions.length) fail(columnSortPath, 'column sort requires a Columns dimension');
+    const direction = enumValue(cs[key('direction', 'Direction')], ['ASC', 'DESC'], 'ASC', columnSortPath) as 'ASC' | 'DESC';
+    const column = object(cs[key('sortBy', 'SortBy')], `${columnSortPath}.sortBy`);
+    keys(column, [key('dataSetIdentifier', 'DataSetIdentifier'), key('columnName', 'ColumnName')], columnSortPath);
+    const columnName = text(column[key('columnName', 'ColumnName')], columnSortPath);
+    const dataSet = text(column[key('dataSetIdentifier', 'DataSetIdentifier')], columnSortPath);
+    const measure = measures.find(field => field.column === columnName && field.dataSet === dataSet);
+    if (!measure) fail(columnSortPath, 'column sort sortBy must identify a bound measure');
+    let aggregation: typeof SORT_AGGREGATIONS[number] = 'SUM';
+    if (cs[key('aggregationFunction', 'AggregationFunction')] !== undefined) {
+      const agg = object(cs[key('aggregationFunction', 'AggregationFunction')], `${columnSortPath}.aggregationFunction`);
+      const numericalKey = key('numericalAggregationFunction', 'NumericalAggregationFunction');
+      keys(agg, [numericalKey], columnSortPath);
+      const numerical = object(agg[numericalKey], `${columnSortPath}.${numericalKey}`);
+      const simpleKey = key('simpleNumericalAggregation', 'SimpleNumericalAggregation');
+      keys(numerical, [simpleKey], columnSortPath);
+      aggregation = enumValue(text(numerical[simpleKey], columnSortPath), [...SORT_AGGREGATIONS], 'SUM', columnSortPath) as typeof SORT_AGGREGATIONS[number];
+    }
+    columnSort = { measureFieldId: measure.id, direction, aggregation };
+  }
   const seenPivotSorts = new Set<string>();
   const fieldSortOptions = list(sort[fieldSortOptionsKey], `${sortPath}.${fieldSortOptionsKey}`).map((entry, index) => {
     const entryPath = `${sortPath}.${fieldSortOptionsKey}[${index}]`;
@@ -609,6 +637,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     ...(facetLimit ? { facetLimit } : {}),
     ...(facetSort ? { facetSort } : {}),
     ...(aggregationSort ? { aggregationSort } : {}),
+    ...(columnSort ? { columnSort } : {}),
     ...(fieldSortOptions.length ? { fieldSortOptions } : {}),
     ...(breakdownLimit ? { breakdownLimit } : {}),
     ...(facet ? { facet } : {}),
