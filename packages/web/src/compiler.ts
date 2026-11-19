@@ -300,9 +300,9 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   // kinds; every other kind still rejects the well.
   const smallMultiplesKey = key('smallMultiples', 'SmallMultiples');
   const faceted = FACETED_KINDS.includes(kind);
-  const unused = [key('colors', 'Colors'), key('targetValues', 'TargetValues'), ...(kind === 'kpi' ? [] : [key('trendGroups', 'TrendGroups')]), ...(faceted ? [] : [smallMultiplesKey])];
+  const unused = [key('colors', 'Colors'), ...(kind === 'kpi' ? [] : [key('targetValues', 'TargetValues'), key('trendGroups', 'TrendGroups')]), ...(faceted ? [] : [smallMultiplesKey])];
   const wellKey = (name: string) => key(name, kind === 'waterfall' && name === 'category' ? 'Categories' : name.startsWith('opensight') ? `OpenSight${name.slice(9)}` : name[0]!.toUpperCase() + name.slice(1));
-  keys(wells, [...(extra ? [...extra.dimensions, ...extra.measures].map(wellKey) : [categoryKey, valueKey]), ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...(kind === 'kpi' ? [key('trendGroups', 'TrendGroups')] : []), ...(kind === 'waterfall' ? [key('breakdowns', 'Breakdowns')] : []), ...(faceted ? [smallMultiplesKey] : []), ...unused], wpath);
+  keys(wells, [...(extra ? [...extra.dimensions, ...extra.measures].map(wellKey) : [categoryKey, valueKey]), ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...(kind === 'kpi' ? [key('trendGroups', 'TrendGroups'), key('targetValues', 'TargetValues')] : []), ...(kind === 'waterfall' ? [key('breakdowns', 'Breakdowns')] : []), ...(faceted ? [smallMultiplesKey] : []), ...unused], wpath);
   for (const name of unused) if (list(wells[name], `${wpath}.${name}`).length) fail(`${wpath}.${name}`, 'field well not supported');
   const field = (value: unknown, measure: boolean, fp: string): Field => {
     const wrapper = object(value, fp);
@@ -347,6 +347,10 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     trendDimension = field(trends[0], false, tp);
   }
   const measures = measureNames.flatMap(name => list(wells[name], `${wpath}.${name}`).map((v, i) => field(v, true, `${wpath}.${name}[${i}]`)));
+  const targetKey = key('targetValues', 'TargetValues');
+  const targets = kind === 'kpi' ? list(wells[targetKey], `${wpath}.${targetKey}`) : [];
+  if (targets.length > 1) fail(`${wpath}.${targetKey}`, 'KPI supports exactly one target measure');
+  const targetMeasure = targets.length ? field(targets[0], true, `${wpath}.${targetKey}[0]`) : undefined;
   // Small multiples: one facet dimension, rendered as a grid of per-facet panels.
   let facet: Field | undefined;
   if (faceted) {
@@ -398,7 +402,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     if (kind === 'kpi' ? dimensions.length !== 0 : kind === 'pivot' || kind === 'table' ? dimensions.length < 1 : dimensions.length !== 1) fail(wpath, kind === 'kpi' ? 'KPI must have no category' : 'exactly one category/group field is supported');
     if (!measures.length || ((kind === 'pie' || kind === 'kpi') && measures.length !== 1)) fail(wpath, 'expected supported number of measures (pie/KPI: one)');
   }
-  const fields = [...dimensions, ...(trendDimension ? [trendDimension] : []), ...(breakdown ? [breakdown] : []), ...(facet ? [facet] : []), ...measures];
+  const fields = [...dimensions, ...(trendDimension ? [trendDimension] : []), ...(breakdown ? [breakdown] : []), ...(facet ? [facet] : []), ...measures, ...(targetMeasure ? [targetMeasure] : [])];
   if (new Set(fields.map(f => f.id)).size !== fields.length) fail(wpath, 'duplicate field IDs');
   if (new Set(fields.map(f => f.dataSet)).size !== 1) fail(wpath, 'multiple datasets are unsupported');
   const warnings: string[] = extra ? [`${p}: ${extra.note}`] : [];
@@ -704,6 +708,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     ...(fieldSortOptions.length ? { fieldSortOptions } : {}),
     ...(breakdownLimit ? { breakdownLimit } : {}),
     ...(trendDimension ? { trendDimension } : {}),
+    ...(targetMeasure ? { targetMeasure } : {}),
     ...(trendGroupSort ? { trendGroupSort } : {}),
     ...(kpiOptions ? { kpiOptions } : {}),
     ...(facet ? { facet } : {}),
@@ -726,7 +731,7 @@ export function compileVisual(input: Input): CompiledVisual {
   if (input.theme !== undefined && !themeValid(input.theme)) fail(input.path, 'invalid analysis theme');
   const theme = input.theme ?? LIGHT_THEME;
   const model = normalizeVisual(input.source, input.definition, input.path);
-  const fields = [...model.dimensions, ...(model.trendDimension ? [model.trendDimension] : []), ...(model.breakdown ? [model.breakdown] : []), ...(model.facet ? [model.facet] : []), ...model.measures];
+  const fields = [...model.dimensions, ...(model.trendDimension ? [model.trendDimension] : []), ...(model.breakdown ? [model.breakdown] : []), ...(model.facet ? [model.facet] : []), ...model.measures, ...(model.targetMeasure ? [model.targetMeasure] : [])];
   // Extra tooltip fields ride the result rows as additional measures; they never join the wells,
   // the series, or the data table. Their column alias is the field id (the query plans outputName = fieldId).
   const extraFields: Field[] = (model.tooltipExtraFields ?? []).map(e =>
@@ -750,6 +755,7 @@ export function compileVisual(input: Input): CompiledVisual {
     object(row, input.path);
     for (const field of fields) cell(row, field);
     for (const field of model.measures) number(row, field);
+    if (model.targetMeasure) number(row, model.targetMeasure);
   }
   // Extra tooltip fields are adornments, not load-bearing: a result set that cannot
   // supply one (pinned fixtures, hosted plans built from wells) warns loudly and skips
