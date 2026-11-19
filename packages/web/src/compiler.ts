@@ -10,6 +10,7 @@ import { LIGHT_THEME, themeValid, paletteValid } from './themes.js';
 import { formattingValid, fieldName, matchingRule, LEGEND_POSITIONS, type LegendPosition } from './formatting.js';
 import type { EChartsOption, BarSeriesOption, LineSeriesOption, PieSeriesOption } from 'echarts';
 import type { Cell, Field, FixtureVisual, MultiplesOptions, Row, VisualModel } from './model.js';
+import { SORT_AGGREGATIONS } from './model.js';
 
 import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
@@ -560,16 +561,43 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const sorts = list(sort[sortsKey], `${cpath}.${sortsKey}`);
   if (sorts.length > 1) fail(cpath, 'only one field sort is supported');
   let fieldSort: VisualModel['sort'];
+  let aggregationSort: VisualModel['aggregationSort'];
   if (sorts.length) {
     const wrapper = object(sorts[0], cpath);
     const fsKey = key('fieldSort', 'FieldSort');
-    keys(wrapper, [fsKey], cpath);
-    const fs = object(wrapper[fsKey], cpath);
-    keys(fs, [key('fieldId', 'FieldId'), key('direction', 'Direction')], cpath);
-    const fieldId = text(fs[key('fieldId', 'FieldId')], cpath);
-    if (!fields.some(f => f.id === fieldId)) fail(cpath, 'sort references an unbound field');
-    const direction = enumValue(fs[key('direction', 'Direction')], ['ASC', 'DESC'], 'ASC', cpath) as 'ASC' | 'DESC';
-    fieldSort = { fieldId, direction };
+    const asKey = key('aggregationSort', 'AggregationSort');
+    keys(wrapper, [fsKey, asKey], cpath);
+    if (Object.keys(wrapper).length !== 1) fail(cpath, 'expected exactly one fieldSort or aggregationSort');
+    if (Object.hasOwn(wrapper, asKey)) {
+      const ap = `${sortPath}.${sortsKey}[0].${asKey}`;
+      if (!CATEGORY_LIMIT_KINDS.includes(kind)) fail(ap, `aggregation sort is unsupported for ${kind}`);
+      const as = object(wrapper[asKey], ap);
+      keys(as, [key('fieldId', 'FieldId'), key('direction', 'Direction'), key('aggregationFunction', 'AggregationFunction'), key('column', 'Column')], ap);
+      const fieldId = text(as[key('fieldId', 'FieldId')], ap);
+      if (fieldId !== dimensions[0]?.id) fail(ap, 'aggregation sort must reference the first category dimension');
+      const direction = enumValue(as[key('direction', 'Direction')], ['ASC', 'DESC'], 'ASC', ap) as 'ASC' | 'DESC';
+      const column = object(as[key('column', 'Column')], `${ap}.column`);
+      keys(column, [key('dataSetIdentifier', 'DataSetIdentifier'), key('columnName', 'ColumnName')], `${ap}.column`);
+      const columnName = text(column[key('columnName', 'ColumnName')], `${ap}.column`);
+      const dataSet = text(column[key('dataSetIdentifier', 'DataSetIdentifier')], `${ap}.column`);
+      const measure = measures.find(f => f.column === columnName && f.dataSet === dataSet);
+      if (!measure) fail(ap, 'aggregation sort column must identify a bound measure');
+      const agg = object(as[key('aggregationFunction', 'AggregationFunction')], `${ap}.aggregationFunction`);
+      const numericalKey = key('numericalAggregationFunction', 'NumericalAggregationFunction');
+      keys(agg, [numericalKey], ap);
+      const numerical = object(agg[numericalKey], `${ap}.${numericalKey}`);
+      const simpleKey = key('simpleNumericalAggregation', 'SimpleNumericalAggregation');
+      keys(numerical, [simpleKey], ap);
+      const aggregation = enumValue(text(numerical[simpleKey], ap), [...SORT_AGGREGATIONS], 'SUM', ap) as typeof SORT_AGGREGATIONS[number];
+      aggregationSort = { fieldId, direction, aggregation, measureFieldId: measure.id };
+    } else {
+      const fs = object(wrapper[fsKey], cpath);
+      keys(fs, [key('fieldId', 'FieldId'), key('direction', 'Direction')], cpath);
+      const fieldId = text(fs[key('fieldId', 'FieldId')], cpath);
+      if (!fields.some(f => f.id === fieldId)) fail(cpath, 'sort references an unbound field');
+      const direction = enumValue(fs[key('direction', 'Direction')], ['ASC', 'DESC'], 'ASC', cpath) as 'ASC' | 'DESC';
+      fieldSort = { fieldId, direction };
+    }
   }
   return {
     id, kind, ...(kind === 'insight' ? { insightConfiguration: object(body.insightConfiguration ?? {}, p) } : {}), ...(formattingValid(formatting) ? { formatting } : {}), ...(palette ? { palette: palette as string[] } : {}), gaugeMin, gaugeMax, bins, title: plain as string | undefined ?? `${measures.map(f => fieldName(f, formattingValid(formatting) ? formatting : undefined)).join(', ')}${dimensions[0] ? ` by ${fieldName(dimensions[0], formattingValid(formatting) ? formatting : undefined)}` : ''}`,
@@ -580,6 +608,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     ...(sliceLimit ? { sliceLimit } : {}),
     ...(facetLimit ? { facetLimit } : {}),
     ...(facetSort ? { facetSort } : {}),
+    ...(aggregationSort ? { aggregationSort } : {}),
     ...(fieldSortOptions.length ? { fieldSortOptions } : {}),
     ...(breakdownLimit ? { breakdownLimit } : {}),
     ...(facet ? { facet } : {}),
@@ -640,7 +669,43 @@ export function compileVisual(input: Input): CompiledVisual {
     const field = fields.find(f => f.id === sort.fieldId)!;
     rows.sort((a, b) => compareCells(cell(a, field), cell(b, field), sort.direction));
   }
-  if (model.dimensions[0] && !['box', 'histogram', 'scatter', 'pointMap', 'sankey'].includes(model.kind)) {
+  if (model.aggregationSort) {
+    const sort = model.aggregationSort;
+    const category = model.dimensions[0]!;
+    const measure = model.measures.find(f => f.id === sort.measureFieldId)!;
+    const facets = model.facet ? groupRowsByFacet(rows, model.facet, cell) : [{ value: null, rows: [...rows] }];
+    const ordered: Row[] = [];
+    for (const facet of facets) {
+      const categories = new Map<Cell, Row[]>();
+      for (const row of facet.rows) {
+        const value = cell(row, category);
+        const group = categories.get(value) ?? [];
+        group.push(row);
+        categories.set(value, group);
+      }
+      const ranked = [...categories.values()].map(group => {
+        const values = group.map(row => number(row, measure)).filter((value): value is number => value !== null);
+        let aggregate: number | null = null;
+        if (values.length) {
+          switch (sort.aggregation) {
+            case 'SUM': aggregate = values.reduce((a, b) => a + b, 0); break;
+            case 'AVERAGE': aggregate = values.reduce((a, b) => a + b, 0) / values.length; break;
+            case 'MIN': aggregate = values.reduce((a, b) => Math.min(a, b)); break;
+            case 'MAX': aggregate = values.reduce((a, b) => Math.max(a, b)); break;
+            case 'COUNT': aggregate = values.length; break;
+            case 'DISTINCT_COUNT': aggregate = new Set(values).size; break;
+          }
+          if (!Number.isFinite(aggregate)) fail(input.path, 'aggregation sort result must be finite');
+        }
+        return { group, aggregate };
+      });
+      ranked.sort((a, b) => compareCells(a.aggregate, b.aggregate, sort.direction));
+      for (const { group } of ranked) ordered.push(...group);
+    }
+    rows.length = 0;
+    rows.push(...ordered);
+  }
+  if (!model.aggregationSort && model.dimensions[0] && !['box', 'histogram', 'scatter', 'pointMap', 'sankey'].includes(model.kind)) {
     // Validate source rows before limiting: collapsing or dropping rows must
     // not hide genuinely duplicated categories (#126).
     // Faceted pies group by (facet, category); waterfall breakdowns group by

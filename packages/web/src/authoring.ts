@@ -6,6 +6,7 @@ import { rebindInsight, topBottomMoversTimeColumn, validateInsightConfiguration 
 import { paletteValid, themeValid, type AnalysisTheme } from './themes.js';
 import { formattingValid, gaugeValid, binsValid, legendPositionValid, legendTitleValid, groupTitleValid, altTextValid, cleanAltText, legendTextStyleValid, dataLabelsValid, cardStyleValid, cardLayoutValid, rowGroupPathValid, type LegendPosition, type LegendTitle, type GroupTitle, type LegendTextStyle, type DataLabels, type CardStyle, type CardLayout, type VisualFormatting } from './formatting.js';
 import type { Cell, MultiplesOptions } from './model.js';
+import { SORT_AGGREGATIONS, type AggregationSort } from './model.js';
 import { EXTRA_VISUALS, extraKind, type VisualKind } from './visual-catalog.js';
 export type { VisualKind } from './visual-catalog.js';
 import { unresolvedFieldDiagnostics } from './unresolved-fields.js';
@@ -123,6 +124,7 @@ export interface AuthorVisual {
   multiplesOptions?: MultiplesOptions;
   /** Group/Color or table row sort by one bound field. Renders through sortConfiguration. */
   groupSort?: GroupSort;
+  aggregationSort?: AggregationSort;
   /** Sort each pivot row/column dimension by its own values. */
   pivotFieldSorts?: GroupSort[];
   /** Category limit: top-N categories with an optional "Other" bucket. Renders through sortConfiguration. */
@@ -235,6 +237,21 @@ export function groupSortValid(value: unknown): value is GroupSort {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const v = value as Record<string, unknown>;
   return Object.keys(v).length === 2 && typeof v.fieldId === 'string' && !!v.fieldId && !v.fieldId.includes('\0') && (v.direction === 'ASC' || v.direction === 'DESC');
+}
+/** Aggregation sorts store draft column names, with membership checked separately. */
+export function aggregationSortValid(value: unknown): value is AggregationSort {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return Object.keys(v).length === 4 && groupSortValid({ fieldId: v.fieldId, direction: v.direction }) &&
+    typeof v.measureFieldId === 'string' && !!v.measureFieldId.trim() && !v.measureFieldId.includes('\0') &&
+    typeof v.aggregation === 'string' && (SORT_AGGREGATIONS as readonly string[]).includes(v.aggregation);
+}
+function cleanAggregationSort(visual: AuthorVisual): AuthorVisual {
+  const sort = visual.aggregationSort;
+  if (!sort || ['bar', 'bar100', 'pie'].includes(visual.kind) && sort.fieldId === visual.dimension && visual.measures.includes(sort.measureFieldId)) return visual;
+  const next = { ...visual };
+  delete next.aggregationSort;
+  return next;
 }
 /** Facet sorts share the field-sort shape; callers also check facet membership. */
 export function facetSortValid(value: unknown): value is GroupSort {
@@ -384,6 +401,7 @@ export type AuthorAction =
   | { type: 'legend-title'; title: LegendTitle | undefined }
   | { type: 'group-title'; title: GroupTitle | undefined }
   | { type: 'group-sort'; sort: GroupSort | undefined }
+  | { type: 'aggregation-sort'; sort: AggregationSort | undefined }
   | { type: 'pivot-field-sorts'; sorts: GroupSort[] | undefined }
   | { type: 'slice-limit'; limit: SliceLimit | undefined }
   | { type: 'facet-limit'; limit: FacetLimit | undefined }
@@ -756,10 +774,23 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         return next;
       }
       case 'group-sort': {
-        if (action.sort !== undefined && !groupSortValid(action.sort)) return visual;
+        if (action.sort !== undefined && (!groupSortValid(action.sort) ||
+          ![visual.dimension, ...visual.rows, ...visual.columns, ...visual.measures].includes(action.sort.fieldId))) return visual;
         const next = { ...visual };
+        delete next.aggregationSort;
         if (action.sort === undefined) delete next.groupSort;
         else next.groupSort = structuredClone(action.sort);
+        return next;
+      }
+      case 'aggregation-sort': {
+        if (action.sort !== undefined && (!aggregationSortValid(action.sort) || !['bar', 'bar100', 'pie'].includes(visual.kind) ||
+          action.sort.fieldId !== visual.dimension || !visual.measures.includes(action.sort.measureFieldId))) return visual;
+        const next = { ...visual };
+        if (action.sort === undefined) delete next.aggregationSort;
+        else {
+          next.aggregationSort = structuredClone(action.sort);
+          delete next.groupSort;
+        }
         return next;
       }
       case 'pivot-field-sorts': {
@@ -933,7 +964,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     return visual;
   }).map((visual, index) => {
     const previous = sheet.visuals[index]!;
-    let next = cleanPivotFieldSorts(visual);
+    let next = cleanAggregationSort(cleanPivotFieldSorts(visual));
     if (next.facetSort && next.facetSort.fieldId !== next.smallMultiples?.[0]) {
       const { facetSort: _dropped, ...rest } = next;
       next = rest;
@@ -973,7 +1004,7 @@ export function remapVisual(visual: AuthorVisual): AuthorVisual {
     if (!field) { missing.add(f.columnName); return []; }
     return [{ ...f, columnName: field.name }];
   });
-  return cleanPivotFieldSorts({ ...visual, rows, columns, dimension, measures, tooltipExtraFields, tooltipHiddenFields, filters, imported: { ...visual.imported, local: true, remapped: true, unmappedFields: [...missing] } });
+  return cleanAggregationSort(cleanPivotFieldSorts({ ...visual, rows, columns, dimension, measures, tooltipExtraFields, tooltipHiddenFields, filters, imported: { ...visual.imported, local: true, remapped: true, unmappedFields: [...missing] } }));
 }
 export function authorVisualProblem(visual: AuthorVisual): string | undefined {
   if (visual.imported) {
@@ -1058,7 +1089,12 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
   // Sort and limits share SortConfiguration; each limit serializes only for
   // its supported kind and (where required) an assigned field well.
   const sortConfiguration = {
-    ...(visual.groupSort && ['bar', 'bar100', 'pie', 'table'].includes(visual.kind)
+    ...(visual.aggregationSort && ['bar', 'bar100', 'pie'].includes(visual.kind)
+      ? { categorySort: [{ aggregationSort: {
+        fieldId: visual.aggregationSort.fieldId, direction: visual.aggregationSort.direction,
+        aggregationFunction: { numericalAggregationFunction: { simpleNumericalAggregation: visual.aggregationSort.aggregation } },
+        column: { dataSetIdentifier: 'sales_data', columnName: visual.aggregationSort.measureFieldId },
+      } }] } : visual.groupSort && ['bar', 'bar100', 'pie', 'table'].includes(visual.kind)
       ? { [visual.kind === 'table' ? 'rowSort' : 'categorySort']: [{ fieldSort: { fieldId: visual.groupSort.fieldId, direction: visual.groupSort.direction } }] } : {}),
     ...(visual.sliceLimit && CATEGORY_LIMIT_KINDS.includes(visual.kind)
       ? { categoryItemsLimit: { itemsLimit: visual.sliceLimit.count, otherCategories: visual.sliceLimit.includeOther ? 'INCLUDE' : 'EXCLUDE' } } : {}),
@@ -1233,7 +1269,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported || unresolvedAllowed ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['o', 'id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'breakdowns', 'multiplesOptions', 'groupSort', 'pivotFieldSorts', 'sliceLimit', 'facetLimit', 'facetSort', 'breakdownLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', 'forecast', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['o', 'id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'breakdowns', 'multiplesOptions', 'groupSort', 'aggregationSort', 'pivotFieldSorts', 'sliceLimit', 'facetLimit', 'facetSort', 'breakdownLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', 'forecast', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if (v.o !== undefined && !validOProvenance(v.o)) return fail();
       if (v.referenceLines !== undefined && (!Array.isArray(v.referenceLines) || !v.referenceLines.every(referenceLineValid))) return fail();
       if (v.forecast !== undefined && !forecastConfigValid(v.forecast)) return fail();
@@ -1241,6 +1277,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       if (v.breakdowns !== undefined && (!fieldNames(v.breakdowns, 'dimension') || v.breakdowns.length > 1 || !unresolvedAllowed && v.breakdowns.some(name => fields.find(f => f.name === name)?.type === 'BOOLEAN'))) return fail();
       if (v.multiplesOptions !== undefined && !multiplesOptionsValid(v.multiplesOptions)) return fail();
       if (v.groupSort !== undefined && !groupSortValid(v.groupSort)) return fail();
+      if (v.aggregationSort !== undefined && (!aggregationSortValid(v.aggregationSort) || v.groupSort !== undefined || !['bar', 'bar100', 'pie'].includes(String(v.kind)) || v.aggregationSort.fieldId !== v.dimension || !(v.measures as string[]).includes(v.aggregationSort.measureFieldId))) return fail();
       if (v.pivotFieldSorts !== undefined && (!pivotFieldSortsValid(v.pivotFieldSorts) || v.kind !== 'pivot' || v.pivotFieldSorts.some(sort => ![...v.rows as string[], ...v.columns as string[]].includes(sort.fieldId)))) return fail();
       if (v.sliceLimit !== undefined && !sliceLimitValid(v.sliceLimit)) return fail();
       if (v.facetLimit !== undefined && !facetLimitValid(v.facetLimit)) return fail();

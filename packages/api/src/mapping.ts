@@ -43,7 +43,15 @@ const pie: Schema = {
       }],
     }],
     sortConfiguration: ['SortConfiguration', {
-      categorySort: ['CategorySort', { fieldSort: ['FieldSort', { fieldId: ['FieldId'], direction: ['Direction'] }] }],
+      categorySort: ['CategorySort', {
+        fieldSort: ['FieldSort', { fieldId: ['FieldId'], direction: ['Direction'] }],
+        aggregationSort: ['AggregationSort', {
+          fieldId: ['FieldId'], direction: ['Direction'], column: ['Column', column],
+          aggregationFunction: ['AggregationFunction', {
+            numericalAggregationFunction: ['NumericalAggregationFunction', { simpleNumericalAggregation: ['SimpleNumericalAggregation'] }],
+          }],
+        }],
+      }],
       categoryItemsLimit: ['CategoryItemsLimit', itemsLimit],
       smallMultiplesLimitConfiguration: ['SmallMultiplesLimitConfiguration', itemsLimit],
     }],

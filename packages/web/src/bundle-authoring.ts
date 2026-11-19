@@ -193,6 +193,27 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     // identify that same bound field; otherwise retain the table sort read-only.
     (kind !== 'table' || wellFields.get(sortFieldId) === sortFieldId)
     ? { fieldId: sortFieldId, direction: sortDirection } : undefined;
+  // Validate the complete native shape before constructing editable draft state.
+  // Category IDs must already be draft names; measure IDs resolve via Column.
+  const aggregationSortPresent = sortWrappers.some(entry => Object.hasOwn(obj(entry), 'aggregationSort'));
+  let aggregationSortProblem: string | undefined;
+  const importedAggregationSort = aggregationSortPresent ? (() => {
+    try {
+      const model = normalizeVisual('bundle', raw);
+      const sort = model.aggregationSort;
+      const explicitDirection = obj(obj(sortWrappers[0]).aggregationSort).direction;
+      if (!sort || !['bar', 'bar100', 'pie'].includes(kind) || explicitDirection === undefined ||
+        sort.fieldId !== sortDimension || wellFields.get(sort.fieldId) !== sortDimension) {
+        throw new Error('Aggregation sort: retained, read-only; requires an explicit direction and a draft category ID on bar/bar100/pie');
+      }
+      const measureFieldId = model.measures.find(field => field.id === sort.measureFieldId)!.column;
+      if (!measures.includes(measureFieldId)) throw new Error('Aggregation sort: unbound draft measure');
+      return { ...sort, measureFieldId };
+    } catch (error) {
+      aggregationSortProblem = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      return undefined;
+    }
+  })() : undefined;
   // Pivot sorts have no export-time ID rewrite. Only explicit, valid entries
   // whose native IDs also identify the draft dimension names become editable.
   const pivotSortsRaw = obj(config.sortConfiguration).fieldSortOptions;
@@ -290,6 +311,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     ...(FACETED_KINDS.includes(kind) && wells.smallMultiples !== undefined ? { smallMultiples: names(wells.smallMultiples) } : {}),
     // OpenSight extension: imported Group/Color sort imports into the draft.
     ...(importedGroupSort ? { groupSort: importedGroupSort } : {}),
+    ...(importedAggregationSort ? { aggregationSort: importedAggregationSort } : {}),
     ...(importedPivotSorts ? { pivotFieldSorts: importedPivotSorts } : {}),
     // OpenSight extension: imported pie slice limit imports into the draft.
     ...(importedSliceLimit ? { sliceLimit: importedSliceLimit } : {}),
@@ -323,6 +345,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const checked = { [variant]: checkedBody };
   const dataSets = [...new Set(references(body))].map(identifier => ({ identifier, arn: definition.dataSetIdentifierDeclarations.find(d => d.identifier === identifier)?.dataSetArn }));
   const issues = Object.hasOwn(kinds, variant) ? differences(checked, projectVisual(visual, raw, (definition.calculatedFields ?? []).map(c => ({ name: string(obj(c).name), expression: string(obj(c).expression), role: 'dimension' }))), variant) : [`Unsupported visual type: ${variant}`];
+  if (aggregationSortProblem) issues.push(aggregationSortProblem);
   // Line/area visuals carrying a forecast configuration get the same compiler
   // normalization check Insight imports get (issue #263): the compiler's
   // forecast gate is fail-closed, so a malformed configuration records a
@@ -564,6 +587,7 @@ function projectVisual(visual: AuthorVisual, raw: BundleVisual, calculations: re
     Object.values(o).forEach(v => { if (Array.isArray(v)) v.forEach(assign); else if (v && typeof v === 'object') assign(v); });
   };
   assign(config.fieldWells);
+  assign(config.sortConfiguration);
   // Keep the original facet field ID when editing a sort on an imported well.
   // Draft wells use column names; native field IDs need not equal those names.
   const facetFields = (value: unknown): Obj[] => Object.entries(obj(value)).flatMap(([key, child]) => key === 'smallMultiples'
@@ -605,6 +629,9 @@ function exportVisual(v: AuthorVisual, raw: BundleVisual | undefined, calculatio
     const config = obj(body.chartConfiguration);
     config.fieldWells = copy(obj(generated).fieldWells); body.chartConfiguration = config;
     rebind(config.fieldWells, LOCAL_IDENTIFIER);
+    for (const wrapper of list(obj(config.sortConfiguration).categorySort)) {
+      if (obj(wrapper).aggregationSort !== undefined) rebind(obj(wrapper).aggregationSort, LOCAL_IDENTIFIER);
+    }
   }
   if (changedKind && !usesRemappedDataset(meta)) rebind(obj(body.chartConfiguration).fieldWells, meta.dataSets[0]?.identifier ?? 'sales_data');
   return { [changedKind ? Object.keys(serializeVisual(v, true, calculations))[0]! : meta.variant]: body };
