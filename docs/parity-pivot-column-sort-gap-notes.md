@@ -105,3 +105,46 @@ OPENSIGHT_CHROMIUM="$HOME/.cache/ms-playwright/chromium_headless_shell-1243/chro
 Logs: `/tmp/opensight-column-sort-before-capture.log` and
 `/tmp/opensight-column-sort-capture.log`. The pre-slice run uses `--baseline`
 and `OPENSIGHT_DEMO=/tmp/opensight-before-column-sort.html`.
+
+
+## Full root verification
+
+```sh
+OPENSIGHT_CHROMIUM="$HOME/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell" TZ=UTC npm test
+```
+
+The complete root run exited **0**: **6,156 passed / 0 failed / 37 skipped**
+(**6,193 tests**, no cancellations or todos). Every skip requires live
+PostgreSQL: 35 in API and 2 in query engine. All **3,196 web tests** passed,
+including the **72 new ColumnSort tests**. Strict TypeScript and the measured
+H4 tenant-flood/timing checks passed. No media work ran concurrently with the
+full suite.
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 1,500 | 0 | 35 |
+| Bundle parser | 213 | 0 | 0 |
+| CLI | 73 | 0 | 0 |
+| Embedding SDK | 10 | 0 | 0 |
+| Headless SDK | 28 | 0 | 0 |
+| Python SDK | 32 | 0 | 0 |
+| MCP server | 74 | 0 | 0 |
+| O interpreter | 42 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 867 | 0 | 2 |
+| Web | 3,196 | 0 | 0 |
+| Root checks | 110 | 0 | 0 |
+| **Total** | **6,156** | **0** | **37** |
+
+The full suite ran once to completion outside the process sandbox using the
+installed Chromium shell. It ran as a persistent local process so the complete
+root command survived tool-session boundaries. No test was removed, weakened
+or skipped to bypass the environment.
+
+Full log: `/tmp/opensight-column-sort-root.log`; exit status:
+`/tmp/opensight-column-sort-root.exit`; machine-readable counts:
+`/tmp/opensight-column-sort-test-counts.json`.
+
+All six checkpoints are on `work/parity-pivot-column-sort`. The slice is
+complete; RowLabelSort and TrendGroupSort remain unsupported as specified.
+No merge or push was performed.
