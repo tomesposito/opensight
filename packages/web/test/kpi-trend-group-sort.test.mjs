@@ -228,3 +228,109 @@ test('Trend sort Properties offer ASC default, DESC, reset and disappear when th
   await act(() => renderer.root.findAllByType('button').find(b => b.props.children === 'Reset trend sort').props.onClick()); assert.equal(selected(current).kpiTrendSort, undefined);
   await act(() => dispatch({ type: 'unassign', well: 'trend', field: 'region' })); assert.equal(renderer.toJSON(), null);
 });
+import { exportBundle, importBundle } from '../build/test/bundle-authoring.js';
+import { readFileSync } from 'node:fs';
+const bundleVisual = b => b.members[0].resource.definition.sheets[0].visuals[0];
+const bundleConfig = b => config({ definition: bundleVisual(b) });
+for (const source of ['bundle', 'api']) for (const wrapped of [false, true]) {
+  test(`${source}, wrapped=${wrapped}: trend import stays editable through storage, editing, clearing and export`, () => {
+    const bundle = exportBundle(sortedDraft()), c = bundleConfig(bundle);
+    c.fieldWells.trendGroups[0].categoricalDimensionField.fieldId = 'native-trend-id';
+    c.sortConfiguration.trendGroupSort[0].fieldSort.fieldId = 'native-trend-id';
+    c.kpiOptions = { sparkline: { type: 'AREA', visibility: 'VISIBLE' }, comparison: { comparisonMethod: 'DIFFERENCE' }, primaryValueDisplayType: 'COMPARISON' };
+    if (wrapped) c.fieldWells = { kpiFieldWells: c.fieldWells };
+    if (source === 'api') bundle.members[0].resource.definition = convertDefinition(projectDefinition(bundle.members[0].resource.definition));
+    const imported = importBundle(bundle);
+    assert.deepEqual(selected(imported).kpiTrendSort, draftSort()); assert.deepEqual(selected(imported).imported.issues, []);
+    assert.deepEqual(parseDraft(JSON.stringify(imported)), JSON.parse(JSON.stringify(imported)));
+    assert.deepEqual(exportBundle(imported), bundle);
+    assert.equal(compileVisual(buildAuthorPreview(selected(imported))).model.kpiOptions.sparkline.type, 'AREA');
+    const edited = authorReducer(imported, { type: 'kpi-trend-sort', sort: draftSort('region', 'ASC') });
+    assert.deepEqual(bundleConfig(exportBundle(edited)).sortConfiguration.trendGroupSort, [{ fieldSort: { fieldId: 'native-trend-id', direction: 'ASC' } }]);
+    assert.deepEqual(selected(importBundle(exportBundle(edited))).kpiTrendSort, draftSort('region', 'ASC'));
+    const cleared = authorReducer(imported, { type: 'kpi-trend-sort', sort: undefined });
+    assert.equal(bundleConfig(exportBundle(cleared)).sortConfiguration?.trendGroupSort, undefined);
+    const removed = authorReducer(imported, { type: 'unassign', well: 'trend', field: 'region' });
+    assert.equal(bundleConfig(exportBundle(removed)).sortConfiguration?.trendGroupSort, undefined);
+    assert.equal(selected(importBundle(exportBundle(removed))).trendField, undefined);
+    const replaced = authorReducer(imported, { type: 'assign', well: 'trend', field: 'order_date' });
+    assert.equal(selected(importBundle(exportBundle(replaced))).trendField, 'order_date');
+    assert.equal(selected(importBundle(exportBundle(replaced))).kpiTrendSort, undefined);
+  });
+}
+for (const source of ['bundle', 'api']) test(`${source}: invalid and missing-direction imports retain diagnostics and verbatim definitions`, () => {
+  for (const sorts of [...malformedSorts, [{ fieldSort: { fieldId: 'region' } }]]) {
+    const bundle = exportBundle(trendDraft()); bundleConfig(bundle).sortConfiguration = { trendGroupSort: sorts };
+    if (source === 'api') bundle.members[0].resource.definition = convertDefinition(projectDefinition(bundle.members[0].resource.definition));
+    const imported = importBundle(bundle);
+    assert.equal(selected(imported).kpiTrendSort, undefined, JSON.stringify(sorts));
+    assert.ok(selected(imported).imported.issues.length, JSON.stringify(sorts));
+    assert.deepEqual(exportBundle(imported), bundle);
+    assert.deepEqual(bundleConfig(exportBundle(authorReducer(imported, { type: 'title', title: 'Retained' }))).sortConfiguration, bundleConfig(bundle).sortConfiguration);
+    assert.doesNotThrow(() => parseDraft(JSON.stringify(imported)));
+  }
+});
+for (const type of ['remap', 'sheet-remap']) test(`${type}: stale trend references clear and surviving references rebind`, () => {
+  const bundle = exportBundle(sortedDraft());
+  bundle.members[0].resource.definition.dataSetIdentifierDeclarations[0].dataSetArn = 'urn:synthetic:kpi-source';
+  bundleConfig(bundle).fieldWells.trendGroups[0].categoricalDimensionField.fieldId = 'native-region';
+  bundleConfig(bundle).sortConfiguration.trendGroupSort[0].fieldSort.fieldId = 'native-region';
+  const imported = importBundle(bundle); selected(imported).imported.local = false;
+  const action = { type, id: type === 'remap' ? selected(imported).id : activeSheet(imported).id };
+  const remapped = authorReducer(imported, action), output = exportBundle(remapped);
+  assert.deepEqual(selected(remapped).kpiTrendSort, draftSort());
+  assert.equal(bundleConfig(output).fieldWells.trendGroups[0].categoricalDimensionField.column.dataSetIdentifier, 'opensight_local_sales');
+  assert.equal(normalizeVisual('bundle', bundleVisual(output)).trendGroupSort.fieldId, 'native-region');
+  assert.doesNotThrow(() => parseDraft(JSON.stringify(remapped)));
+  bundleConfig(bundle).fieldWells.trendGroups[0].categoricalDimensionField.column.columnName = 'missing';
+  const stale = importBundle(bundle); selected(stale).imported.local = false;
+  const clean = authorReducer(stale, action);
+  assert.equal(selected(clean).kpiTrendSort, undefined); assert.equal(selected(clean).trendField, undefined);
+  assert.equal(bundleConfig(exportBundle(clean)).sortConfiguration?.trendGroupSort, undefined);
+});
+test('reduced automotive fixture KPI compiles and its subset round-trips in both dialects', () => {
+  const automotive = JSON.parse(readFileSync(new URL('../../bundle-parser/test/fixtures/synthetic/dashboard/automotive.json', import.meta.url), 'utf8'));
+  const candidates = automotive.definition.sheets.flatMap(s => s.visuals).filter(v => v.kpiVisual?.chartConfiguration?.fieldWells?.trendGroups?.[0]?.dateDimensionField && v.kpiVisual.chartConfiguration.fieldWells.values[0]?.numericalMeasureField?.aggregationFunction?.simpleNumericalAggregation === 'SUM');
+  assert.ok(candidates.length);
+  const original = candidates[0].kpiVisual, c = original.chartConfiguration;
+  // Keep the real SUM field, trend ID/column, explicit direction and supported options.
+  // The full visual also carries format/hierarchy/conditional-format properties outside this slice.
+  const trend = c.fieldWells.trendGroups[0].dateDimensionField, measure = c.fieldWells.values[0].numericalMeasureField;
+  const reduced = { kpiVisual: { visualId: original.visualId, chartConfiguration: { fieldWells: {
+    values: [{ numericalMeasureField: { fieldId: measure.fieldId, column: measure.column, aggregationFunction: measure.aggregationFunction } }],
+    trendGroups: [{ dateDimensionField: { fieldId: trend.fieldId, column: trend.column, ...(trend.dateGranularity ? { dateGranularity: trend.dateGranularity } : {}) } }],
+  }, sortConfiguration: c.sortConfiguration, kpiOptions: {
+    comparison: { comparisonMethod: 'PERCENT_DIFFERENCE' }, primaryValueDisplayType: c.kpiOptions.primaryValueDisplayType,
+    ...(c.kpiOptions.sparkline ? { sparkline: { type: c.kpiOptions.sparkline.type, visibility: c.kpiOptions.sparkline.visibility } } : {}),
+  } } } };
+  const grain = trend.dateGranularity ?? 'DAY';
+  const periods = grain === 'MONTH' ? ['2025-01', '2025-02'] : ['2025-01-01', '2025-02-01'];
+  for (const source of ['bundle', 'api']) {
+    const value = { source: 'bundle', path: '$', definition: reduced, bindings: {}, rows: periods.map((p, i) => ({ [trend.column.columnName]: p, [measure.column.columnName]: 10 + i * 5 })) };
+    const result = compileVisual(dialect(value, source)); assert.equal(result.state, 'ready'); assert.ok(result.option.series); assert.equal(result.model.trendGroupSort.direction, 'DESC');
+  }
+  assert.deepEqual(convertDefinition(projectDefinition(definition(reduced))), definition(reduced));
+});
+test('trend wells, TrendGroupSort and KPIOptions remain closed on other visual kinds', () => {
+  for (const kind of ['bar', 'line', 'area', 'pie', 'table', 'pivot', 'gauge', 'waterfall', 'sankey', 'radar']) {
+    const def = serializeVisual(selected(authorReducer(emptyDraft(), { type: 'add', kind })));
+    for (const feature of ['well', 'sort', 'options']) {
+      const changed = structuredClone(def), c = Object.values(changed)[0].chartConfiguration;
+      if (feature === 'well') {
+        const w = kind === 'gauge' ? c.fieldWells : Object.values(c.fieldWells)[0]; w.trendGroups = [dimension()];
+      } else if (feature === 'sort') c.sortConfiguration = { trendGroupSort: [sort()] };
+      else c.kpiOptions = {};
+      for (const source of ['bundle', 'api']) assert.throws(() => normalize(dialect({ ...input(), definition: changed }, source)), CompileError, `${kind}: ${feature}`);
+    }
+  }
+});
+test('date trend imports preserve default DAY and explicit MONTH through preview and export', () => {
+  for (const grain of [undefined, 'DAY', 'MONTH', 'QUARTER', 'YEAR']) {
+    const bundle = exportBundle(trendDraft('order_date'));
+    const f = bundleConfig(bundle).fieldWells.trendGroups[0].dateDimensionField;
+    if (grain === undefined) delete f.dateGranularity; else f.dateGranularity = grain;
+    const imported = importBundle(bundle);
+    assert.equal(normalizeVisual('bundle', serializeVisual(selected(imported))).trendDimension.dateGranularity, grain ?? 'DAY');
+    assert.deepEqual(exportBundle(imported), bundle);
+  }
+});

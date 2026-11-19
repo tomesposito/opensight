@@ -289,7 +289,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const fpath = `${cpath}.${key('fieldWells', 'FieldWells')}`;
   const outer = object(config[key('fieldWells', 'FieldWells')], fpath);
   const wellsKey = extra ? (extra.wells ? key(extra.wells, extra.wells[0]!.toUpperCase() + extra.wells.slice(1)) : '') : kind === 'pie' ? key('pieChartAggregatedFieldWells', 'PieChartAggregatedFieldWells')
-    : { bar: key('barChartAggregatedFieldWells', 'BarChartAggregatedFieldWells'), line: key('lineChartAggregatedFieldWells', 'LineChartAggregatedFieldWells'), table: key('tableAggregatedFieldWells', 'TableAggregatedFieldWells'), pivot: key('pivotTableAggregatedFieldWells', 'PivotTableAggregatedFieldWells'), kpi: '' }[kind as 'bar' | 'line' | 'table' | 'pivot' | 'kpi'];
+    : { bar: key('barChartAggregatedFieldWells', 'BarChartAggregatedFieldWells'), line: key('lineChartAggregatedFieldWells', 'LineChartAggregatedFieldWells'), table: key('tableAggregatedFieldWells', 'TableAggregatedFieldWells'), pivot: key('pivotTableAggregatedFieldWells', 'PivotTableAggregatedFieldWells'), kpi: Object.hasOwn(outer, key('kpiFieldWells', 'KPIFieldWells')) ? key('kpiFieldWells', 'KPIFieldWells') : '' }[kind as 'bar' | 'line' | 'table' | 'pivot' | 'kpi'];
   if (wellsKey) keys(outer, [wellsKey], fpath);
   const wells = wellsKey ? object(outer[wellsKey], `${fpath}.${wellsKey}`) : outer;
   const wpath = wellsKey ? `${fpath}.${wellsKey}` : fpath;

@@ -1,5 +1,5 @@
 import { validOProvenance, oTitle, type OProvenance } from './o-provenance.js';
-import { metricColumn, type PublishedMetric } from '@opensight/query-engine/browser';
+import { parseKpiOptions, type KpiOptions, metricColumn, type PublishedMetric } from '@opensight/query-engine/browser';
 import { metricFormatting, validMetricFormat } from './governed-metrics.js';
 import { defaultTextStyle, sheetObjectValid, serializeObjects, objectElementType, type SheetObject, type TextObject, type TextStyle } from './sheet-objects.js';
 import { rebindInsight, topBottomMoversTimeColumn, validateInsightConfiguration } from './insight-configuration.js';
@@ -119,6 +119,7 @@ export interface AuthorVisual {
   dimension: string | null; measures: string[]; rows: string[]; columns: string[];
   trendField?: string;
   kpiTrendSort?: GroupSort;
+  kpiOptions?: KpiOptions;
   smallMultiples?: string[];
   /** Waterfall breakdown field (QuickSight Breakdowns well). At most one. */
   breakdowns?: string[];
@@ -288,6 +289,7 @@ export function kpiTrendSortValid(value: unknown): value is GroupSort {
 }
 function cleanKpiTrend(visual: AuthorVisual): AuthorVisual {
   const next = { ...visual };
+  if (next.kind !== 'kpi') delete next.kpiOptions;
   if (next.kind !== 'kpi' || !next.trendField) delete next.trendField;
   if (next.kpiTrendSort && (next.kind !== 'kpi' || next.kpiTrendSort.fieldId !== next.trendField)) delete next.kpiTrendSort;
   return next;
@@ -1220,6 +1222,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
       } } : {}),
       fieldWells: { pivotTableAggregatedFieldWells: { rows: visual.rows.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), columns: visual.columns.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), values } } } } };
     case 'kpi': return { kpiVisual: { ...body, chartConfiguration: {
+      ...(visual.kpiOptions ? { kpiOptions: structuredClone(visual.kpiOptions) } : {}),
       fieldWells: { values, ...(visual.trendField ? { trendGroups: [dimensionField(visual.trendField, visual.dateGrain, calculations, dataset)] } : {}) },
       ...(visual.trendField && visual.kpiTrendSort ? { sortConfiguration: { trendGroupSort: [{ fieldSort: { ...visual.kpiTrendSort } }] } } : {}),
     } } };
@@ -1354,7 +1357,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported || unresolvedAllowed ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['o', 'id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'breakdowns', 'multiplesOptions', 'groupSort', 'aggregationSort', 'pivotFieldSorts', 'pivotColumnSort', 'pivotRowSort', 'trendField', 'kpiTrendSort', 'sliceLimit', 'facetLimit', 'facetSort', 'breakdownLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', 'forecast', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['o', 'id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'breakdowns', 'multiplesOptions', 'groupSort', 'aggregationSort', 'pivotFieldSorts', 'pivotColumnSort', 'pivotRowSort', 'trendField', 'kpiTrendSort', 'kpiOptions', 'sliceLimit', 'facetLimit', 'facetSort', 'breakdownLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', 'forecast', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if (v.o !== undefined && !validOProvenance(v.o)) return fail();
       if (v.referenceLines !== undefined && (!Array.isArray(v.referenceLines) || !v.referenceLines.every(referenceLineValid))) return fail();
       if (v.forecast !== undefined && !forecastConfigValid(v.forecast)) return fail();
@@ -1364,7 +1367,11 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       if (v.groupSort !== undefined && !groupSortValid(v.groupSort)) return fail();
       if (v.aggregationSort !== undefined && (!aggregationSortValid(v.aggregationSort) || v.groupSort !== undefined || !['bar', 'bar100', 'pie'].includes(String(v.kind)) || v.aggregationSort.fieldId !== v.dimension || !(v.measures as string[]).includes(v.aggregationSort.measureFieldId))) return fail();
       if (v.pivotColumnSort !== undefined && (!pivotColumnSortValid(v.pivotColumnSort) || v.kind !== 'pivot' || !(v.columns as string[]).length || !(v.measures as string[]).includes(v.pivotColumnSort.measureFieldId))) return fail();
-      if (v.trendField !== undefined && (v.kind !== 'kpi' || !fieldNames([v.trendField], 'dimension') || !unresolvedAllowed && !['STRING', 'DATETIME'].includes(fields.find(f => f.name === v.trendField)?.type ?? ''))) return fail();
+      if (v.kpiOptions !== undefined) {
+        if (v.kind !== 'kpi') return fail();
+        parseKpiOptions(v.kpiOptions, false, 'kpiOptions', () => fail());
+      }
+      if (v.trendField !== undefined && (v.kind !== 'kpi' || !fieldNames([v.trendField], 'dimension') || !imported && !unresolvedAllowed && !['STRING', 'DATETIME'].includes(fields.find(f => f.name === v.trendField)?.type ?? ''))) return fail();
       if (v.kpiTrendSort !== undefined && (!kpiTrendSortValid(v.kpiTrendSort) || v.kind !== 'kpi' || !v.trendField || v.kpiTrendSort.fieldId !== v.trendField)) return fail();
       if (v.pivotRowSort !== undefined && (!pivotRowSortValid(v.pivotRowSort) || v.kind !== 'pivot' || !(v.rows as string[]).length || !(v.measures as string[]).includes(v.pivotRowSort.measureFieldId))) return fail();
       if (v.pivotFieldSorts !== undefined && (!pivotFieldSortsValid(v.pivotFieldSorts) || v.kind !== 'pivot' || v.pivotFieldSorts.some(sort => ![...v.rows as string[], ...v.columns as string[]].includes(sort.fieldId)))) return fail();

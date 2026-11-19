@@ -214,6 +214,25 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
       return undefined;
     }
   })() : undefined;
+  let kpiTrendProblem: string | undefined;
+  const kpiChecked = kind === 'kpi' && (config.sortConfiguration !== undefined || config.kpiOptions !== undefined || wells.trendGroups !== undefined);
+  const importedKpi = kpiChecked ? (() => {
+    try {
+      const { actions: _actions, columnHierarchies: _hierarchies, ...kpiBody } = body;
+      const model = normalizeVisual('bundle', { [variant]: kpiBody });
+      const rawSort = obj(config.sortConfiguration).trendGroupSort;
+      const explicit = obj(obj(list(rawSort)[0]).fieldSort).direction;
+      if (model.trendGroupSort && explicit === undefined) kpiTrendProblem = 'Trend sort: retained, read-only; requires an explicit direction on KPI';
+      return {
+        ...(model.trendDimension ? { trendField: model.trendDimension.column } : {}),
+        ...(model.trendGroupSort && explicit !== undefined ? { kpiTrendSort: { ...model.trendGroupSort, fieldId: model.trendDimension!.column } } : {}),
+        ...(model.kpiOptions ? { kpiOptions: model.kpiOptions } : {}),
+      };
+    } catch (error) {
+      kpiTrendProblem = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      return {};
+    }
+  })() : {};
   const columnSortsRaw = obj(config.sortConfiguration).columnSort;
   let columnSortProblem: string | undefined;
   const importedColumnSort = columnSortsRaw !== undefined ? (() => {
@@ -353,6 +372,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     ...(importedPivotSorts ? { pivotFieldSorts: importedPivotSorts } : {}),
     ...(importedColumnSort ? { pivotColumnSort: importedColumnSort } : {}),
     ...(importedPivotRowSort ? { pivotRowSort: importedPivotRowSort } : {}),
+    ...importedKpi,
     // OpenSight extension: imported pie slice limit imports into the draft.
     ...(importedSliceLimit ? { sliceLimit: importedSliceLimit } : {}),
     ...(importedFacetLimit ? { facetLimit: importedFacetLimit } : {}),
@@ -376,7 +396,8 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     totals: (kind === 'pivot' ? obj(total.rowTotalOptions) : total).totalsVisibility === 'VISIBLE',
     subtotals: (kind === 'pivot' ? obj(total.rowSubtotalOptions) : obj(config.opensightSubtotalOptions)).totalsVisibility === 'VISIBLE',
   };
-  const dateField = list(wells[kind === 'pivot' ? 'rows' : kind === 'table' ? 'groupBy' : 'category']).map(f => obj(obj(f).dateDimensionField)).find(f => typeof obj(f.column).columnName === 'string');
+  const dateField = list(wells[kind === 'kpi' ? 'trendGroups' : kind === 'pivot' ? 'rows' : kind === 'table' ? 'groupBy' : 'category']).map(f => obj(obj(f).dateDimensionField)).find(f => typeof obj(f.column).columnName === 'string');
+  if (kind === 'kpi' && dateField && dateField.dateGranularity === undefined) visual.dateGrain = 'DAY';
   if (dateField && ['YEAR','QUARTER','DAY'].includes(String(dateField.dateGranularity))) visual.dateGrain = dateField.dateGranularity as 'YEAR' | 'QUARTER' | 'DAY';
   const unrecognized = importInteractions(body, visual);
   const checkedBody = { ...body, ...unrecognized } as Obj;
@@ -388,13 +409,14 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   if (aggregationSortProblem) issues.push(aggregationSortProblem);
   if (columnSortProblem) issues.push(columnSortProblem);
   if (pivotRowSortProblem) issues.push(pivotRowSortProblem);
+  if (kpiTrendProblem) issues.push(kpiTrendProblem);
   // Line/area visuals carrying a forecast configuration get the same compiler
   // normalization check Insight imports get (issue #263): the compiler's
   // forecast gate is fail-closed, so a malformed configuration records a
   // blocking diagnostic here instead of executing sanitized in the preview.
   const forecastChecked = (kind === 'line' || kind === 'area') && config.forecastConfigurations !== undefined;
   const issuesBeforeNormalize = issues.length;
-  if (kind === 'insight' || kind === 'radar' || kind === 'sankey' || kind === 'waterfall' || forecastChecked || kind === 'pivot' && config.sortConfiguration !== undefined) {
+  if (kind === 'insight' || kind === 'radar' || kind === 'sankey' || kind === 'waterfall' || forecastChecked || kpiChecked || kind === 'pivot' && config.sortConfiguration !== undefined) {
     try { normalizeVisual('bundle', checked); }
     catch (error) { issues.push(error instanceof Error ? `${error.name}: ${error.message}` : String(error)); }
   }
@@ -638,6 +660,13 @@ function projectVisual(visual: AuthorVisual, raw: BundleVisual, calculations: re
   if (typeof originalFacet?.fieldId === 'string') {
     for (const field of facetFields(config.fieldWells)) field.fieldId = originalFacet.fieldId;
     for (const wrapper of list(obj(config.sortConfiguration).smallMultiplesSort)) obj(obj(wrapper).fieldSort).fieldId = originalFacet.fieldId;
+  }
+  const trendFields = (value: unknown): Obj[] => Object.entries(obj(value)).flatMap(([key, child]) => key === 'trendGroups'
+    ? list(child).map(wrapper => obj(Object.values(obj(wrapper))[0])) : trendFields(child));
+  const originalTrend = trendFields(originalWells).find(field => obj(field.column).columnName === visual.trendField);
+  if (typeof originalTrend?.fieldId === 'string') {
+    for (const field of trendFields(config.fieldWells)) field.fieldId = originalTrend.fieldId;
+    for (const wrapper of list(obj(config.sortConfiguration).trendGroupSort)) obj(obj(wrapper).fieldSort).fieldId = originalTrend.fieldId;
   }
   if (visual.kind === 'insight') assign(body.insightConfiguration);
   if (visual.kind === 'kpi' && Object.hasOwn(originalWells, 'kpiFieldWells')) config.fieldWells = { kpiFieldWells: config.fieldWells };
