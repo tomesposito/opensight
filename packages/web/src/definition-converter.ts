@@ -100,7 +100,15 @@ const title: Schema = {
   Visibility: ['visibility'], FormatText: ['formatText', { PlainText: ['plainText'], RichText: ['richText'] }],
 };
 const limit: Schema = members('OtherCategories ItemsLimit');
-const sort: Schema = { FieldSort: ['fieldSort', members('FieldId Direction')] };
+const sort: Schema = {
+  FieldSort: ['fieldSort', members('FieldId Direction')],
+  AggregationSort: ['aggregationSort', {
+    ...members('FieldId Direction'), Column: ['column', column],
+    AggregationFunction: ['aggregationFunction', {
+      NumericalAggregationFunction: ['numericalAggregationFunction', members('SimpleNumericalAggregation')],
+    }],
+  }],
+};
 const labels: Schema = members('Visibility Overlap MeasureLabelVisibility');
 const axis: Schema = { ScrollbarOptions: ['scrollbarOptions', visibility] };
 const border: Schema = members('Style Thickness Color');
