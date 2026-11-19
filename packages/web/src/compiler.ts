@@ -272,7 +272,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const extra = extraKind(kind) ? EXTRA_VISUALS[kind] : undefined;
   const common = [key('fieldWells', 'FieldWells')];
   if (kind !== 'insight' && kind !== 'kpi' && kind !== 'table' && kind !== 'pivot') common.push(key('sortConfiguration', 'SortConfiguration'), key('dataLabels', 'DataLabels'), key('tooltip', 'Tooltip'), key('legend', 'Legend'));
-  if (kind === 'table') common.push(key('sortConfiguration', 'SortConfiguration'));
+  if (kind === 'table' || kind === 'pivot') common.push(key('sortConfiguration', 'SortConfiguration'));
   if (kind === 'pie') common.push(key('donutOptions', 'DonutOptions'));
   if (FACETED_KINDS.includes(kind)) common.push(key('opensightMultiplesOptions', 'OpenSightMultiplesOptions'));
   if (kind === 'bar' || kind === 'bar100') common.push(key('orientation', 'Orientation'), key('barsArrangement', 'BarsArrangement'));
@@ -464,11 +464,26 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const forecast = parsedForecast.forecast;
   if (parsedForecast.extra > 0) warnings.push(`${cpath}.${forecastKey}: ${parsedForecast.extra} additional forecast configuration${parsedForecast.extra === 1 ? '' : 's'} ignored; only the first is applied.`);
   if (forecast && !dimensions[0]?.dateGranularity) warnings.push(`${cpath}.${forecastKey}: forecast ignored — the chart's category field is not a date dimension.`);
-  const sort = object(config[key('sortConfiguration', 'SortConfiguration')] ?? {}, cpath);
+  const sortPath = `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`;
+  const sortRaw = config[key('sortConfiguration', 'SortConfiguration')];
+  const sort = object(sortRaw === undefined ? {} : sortRaw, sortPath);
   const sortsKey = kind === 'table' ? key('rowSort', 'RowSort') : key('categorySort', 'CategorySort');
   const facetSortKey = key('smallMultiplesSort', 'SmallMultiplesSort');
   const breakdownLimitKey = key('breakdownItemsLimit', 'BreakdownItemsLimit');
-  keys(sort, ['table', 'radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration'), ...(FACETED_KINDS.includes(kind) ? [facetSortKey] : [])], `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`);
+  const fieldSortOptionsKey = key('fieldSortOptions', 'FieldSortOptions');
+  keys(sort, kind === 'pivot' ? [fieldSortOptionsKey] : ['table', 'radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration'), ...(FACETED_KINDS.includes(kind) ? [facetSortKey] : [])], sortPath);
+  const seenPivotSorts = new Set<string>();
+  const fieldSortOptions = list(sort[fieldSortOptionsKey], `${sortPath}.${fieldSortOptionsKey}`).map((entry, index) => {
+    const entryPath = `${sortPath}.${fieldSortOptionsKey}[${index}]`;
+    const fs = object(entry, entryPath);
+    keys(fs, [key('fieldId', 'FieldId'), key('sortDirection', 'SortDirection')], entryPath);
+    const fieldId = text(fs[key('fieldId', 'FieldId')], entryPath);
+    if (![...rowDimensions, ...columnDimensions].some(field => field.id === fieldId)) fail(entryPath, 'pivot field sort must reference a bound row or column dimension');
+    if (seenPivotSorts.has(fieldId)) fail(entryPath, 'duplicate pivot field sort');
+    seenPivotSorts.add(fieldId);
+    const direction = enumValue(fs[key('sortDirection', 'SortDirection')], ['ASC', 'DESC'], 'ASC', entryPath) as 'ASC' | 'DESC';
+    return { fieldId, direction };
+  });
   const facetSortPath = `${cpath}.${key('sortConfiguration', 'SortConfiguration')}.${facetSortKey}`;
   const facetSorts = list(sort[facetSortKey], facetSortPath);
   if (facetSorts.length > 1) fail(facetSortPath, 'only one field sort is supported');
@@ -565,6 +580,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     ...(sliceLimit ? { sliceLimit } : {}),
     ...(facetLimit ? { facetLimit } : {}),
     ...(facetSort ? { facetSort } : {}),
+    ...(fieldSortOptions.length ? { fieldSortOptions } : {}),
     ...(breakdownLimit ? { breakdownLimit } : {}),
     ...(facet ? { facet } : {}),
     ...(breakdown ? { breakdown } : {}),
