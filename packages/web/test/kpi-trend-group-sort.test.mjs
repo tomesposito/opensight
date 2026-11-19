@@ -158,7 +158,7 @@ for (const source of ['bundle', 'api']) {
       { progressBar: { visibility: null } }, { trendArrows: { visibility: 'yes' } }];
     for (const options of invalid) { const v = input(); config(v).kpiOptions = options; assert.throws(() => normalize(dialect(v, source)), CompileError, JSON.stringify(options)); }
     const v = input(); config(v).fieldWells.targetValues = config(v).fieldWells.values;
-    assert.throws(() => normalize(dialect(v, source)), /field well not supported/);
+    assert.throws(() => normalize(dialect(v, source)), /duplicate field IDs/);
   });
 }
 import { parseDraft, serializeVisual, kpiTrendSortValid } from '../build/test/authoring.js';

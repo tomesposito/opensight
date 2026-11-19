@@ -15,7 +15,7 @@ import { SORT_AGGREGATIONS } from './model.js';
 import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
 import { applyCategoryLimit, CATEGORY_LIMIT_KINDS } from './category-limit.js';
-import { kpiComparison, orderKpiTrend } from './kpi-trend.js';
+import { kpiComparison, kpiTotal, orderKpiTrend } from './kpi-trend.js';
 import { compareCells } from './cell-sort.js';
 import { applyDisplayOptions, legendTextStyle } from './display-options.js';
 import { FACETED_KINDS, applyFacetLimit, facetLayout, facetPanelGrids, facetTitles, groupRowsByFacet, type FacetGroup } from './facet-layout.js';
@@ -27,6 +27,7 @@ type Input = Pick<FixtureVisual, 'source' | 'rows' | 'bindings' | 'path' | 'them
 export interface CompiledVisual {
   model: VisualModel;
   narrative?: InsightNarrative;
+  kpiTarget?: { value: number | null };
   option: EChartsOption;
   /** Ordered, validated cells also used by the accessible HTML data table. */
   table: { columns: string[]; visibleColumns?: string[]; rows: Cell[][]; rowKinds?: ('detail' | 'subtotal' | 'total')[];
@@ -731,6 +732,7 @@ export function compileVisual(input: Input): CompiledVisual {
   if (input.theme !== undefined && !themeValid(input.theme)) fail(input.path, 'invalid analysis theme');
   const theme = input.theme ?? LIGHT_THEME;
   const model = normalizeVisual(input.source, input.definition, input.path);
+  let kpiTarget: CompiledVisual['kpiTarget'];
   const fields = [...model.dimensions, ...(model.trendDimension ? [model.trendDimension] : []), ...(model.breakdown ? [model.breakdown] : []), ...(model.facet ? [model.facet] : []), ...model.measures, ...(model.targetMeasure ? [model.targetMeasure] : [])];
   // Extra tooltip fields ride the result rows as additional measures; they never join the wells,
   // the series, or the data table. Their column alias is the field id (the query plans outputName = fieldId).
@@ -994,8 +996,12 @@ export function compileVisual(input: Input): CompiledVisual {
     if (!model.trendDimension && rows.length > 1) fail(input.path, 'KPI expects exactly one aggregate row, not a client-side sum');
     const row = rows[0];
     const values = rows.map(row => number(row, model.measures[0]!));
-    const value = model.trendDimension ? values.reduce<number | null>((sum, value) => value === null ? sum : (sum ?? 0) + value, null) : row ? number(row, model.measures[0]!) : null;
+    const value = model.trendDimension ? kpiTotal(values, message => fail(input.path, message)) : row ? number(row, model.measures[0]!) : null;
     if (value !== null && !Number.isFinite(value)) fail(input.path, 'KPI total must be finite');
+    if (model.targetMeasure) {
+      const targets = rows.map(row => number(row, model.targetMeasure!));
+      kpiTarget = { value: model.trendDimension ? kpiTotal(targets, message => fail(input.path, `target: ${message}`)) : targets[0] ?? null };
+    }
     const sparkline = !!model.trendDimension && rows.length >= 2 && model.kpiOptions?.sparkline?.visibility !== 'HIDDEN';
     const comparison = model.trendDimension && model.kpiOptions?.comparison ? kpiComparison(values, model.kpiOptions.comparison.comparisonMethod) : null;
     const comparisonLabel = comparison === null ? undefined : `${displayCell(comparison)}${model.kpiOptions?.comparison?.comparisonMethod === 'PERCENT_DIFFERENCE' ? '%' : ''}`;
@@ -1167,7 +1173,7 @@ export function compileVisual(input: Input): CompiledVisual {
       };
     }
   }
-  return { model, option, state, ...(forecastNote ? { forecastNote } : {}), ...(narrative ? { narrative } : {}), table: { ...(model.trendDimension ? { dimensionCount: 1 } : {}), columns: fields.map(f => fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
+  return { model, option, state, ...(kpiTarget ? { kpiTarget } : {}), ...(forecastNote ? { forecastNote } : {}), ...(narrative ? { narrative } : {}), table: { ...(model.trendDimension ? { dimensionCount: 1 } : {}), columns: fields.map(f => fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
     ...(model.formatting ? { visibleColumns: fields.map(f => (model.measures.includes(f) ? model.formatting?.valueNamesVisible : model.formatting?.rowNamesVisible) === false ? '' : fieldName(f, model.formatting)) } : {}),
   } };
 }

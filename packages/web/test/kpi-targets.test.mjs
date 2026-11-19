@@ -51,3 +51,30 @@ for (const source of ['bundle', 'api']) {
     }
   });
 }
+for (const source of ['bundle', 'api']) {
+  test(`${source}: target totals follow the primary grain and ignore nulls without inventing zero`, () => {
+    const v = input(true); v.rows = [{ period: 'B', revenue: 4, budget: null }, { period: 'A', revenue: 3, budget: 8 }, { period: 'C', revenue: null, budget: 2 }];
+    const before = structuredClone(v), c = compileVisual(dialect(v, source));
+    assert.equal(c.kpiTarget.value, 10); assert.equal(c.option.graphic[0].style.text, '7'); assert.deepEqual(v, before);
+    assert.deepEqual(c.table.rows, [['A', 3, 8], ['B', 4, null], ['C', null, 2]]);
+    for (const rows of [[], null, [{ period: 'A', revenue: 4, budget: null }], [{ period: 'A', revenue: 4, budget: null }, { period: 'B', revenue: null, budget: null }]]) {
+      assert.equal(compileVisual(dialect({ ...v, rows }, source)).kpiTarget.value, null);
+    }
+    assert.equal(compileVisual(dialect(input(), source)).kpiTarget.value, 20);
+    assert.throws(() => compileVisual(dialect({ ...input(), rows: [input().rows[0], input().rows[0]] }, source)), /exactly one aggregate row/);
+  });
+  test(`${source}: target arithmetic and duplicate trend keys fail closed`, () => {
+    const v = input(true); v.rows = [{ period: 'A', revenue: 1, budget: Number.MAX_VALUE }, { period: 'B', revenue: 2, budget: Number.MAX_VALUE }];
+    assert.throws(() => compileVisual(dialect(v, source)), /target: KPI total must be finite/);
+    v.rows = [input().rows[0], input().rows[0]];
+    assert.throws(() => compileVisual(dialect(v, source)), /duplicate trend groups/);
+  });
+  test(`${source}: trended targets require explicit SUM even for governed metrics`, () => {
+    for (const aggregation of ['AVG', 'COUNT', 'MIN', 'MAX', 'DISTINCT_COUNT']) {
+      const v = input(true); config(v).fieldWells.targetValues = [measure('target', '__metric_budget', aggregation)];
+      assert.throws(() => normalize(dialect(v, source)), /trended KPI requires an explicit SUM/);
+      delete config(v).fieldWells.trendGroups;
+      assert.equal(normalize(dialect(v, source)).targetMeasure.column, '__metric_budget');
+    }
+  });
+}
