@@ -2,6 +2,7 @@ import { type Dispatch } from 'react';
 import type { AuthorAction, AuthorDraft, AuthorVisual, BreakdownLimit, FacetLimit, ForecastConfig, GroupSort, SliceLimit } from './authoring.js';
 import { GRID_COLUMNS, defaultMultiplesOptions, hasSmallMultiplesWell, breakdownLimitValid, facetLimitValid, sliceLimitValid } from './authoring.js';
 import type { MultiplesOptions as MultiplesOptionsState } from './model.js';
+import { SORT_AGGREGATIONS, type AggregationSort } from './model.js';
 import { hasDataLabels, hasLegend, LEGEND_POSITIONS, DATA_LABEL_POSITIONS, CARD_DEFAULTS, cleanCardStyle, cleanCardLayout, cleanAltText, altTextValid, type LegendPosition, type LegendTextStyle, type LegendTitle, type GroupTitle, type DataLabels, type DataLabelPosition, type CardStyle, type CardSwatch, type CardBorder } from './formatting.js';
 import { LIGHT_THEME } from './themes.js';
 import { CATEGORY_LIMIT_KINDS } from './category-limit.js';
@@ -374,6 +375,12 @@ export function GroupColorOptions({ visual, dispatch }: SectionProps) {
   const setTitle = (next: GroupTitle | undefined) => dispatch({ type: 'group-title', title: next });
   const sortFields = [...new Set([...(field ? [field] : []), ...visual.measures])];
   const sort = visual.groupSort;
+  const aggregationSort = visual.aggregationSort;
+  const setAggregationSort = (changes: Partial<AggregationSort> = {}) => {
+    if (!field || !visual.measures.length) return;
+    dispatch({ type: 'aggregation-sort', sort: { fieldId: field, measureFieldId: visual.measures[0]!, aggregation: 'SUM', direction: 'DESC', ...aggregationSort, ...changes } });
+  };
+  const aggregationNames = { SUM: 'Sum', AVERAGE: 'Average', MIN: 'Min', MAX: 'Max', COUNT: 'Count', DISTINCT_COUNT: 'Distinct count' };
   const sortDisplayName = (name: string) => (names && Object.hasOwn(names, name) ? (names[name] as string) : name);
   const setSort = (fieldId: string | undefined, direction?: GroupSort['direction']) => {
     if (fieldId === undefined || fieldId === '') { dispatch({ type: 'group-sort', sort: undefined }); return; }
@@ -406,12 +413,24 @@ export function GroupColorOptions({ visual, dispatch }: SectionProps) {
       }} /></label>
     <p className="field-hint">{field ? `Source field: ${field}. Display names appear in generated titles and result tables.` : 'Assign a Group/Color field first.'}</p>
     {sortFields.length ? <div className="property-control-row" role="group" aria-label="Group/Color sort">
-      <label>Sort by<select aria-label="Sort slices by" value={sort?.fieldId ?? ''} onChange={e => setSort(e.target.value || undefined, sort?.direction)}>
+      {field && visual.measures.length > 0 && <label>Sort mode<select aria-label="Category sort mode" value={aggregationSort ? 'measure' : 'field'} onChange={e => {
+        if (e.target.value === 'measure') setAggregationSort();
+        else if (e.target.value === 'field') setSort(field);
+      }}><option value="field">By field</option><option value="measure">By measure</option></select></label>}
+      {aggregationSort ? <>
+        <label>Measure<select aria-label="Sort measure" value={aggregationSort.measureFieldId} onChange={e => setAggregationSort({ measureFieldId: e.target.value })}>
+          {visual.measures.map(f => <option key={f} value={f}>{sortDisplayName(f)}</option>)}
+        </select></label>
+        <label>Aggregation<select aria-label="Sort aggregation" value={aggregationSort.aggregation} onChange={e => {
+          const aggregation = SORT_AGGREGATIONS.find(value => value === e.target.value);
+          if (aggregation) setAggregationSort({ aggregation });
+        }}>{SORT_AGGREGATIONS.map(value => <option key={value} value={value}>{aggregationNames[value]}</option>)}</select></label>
+      </> : <label>Sort by<select aria-label="Sort slices by" value={sort?.fieldId ?? ''} onChange={e => setSort(e.target.value || undefined, sort?.direction)}>
         <option value="">Default order</option>
         {sortFields.map(f => <option key={f} value={f}>{sortDisplayName(f)}</option>)}
-      </select></label>
-      {sort && <div className="property-inline" role="group" aria-label="Sort direction">
-        {(['ASC', 'DESC'] as const).map(d => <button type="button" key={d} aria-label={d === 'ASC' ? 'Sort ascending' : 'Sort descending'} aria-pressed={sort.direction === d} onClick={() => setSort(sort.fieldId, d)}>{d === 'ASC' ? '↑' : '↓'}</button>)}
+      </select></label>}
+      {(sort || aggregationSort) && <div className="property-inline" role="group" aria-label="Sort direction">
+        {(['ASC', 'DESC'] as const).map(d => <button type="button" key={d} aria-label={d === 'ASC' ? 'Sort ascending' : 'Sort descending'} aria-pressed={(aggregationSort ?? sort)?.direction === d} onClick={() => aggregationSort ? setAggregationSort({ direction: d }) : setSort(sort!.fieldId, d)}>{d === 'ASC' ? '↑' : '↓'}</button>)}
       </div>}
     </div> : <p className="field-hint">Assign a Group/Color field or a measure to sort the slices.</p>}
     <p className="field-hint">The default order follows the dataset's dimension order; a chosen sort applies to the rendered slices.</p>
