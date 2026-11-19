@@ -117,6 +117,7 @@ export interface AuthorVisual {
   id: string; kind: VisualKind; title: string;
   subtitle?: string; subtitleVisible?: boolean;
   dimension: string | null; measures: string[]; rows: string[]; columns: string[];
+  trendField?: string;
   smallMultiples?: string[];
   /** Waterfall breakdown field (QuickSight Breakdowns well). At most one. */
   breakdowns?: string[];
@@ -188,7 +189,7 @@ export const hasSmallMultiplesWell = (kind: VisualKind): boolean => ['bar', 'bar
 export const hasBreakdownWell = (kind: VisualKind): boolean => kind === 'waterfall';
 export const capabilityNote = (kind: VisualKind): string => extraKind(kind) ? EXTRA_VISUALS[kind].note : kind === 'kpi' ? 'One measure, one aggregate row.' : tabular(kind) ? 'Additive SUM totals over supplied groups; nulls remain null.' : 'One category dimension; measures use SUM. Pie requires nonnegative values.';
 export const tabular = (kind: VisualKind): boolean => kind === 'table' || kind === 'pivot';
-export const visualDimensions = (visual: AuthorVisual): string[] => noDimensions(visual.kind) ? [] : grouped(visual.kind)
+export const visualDimensions = (visual: AuthorVisual): string[] => visual.kind === 'kpi' && visual.trendField ? [visual.trendField] : noDimensions(visual.kind) ? [] : grouped(visual.kind)
   ? [...visual.rows, ...visual.columns] : visual.dimension === null ? [] : [visual.dimension];
 const originalIds = (draft: AuthorDraft, visual: boolean): string[] => (draft.bundle?.original.members ?? []).flatMap(({ resource }) => resource.resourceType === 'analysis' || resource.resourceType === 'dashboard' ? (resource.definition.sheets ?? []).flatMap(s => visual ? (s.visuals ?? []).map(v => Object.values(v)[0]!.visualId) : [s.sheetId]) : []);
 const nextId = (prefix: string, ids: string[]): string => {

@@ -15,6 +15,7 @@ import { SORT_AGGREGATIONS } from './model.js';
 import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
 import { applyCategoryLimit, CATEGORY_LIMIT_KINDS } from './category-limit.js';
+import { orderKpiTrend } from './kpi-trend.js';
 import { compareCells } from './cell-sort.js';
 import { applyDisplayOptions, legendTextStyle } from './display-options.js';
 import { FACETED_KINDS, applyFacetLimit, facetLayout, facetPanelGrids, facetTitles, groupRowsByFacet, type FacetGroup } from './facet-layout.js';
@@ -718,7 +719,7 @@ export function compileVisual(input: Input): CompiledVisual {
   if (input.theme !== undefined && !themeValid(input.theme)) fail(input.path, 'invalid analysis theme');
   const theme = input.theme ?? LIGHT_THEME;
   const model = normalizeVisual(input.source, input.definition, input.path);
-  const fields = [...model.dimensions, ...(model.breakdown ? [model.breakdown] : []), ...(model.facet ? [model.facet] : []), ...model.measures];
+  const fields = [...model.dimensions, ...(model.trendDimension ? [model.trendDimension] : []), ...(model.breakdown ? [model.breakdown] : []), ...(model.facet ? [model.facet] : []), ...model.measures];
   // Extra tooltip fields ride the result rows as additional measures; they never join the wells,
   // the series, or the data table. Their column alias is the field id (the query plans outputName = fieldId).
   const extraFields: Field[] = (model.tooltipExtraFields ?? []).map(e =>
@@ -750,6 +751,10 @@ export function compileVisual(input: Input): CompiledVisual {
   const availableExtras = extraFields.filter(field => rows.every(row => Object.hasOwn(row, extraColumn(field))));
   for (const e of model.tooltipExtraFields ?? []) {
     if (!availableExtras.some(f => f.id === e.id)) model.warnings.push(`${input.path}: tooltip field '${e.id}' has no data in this result and will not be shown.`);
+  }
+  if (model.trendDimension) {
+    const ordered = orderKpiTrend(rows, model.trendDimension, model.trendGroupSort?.direction ?? 'ASC', cell, message => fail(input.path, message));
+    rows.splice(0, rows.length, ...ordered);
   }
   if (model.sort) {
     const sort = model.sort;
@@ -1134,7 +1139,7 @@ export function compileVisual(input: Input): CompiledVisual {
       };
     }
   }
-  return { model, option, state, ...(forecastNote ? { forecastNote } : {}), ...(narrative ? { narrative } : {}), table: { columns: fields.map(f => fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
+  return { model, option, state, ...(forecastNote ? { forecastNote } : {}), ...(narrative ? { narrative } : {}), table: { ...(model.trendDimension ? { dimensionCount: 1 } : {}), columns: fields.map(f => fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
     ...(model.formatting ? { visibleColumns: fields.map(f => (model.measures.includes(f) ? model.formatting?.valueNamesVisible : model.formatting?.rowNamesVisible) === false ? '' : fieldName(f, model.formatting)) } : {}),
   } };
 }

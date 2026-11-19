@@ -61,3 +61,24 @@ for (const source of ['bundle', 'api']) {
     assert.throws(() => normalize(dialect(sorted(input(false)), source)), /bound trend dimension/);
   });
 }
+import { orderKpiTrend } from '../build/test/kpi-trend.js';
+import { buildAuthorQuery } from '../build/test/author-query.js';
+import { activeSheet, authorReducer, emptyDraft } from '../build/test/authoring.js';
+const selected = d => activeSheet(d).visuals.find(v => v.id === activeSheet(d).selectedId);
+const order = (values, direction = 'ASC', grain) => orderKpiTrend(values.map(period => ({ period })), { column: 'period', ...(grain ? { dateGranularity: grain } : {}) }, direction, (r, f) => r[f.column], message => { throw new Error(message); }).map(r => r.period);
+test('trend order is typed, stable, null-last and defaults ascending', () => {
+  assert.deepEqual(order([10, null, 2, 1]), [1, 2, 10, null]);
+  assert.deepEqual(order([10, null, 2, 1], 'DESC'), [10, 2, 1, null]);
+  assert.deepEqual(order(['b', 'a', null]), ['a', 'b', null]);
+  assert.deepEqual(order([2, '2', 1]), [1, 2, '2']);
+  assert.deepEqual(order(['2025-02', '2024-12', null], 'ASC', 'MONTH'), ['2024-12', '2025-02', null]);
+  assert.deepEqual(order(['2025-Q4', '2024-Q2'], 'ASC', 'QUARTER'), ['2024-Q2', '2025-Q4']);
+  assert.throws(() => order(['bad'], 'ASC', 'MONTH'), /invalid date/);
+  assert.throws(() => order(['a', 'a']), /duplicate trend groups/);
+});
+test('KPI query groups by the date or category trend well', () => {
+  const v = selected(authorReducer(emptyDraft(), { type: 'add', kind: 'kpi' }));
+  assert.deepEqual(buildAuthorQuery(v).dimensions, []);
+  assert.deepEqual(buildAuthorQuery({ ...v, trendField: 'region' }).dimensions, [{ fieldId: 'region', columnName: 'region' }]);
+  assert.deepEqual(buildAuthorQuery({ ...v, trendField: 'order_date' }).dimensions, [{ fieldId: 'order_date', columnName: 'order_date', granularity: 'MONTH' }]);
+});
