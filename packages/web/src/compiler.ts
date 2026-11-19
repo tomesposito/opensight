@@ -714,18 +714,7 @@ export function compileVisual(input: Input): CompiledVisual {
       }
       const ranked = [...categories.values()].map(group => {
         const values = group.map(row => number(row, measure)).filter((value): value is number => value !== null);
-        let aggregate: number | null = null;
-        if (values.length) {
-          switch (sort.aggregation) {
-            case 'SUM': aggregate = values.reduce((a, b) => a + b, 0); break;
-            case 'AVERAGE': aggregate = values.reduce((a, b) => a + b, 0) / values.length; break;
-            case 'MIN': aggregate = values.reduce((a, b) => Math.min(a, b)); break;
-            case 'MAX': aggregate = values.reduce((a, b) => Math.max(a, b)); break;
-            case 'COUNT': aggregate = values.length; break;
-            case 'DISTINCT_COUNT': aggregate = new Set(values).size; break;
-          }
-          if (!Number.isFinite(aggregate)) fail(input.path, 'aggregation sort result must be finite');
-        }
+        const aggregate = aggregateSortValues(values, sort.aggregation, input.path);
         return { group, aggregate };
       });
       ranked.sort((a, b) => compareCells(a.aggregate, b.aggregate, sort.direction));
@@ -1373,9 +1362,25 @@ function periodLabel(date: Date, grain: 'DAY' | 'MONTH' | 'QUARTER' | 'YEAR', ra
   return iso.slice(0, 10);
 }
 
+/** Shared result-value aggregation for category and pivot column ordering. */
+function aggregateSortValues(values: number[], aggregation: typeof SORT_AGGREGATIONS[number], path: string): number | null {
+  if (!values.length) return null;
+  let result: number;
+  switch (aggregation) {
+    case 'SUM': result = values.reduce((a, b) => a + b, 0); break;
+    case 'AVERAGE': result = values.reduce((a, b) => a + b, 0) / values.length; break;
+    case 'MIN': result = values.reduce((a, b) => Math.min(a, b)); break;
+    case 'MAX': result = values.reduce((a, b) => Math.max(a, b)); break;
+    case 'COUNT': result = values.length; break;
+    case 'DISTINCT_COUNT': result = new Set(values).size; break;
+  }
+  if (!Number.isFinite(result)) fail(path, 'aggregation sort result must be finite');
+  return result;
+}
+
 interface AxisEntry { cells: Cell[]; kind: 'detail' | 'subtotal' | 'total' }
 /** Hierarchical axes preserve typed keys (null, strings and numbers never collide). */
-function axisEntries(paths: Cell[][], depth: number, subtotals: boolean, totals: boolean, directions: ('ASC' | 'DESC' | undefined)[] = []): AxisEntry[] {
+function axisEntries(paths: Cell[][], depth: number, subtotals: boolean, totals: boolean, directions: ('ASC' | 'DESC' | undefined)[] = [], outerOrder?: (a: Cell, b: Cell) => number): AxisEntry[] {
   if (!depth) return [{ cells: [], kind: 'detail' }];
   const result: AxisEntry[] = [];
   const visit = (prefix: Cell[], candidates: Cell[][]) => {
@@ -1388,7 +1393,8 @@ function axisEntries(paths: Cell[][], depth: number, subtotals: boolean, totals:
     }
     const siblings = [...groups.values()];
     const direction = directions[prefix.length];
-    if (direction) siblings.sort((a, b) => compareCells(a[0]![prefix.length]!, b[0]![prefix.length]!, direction));
+    if (!prefix.length && outerOrder) siblings.sort((a, b) => outerOrder(a[0]![0]!, b[0]![0]!));
+    else if (direction) siblings.sort((a, b) => compareCells(a[0]![prefix.length]!, b[0]![prefix.length]!, direction));
     for (const group of siblings) visit([...prefix, group[0]![prefix.length]!], group);
     if (subtotals && prefix.length) result.push({ cells: prefix, kind: 'subtotal' });
   };
@@ -1433,7 +1439,24 @@ function compilePivotTable(model: VisualModel, rows: Row[], cell: (row: Row, fie
   const colPaths = rows.map(row => columnFields.map(f => cell(row, f)));
   const directions = (fields: Field[]) => fields.map(field => model.fieldSortOptions?.find(sort => sort.fieldId === field.id)?.direction);
   const rowAxis = axisEntries(rowPaths, rowFields.length, model.subtotals, model.totals, directions(rowFields));
-  const colAxis = axisEntries(colPaths, columnFields.length, model.columnSubtotals, model.columnTotals, directions(columnFields));
+  let outerOrder: ((a: Cell, b: Cell) => number) | undefined;
+  if (model.columnSort) {
+    const sort = model.columnSort;
+    const measure = model.measures.find(field => field.id === sort.measureFieldId)!;
+    const groups = new Map<Cell, number[]>();
+    for (const row of rows) {
+      const key = cell(row, columnFields[0]!);
+      const values = groups.get(key) ?? [];
+      const value = number(row, measure);
+      if (value !== null) values.push(value);
+      groups.set(key, values);
+    }
+    const aggregates = new Map([...groups].map(([key, values]) => [key, aggregateSortValues(values, sort.aggregation, path)]));
+    // Only the first column level overrides fieldSortOptions. Stable sorting
+    // preserves first appearance for ties; all inner and row sorts still apply.
+    outerOrder = (a, b) => compareCells(aggregates.get(a)!, aggregates.get(b)!, sort.direction);
+  }
+  const colAxis = axisEntries(colPaths, columnFields.length, model.columnSubtotals, model.columnTotals, directions(columnFields), outerOrder);
   const label = (entry: AxisEntry, fields: Field[], visible = false): string => entry.kind === 'total' ? 'Grand total' : [
     ...entry.cells.map((value, i) => `${visible && model.formatting?.columnNamesVisible === false ? '' : `${fieldName(fields[i]!, model.formatting)}: `}${displayCell(value)}`),
     ...(entry.kind === 'subtotal' ? ['Subtotal'] : []),
