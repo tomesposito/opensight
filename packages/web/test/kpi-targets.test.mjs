@@ -177,3 +177,48 @@ for (const source of ['bundle', 'api']) {
     config(v).kpiOptions = { trendArrows: {} }; assert.ok(compileVisual(dialect(v, source)).model.warnings.some(w => w.includes('comparison is unavailable')));
   });
 }
+import { parseDraft, serializeVisual, dataFields } from '../build/test/authoring.js';
+import { buildAuthorPreview } from '../build/test/author-preview.js';
+import { AuthorCanvas } from '../build/test/Author.js';
+import { interpretQuestion } from '@opensight/o-interpreter';
+const targetDraft = (field = 'profit') => authorReducer(kpiDraft(), { type: 'assign', well: 'target', field });
+test('target authoring validates storage and preserves last valid state on invalid edits', () => {
+  const d = targetDraft(); assert.deepEqual(parseDraft(JSON.stringify(d)), d);
+  for (const field of ['region', 'order_id', 'missing', '', null, {}]) assert.equal(selected(authorReducer(d, { type: 'assign', well: 'target', field })), selected(d));
+  for (const targetField of ['missing', 'region', ' ', 'profit\0', null, {}, []]) {
+    const bad = structuredClone(d); selected(bad).targetField = targetField; assert.throws(() => parseDraft(JSON.stringify(bad)));
+  }
+  for (const kind of ['bar', 'line', 'table', 'pivot', 'pie', 'gauge']) {
+    const other = authorReducer(emptyDraft(), { type: 'add', kind });
+    assert.equal(selected(authorReducer(other, { type: 'assign', well: 'target', field: 'profit' })).targetField, undefined);
+    selected(other).targetField = 'profit'; assert.throws(() => parseDraft(JSON.stringify(other)));
+  }
+});
+test('removing/replacing target, kind switches and O replacement clear stale target state', () => {
+  const d = targetDraft();
+  for (const action of [{ type: 'unassign', well: 'target', field: 'profit' }, { type: 'unassign', field: 'profit' }, { type: 'kind', kind: 'bar' }]) assert.equal(selected(authorReducer(d, action)).targetField, undefined);
+  assert.equal(selected(authorReducer(d, { type: 'assign', well: 'target', field: 'revenue' })).targetField, 'revenue');
+  assert.equal(selected(authorReducer(d, { type: 'title', title: 'Goal' })).targetField, 'profit');
+  const v = selected(d); v.o = { question: 'sum revenue', interpretation: interpretQuestion('sum revenue', dataFields([])).interpretations[0] };
+  const next = authorReducer(d, { type: 'o-replace', id: v.id, visual: { ...v, targetField: undefined }, calculatedFields: [] });
+  assert.equal(selected(next).targetField, undefined); assert.doesNotThrow(() => parseDraft(JSON.stringify(next)));
+});
+test('authored targets serialize only to targetValues, preview both grains and clear to the old definition', () => {
+  const base = kpiDraft(), d = targetDraft();
+  const c = config({ definition: serializeVisual(selected(d)) }); assert.deepEqual(Object.keys(c.fieldWells).sort(), ['targetValues', 'values']);
+  for (const trendField of [undefined, 'region', 'order_date']) {
+    const v = { ...selected(d), trendField }, preview = compileVisual(buildAuthorPreview(v));
+    assert.equal(preview.state, 'ready'); assert.ok(preview.kpiTarget.value > 0);
+    assert.equal(preview.table.rows.length > 1, !!trendField);
+  }
+  const cleared = authorReducer(d, { type: 'unassign', well: 'target', field: 'profit' });
+  assert.deepEqual(serializeVisual(selected(cleared)), serializeVisual(selected(base)));
+  const shared = compileVisual(buildAuthorPreview({ ...selected(d), targetField: 'revenue' }));
+  assert.equal(shared.model.targetMeasure.id, 'target:revenue'); assert.equal(shared.table.rows[0][0], shared.table.rows[0][1]);
+});
+test('Target value well accepts only measures and uses measure labels', () => {
+  const html = renderToStaticMarkup(React.createElement(AuthorCanvas, { draft: targetDraft(), dispatch() {} }));
+  assert.match(html, /TARGET VALUE/); assert.match(html, /Remove profit from Target value/); assert.match(html, /SUM\(profit\)/);
+  const select = /<select[^>]*aria-label="Assign Target value"[\s\S]*?<\/select>/.exec(html)[0];
+  assert.match(select, /value="revenue"/); assert.match(select, /value="profit"/); assert.doesNotMatch(select, /value="region"|value="order_date"/);
+});

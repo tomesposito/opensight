@@ -1,4 +1,4 @@
-import { authorVisualProblem, dataFields, noDimensions, serializeVisual, visualDimensions } from './authoring.js';
+import { authorVisualProblem, kpiTargetFieldId, dataFields, noDimensions, serializeVisual, visualDimensions } from './authoring.js';
 import type { AuthorVisual, AuthorDataset, CalculatedField } from './authoring.js';
 import { buildAuthorQuery } from './author-query.js';
 import { executeFixtureQuery } from './fixture-query.js';
@@ -44,7 +44,7 @@ export function buildAuthorVisual(visual: AuthorVisual, calculations: readonly C
     ...(visual.filterActions?.length ? { filterActions: [...visual.filterActions] } : {}),
     ...(visual.urlActions?.length ? { urlActions: [...visual.urlActions] } : {}),
     ...(visual.navigationActions?.length ? { navigationActions: [...visual.navigationActions] } : {}),
-    bindings: Object.fromEntries([...visualDimensions(visual), ...((() => { try { const t = visual.kind === 'insight' && visual.insightConfiguration ? topBottomMoversTimeColumn(visual.insightConfiguration) : undefined; return t && !visualDimensions(visual).includes(t) ? [t] : []; } catch { return []; } })()), ...(FACETED_KINDS.includes(visual.kind) ? visual.smallMultiples ?? [] : []), ...(visual.kind === 'waterfall' ? visual.breakdowns ?? [] : [])].filter(name => dataFields(calculations, dataset).some(f => f.name === name && f.type === 'DATETIME')).map(name => [name, (visual.dateGrain ?? 'MONTH').toLowerCase()])),
+    bindings: { ...(visual.kind === 'kpi' && visual.targetField ? { [kpiTargetFieldId(visual)!]: kpiTargetFieldId(visual)! } : {}), ...Object.fromEntries([...visualDimensions(visual), ...((() => { try { const t = visual.kind === 'insight' && visual.insightConfiguration ? topBottomMoversTimeColumn(visual.insightConfiguration) : undefined; return t && !visualDimensions(visual).includes(t) ? [t] : []; } catch { return []; } })()), ...(FACETED_KINDS.includes(visual.kind) ? visual.smallMultiples ?? [] : []), ...(visual.kind === 'waterfall' ? visual.breakdowns ?? [] : [])].filter(name => dataFields(calculations, dataset).some(f => f.name === name && f.type === 'DATETIME')).map(name => [name, (visual.dateGrain ?? 'MONTH').toLowerCase()])) },
     placement: { column: 0, columns: 36, row: 0, rows: 6 },
     path: `author.${visual.id}`,
   };
