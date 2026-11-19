@@ -101,3 +101,48 @@ test('published bindings include distinct native target IDs and date trend alias
     assert.equal(compileVisual({ ...dialect(v, source), bindings: publishedBindings(dialect(v, source)), rows: [{ month: '2026-01', value: 4, target: 8 }] }).kpiTarget.value, 8);
   }
 });
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { VisualCard } from '../build/test/VisualCard.js';
+const markup = v => renderToStaticMarkup(React.createElement(VisualCard, { visual: { ...v, placement: { column: 0, columns: 36, row: 0, rows: 6 } } }));
+for (const source of ['bundle', 'api']) {
+  test(`${source}: target text and accessible data remain when the progress bar is absent or hidden`, () => {
+    const v = input();
+    for (const progressBar of [undefined, { visibility: 'HIDDEN' }]) {
+      config(v).kpiOptions = progressBar ? { progressBar } : {};
+      const c = compileVisual(dialect(v, source));
+      assert.ok(c.option.graphic.some(g => g.style?.text === 'Target: 20'));
+      assert.deepEqual(c.table.columns, ['revenue', 'Target: budget']);
+      assert.equal(c.kpiTarget.progress, undefined);
+      assert.match(markup(dialect(v, source)), /Target: budget/);
+    }
+  });
+  test(`${source}: progress bar uses actual primary / target and clamps only the visual fill`, () => {
+    const v = input(); config(v).kpiOptions = { progressBar: {} };
+    for (const [revenue, ratio, percent, label] of [[10, 0.5, 50, '50% of target'], [30, 1.5, 100, '150% of target'], [-10, -0.5, 0, '-50% of target'], [0, 0, 0, '0% of target']]) {
+      v.rows[0].revenue = revenue;
+      const c = compileVisual(dialect(v, source));
+      assert.deepEqual(c.kpiTarget.progress, { ratio, percent, label });
+      assert.equal(c.option.graphic.find(g => g.id === 'kpi-progress').children[1].shape.width, percent * 2);
+      assert.equal(c.model.warnings.some(w => w.includes('progressBar')), false);
+      assert.match(markup(dialect(v, source)), new RegExp(`aria-valuetext="${label}"`));
+    }
+  });
+  test(`${source}: unusable targets and primary values omit the bar and explain why`, () => {
+    const v = input(); config(v).kpiOptions = { progressBar: {} };
+    for (const [revenue, budget, reason] of [[10, null, 'target is null'], [10, 0, 'greater than zero'], [10, -1, 'greater than zero'], [null, 20, 'primary value is null'], [Number.MAX_VALUE, Number.MIN_VALUE, 'ratio is not finite']]) {
+      v.rows = [{ revenue, budget }]; const c = compileVisual(dialect(v, source));
+      assert.equal(c.kpiTarget.progress, undefined); assert.ok(c.model.warnings.some(w => w.includes(reason)));
+      assert.equal(c.option.graphic.some(g => g.id === 'kpi-progress'), false);
+    }
+    delete config(v).fieldWells.targetValues; v.rows = [{ revenue: 10 }];
+    assert.ok(compileVisual(dialect(v, source)).model.warnings.some(w => w.includes('targetValues')));
+    assert.equal(compileVisual(dialect(v, source)).kpiTarget, undefined);
+  });
+}
+test('target text and View data use the primary metric format', () => {
+  const v = input(); v.definition.kpiVisual.opensightFormatting = { metricFormats: { revenue: { style: 'currency', currency: 'USD', decimalPlaces: 2 } } };
+  const c = compileVisual(v);
+  assert.equal(c.kpiTarget.label, '$20.00'); assert.equal(c.option.graphic[0].style.text, '$10.00');
+  assert.match(markup(v), /\$20\.00/);
+});

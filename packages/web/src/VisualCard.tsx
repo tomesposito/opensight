@@ -39,6 +39,10 @@ function Chart({ option, title, compiled, interaction }: { option: EChartsOption
     observer.observe(container.current);
     return () => { observer.disconnect(); chart.dispose(); };
   }, [option, compiled, interaction]);
+  if (compiled.kpiTarget) return <div className="chart" role="img" aria-label={`${compiled.model.formatting?.altText ?? title}. Target: ${compiled.kpiTarget.label}. ${compiled.kpiTarget.progress?.label ?? ''}`}>
+    <div ref={container} style={{ width: '100%', height: '100%' }} aria-hidden="true" />
+    {compiled.kpiTarget.progress && <span className="sr-only" role="progressbar" aria-label="Progress toward target" aria-valuemin={0} aria-valuemax={100} aria-valuenow={compiled.kpiTarget.progress.percent} aria-valuetext={compiled.kpiTarget.progress.label} />}
+  </div>;
   return <div ref={container} className={`chart${compiled.narrative ? ' insight-chart' : ''}`} role="img" aria-label={compiled.model.formatting?.altText ?? (compiled.narrative ? `${title}. ${compiled.narrative.text}` : title)} />;
 }
 
