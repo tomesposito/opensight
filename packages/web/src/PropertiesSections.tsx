@@ -2,7 +2,7 @@ import { type Dispatch } from 'react';
 import type { AuthorAction, AuthorDraft, AuthorVisual, BreakdownLimit, FacetLimit, ForecastConfig, GroupSort, SliceLimit } from './authoring.js';
 import { GRID_COLUMNS, defaultMultiplesOptions, hasSmallMultiplesWell, breakdownLimitValid, facetLimitValid, sliceLimitValid } from './authoring.js';
 import type { MultiplesOptions as MultiplesOptionsState } from './model.js';
-import { SORT_AGGREGATIONS, type AggregationSort } from './model.js';
+import { SORT_AGGREGATIONS, type AggregationSort, type PivotColumnSort } from './model.js';
 import { hasDataLabels, hasLegend, LEGEND_POSITIONS, DATA_LABEL_POSITIONS, CARD_DEFAULTS, cleanCardStyle, cleanCardLayout, cleanAltText, altTextValid, type LegendPosition, type LegendTextStyle, type LegendTitle, type GroupTitle, type DataLabels, type DataLabelPosition, type CardStyle, type CardSwatch, type CardBorder } from './formatting.js';
 import { LIGHT_THEME } from './themes.js';
 import { CATEGORY_LIMIT_KINDS } from './category-limit.js';
@@ -306,6 +306,39 @@ export function BreakdownOptions({ visual, dispatch }: SectionProps) {
   return <details className="property-section"><summary data-author-control="breakdowns">Breakdowns</summary>
     <p className="field-hint">{breakdown ? `Breakdown field: ${breakdown}. Breakdown values render in display order within each category.` : 'Assign a Breakdowns field in the field wells to limit breakdown values.'}</p>
     {breakdown && <BreakdownLimitControls visual={visual} dispatch={dispatch} />}
+  </details>;
+}
+
+export function PivotColumnSortOptions({ visual, dispatch }: SectionProps) {
+  if (visual.kind !== 'pivot') return null;
+  const sort = visual.pivotColumnSort;
+  const names = visual.formatting?.names;
+  const setSort = (measureFieldId: string, changes: Partial<PivotColumnSort> = {}) => {
+    if (measureFieldId === '') { dispatch({ type: 'pivot-column-sort', sort: undefined }); return; }
+    if (!visual.columns.length || !visual.measures.includes(measureFieldId)) return;
+    dispatch({ type: 'pivot-column-sort', sort: { aggregation: 'SUM', direction: 'DESC', ...sort, ...changes, measureFieldId } });
+  };
+  const aggregationNames = { SUM: 'Sum', AVERAGE: 'Average', MIN: 'Min', MAX: 'Max', COUNT: 'Count', DISTINCT_COUNT: 'Distinct count' };
+  return <details className="property-section"><summary>Column sort</summary>
+    <div className="property-control-row" role="group" aria-label="Pivot column sort controls">
+      <label>Measure<select aria-label="Column sort measure" value={sort?.measureFieldId ?? ''} disabled={!visual.columns.length}
+        onChange={e => setSort(e.target.value)}>
+        <option value="">Default</option>
+        {visual.measures.map(field => <option key={field} value={field}>{names && Object.hasOwn(names, field) ? names[field] : field}</option>)}
+      </select></label>
+      {sort && <>
+        <label>Aggregation<select aria-label="Column sort aggregation" value={sort.aggregation} onChange={e => {
+          const aggregation = SORT_AGGREGATIONS.find(value => value === e.target.value);
+          if (aggregation) setSort(sort.measureFieldId, { aggregation });
+        }}>{SORT_AGGREGATIONS.map(value => <option key={value} value={value}>{aggregationNames[value]}</option>)}</select></label>
+        <div className="property-inline" role="group" aria-label="Column sort direction">
+          {(['ASC', 'DESC'] as const).map(direction => <button type="button" key={direction}
+            aria-label={`Column sort ${direction === 'ASC' ? 'ascending' : 'descending'}`} aria-pressed={sort.direction === direction}
+            onClick={() => setSort(sort.measureFieldId, { direction })}>{direction === 'ASC' ? '↑' : '↓'}</button>)}
+        </div>
+      </>}
+    </div>
+    <p className="field-hint">{visual.columns.length ? 'Orders outer column groups by the selected measure. Inner column and row field sorts still apply.' : 'Assign a Columns field to sort column groups by a measure.'}</p>
   </details>;
 }
 

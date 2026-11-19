@@ -214,6 +214,25 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
       return undefined;
     }
   })() : undefined;
+  const columnSortsRaw = obj(config.sortConfiguration).columnSort;
+  let columnSortProblem: string | undefined;
+  const importedColumnSort = columnSortsRaw !== undefined ? (() => {
+    try {
+      const model = normalizeVisual('bundle', raw);
+      // An empty list is a no-op and stays verbatim in the retained definition.
+      if (Array.isArray(columnSortsRaw) && !columnSortsRaw.length) return undefined;
+      const sort = model.columnSort;
+      if (!sort || kind !== 'pivot' || obj(list(columnSortsRaw)[0]).direction === undefined) {
+        throw new Error('Column sort: retained, read-only; requires an explicit direction on pivot');
+      }
+      const measureFieldId = model.measures.find(field => field.id === sort.measureFieldId)!.column;
+      if (!measures.includes(measureFieldId)) throw new Error('Column sort: unbound draft measure');
+      return { ...sort, measureFieldId };
+    } catch (error) {
+      columnSortProblem = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      return undefined;
+    }
+  })() : undefined;
   // Pivot sorts have no export-time ID rewrite. Only explicit, valid entries
   // whose native IDs also identify the draft dimension names become editable.
   const pivotSortsRaw = obj(config.sortConfiguration).fieldSortOptions;
@@ -313,6 +332,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     ...(importedGroupSort ? { groupSort: importedGroupSort } : {}),
     ...(importedAggregationSort ? { aggregationSort: importedAggregationSort } : {}),
     ...(importedPivotSorts ? { pivotFieldSorts: importedPivotSorts } : {}),
+    ...(importedColumnSort ? { pivotColumnSort: importedColumnSort } : {}),
     // OpenSight extension: imported pie slice limit imports into the draft.
     ...(importedSliceLimit ? { sliceLimit: importedSliceLimit } : {}),
     ...(importedFacetLimit ? { facetLimit: importedFacetLimit } : {}),
@@ -346,6 +366,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
   const dataSets = [...new Set(references(body))].map(identifier => ({ identifier, arn: definition.dataSetIdentifierDeclarations.find(d => d.identifier === identifier)?.dataSetArn }));
   const issues = Object.hasOwn(kinds, variant) ? differences(checked, projectVisual(visual, raw, (definition.calculatedFields ?? []).map(c => ({ name: string(obj(c).name), expression: string(obj(c).expression), role: 'dimension' }))), variant) : [`Unsupported visual type: ${variant}`];
   if (aggregationSortProblem) issues.push(aggregationSortProblem);
+  if (columnSortProblem) issues.push(columnSortProblem);
   // Line/area visuals carrying a forecast configuration get the same compiler
   // normalization check Insight imports get (issue #263): the compiler's
   // forecast gate is fail-closed, so a malformed configuration records a
@@ -582,7 +603,7 @@ function projectVisual(visual: AuthorVisual, raw: BundleVisual, calculations: re
   collect(originalWells);
   if (visual.kind === 'insight') collect(original.insightConfiguration);
   const assign = (value: unknown): void => {
-    const o = obj(value), column = obj(o.column);
+    const o = obj(value), column = obj(o.column ?? o.sortBy);
     if (typeof column.columnName === 'string') column.dataSetIdentifier = identifiers.get(column.columnName) ?? [...identifiers.values()][0] ?? 'sales_data';
     Object.values(o).forEach(v => { if (Array.isArray(v)) v.forEach(assign); else if (v && typeof v === 'object') assign(v); });
   };
@@ -629,6 +650,7 @@ function exportVisual(v: AuthorVisual, raw: BundleVisual | undefined, calculatio
     const config = obj(body.chartConfiguration);
     config.fieldWells = copy(obj(generated).fieldWells); body.chartConfiguration = config;
     rebind(config.fieldWells, LOCAL_IDENTIFIER);
+    if (v.pivotColumnSort) rebind(obj(config.sortConfiguration).columnSort, LOCAL_IDENTIFIER);
     for (const wrapper of list(obj(config.sortConfiguration).categorySort)) {
       if (obj(wrapper).aggregationSort !== undefined) rebind(obj(wrapper).aggregationSort, LOCAL_IDENTIFIER);
     }
