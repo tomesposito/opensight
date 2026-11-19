@@ -22,9 +22,9 @@ Malformed lists, unknown wrapper/field-sort/configuration keys, unbound IDs
 and multiple entries raise a named `CompileError`.
 
 Tables reject category, category-limit, facet and breakdown sort settings.
-Other visual kinds reject `rowSort`. Pivot, KPI and insight continue to reject
-`sortConfiguration` entirely; table dataLabels, tooltip and legend gates are
-unchanged.
+Other visual kinds reject `rowSort`. KPI and insight reject `sortConfiguration`
+entirely. Pivot accepts only [dimension field sorts](parity-pivot-field-sort.md);
+table dataLabels, tooltip and legend gates are unchanged.
 
 ## Ordering
 
