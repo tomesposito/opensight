@@ -104,3 +104,4 @@ existing web test glob and root `npm test`. It also updates three assertions
 in the pivot-column-sort, pivot-field-sort and table-row-sort suites where
 they previously asserted that pivot `rowSort` is rejected outright; the
 wrapper-shape rejection is still asserted in the table suite.
+See [verification and captures](parity-pivot-row-sort-gap-notes.md).
