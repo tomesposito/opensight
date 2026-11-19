@@ -1041,7 +1041,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
           if (field.name !== visual.targetField) delete next.targetAggregation;
           return next;
         }
-        if (action.well === 'trend' && visual.targetAggregation && visual.targetAggregation !== 'SUM') return visual;
+        if (action.well === 'trend' && visual.targetField && (visual.targetAggregation ?? dataFields(draft.calculatedFields, draft.dataset).find(f => f.name === visual.targetField)?.metric?.defaultAggregation ?? 'SUM') !== 'SUM') return visual;
         if (action.well === 'trend') return visual.kind === 'kpi' && field.role === 'dimension' && ['STRING', 'DATETIME'].includes(field.type) ? { ...visual, trendField: field.name } : visual;
         if (action.well === 'smallMultiples') return field.role === 'dimension' && hasSmallMultiplesWell(visual.kind) ? { ...visual, smallMultiples: [field.name] } : visual;
         if (action.well === 'breakdown') return field.role === 'dimension' && hasBreakdownWell(visual.kind) ? { ...visual, breakdowns: [field.name] } : visual;
@@ -1400,6 +1400,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
         parseKpiOptions(v.kpiOptions, false, 'kpiOptions', () => fail());
       }
       if (v.targetAggregation !== undefined && (v.kind !== 'kpi' || typeof v.targetField !== 'string' || !['SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'DISTINCT_COUNT'].includes(String(v.targetAggregation)) || v.targetAggregation !== 'SUM' && (!v.targetField.startsWith('__metric_') || v.trendField !== undefined))) return fail();
+      if (v.targetField && v.trendField && (v.targetAggregation ?? fields.find(f => f.name === v.targetField)?.metric?.defaultAggregation ?? 'SUM') !== 'SUM') return fail();
       if (v.targetField !== undefined && (v.kind !== 'kpi' || !fieldNames([v.targetField], 'measure'))) return fail();
       if (v.trendField !== undefined && (v.kind !== 'kpi' || !fieldNames([v.trendField], 'dimension') || !imported && !unresolvedAllowed && !['STRING', 'DATETIME'].includes(fields.find(f => f.name === v.trendField)?.type ?? ''))) return fail();
       if (v.kpiTrendSort !== undefined && (!kpiTrendSortValid(v.kpiTrendSort) || v.kind !== 'kpi' || !v.trendField || v.kpiTrendSort.fieldId !== v.trendField)) return fail();

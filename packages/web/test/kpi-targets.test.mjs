@@ -299,10 +299,22 @@ for (const source of ['bundle', 'api']) test(`${source}: nontrended governed tar
   const d = importDialect(b, source); assert.equal(selected(d).targetAggregation, 'AVG'); assert.deepEqual(selected(d).imported.issues, []);
   assert.deepEqual(parseDraft(JSON.stringify(d)), JSON.parse(JSON.stringify(d)));
   assert.equal(buildAuthorQuery(selected(d)).measures[1].aggregation, 'AVG');
+  assert.match(renderToStaticMarkup(React.createElement(AuthorCanvas, { draft: d, dispatch() {} })), /AVG\(__metric_goal\)/);
   assert.equal(config({ definition: serializeVisual(selected(d)) }).fieldWells.targetValues[0].numericalMeasureField.aggregationFunction.simpleNumericalAggregation, 'AVG');
   assert.equal(selected(authorReducer(d, { type: 'assign', well: 'trend', field: 'region' })), selected(d));
   const changed = authorReducer(d, { type: 'assign', well: 'target', field: 'profit' }); assert.equal(selected(changed).targetAggregation, undefined);
   assert.equal(bundleConfig(exportBundle(changed)).fieldWells.targetValues[0].numericalMeasureField.aggregationFunction.simpleNumericalAggregation, 'SUM');
   const cleared = authorReducer(d, { type: 'unassign', well: 'target', field: '__metric_goal' }); assert.equal(selected(cleared).targetAggregation, undefined);
   const bad = structuredClone(d); selected(bad).trendField = 'region'; assert.throws(() => parseDraft(JSON.stringify(bad)));
+});
+test('governed non-SUM target edits fail closed when adding either side of a trend binding', () => {
+  const metric = { id: 'goal', version: 1, name: 'Goal', expression: 'avg({profit})', defaultAggregation: 'AVG', format: { style: 'number', decimalPlaces: 1 }, description: '', synonyms: [] };
+  const dataset = { id: 'prepared', name: 'Sales', columns: [{ name: 'region', type: 'STRING' }, { name: 'revenue', type: 'DECIMAL' }, { name: 'profit', type: 'DECIMAL' }], metrics: [metric] };
+  const d = { ...kpiDraft(), dataset }, trend = authorReducer(d, { type: 'assign', well: 'trend', field: 'region' });
+  assert.equal(selected(authorReducer(trend, { type: 'assign', well: 'target', field: '__metric_goal' })), selected(trend));
+  const target = authorReducer(d, { type: 'assign', well: 'target', field: '__metric_goal' });
+  assert.equal(selected(authorReducer(target, { type: 'assign', well: 'trend', field: 'region' })), selected(target));
+  const bad = structuredClone(target); selected(bad).trendField = 'region';
+  assert.throws(() => parseDraft(JSON.stringify(bad)));
+  assert.equal(buildAuthorQuery(selected(bad), [], [], dataset), null);
 });

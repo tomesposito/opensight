@@ -98,8 +98,10 @@ KPI, table, pivot, radar, sankey, waterfall, insight, scatter, combo, maps and m
 filter actions, drill-down, themes, and `.qs` bundle import/export round trips.
 KPIs support an optional [Trend group and Trend sort](docs/parity-kpi-trend-group-sort.md),
 with grouped SUM totals, line/area sparklines and last-group comparisons.
+An optional [Target value](docs/parity-kpi-targets.md) adds target text, accessible
+progress bars and signed comparison arrows when the imported options request them.
 
-![KPI trend group and descending sort in the analysis editor](docs/images/kpi-trend-sort.png)
+![KPI target, progress bar and trend comparison in the analysis editor](docs/images/kpi-targets.png)
 
 The static demo, and local **Try sample data**, show a sales dashboard using pinned synthetic sample results
 (fixed East-region filter; no live query). Choose **Author** to build an analysis,

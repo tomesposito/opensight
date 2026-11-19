@@ -449,8 +449,7 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
   if (kind === 'KPIVisual') {
     if (config.KPIOptions !== undefined) parseKpiOptions(config.KPIOptions, true, `${cp}.KPIOptions`, (path, message) => fail('UNSUPPORTED_FEATURE', path, message));
     if (dimensions.length > 1) fail('UNSUPPORTED_FEATURE', wp, 'KPI supports exactly one trend dimension');
-    if (values.length !== 1) fail('UNSUPPORTED_FEATURE', wp, 'KPI requires one primary measure');
-    if (dimensions.length && measures.some(m => m.aggregation !== 'SUM')) fail('UNSUPPORTED_FEATURE', wp, 'trended KPI requires one SUM measure and an explicit SUM target binding');
+    if (dimensions.length && (values.length !== 1 || measures.some(m => m.aggregation !== 'SUM'))) fail('UNSUPPORTED_FEATURE', wp, 'trended KPI requires one SUM measure and an explicit SUM target binding');
     if (config.SortConfiguration !== undefined) {
       const sp = `${cp}.SortConfiguration`, sort = object(config.SortConfiguration, sp);
       keys(sort, ['TrendGroupSort'], sp);

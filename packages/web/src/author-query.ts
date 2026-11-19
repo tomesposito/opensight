@@ -31,6 +31,7 @@ function insightDimensionField(name: string, visual: AuthorVisual, calculations:
 
 export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly CalculatedField[] = [], parameters: readonly AuthorParameter[] = [], dataset?: AuthorDataset): QueryRequest | null {
   if (authorVisualProblem(visual) || unresolvedVisualFieldDiagnostics(visual, calculations, dataset, parameters).length) return null;
+  if (visual.kind === 'kpi' && visual.trendField && visual.targetField && (visual.targetAggregation ?? dataset?.metrics?.find(m => metricColumn(m.id) === visual.targetField)?.defaultAggregation ?? 'SUM') !== 'SUM') return null;
   let dimensions = visualDimensions(visual);
   // A uniqueValues-only insight binds no measure; its grouped query is category-only.
   let uvOnly = false;
