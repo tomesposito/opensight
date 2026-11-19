@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { act, createElement, useReducer } from 'react';
+import { create } from 'react-test-renderer';
+import { TableSortOptions } from '../build/test/PropertiesSections.js';
 import { compileVisual, normalizeVisual, CompileError } from '../build/test/compiler.js';
 import { activeSheet, authorReducer, emptyDraft, groupSortValid, parseDraft, serializeVisual } from '../build/test/authoring.js';
 import { exportBundle, importBundle } from '../build/test/bundle-authoring.js';
@@ -196,5 +199,43 @@ test('malformed, unbound, missing-direction and multiple imported row sorts stay
     assert.equal(selected(imported).groupSort, undefined, JSON.stringify(rowSort));
     assert.ok(selected(imported).imported.issues.length, JSON.stringify(rowSort));
     assert.deepEqual(exportBundle(imported), bundle);
+  }
+});
+
+test('Row sort controls list table fields, use display names, default directions and preserve valid selections', async t => {
+  const oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let renderer, current, dispatch;
+  function Harness() {
+    [current, dispatch] = useReducer(authorReducer, authorReducer(tableDraft(), { type: 'formatting', formatting: { names: { region: 'Sales region', revenue: 'Sales' } } }));
+    return createElement(TableSortOptions, { visual: selected(current), dispatch });
+  }
+  await act(() => { renderer = create(createElement(Harness)); });
+  t.after(async () => { await act(() => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
+  const control = () => renderer.root.findByProps({ 'aria-label': 'Sort rows by' });
+  assert.deepEqual(control().findAllByType('option').map(o => [o.props.value, o.children[0]]), [['', 'Default order'], ['region', 'Sales region'], ['category', 'category'], ['revenue', 'Sales']]);
+  assert.equal(control().props.value, '');
+  assert.equal(renderer.root.findAllByType('button').length, 0);
+  for (const [fieldId, direction] of [['category', 'ASC'], ['revenue', 'DESC'], ['region', 'ASC']]) {
+    await act(() => control().props.onChange({ target: { value: fieldId } }));
+    assert.deepEqual(selected(current).groupSort, { fieldId, direction });
+  }
+  for (const direction of ['DESC', 'ASC']) {
+    const button = renderer.root.findByProps({ 'aria-label': direction === 'ASC' ? 'Sort rows ascending' : 'Sort rows descending' });
+    await act(() => button.props.onClick());
+    assert.deepEqual(selected(current).groupSort, { fieldId: 'region', direction });
+    assert.equal(button.props['aria-pressed'], true);
+  }
+  await act(() => control().props.onChange({ target: { value: 'missing' } }));
+  assert.deepEqual(selected(current).groupSort, { fieldId: 'region', direction: 'ASC' });
+  await act(() => dispatch({ type: 'unassign', field: 'region', well: 'rows' }));
+  assert.equal(control().props.value, '');
+  await act(() => control().props.onChange({ target: { value: 'revenue' } }));
+  await act(() => control().props.onChange({ target: { value: '' } }));
+  assert.equal(selected(current).groupSort, undefined);
+  assert.equal(renderer.root.findAllByType('button').length, 0);
+  for (const kind of ['bar', 'pivot', 'kpi', 'insight']) {
+    await act(() => dispatch({ type: 'kind', kind }));
+    assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Sort rows by' }).length, 0);
   }
 });

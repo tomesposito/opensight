@@ -308,6 +308,31 @@ export function BreakdownOptions({ visual, dispatch }: SectionProps) {
   </details>;
 }
 
+export function TableSortOptions({ visual, dispatch }: SectionProps) {
+  if (visual.kind !== 'table') return null;
+  const fields = [...new Set([...visual.rows, ...visual.measures])];
+  const names = visual.formatting?.names;
+  const sort = visual.groupSort;
+  const setSort = (fieldId: string, direction?: GroupSort['direction']) => {
+    if (fieldId === '') { dispatch({ type: 'group-sort', sort: undefined }); return; }
+    if (!fields.includes(fieldId)) return;
+    dispatch({ type: 'group-sort', sort: { fieldId, direction: direction ?? (visual.measures.includes(fieldId) ? 'DESC' : 'ASC') } });
+  };
+  return <details className="property-section"><summary>Row sort</summary>
+    <div className="property-control-row" role="group" aria-label="Table row sort controls">
+      <label>Sort by<select aria-label="Sort rows by" value={sort?.fieldId ?? ''} onChange={e => setSort(e.target.value)}>
+        <option value="">Default order</option>
+        {fields.map(field => <option key={field} value={field}>{names && Object.hasOwn(names, field) ? names[field] : field}</option>)}
+      </select></label>
+      {sort && <div className="property-inline" role="group" aria-label="Row sort direction">
+        {(['ASC', 'DESC'] as const).map(direction => <button type="button" key={direction}
+          aria-label={direction === 'ASC' ? 'Sort rows ascending' : 'Sort rows descending'} aria-pressed={sort.direction === direction}
+          onClick={() => setSort(sort.fieldId, direction)}>{direction === 'ASC' ? '↑' : '↓'}</button>)}
+      </div>}
+    </div>
+  </details>;
+}
+
 export function GroupColorOptions({ visual, dispatch }: SectionProps) {
   if (!CATEGORY_LIMIT_KINDS.includes(visual.kind)) return null;
   if (!['bar', 'bar100', 'pie'].includes(visual.kind)) return <details className="property-section"><summary>Category limit</summary>
