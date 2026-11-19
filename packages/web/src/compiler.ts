@@ -298,9 +298,9 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   // kinds; every other kind still rejects the well.
   const smallMultiplesKey = key('smallMultiples', 'SmallMultiples');
   const faceted = FACETED_KINDS.includes(kind);
-  const unused = [key('colors', 'Colors'), key('targetValues', 'TargetValues'), key('trendGroups', 'TrendGroups'), ...(faceted ? [] : [smallMultiplesKey])];
+  const unused = [key('colors', 'Colors'), key('targetValues', 'TargetValues'), ...(kind === 'kpi' ? [] : [key('trendGroups', 'TrendGroups')]), ...(faceted ? [] : [smallMultiplesKey])];
   const wellKey = (name: string) => key(name, kind === 'waterfall' && name === 'category' ? 'Categories' : name.startsWith('opensight') ? `OpenSight${name.slice(9)}` : name[0]!.toUpperCase() + name.slice(1));
-  keys(wells, [...(extra ? [...extra.dimensions, ...extra.measures].map(wellKey) : [categoryKey, valueKey]), ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...(kind === 'waterfall' ? [key('breakdowns', 'Breakdowns')] : []), ...(faceted ? [smallMultiplesKey] : []), ...unused], wpath);
+  keys(wells, [...(extra ? [...extra.dimensions, ...extra.measures].map(wellKey) : [categoryKey, valueKey]), ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...(kind === 'kpi' ? [key('trendGroups', 'TrendGroups')] : []), ...(kind === 'waterfall' ? [key('breakdowns', 'Breakdowns')] : []), ...(faceted ? [smallMultiplesKey] : []), ...unused], wpath);
   for (const name of unused) if (list(wells[name], `${wpath}.${name}`).length) fail(`${wpath}.${name}`, 'field well not supported');
   const field = (value: unknown, measure: boolean, fp: string): Field => {
     const wrapper = object(value, fp);
@@ -334,6 +334,15 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const rowDimensions = dimensionNames.flatMap(name => list(wells[name], `${wpath}.${name}`).map((v, i) => field(v, false, `${wpath}.${name}[${i}]`)));
   const columnDimensions = kind === 'pivot' ? list(wells[key('columns', 'Columns')], wpath).map((v, i) => field(v, false, `${wpath}.columns[${i}]`)) : [];
   const dimensions = [...rowDimensions, ...columnDimensions];
+  const trendKey = key('trendGroups', 'TrendGroups');
+  const trends = kind === 'kpi' ? list(wells[trendKey], `${wpath}.${trendKey}`) : [];
+  if (trends.length > 1) fail(`${wpath}.${trendKey}`, 'KPI supports exactly one trend dimension');
+  let trendDimension: Field | undefined;
+  if (trends.length) {
+    const tp = `${wpath}.${trendKey}[0]`;
+    keys(object(trends[0], tp), [key('categoricalDimensionField', 'CategoricalDimensionField'), key('dateDimensionField', 'DateDimensionField')], tp);
+    trendDimension = field(trends[0], false, tp);
+  }
   const measures = measureNames.flatMap(name => list(wells[name], `${wpath}.${name}`).map((v, i) => field(v, true, `${wpath}.${name}[${i}]`)));
   // Small multiples: one facet dimension, rendered as a grid of per-facet panels.
   let facet: Field | undefined;
@@ -386,7 +395,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     if (kind === 'kpi' ? dimensions.length !== 0 : kind === 'pivot' || kind === 'table' ? dimensions.length < 1 : dimensions.length !== 1) fail(wpath, kind === 'kpi' ? 'KPI must have no category' : 'exactly one category/group field is supported');
     if (!measures.length || ((kind === 'pie' || kind === 'kpi') && measures.length !== 1)) fail(wpath, 'expected supported number of measures (pie/KPI: one)');
   }
-  const fields = [...dimensions, ...(breakdown ? [breakdown] : []), ...(facet ? [facet] : []), ...measures];
+  const fields = [...dimensions, ...(trendDimension ? [trendDimension] : []), ...(breakdown ? [breakdown] : []), ...(facet ? [facet] : []), ...measures];
   if (new Set(fields.map(f => f.id)).size !== fields.length) fail(wpath, 'duplicate field IDs');
   if (new Set(fields.map(f => f.dataSet)).size !== 1) fail(wpath, 'multiple datasets are unsupported');
   const warnings: string[] = extra ? [`${p}: ${extra.note}`] : [];
@@ -669,6 +678,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     ...(rowSort ? { rowSort } : {}),
     ...(fieldSortOptions.length ? { fieldSortOptions } : {}),
     ...(breakdownLimit ? { breakdownLimit } : {}),
+    ...(trendDimension ? { trendDimension } : {}),
     ...(facet ? { facet } : {}),
     ...(breakdown ? { breakdown } : {}),
     ...(forecast ? { forecast } : {}),
