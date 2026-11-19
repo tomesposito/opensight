@@ -161,3 +161,70 @@ for (const source of ['bundle', 'api']) {
     assert.throws(() => normalize(dialect(v, source)), /field well not supported/);
   });
 }
+import { parseDraft, serializeVisual, kpiTrendSortValid } from '../build/test/authoring.js';
+import { buildAuthorPreview } from '../build/test/author-preview.js';
+import { KpiTrendSortOptions } from '../build/test/PropertiesSections.js';
+import { AuthorCanvas } from '../build/test/Author.js';
+import { act, createElement, useReducer } from 'react';
+import { create } from 'react-test-renderer';
+import { renderToStaticMarkup } from 'react-dom/server';
+const kpiDraft = () => authorReducer(emptyDraft(), { type: 'add', kind: 'kpi' });
+const trendDraft = (field = 'region') => authorReducer(kpiDraft(), { type: 'assign', well: 'trend', field });
+const draftSort = (fieldId = 'region', direction = 'DESC') => ({ fieldId, direction });
+const sortedDraft = () => authorReducer(trendDraft(), { type: 'kpi-trend-sort', sort: draftSort() });
+test('KPI trend authoring validates edits/storage and preserves the last valid state', () => {
+  const d = sortedDraft(); assert.deepEqual(parseDraft(JSON.stringify(d)), d);
+  for (const sort of [null, [], {}, { ...draftSort(), extra: 1 }, { fieldId: ' ', direction: 'ASC' }, { fieldId: 'region\0', direction: 'ASC' }, { fieldId: 'region', direction: 'DOWN' }, draftSort('missing'), draftSort('revenue')]) {
+    assert.deepEqual(selected(authorReducer(d, { type: 'kpi-trend-sort', sort })), selected(d));
+    const bad = structuredClone(d); selected(bad).kpiTrendSort = sort; assert.throws(() => parseDraft(JSON.stringify(bad)));
+  }
+  assert.equal(kpiTrendSortValid({ fieldId: ' ', direction: 'ASC' }), false);
+  for (const field of ['revenue', 'order_id', 'missing']) assert.deepEqual(selected(authorReducer(d, { type: 'assign', well: 'trend', field })), selected(d));
+  const actionSort = draftSort(); const copied = authorReducer(trendDraft(), { type: 'kpi-trend-sort', sort: actionSort }); actionSort.direction = 'ASC';
+  assert.equal(selected(copied).kpiTrendSort.direction, 'DESC');
+  assert.equal(selected(authorReducer(kpiDraft(), { type: 'kpi-trend-sort', sort: draftSort() })).kpiTrendSort, undefined);
+});
+test('removing/replacing trend field and switching kind clear sorts; unrelated edits preserve them', () => {
+  const d = sortedDraft();
+  for (const action of [{ type: 'unassign', well: 'trend', field: 'region' }, { type: 'unassign', field: 'region' }, { type: 'assign', well: 'trend', field: 'order_date' }, { type: 'kind', kind: 'bar' }]) assert.equal(selected(authorReducer(d, action)).kpiTrendSort, undefined);
+  for (const action of [{ type: 'title', title: 'Trend' }, { type: 'assign', well: 'values', field: 'profit' }]) assert.deepEqual(selected(authorReducer(d, action)).kpiTrendSort, draftSort());
+  for (const kind of ['bar', 'pie', 'table', 'pivot', 'line', 'gauge']) {
+    const other = authorReducer(emptyDraft(), { type: 'add', kind });
+    assert.equal(selected(authorReducer(other, { type: 'assign', well: 'trend', field: 'region' })).trendField, undefined);
+    assert.equal(selected(authorReducer(other, { type: 'kpi-trend-sort', sort: draftSort() })).kpiTrendSort, undefined);
+    selected(other).kpiTrendSort = draftSort(); assert.throws(() => parseDraft(JSON.stringify(other)));
+  }
+});
+test('authored KPIs emit only trend wells/sorts, preview real grouped values and clear back to the original definition', () => {
+  const base = kpiDraft(), d = sortedDraft();
+  const c = config({ definition: serializeVisual(selected(d)) });
+  assert.deepEqual(Object.keys(c).sort(), ['fieldWells', 'sortConfiguration']);
+  assert.deepEqual(Object.keys(c.fieldWells).sort(), ['trendGroups', 'values']);
+  assert.deepEqual(c.sortConfiguration, { trendGroupSort: [{ fieldSort: draftSort() }] });
+  const preview = compileVisual(buildAuthorPreview(selected(d)));
+  assert.equal(preview.state, 'ready'); assert.ok(preview.table.rows.length > 1); assert.ok(preview.option.series);
+  const datePreview = compileVisual(buildAuthorPreview(selected(trendDraft('order_date'))));
+  assert.ok(datePreview.table.rows.length > 1); assert.equal(datePreview.model.trendDimension.dateGranularity, 'MONTH');
+  const cleared = authorReducer(d, { type: 'unassign', well: 'trend', field: 'region' });
+  assert.deepEqual(serializeVisual(selected(cleared)), serializeVisual(selected(base)));
+  assert.equal(config({ definition: serializeVisual(selected(authorReducer(d, { type: 'kpi-trend-sort', sort: undefined }))) }).sortConfiguration, undefined);
+});
+test('KPI authoring UI offers one Trend group well with date/categorical fields', () => {
+  const html = renderToStaticMarkup(createElement(AuthorCanvas, { draft: trendDraft(), dispatch() {} }));
+  assert.match(html, /Assign Trend group/); assert.match(html, /TREND GROUP/);
+  const select = /<select[^>]*aria-label="Assign Trend group"[\s\S]*?<\/select>/.exec(html)[0];
+  assert.match(select, /order_date/); assert.match(select, /region/); assert.doesNotMatch(select, /order_id|revenue/);
+});
+test('Trend sort Properties offer ASC default, DESC, reset and disappear when the trend is removed', async t => {
+  const old = globalThis.IS_REACT_ACT_ENVIRONMENT; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let renderer, current, dispatch;
+  function Harness() { [current, dispatch] = useReducer(authorReducer, trendDraft()); return createElement(KpiTrendSortOptions, { visual: selected(current), dispatch }); }
+  await act(() => { renderer = create(createElement(Harness)); });
+  t.after(async () => { await act(() => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = old; });
+  const control = label => renderer.root.findByProps({ 'aria-label': label });
+  assert.equal(control('Trend sort ascending').props['aria-pressed'], true);
+  await act(() => control('Trend sort descending').props.onClick()); assert.deepEqual(selected(current).kpiTrendSort, draftSort());
+  await act(() => control('Trend sort ascending').props.onClick()); assert.deepEqual(selected(current).kpiTrendSort, draftSort('region', 'ASC'));
+  await act(() => renderer.root.findAllByType('button').find(b => b.props.children === 'Reset trend sort').props.onClick()); assert.equal(selected(current).kpiTrendSort, undefined);
+  await act(() => dispatch({ type: 'unassign', well: 'trend', field: 'region' })); assert.equal(renderer.toJSON(), null);
+});

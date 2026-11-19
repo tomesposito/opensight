@@ -23,7 +23,7 @@ import { QSidePanel } from './QSidePanel.js';
 import { BuildForMe } from './BuildForMe.js';
 import { FormattingEditor } from './FormattingEditor.js';
 import { PivotOptionsEditor } from './PivotOptionsEditor.js';
-import { CardTitle, CardStyle, CardLayout, MultiplesOptions, PivotColumnSortOptions, PivotRowSortOptions, PivotFieldSortOptions, TableSortOptions, GroupColorOptions, BreakdownOptions, LegendOptions, DataLabelsOptions, ReferenceLinesEditor, ForecastEditor, VisualPlacement } from './PropertiesSections.js';
+import { CardTitle, CardStyle, CardLayout, MultiplesOptions, PivotColumnSortOptions, PivotRowSortOptions, KpiTrendSortOptions, PivotFieldSortOptions, TableSortOptions, GroupColorOptions, BreakdownOptions, LegendOptions, DataLabelsOptions, ReferenceLinesEditor, ForecastEditor, VisualPlacement } from './PropertiesSections.js';
 import { cardChromeStyle, type VisualFormatting } from './formatting.js';
 import { LIGHT_THEME, themeValid, type AnalysisTheme } from './themes.js';
 import { functionCatalog } from '@opensight/query-engine/browser';
@@ -337,7 +337,7 @@ function Panel({ title, className, children }: { title: string; className: strin
   </details>;
 }
 
-const dimensionWellLabel = (kind: VisualKind, well: Well): string => well === 'columns'
+const dimensionWellLabel = (kind: VisualKind, well: Well): string => well === 'trend' ? 'Trend group' : well === 'columns'
   ? kind === 'sankey' ? 'Destination' : kind === 'pointMap' ? 'Longitude' : kind === 'radar' ? 'Color' : 'Columns'
   : well === 'breakdown' ? 'Breakdown' : well === 'smallMultiples' ? 'Small multiples' : kind === 'pointMap' ? 'Latitude' : kind === 'box' ? 'Group / sample dimensions' : ['bar', 'bar100', 'pie'].includes(kind) ? 'Group/Color' : dimensionLabel(kind);
 const FIELD_DRAG_TYPE = 'application/x-opensight-field';
@@ -376,8 +376,8 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
   const clearActions = () => { setInteractionState({ key: interactionKey, selections: {} }); setMenuActionState({ key: interactionKey, selections: {} }); };
   const selected = sheet.visuals.find(v => v.id === sheet.selectedId);
   const selectedObject = sheet.objects?.find(o => o.id === sheet.selectedId);
-  const dimensionWell: Well = well === 'smallMultiples' && (!selected || hasSmallMultiplesWell(selected.kind)) ? 'smallMultiples' : well === 'breakdown' && (!selected || hasBreakdownWell(selected.kind)) ? 'breakdown' : selected ? grouped(selected.kind) ? (well === 'columns' && splitDimensions(selected.kind) ? 'columns' : 'rows') : 'dimension' : 'dimension';
-  const dimensionDestination = selected ? noDimensions(selected.kind) ? 'unavailable for this visual' : dimensionWellLabel(selected.kind, dimensionWell) : dimensionWellLabel('bar', dimensionWell);
+  const dimensionWell: Well = selected?.kind === 'kpi' ? 'trend' : well === 'smallMultiples' && (!selected || hasSmallMultiplesWell(selected.kind)) ? 'smallMultiples' : well === 'breakdown' && (!selected || hasBreakdownWell(selected.kind)) ? 'breakdown' : selected ? grouped(selected.kind) ? (well === 'columns' && splitDimensions(selected.kind) ? 'columns' : 'rows') : 'dimension' : 'dimension';
+  const dimensionDestination = selected ? noDimensions(selected.kind) && selected.kind !== 'kpi' ? 'unavailable for this visual' : dimensionWellLabel(selected.kind, dimensionWell) : dimensionWellLabel('bar', dimensionWell);
   const recordProblem = (visualId: string, problems: Record<string, string>) => setActionProblems({ key: interactionKey, visuals: { ...runtimeProblems, [visualId]: problems } });
   const fireUrlAction = (visual: AuthorVisual, action: UrlAction, selection: Selection): string | undefined => {
     const result = resolveUrlAction(visual, action, selection);
@@ -431,7 +431,7 @@ export function AuthorCanvas({ draft, dispatch, client, fit = true, sourceProble
           <summary><svg className="field-folder" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 4V2.5h5l2 2h6V13h-13V4Z" /></svg>{group}</summary>
           {matchingFields.filter(f => fieldGroup(f) === group).map(field => <button key={field.name} type="button"
             title={field.type === 'BOOLEAN' ? 'Boolean fields are supported in preparation; convert to text or number before charting.' : undefined}
-            disabled={field.type === 'BOOLEAN' || (field.role === 'dimension' && !!selected && noDimensions(selected.kind))}
+            disabled={field.type === 'BOOLEAN' || (field.role === 'dimension' && !!selected && (noDimensions(selected.kind) && selected.kind !== 'kpi' || selected.kind === 'kpi' && !['STRING', 'DATETIME'].includes(field.type)))}
             aria-label={`Assign ${field.label ?? field.name}`} aria-pressed={selected?.dimension === field.name || selected?.rows.includes(field.name) || selected?.columns.includes(field.name) || !!selected?.measures.includes(field.name) || !!selected?.smallMultiples?.includes(field.name) || !!selected?.breakdowns?.includes(field.name)}
             draggable={field.type !== 'BOOLEAN'} onDragStart={e => { e.dataTransfer.setData(FIELD_DRAG_TYPE, field.name); e.dataTransfer.effectAllowed = 'copy'; }}
             aria-describedby={`${fieldIconId}-${encodeURIComponent(field.name)}`}
@@ -554,6 +554,7 @@ function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual?: 
     { name: 'dimension', label: 'Group/Color', values: [] }, { name: 'values', label: 'Value', values: [] }, { name: 'smallMultiples', label: 'Small multiples', values: [] },
   ] : [
     ...(noDimensions(visual.kind) ? [] : grouped(visual.kind) ? [{ name: 'rows' as const, label: dimensionWellLabel(visual.kind, 'rows'), values: visual.rows }] : [{ name: 'dimension' as const, label: dimensionWellLabel(visual.kind, 'dimension'), values: visual.dimension ? [visual.dimension] : [] }]),
+    ...(visual.kind === 'kpi' ? [{ name: 'trend' as const, label: 'Trend group', values: visual.trendField ? [visual.trendField] : [] }] : []),
     ...(splitDimensions(visual.kind) ? [{ name: 'columns' as const, label: dimensionWellLabel(visual.kind, 'columns'), values: visual.columns }] : []),
     { name: 'values', label: visual.kind === 'sankey' ? 'Weight' : visual.kind === 'scatter' ? 'Values · X, Y, size (in order)' : visual.kind === 'combo' ? 'Values · bar, then lines' : hasSmallMultiplesWell(visual.kind) ? 'Value' : 'Values', values: visual.measures },
     ...(hasSmallMultiplesWell(visual.kind) || visual.smallMultiples?.length ? [{ name: 'smallMultiples' as const, label: 'Small multiples', values: visual.smallMultiples ?? [] }] : []),
@@ -571,7 +572,7 @@ function FieldWells({ visual, draft, dispatch, activeWell, onWell }: { visual?: 
     {w.name === 'values' && visual?.kind === 'insight' && <p>One measure; optional second measure for comparison (first minus second).</p>}
     {w.name === 'values' && visual && visual.measures.length > 1 && <div className="measure-order">{visual.measures.map((name, index) => <button type="button" key={name} disabled={!index} aria-label={`Move ${fieldLabel(name)} measure earlier`} onClick={() => dispatch({ type: 'measure-move', index, offset: -1 })}>↑ {fieldLabel(name)}</button>)}</div>}
     {!w.values.length && <button type="button" className="well-placeholder" aria-label={`Select ${w.label.toUpperCase()} well`} aria-pressed={activeWell === w.name} onClick={() => onWell(w.name)}>{w.name === 'columns' && visual?.kind === 'radar' ? 'Optional color dimension' : w.name === 'values' ? 'Add a measure' : 'Add a dimension'}</button>}
-    {visual && <label className="well-picker"><span className="sr-only">Assign {w.name === 'values' ? 'measure' : w.name === 'smallMultiples' ? 'small multiples' : w.name === 'breakdown' ? 'breakdown' : ['radar', 'sankey'].includes(visual.kind) ? w.label.toLowerCase() : w.name === 'dimension' ? 'dimension' : w.name}</span><select aria-label={`Assign ${w.label}`} title={`Assign ${w.label}`} disabled={w.name === 'smallMultiples' && !hasSmallMultiplesWell(visual.kind) || w.name === 'breakdown' && !hasBreakdownWell(visual.kind)} value="" onChange={e => assign(e.target.value, w.name)}><option value="" disabled>Choose field…</option>{fields.filter(f => f.type !== 'BOOLEAN' && f.role === (w.name === 'values' ? 'measure' : 'dimension')).map(f => <option key={f.name} value={f.name}>{f.label ?? f.name}</option>)}</select></label>}
+    {visual && <label className="well-picker"><span className="sr-only">Assign {w.name === 'values' ? 'measure' : w.name === 'smallMultiples' ? 'small multiples' : w.name === 'breakdown' ? 'breakdown' : ['radar', 'sankey'].includes(visual.kind) ? w.label.toLowerCase() : w.name === 'dimension' ? 'dimension' : w.name}</span><select aria-label={`Assign ${w.label}`} title={`Assign ${w.label}`} disabled={w.name === 'smallMultiples' && !hasSmallMultiplesWell(visual.kind) || w.name === 'breakdown' && !hasBreakdownWell(visual.kind)} value="" onChange={e => assign(e.target.value, w.name)}><option value="" disabled>Choose field…</option>{fields.filter(f => f.type !== 'BOOLEAN' && (w.name !== 'trend' || ['STRING', 'DATETIME'].includes(f.type)) && f.role === (w.name === 'values' ? 'measure' : 'dimension')).map(f => <option key={f.name} value={f.name}>{f.label ?? f.name}</option>)}</select></label>}
 </fieldset>)}</div>;
 }
 
@@ -622,6 +623,7 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
     <PivotFieldSortOptions visual={visual} dispatch={dispatch} />
     <PivotColumnSortOptions visual={visual} dispatch={dispatch} />
     <PivotRowSortOptions visual={visual} dispatch={dispatch} />
+    <KpiTrendSortOptions visual={visual} dispatch={dispatch} />
     <BreakdownOptions visual={visual} dispatch={dispatch} />
     <LegendOptions visual={visual} dispatch={dispatch} />
     <DataLabelsOptions visual={visual} dispatch={dispatch} />

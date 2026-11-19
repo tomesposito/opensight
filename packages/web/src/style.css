@@ -1248,6 +1248,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .property-control-row { display: grid; gap: 4px; margin: 8px 0; }
 .property-caption { margin: 8px 0; font-size: 12px; font-weight: 600; }
 .property-inline + .property-inline { margin-top: 4px; }
+.author-workspace[data-chrome=light] .kpi-trend-sort-direction button[aria-pressed=true],
 .author-workspace[data-chrome=light] .pivot-column-sort-direction button[aria-pressed=true] { background: #eaf5f5; border-color: #3b82f6; color: #2f66d8; }
 .action-list { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 4px; }
 .action-row { display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: 100%; padding: 8px; text-align: left; background: var(--chrome-surface, #fff); border: 1px solid var(--chrome-border, #c3cfe0); border-radius: 4px; font: inherit; cursor: pointer; color: inherit; }

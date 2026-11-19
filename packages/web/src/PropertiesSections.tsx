@@ -658,3 +658,16 @@ export function VisualPlacement({ visual, draft, dispatch }: SectionProps & { dr
       }} /></label>)}
   </details>;
 }
+
+export function KpiTrendSortOptions({ visual, dispatch }: SectionProps) {
+  if (visual.kind !== 'kpi' || !visual.trendField) return null;
+  return <details className="property-section"><summary>Trend sort</summary>
+    <div className="property-inline kpi-trend-sort-direction" role="group" aria-label="Trend sort direction">
+      {(['ASC', 'DESC'] as const).map(direction => <button type="button" key={direction}
+        aria-label={`Trend sort ${direction === 'ASC' ? 'ascending' : 'descending'}`} aria-pressed={(visual.kpiTrendSort?.direction ?? 'ASC') === direction}
+        onClick={() => dispatch({ type: 'kpi-trend-sort', sort: { fieldId: visual.trendField!, direction } })}>{direction === 'ASC' ? '↑' : '↓'}</button>)}
+      {visual.kpiTrendSort && <button type="button" onClick={() => dispatch({ type: 'kpi-trend-sort', sort: undefined })}>Reset trend sort</button>}
+    </div>
+    <p className="field-hint">Orders trend groups by their values. Default is ascending; null groups stay last.</p>
+  </details>;
+}

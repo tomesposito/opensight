@@ -75,7 +75,7 @@ export const VISUAL_TYPES = [
   { kind: 'table', label: 'Table', icon: '▤' }, { kind: 'pivot', label: 'Pivot', icon: '▦' },
   ...Object.entries(EXTRA_VISUALS).map(([kind, type]) => ({ kind: kind as VisualKind, label: type.label, icon: type.icon })),
 ] as const;
-export type Well = 'dimension' | 'rows' | 'columns' | 'values' | 'smallMultiples' | 'breakdown';
+export type Well = 'dimension' | 'rows' | 'columns' | 'values' | 'smallMultiples' | 'breakdown' | 'trend';
 export interface CategoryFilter { columnName: string; values: string[]; parameterName?: string; operator?: 'EQUALS' | 'GREATER_THAN_OR_EQUAL_TO' | 'LESS_THAN_OR_EQUAL_TO' }
 export interface ImportedVisual {
   visualId: string; variant: string; local: boolean; replaced?: boolean; remapped?: boolean;
@@ -118,6 +118,7 @@ export interface AuthorVisual {
   subtitle?: string; subtitleVisible?: boolean;
   dimension: string | null; measures: string[]; rows: string[]; columns: string[];
   trendField?: string;
+  kpiTrendSort?: GroupSort;
   smallMultiples?: string[];
   /** Waterfall breakdown field (QuickSight Breakdowns well). At most one. */
   breakdowns?: string[];
@@ -187,7 +188,7 @@ export const grouped = (kind: VisualKind): boolean => ['table', 'pivot', 'treema
 export const splitDimensions = (kind: VisualKind): boolean => ['pivot', 'heatmap', 'pointMap', 'radar', 'sankey'].includes(kind);
 export const hasSmallMultiplesWell = (kind: VisualKind): boolean => ['bar', 'bar100', 'line', 'area', 'combo', 'pie'].includes(kind);
 export const hasBreakdownWell = (kind: VisualKind): boolean => kind === 'waterfall';
-export const capabilityNote = (kind: VisualKind): string => extraKind(kind) ? EXTRA_VISUALS[kind].note : kind === 'kpi' ? 'One measure, one aggregate row.' : tabular(kind) ? 'Additive SUM totals over supplied groups; nulls remain null.' : 'One category dimension; measures use SUM. Pie requires nonnegative values.';
+export const capabilityNote = (kind: VisualKind): string => extraKind(kind) ? EXTRA_VISUALS[kind].note : kind === 'kpi' ? 'One SUM measure; optional date or categorical trend group.' : tabular(kind) ? 'Additive SUM totals over supplied groups; nulls remain null.' : 'One category dimension; measures use SUM. Pie requires nonnegative values.';
 export const tabular = (kind: VisualKind): boolean => kind === 'table' || kind === 'pivot';
 export const visualDimensions = (visual: AuthorVisual): string[] => visual.kind === 'kpi' && visual.trendField ? [visual.trendField] : noDimensions(visual.kind) ? [] : grouped(visual.kind)
   ? [...visual.rows, ...visual.columns] : visual.dimension === null ? [] : [visual.dimension];
@@ -281,6 +282,15 @@ function cleanPivotColumnSort(visual: AuthorVisual): AuthorVisual {
 /** Row sorts share the column-sort shape; the draft measure is bound the same way. */
 export function pivotRowSortValid(value: unknown): value is PivotRowSort {
   return pivotColumnSortValid(value);
+}
+export function kpiTrendSortValid(value: unknown): value is GroupSort {
+  return groupSortValid(value) && !!value.fieldId.trim() && value.fieldId === value.fieldId.trim();
+}
+function cleanKpiTrend(visual: AuthorVisual): AuthorVisual {
+  const next = { ...visual };
+  if (next.kind !== 'kpi' || !next.trendField) delete next.trendField;
+  if (next.kpiTrendSort && (next.kind !== 'kpi' || next.kpiTrendSort.fieldId !== next.trendField)) delete next.kpiTrendSort;
+  return next;
 }
 function cleanPivotRowSort(visual: AuthorVisual): AuthorVisual {
   const sort = visual.pivotRowSort;
@@ -430,6 +440,7 @@ export type AuthorAction =
   | { type: 'group-sort'; sort: GroupSort | undefined }
   | { type: 'aggregation-sort'; sort: AggregationSort | undefined }
   | { type: 'pivot-column-sort'; sort: PivotColumnSort | undefined }
+  | { type: 'kpi-trend-sort'; sort: GroupSort | undefined }
   | { type: 'pivot-row-sort'; sort: PivotRowSort | undefined }
   | { type: 'pivot-field-sorts'; sorts: GroupSort[] | undefined }
   | { type: 'slice-limit'; limit: SliceLimit | undefined }
@@ -646,9 +657,9 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
   if (action.type === 'o-replace') {
     const previous = sheet.visuals.find(v => v.id === action.id);
     if (!previous?.o || !validOProvenance(action.visual.o)) return draft;
-    const { kind, dimension, rows, columns, measures, filters, dateGrain, donut, o } = action.visual;
-    const visual = cleanPivotRowSort(cleanPivotColumnSort(structuredClone({ ...previous, kind, dimension, rows, columns, measures, filters, dateGrain, donut, o,
-      title: previous.title === oTitle(previous.o.interpretation) ? oTitle(o.interpretation) : previous.title })));
+    const { kind, dimension, rows, columns, measures, filters, dateGrain, donut, o, trendField } = action.visual;
+    const visual = cleanKpiTrend(cleanPivotRowSort(cleanPivotColumnSort(structuredClone({ ...previous, kind, trendField, dimension, rows, columns, measures, filters, dateGrain, donut, o,
+      title: previous.title === oTitle(previous.o.interpretation) ? oTitle(o.interpretation) : previous.title }))));
     const calculatedFields = structuredClone(draft.calculatedFields);
     for (const c of action.calculatedFields) {
       const existing = calculatedFields.find(f => f.name === c.name);
@@ -830,6 +841,13 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         else next.pivotColumnSort = structuredClone(action.sort);
         return next;
       }
+      case 'kpi-trend-sort': {
+        if (action.sort !== undefined && (!kpiTrendSortValid(action.sort) || visual.kind !== 'kpi' || !visual.trendField || action.sort.fieldId !== visual.trendField)) return visual;
+        const next = { ...visual };
+        if (action.sort === undefined) delete next.kpiTrendSort;
+        else next.kpiTrendSort = structuredClone(action.sort);
+        return next;
+      }
       case 'pivot-row-sort': {
         if (action.sort !== undefined && (!pivotRowSortValid(action.sort) || visual.kind !== 'pivot' ||
           !visual.rows.length || !visual.measures.includes(action.sort.measureFieldId))) return visual;
@@ -966,6 +984,10 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         return { ...visual, filters: action.values === null ? filters : [...filters, { columnName: action.columnName, values: [...new Set(action.values)] }] };
       }
       case 'unassign': {
+        if ((action.well === 'trend' || !action.well) && action.field === visual.trendField) {
+          const next = { ...visual }; delete next.trendField; delete next.kpiTrendSort; return next;
+        }
+
         if (action.well === 'smallMultiples') {
           const next = { ...visual, smallMultiples: visual.smallMultiples?.filter(f => f !== action.field) };
           if (!next.smallMultiples?.length) delete next.facetLimit;
@@ -993,6 +1015,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
       case 'assign': {
         const field = dataFields(draft.calculatedFields, draft.dataset).find(f => f.name === action.field);
         if (!field || field.type === 'BOOLEAN') return visual;
+        if (action.well === 'trend') return visual.kind === 'kpi' && field.role === 'dimension' && ['STRING', 'DATETIME'].includes(field.type) ? { ...visual, trendField: field.name } : visual;
         if (action.well === 'smallMultiples') return field.role === 'dimension' && hasSmallMultiplesWell(visual.kind) ? { ...visual, smallMultiples: [field.name] } : visual;
         if (action.well === 'breakdown') return field.role === 'dimension' && hasBreakdownWell(visual.kind) ? { ...visual, breakdowns: [field.name] } : visual;
         if (field.role === 'measure') return action.well && action.well !== 'values' || (visual.kind === 'scatter' && visual.measures.length >= 3 || visual.kind === 'insight' && visual.measures.length >= 2) ? visual : { ...visual, measures: singleMeasure(visual.kind) ? [field.name] : [...new Set([...visual.measures, field.name])] };
@@ -1009,7 +1032,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
     return visual;
   }).map((visual, index) => {
     const previous = sheet.visuals[index]!;
-    let next = cleanAggregationSort(cleanPivotRowSort(cleanPivotColumnSort(cleanPivotFieldSorts(visual))));
+    let next = cleanKpiTrend(cleanAggregationSort(cleanPivotRowSort(cleanPivotColumnSort(cleanPivotFieldSorts(visual)))));
     if (next.facetSort && next.facetSort.fieldId !== next.smallMultiples?.[0]) {
       const { facetSort: _dropped, ...rest } = next;
       next = rest;
@@ -1049,7 +1072,9 @@ export function remapVisual(visual: AuthorVisual): AuthorVisual {
     if (!field) { missing.add(f.columnName); return []; }
     return [{ ...f, columnName: field.name }];
   });
-  return cleanAggregationSort(cleanPivotRowSort(cleanPivotColumnSort(cleanPivotFieldSorts({ ...visual, rows, columns, dimension, measures, tooltipExtraFields, tooltipHiddenFields, filters, imported: { ...visual.imported, local: true, remapped: true, unmappedFields: [...missing] } }))));
+  const trendField = visual.trendField ? match([visual.trendField], 'dimension')[0] : undefined;
+  const kpiTrendSort = visual.kpiTrendSort && trendField ? { ...visual.kpiTrendSort, fieldId: trendField } : undefined;
+  return cleanKpiTrend(cleanAggregationSort(cleanPivotRowSort(cleanPivotColumnSort(cleanPivotFieldSorts({ ...visual, trendField, kpiTrendSort, rows, columns, dimension, measures, tooltipExtraFields, tooltipHiddenFields, filters, imported: { ...visual.imported, local: true, remapped: true, unmappedFields: [...missing] } })))));
 }
 export function authorVisualProblem(visual: AuthorVisual): string | undefined {
   if (visual.imported) {
@@ -1194,7 +1219,10 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
         }] } : {}),
       } } : {}),
       fieldWells: { pivotTableAggregatedFieldWells: { rows: visual.rows.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), columns: visual.columns.map(name => dimensionField(name, visual.dateGrain, calculations, dataset)), values } } } } };
-    case 'kpi': return { kpiVisual: { ...body, chartConfiguration: { fieldWells: { values } } } };
+    case 'kpi': return { kpiVisual: { ...body, chartConfiguration: {
+      fieldWells: { values, ...(visual.trendField ? { trendGroups: [dimensionField(visual.trendField, visual.dateGrain, calculations, dataset)] } : {}) },
+      ...(visual.trendField && visual.kpiTrendSort ? { sortConfiguration: { trendGroupSort: [{ fieldSort: { ...visual.kpiTrendSort } }] } } : {}),
+    } } };
   }
 }
 /** Export the analysis, including sheet layouts and scoped filters, but never result rows or UI selection. */
@@ -1326,7 +1354,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported || unresolvedAllowed ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['o', 'id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'breakdowns', 'multiplesOptions', 'groupSort', 'aggregationSort', 'pivotFieldSorts', 'pivotColumnSort', 'pivotRowSort', 'sliceLimit', 'facetLimit', 'facetSort', 'breakdownLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', 'forecast', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['o', 'id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'breakdowns', 'multiplesOptions', 'groupSort', 'aggregationSort', 'pivotFieldSorts', 'pivotColumnSort', 'pivotRowSort', 'trendField', 'kpiTrendSort', 'sliceLimit', 'facetLimit', 'facetSort', 'breakdownLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', 'forecast', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if (v.o !== undefined && !validOProvenance(v.o)) return fail();
       if (v.referenceLines !== undefined && (!Array.isArray(v.referenceLines) || !v.referenceLines.every(referenceLineValid))) return fail();
       if (v.forecast !== undefined && !forecastConfigValid(v.forecast)) return fail();
@@ -1336,6 +1364,8 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       if (v.groupSort !== undefined && !groupSortValid(v.groupSort)) return fail();
       if (v.aggregationSort !== undefined && (!aggregationSortValid(v.aggregationSort) || v.groupSort !== undefined || !['bar', 'bar100', 'pie'].includes(String(v.kind)) || v.aggregationSort.fieldId !== v.dimension || !(v.measures as string[]).includes(v.aggregationSort.measureFieldId))) return fail();
       if (v.pivotColumnSort !== undefined && (!pivotColumnSortValid(v.pivotColumnSort) || v.kind !== 'pivot' || !(v.columns as string[]).length || !(v.measures as string[]).includes(v.pivotColumnSort.measureFieldId))) return fail();
+      if (v.trendField !== undefined && (v.kind !== 'kpi' || !fieldNames([v.trendField], 'dimension') || !unresolvedAllowed && !['STRING', 'DATETIME'].includes(fields.find(f => f.name === v.trendField)?.type ?? ''))) return fail();
+      if (v.kpiTrendSort !== undefined && (!kpiTrendSortValid(v.kpiTrendSort) || v.kind !== 'kpi' || !v.trendField || v.kpiTrendSort.fieldId !== v.trendField)) return fail();
       if (v.pivotRowSort !== undefined && (!pivotRowSortValid(v.pivotRowSort) || v.kind !== 'pivot' || !(v.rows as string[]).length || !(v.measures as string[]).includes(v.pivotRowSort.measureFieldId))) return fail();
       if (v.pivotFieldSorts !== undefined && (!pivotFieldSortsValid(v.pivotFieldSorts) || v.kind !== 'pivot' || v.pivotFieldSorts.some(sort => ![...v.rows as string[], ...v.columns as string[]].includes(sort.fieldId)))) return fail();
       if (v.sliceLimit !== undefined && !sliceLimitValid(v.sliceLimit)) return fail();
