@@ -23,7 +23,7 @@ import { QSidePanel } from './QSidePanel.js';
 import { BuildForMe } from './BuildForMe.js';
 import { FormattingEditor } from './FormattingEditor.js';
 import { PivotOptionsEditor } from './PivotOptionsEditor.js';
-import { CardTitle, CardStyle, CardLayout, MultiplesOptions, PivotFieldSortOptions, TableSortOptions, GroupColorOptions, BreakdownOptions, LegendOptions, DataLabelsOptions, ReferenceLinesEditor, ForecastEditor, VisualPlacement } from './PropertiesSections.js';
+import { CardTitle, CardStyle, CardLayout, MultiplesOptions, PivotColumnSortOptions, PivotFieldSortOptions, TableSortOptions, GroupColorOptions, BreakdownOptions, LegendOptions, DataLabelsOptions, ReferenceLinesEditor, ForecastEditor, VisualPlacement } from './PropertiesSections.js';
 import { cardChromeStyle, type VisualFormatting } from './formatting.js';
 import { LIGHT_THEME, themeValid, type AnalysisTheme } from './themes.js';
 import { functionCatalog } from '@opensight/query-engine/browser';
@@ -620,6 +620,7 @@ function Properties({ visual, draft, dispatch, client, runtimeProblems }: Editor
     <MultiplesOptions visual={visual} dispatch={dispatch} />
     {visual.kind === 'table' ? <TableSortOptions visual={visual} dispatch={dispatch} /> : <GroupColorOptions visual={visual} dispatch={dispatch} />}
     <PivotFieldSortOptions visual={visual} dispatch={dispatch} />
+    <PivotColumnSortOptions visual={visual} dispatch={dispatch} />
     <BreakdownOptions visual={visual} dispatch={dispatch} />
     <LegendOptions visual={visual} dispatch={dispatch} />
     <DataLabelsOptions visual={visual} dispatch={dispatch} />

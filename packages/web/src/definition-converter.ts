@@ -100,13 +100,14 @@ const title: Schema = {
   Visibility: ['visibility'], FormatText: ['formatText', { PlainText: ['plainText'], RichText: ['richText'] }],
 };
 const limit: Schema = members('OtherCategories ItemsLimit');
+const sortAggregation: Schema = {
+  NumericalAggregationFunction: ['numericalAggregationFunction', members('SimpleNumericalAggregation')],
+};
 const sort: Schema = {
   FieldSort: ['fieldSort', members('FieldId Direction')],
   AggregationSort: ['aggregationSort', {
     ...members('FieldId Direction'), Column: ['column', column],
-    AggregationFunction: ['aggregationFunction', {
-      NumericalAggregationFunction: ['numericalAggregationFunction', members('SimpleNumericalAggregation')],
-    }],
+    AggregationFunction: ['aggregationFunction', sortAggregation],
   }],
 };
 const labels: Schema = members('Visibility Overlap MeasureLabelVisibility');
@@ -190,6 +191,8 @@ const visualBody: Schema = {
     }],
     SortConfiguration: ['sortConfiguration', {
       FieldSortOptions: ['fieldSortOptions', members('FieldId SortDirection')],
+      ColumnSort: ['columnSort', { ...members('Direction'), SortBy: ['sortBy', column],
+        AggregationFunction: ['aggregationFunction', sortAggregation] }],
       CategorySort: ['categorySort', sort], TrendGroupSort: ['trendGroupSort', sort], RowSort: ['rowSort', sort],
       SmallMultiplesSort: ['smallMultiplesSort', sort],
       CategoryItemsLimit: ['categoryItemsLimit', limit], SmallMultiplesLimitConfiguration: ['smallMultiplesLimitConfiguration', limit],
