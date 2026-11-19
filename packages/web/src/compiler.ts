@@ -27,6 +27,7 @@ type Input = Pick<FixtureVisual, 'source' | 'rows' | 'bindings' | 'path' | 'them
 export interface CompiledVisual {
   model: VisualModel;
   narrative?: InsightNarrative;
+  kpiTrendArrow?: { direction: 'up' | 'down'; label: string };
   kpiTarget?: { value: number | null; label: string; progress?: { ratio: number; percent: number; label: string } };
   option: EChartsOption;
   /** Ordered, validated cells also used by the accessible HTML data table. */
@@ -410,7 +411,6 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const kpiOptions = kind === 'kpi' && config[key('kpiOptions', 'KPIOptions')] !== undefined
     ? parseKpiOptions(config[key('kpiOptions', 'KPIOptions')], !bundle, `${cpath}.${key('kpiOptions', 'KPIOptions')}`, fail) : undefined;
   if (kpiOptions?.progressBar?.visibility === 'VISIBLE' && !targetMeasure) warnings.push('KPI progressBar is retained but cannot render without supported targetValues.');
-  if (kpiOptions?.trendArrows?.visibility === 'VISIBLE') warnings.push('KPI trendArrows are retained but are not rendered in this slice.');
   const gauge = object(config[key('opensightGauge', 'OpenSightGauge')] ?? {}, cpath);
   keys(gauge, ['min', 'max'], cpath);
   const gaugeMin = gauge.min ?? 0, gaugeMax = gauge.max ?? 100, bins = config[key('opensightBins', 'OpenSightBins')] ?? 10;
@@ -733,6 +733,7 @@ export function compileVisual(input: Input): CompiledVisual {
   const theme = input.theme ?? LIGHT_THEME;
   const model = normalizeVisual(input.source, input.definition, input.path);
   let kpiTarget: CompiledVisual['kpiTarget'];
+  let kpiTrendArrow: CompiledVisual['kpiTrendArrow'];
   const fields = [...model.dimensions, ...(model.trendDimension ? [model.trendDimension] : []), ...(model.breakdown ? [model.breakdown] : []), ...(model.facet ? [model.facet] : []), ...model.measures, ...(model.targetMeasure ? [model.targetMeasure] : [])];
   // Extra tooltip fields ride the result rows as additional measures; they never join the wells,
   // the series, or the data table. Their column alias is the field id (the query plans outputName = fieldId).
@@ -1011,7 +1012,13 @@ export function compileVisual(input: Input): CompiledVisual {
     }
     const sparkline = !!model.trendDimension && rows.length >= 2 && model.kpiOptions?.sparkline?.visibility !== 'HIDDEN';
     const comparison = model.trendDimension && model.kpiOptions?.comparison ? kpiComparison(values, model.kpiOptions.comparison.comparisonMethod) : null;
-    const comparisonLabel = comparison === null ? undefined : `${displayCell(comparison)}${model.kpiOptions?.comparison?.comparisonMethod === 'PERCENT_DIFFERENCE' ? '%' : ''}`;
+    let comparisonLabel = comparison === null ? undefined : `${displayCell(comparison)}${model.kpiOptions?.comparison?.comparisonMethod === 'PERCENT_DIFFERENCE' ? '%' : ''}`;
+    if (model.kpiOptions?.trendArrows?.visibility === 'VISIBLE') {
+      if (comparison !== null && comparison !== 0) {
+        kpiTrendArrow = { direction: comparison > 0 ? 'up' : 'down', label: `Trend ${comparison > 0 ? 'up' : 'down'}: ${comparisonLabel}` };
+        comparisonLabel = `${comparison > 0 ? '↑' : '↓'} ${comparisonLabel}`;
+      } else model.warnings.push(`KPI trendArrows cannot render: ${comparison === null ? 'comparison is unavailable' : 'comparison is zero'}.`);
+    }
     const primaryComparison = model.kpiOptions?.primaryValueDisplayType === 'COMPARISON';
     if (primaryComparison && comparison === null) model.warnings.push('KPI COMPARISON is unavailable; falling back to ACTUAL.');
     const label = state === 'unavailable' ? DATA_REQUIRED_LABEL : state === 'empty' ? 'No results' : value === null ? 'No value' : formatMetric(value, model.formatting?.metricFormats?.[model.measures[0]!.column]) ?? displayCell(value);
@@ -1187,7 +1194,7 @@ export function compileVisual(input: Input): CompiledVisual {
       };
     }
   }
-  return { model, option, state, ...(kpiTarget ? { kpiTarget } : {}), ...(forecastNote ? { forecastNote } : {}), ...(narrative ? { narrative } : {}), table: { ...(model.trendDimension ? { dimensionCount: 1 } : {}), columns: fields.map(f => f === model.targetMeasure ? `Target: ${fieldName(f, model.formatting)}` : fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
+  return { model, option, state, ...(kpiTrendArrow ? { kpiTrendArrow } : {}), ...(kpiTarget ? { kpiTarget } : {}), ...(forecastNote ? { forecastNote } : {}), ...(narrative ? { narrative } : {}), table: { ...(model.trendDimension ? { dimensionCount: 1 } : {}), columns: fields.map(f => f === model.targetMeasure ? `Target: ${fieldName(f, model.formatting)}` : fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
     ...(model.formatting ? { visibleColumns: fields.map(f => (model.measures.includes(f) ? model.formatting?.valueNamesVisible : model.formatting?.rowNamesVisible) === false ? '' : fieldName(f, model.formatting)) } : {}),
   } };
 }

@@ -146,3 +146,34 @@ test('target text and View data use the primary metric format', () => {
   assert.equal(c.kpiTarget.label, '$20.00'); assert.equal(c.option.graphic[0].style.text, '$10.00');
   assert.match(markup(v), /\$20\.00/);
 });
+for (const source of ['bundle', 'api']) {
+  test(`${source}: arrows follow last-vs-previous comparison in trend order and have accessible words`, () => {
+    const v = input(true); config(v).kpiOptions = { comparison: { comparisonMethod: 'DIFFERENCE' }, trendArrows: {} };
+    for (const [current, direction, glyph] of [[15, 'up', '↑'], [5, 'down', '↓']]) for (const primaryValueDisplayType of ['ACTUAL', 'COMPARISON']) {
+      v.rows = [{ period: 'B', revenue: current, budget: 20 }, { period: 'A', revenue: 10, budget: 20 }];
+      config(v).kpiOptions.primaryValueDisplayType = primaryValueDisplayType;
+      const c = compileVisual(dialect(v, source));
+      assert.deepEqual(c.kpiTrendArrow, { direction, label: `Trend ${direction}: ${current - 10}` });
+      assert.equal(c.option.graphic[primaryValueDisplayType === 'COMPARISON' ? 0 : 1].style.text, `${glyph} ${current - 10}`);
+      assert.equal(c.model.warnings.some(w => w.includes('trendArrows')), false);
+      const html = markup(dialect(v, source)); assert.match(html, new RegExp(`Trend ${direction}:`)); assert.match(html, /aria-hidden="true"/);
+    }
+    config(v).sortConfiguration = { trendGroupSort: [{ fieldSort: { fieldId: 'period', direction: 'DESC' } }] };
+    assert.equal(compileVisual(dialect(v, source)).kpiTrendArrow.direction, 'up');
+  });
+  test(`${source}: zero/unavailable comparisons keep an honest note; hidden/absent arrows stay absent`, () => {
+    const v = input(true); config(v).kpiOptions = { comparison: { comparisonMethod: 'PERCENT_DIFFERENCE' }, trendArrows: {} };
+    for (const values of [[], [1], [10, 10], [null, 1], [1, null], [0, 1], [Number.MAX_VALUE, -Number.MAX_VALUE]]) {
+      v.rows = values.map((revenue, i) => ({ period: String(i), revenue, budget: 20 }));
+      const c = compileVisual(dialect(v, source)); assert.equal(c.kpiTrendArrow, undefined);
+      assert.ok(c.model.warnings.some(w => w.includes('trendArrows')));
+    }
+    v.rows = [{ period: 'A', revenue: 10, budget: 20 }, { period: 'B', revenue: 15, budget: 20 }];
+    for (const trendArrows of [undefined, { visibility: 'HIDDEN' }]) {
+      config(v).kpiOptions.trendArrows = trendArrows;
+      const c = compileVisual(dialect(v, source)); assert.equal(c.kpiTrendArrow, undefined); assert.equal(c.option.graphic[1].style.text, '50%');
+      assert.equal(c.model.warnings.some(w => w.includes('trendArrows')), false);
+    }
+    config(v).kpiOptions = { trendArrows: {} }; assert.ok(compileVisual(dialect(v, source)).model.warnings.some(w => w.includes('comparison is unavailable')));
+  });
+}

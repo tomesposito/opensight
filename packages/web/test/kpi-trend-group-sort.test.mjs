@@ -131,17 +131,17 @@ for (const source of ['bundle', 'api']) {
     const v = input(); v.rows = [{ period: 'B', revenue: 15 }, { period: 'A', revenue: 10 }];
     config(v).kpiOptions = { sparkline: { type: 'AREA', visibility: 'VISIBLE' }, comparison: { comparisonMethod: 'PERCENT_DIFFERENCE' }, primaryValueDisplayType: 'ACTUAL', progressBar: { visibility: 'VISIBLE' }, trendArrows: { visibility: 'VISIBLE' } };
     let c = compileVisual(dialect(v, source));
-    assert.equal(c.option.graphic[0].style.text, '25'); assert.equal(c.option.graphic[1].style.text, '50%');
+    assert.equal(c.option.graphic[0].style.text, '25'); assert.equal(c.option.graphic[1].style.text, '↑ 50%');
     assert.ok(c.option.series[0].areaStyle); assert.ok(c.model.warnings.some(w => w.includes('targetValues')));
     assert.deepEqual(c.model.kpiOptions, config(v).kpiOptions);
     config(v).kpiOptions.primaryValueDisplayType = 'COMPARISON';
-    assert.equal(compileVisual(dialect(v, source)).option.graphic[0].style.text, '50%');
+    assert.equal(compileVisual(dialect(v, source)).option.graphic[0].style.text, '↑ 50%');
     config(v).kpiOptions.comparison.comparisonMethod = 'DIFFERENCE';
     config(v).kpiOptions.sparkline.visibility = 'HIDDEN';
     c = compileVisual(dialect(v, source));
-    assert.equal(c.option.graphic[0].style.text, '5'); assert.equal(c.option.series, undefined);
+    assert.equal(c.option.graphic[0].style.text, '↑ 5'); assert.equal(c.option.series, undefined);
     config(v).sortConfiguration = { trendGroupSort: [sort('DESC')] };
-    assert.equal(compileVisual(dialect(v, source)).option.graphic[0].style.text, '-5');
+    assert.equal(compileVisual(dialect(v, source)).option.graphic[0].style.text, '↓ -5');
   });
   test(`${source}: unavailable comparisons fall back to ACTUAL with a warning`, () => {
     const v = input(); config(v).kpiOptions = { primaryValueDisplayType: 'COMPARISON', comparison: { comparisonMethod: 'PERCENT_DIFFERENCE' } };
