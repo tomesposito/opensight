@@ -38,3 +38,26 @@ for (const source of ['bundle', 'api']) {
     assert.equal('trendDimension' in normalize(dialect(v, source)), false);
   });
 }
+const sort = (direction = 'DESC') => ({ fieldSort: { fieldId: 'period', direction } });
+const sorted = (v = input(), entries = [sort()]) => { config(v).sortConfiguration = { trendGroupSort: entries }; return v; };
+const malformedSorts = [null, {}, [], [sort(), sort()], [null], [[]], [{}], [{ extra: true }],
+  [{ aggregationSort: {} }], [{ ...sort(), aggregationSort: {} }], [{ ...sort(), extra: true }],
+  ...[null, {}, [], { fieldId: 'missing' }, { fieldId: 'value' }, { fieldId: 'period', extra: true },
+    ...['asc', '', null, 1].map(direction => ({ fieldId: 'period', direction }))].map(fieldSort => [{ fieldSort }])];
+for (const source of ['bundle', 'api']) {
+  test(`${source}: TrendGroupSort binds trend id, defaults ASC, maps both dialects`, () => {
+    assert.deepEqual(normalize(dialect(sorted(), source)).trendGroupSort, { fieldId: 'period', direction: 'DESC' });
+    const v = sorted(); delete config(v).sortConfiguration.trendGroupSort[0].fieldSort.direction;
+    assert.deepEqual(normalize(dialect(v, source)).trendGroupSort, { fieldId: 'period', direction: 'ASC' });
+    const internal = definition(sorted().definition);
+    assert.deepEqual(convertDefinition(projectDefinition(internal)), internal);
+  });
+  test(`${source}: TrendGroupSort rejects malformed entries and unknown keys at every level`, () => {
+    for (const bad of malformedSorts) assert.throws(() => normalize(dialect(sorted(input(), bad), source)), CompileError, JSON.stringify(bad));
+    for (const bad of [null, [], { ...config(sorted()).sortConfiguration, unknown: true }, { categorySort: [] }]) {
+      const v = input(); config(v).sortConfiguration = bad;
+      assert.throws(() => normalize(dialect(v, source)), CompileError);
+    }
+    assert.throws(() => normalize(dialect(sorted(input(false)), source)), /bound trend dimension/);
+  });
+}

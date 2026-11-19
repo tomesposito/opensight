@@ -36,6 +36,7 @@ export interface VisualModel {
   dimensions: Field[];
   /** Optional KPI grouping dimension; separate from category wells. */
   trendDimension?: Field;
+  trendGroupSort?: { fieldId: string; direction: 'ASC' | 'DESC' };
   /** Small-multiples facet dimension (pie only for now). Rendered as a grid of
    *  per-facet charts; part of the view-data table but never a series field. */
   facet?: Field;

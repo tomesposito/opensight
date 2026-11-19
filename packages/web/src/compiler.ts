@@ -273,7 +273,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const extra = extraKind(kind) ? EXTRA_VISUALS[kind] : undefined;
   const common = [key('fieldWells', 'FieldWells')];
   if (kind !== 'insight' && kind !== 'kpi' && kind !== 'table' && kind !== 'pivot') common.push(key('sortConfiguration', 'SortConfiguration'), key('dataLabels', 'DataLabels'), key('tooltip', 'Tooltip'), key('legend', 'Legend'));
-  if (kind === 'table' || kind === 'pivot') common.push(key('sortConfiguration', 'SortConfiguration'));
+  if (kind === 'table' || kind === 'pivot' || kind === 'kpi') common.push(key('sortConfiguration', 'SortConfiguration'));
   if (kind === 'pie') common.push(key('donutOptions', 'DonutOptions'));
   if (FACETED_KINDS.includes(kind)) common.push(key('opensightMultiplesOptions', 'OpenSightMultiplesOptions'));
   if (kind === 'bar' || kind === 'bar100') common.push(key('orientation', 'Orientation'), key('barsArrangement', 'BarsArrangement'));
@@ -476,14 +476,32 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   if (forecast && !dimensions[0]?.dateGranularity) warnings.push(`${cpath}.${forecastKey}: forecast ignored — the chart's category field is not a date dimension.`);
   const sortPath = `${cpath}.${key('sortConfiguration', 'SortConfiguration')}`;
   const sortRaw = config[key('sortConfiguration', 'SortConfiguration')];
-  const sort = object(kind === 'pivot' ? (sortRaw === undefined ? {} : sortRaw) : sortRaw ?? {}, kind === 'pivot' ? sortPath : cpath);
+  const sort = object(kind === 'pivot' || kind === 'kpi' ? (sortRaw === undefined ? {} : sortRaw) : sortRaw ?? {}, kind === 'pivot' ? sortPath : cpath);
   const sortsKey = kind === 'table' ? key('rowSort', 'RowSort') : key('categorySort', 'CategorySort');
   const facetSortKey = key('smallMultiplesSort', 'SmallMultiplesSort');
   const breakdownLimitKey = key('breakdownItemsLimit', 'BreakdownItemsLimit');
   const fieldSortOptionsKey = key('fieldSortOptions', 'FieldSortOptions');
   const columnSortKey = key('columnSort', 'ColumnSort');
   const pivotRowSortKey = key('rowSort', 'RowSort');
-  keys(sort, kind === 'pivot' ? [fieldSortOptionsKey, columnSortKey, pivotRowSortKey] : ['table', 'radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration'), ...(FACETED_KINDS.includes(kind) ? [facetSortKey] : [])], sortPath);
+  keys(sort, kind === 'kpi' ? [key('trendGroupSort', 'TrendGroupSort')] : kind === 'pivot' ? [fieldSortOptionsKey, columnSortKey, pivotRowSortKey] : ['table', 'radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration'), ...(FACETED_KINDS.includes(kind) ? [facetSortKey] : [])], sortPath);
+  const trendSortKey = key('trendGroupSort', 'TrendGroupSort');
+  const trendSortPath = `${sortPath}.${trendSortKey}`;
+  let trendGroupSort: VisualModel['trendGroupSort'];
+  if (sort[trendSortKey] !== undefined) {
+    const entries = list(sort[trendSortKey], trendSortPath);
+    if (entries.length !== 1) fail(trendSortPath, 'expected exactly one trend group sort');
+    const wrapper = object(entries[0], `${trendSortPath}[0]`);
+    const fsKey = key('fieldSort', 'FieldSort'), asKey = key('aggregationSort', 'AggregationSort');
+    keys(wrapper, [fsKey, asKey], trendSortPath);
+    if (Object.keys(wrapper).length !== 1) fail(trendSortPath, 'expected exactly one fieldSort or aggregationSort');
+    if (Object.hasOwn(wrapper, asKey)) fail(trendSortPath, 'aggregationSort is unsupported for KPI trend');
+    const fs = object(wrapper[fsKey], `${trendSortPath}.${fsKey}`);
+    keys(fs, [key('fieldId', 'FieldId'), key('direction', 'Direction')], trendSortPath);
+    const fieldId = text(fs[key('fieldId', 'FieldId')], trendSortPath);
+    if (!trendDimension || fieldId !== trendDimension.id) fail(trendSortPath, 'trend group sort must reference the bound trend dimension');
+    const direction = enumValue(fs[key('direction', 'Direction')], ['ASC', 'DESC'], 'ASC', trendSortPath) as 'ASC' | 'DESC';
+    trendGroupSort = { fieldId, direction };
+  }
   const columnSortPath = `${sortPath}.${columnSortKey}`;
   const columnSorts = list(sort[columnSortKey], columnSortPath);
   if (columnSorts.length > 1) fail(columnSortPath, 'only one column sort is supported');
@@ -679,6 +697,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     ...(fieldSortOptions.length ? { fieldSortOptions } : {}),
     ...(breakdownLimit ? { breakdownLimit } : {}),
     ...(trendDimension ? { trendDimension } : {}),
+    ...(trendGroupSort ? { trendGroupSort } : {}),
     ...(facet ? { facet } : {}),
     ...(breakdown ? { breakdown } : {}),
     ...(forecast ? { forecast } : {}),
