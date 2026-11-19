@@ -22,7 +22,7 @@ async function mount(t, initial) {
   const clickAnywhere = async name => { const button = renderer.root.findAllByType('button').find(n => n.props.children === name); assert.ok(button, name); await act(() => button.props.onClick()); };
   return { renderer, state: () => state, dispatch: async action => act(() => dispatch(action)), tab, panel, click, clickAnywhere, change, switch: async name => act(() => tab(name).props.onClick()) };
 }
-const visualSections = ['Display settings', 'Field sort', 'Column sort', 'Placement', 'Pivot options', 'Headers', 'Cells', 'Total', 'Subtotal', 'Row names', 'Column names', 'Value names', 'Conditional formatting', 'Visual palette', 'Analysis theme'];
+const visualSections = ['Display settings', 'Field sort', 'Column sort', 'Row sort', 'Placement', 'Pivot options', 'Headers', 'Cells', 'Total', 'Subtotal', 'Row names', 'Column names', 'Value names', 'Conditional formatting', 'Visual palette', 'Analysis theme'];
 const interactionSections = ['Filters', 'Actions', 'Drill-down hierarchy', 'Parameter bindings'];
 
 test('every reference section uses uniform details; tabs expose the correct panel and keyboard navigation', async t => {
