@@ -457,11 +457,29 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
         const entries = array(sort.TrendGroupSort, `${sp}.TrendGroupSort`);
         if (entries.length !== 1) fail('INVALID_INPUT', sp, 'expected exactly one trend group sort');
         const wrapper = object(entries[0], sp);
-        keys(wrapper, ['FieldSort'], sp);
-        const fs = object(wrapper.FieldSort, sp);
-        keys(fs, ['FieldId', 'Direction'], sp);
-        if (!dimensions.length || fs.FieldId !== dimensions[0]!.fieldId) fail('INVALID_INPUT', sp, 'trend group sort must reference the bound trend dimension');
-        if (fs.Direction !== undefined && fs.Direction !== 'ASC' && fs.Direction !== 'DESC') fail('INVALID_INPUT', sp, 'invalid trend sort direction');
+        keys(wrapper, ['FieldSort', 'AggregationSort'], sp);
+        if (Object.keys(wrapper).length !== 1) fail('INVALID_INPUT', sp, 'expected exactly one FieldSort or AggregationSort');
+        if (Object.hasOwn(wrapper, 'AggregationSort')) {
+          const ap = `${sp}.TrendGroupSort[0].AggregationSort`, aggregate = object(wrapper.AggregationSort, ap);
+          keys(aggregate, ['FieldId', 'Direction', 'Column', 'AggregationFunction'], ap);
+          const fieldId = string(aggregate.FieldId, `${ap}.FieldId`);
+          if (!dimensions.length || fieldId !== dimensions[0]!.fieldId) fail('INVALID_INPUT', sp, 'trend group sort must reference the bound trend dimension');
+          if (aggregate.Direction !== undefined && aggregate.Direction !== 'ASC' && aggregate.Direction !== 'DESC') fail('INVALID_INPUT', sp, 'invalid trend sort direction');
+          const name = column(aggregate.Column, `${ap}.Column`, binder);
+          if (!measures.slice(0, values.length).some(m => m.columnName === name)) fail('INVALID_INPUT', `${ap}.Column`, 'aggregation sort column must identify a bound primary measure');
+          const fp = `${ap}.AggregationFunction`, aggregation = object(aggregate.AggregationFunction, fp);
+          keys(aggregation, ['NumericalAggregationFunction'], fp);
+          const np = `${fp}.NumericalAggregationFunction`, numerical = object(aggregation.NumericalAggregationFunction, np);
+          keys(numerical, ['SimpleNumericalAggregation'], np);
+          const value = string(numerical.SimpleNumericalAggregation, `${np}.SimpleNumericalAggregation`);
+          if (!['SUM', 'AVERAGE', 'MIN', 'MAX', 'COUNT', 'DISTINCT_COUNT'].includes(value)) fail('UNSUPPORTED_FEATURE', `${np}.SimpleNumericalAggregation`, 'expected SUM, AVERAGE, MIN, MAX, COUNT or DISTINCT_COUNT');
+          // Like FieldSort, this validates consumer ordering without changing the query plan.
+        } else {
+          const fs = object(wrapper.FieldSort, sp);
+          keys(fs, ['FieldId', 'Direction'], sp);
+          if (!dimensions.length || fs.FieldId !== dimensions[0]!.fieldId) fail('INVALID_INPUT', sp, 'trend group sort must reference the bound trend dimension');
+          if (fs.Direction !== undefined && fs.Direction !== 'ASC' && fs.Direction !== 'DESC') fail('INVALID_INPUT', sp, 'invalid trend sort direction');
+        }
       }
     }
   }

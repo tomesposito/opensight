@@ -123,3 +123,12 @@ the working diff contains no dependency or package-lock change, no
 `SOLUTION_DESIGN.md` edit, and no static-demo change. No AWS calls, network
 downloads, merge or push were performed. The native planner boundary above
 remains documented, and visual fidelity is not measured.
+
+## Follow-up: native planner boundary closed
+
+The subsequent `parity-kpi-trend-agg-sort-planner` slice closes the native
+`planVisual` boundary documented in this historical report. Supported KPI
+aggregation sorts now pass native validation; plans, SQL and grouped results
+remain identical to no-sort definitions, with display ordering still owned by
+the consumer/compiler. See the [planner contract](parity-kpi-trend-agg-sort-planner.md)
+and [new verification evidence](parity-kpi-trend-agg-sort-planner-gap-notes.md).
