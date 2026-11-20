@@ -786,7 +786,17 @@ export function compileVisual(input: Input): CompiledVisual {
     if (!availableExtras.some(f => f.id === e.id)) model.warnings.push(`${input.path}: tooltip field '${e.id}' has no data in this result and will not be shown.`);
   }
   if (model.trendDimension) {
-    const ordered = orderKpiTrend(rows, model.trendDimension, model.trendGroupSort?.direction ?? 'ASC', cell, message => fail(input.path, message));
+    const sort = model.trendGroupSort;
+    // Validate unique groups and date keys for either sort mode. Aggregation
+    // ties retain input order, as they do for category aggregation sorts.
+    let ordered = orderKpiTrend(rows, model.trendDimension, sort?.direction ?? 'ASC', cell, message => fail(input.path, message));
+    if (sort?.aggregation) {
+      const measure = model.measures.find(field => field.id === sort.measureFieldId)!;
+      ordered = rows.map(row => {
+        const value = number(row, measure);
+        return { row, aggregate: aggregateSortValues(value === null ? [] : [value], sort.aggregation!, input.path) };
+      }).sort((a, b) => compareCells(a.aggregate, b.aggregate, sort.direction)).map(({ row }) => row);
+    }
     rows.splice(0, rows.length, ...ordered);
   }
   if (model.sort) {
