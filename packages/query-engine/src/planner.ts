@@ -379,7 +379,8 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
   // ForecastConfigurations and the line Type are line-family only (issue #257):
   // on any other visual kind they remain unrecognized and fail closed above.
   const lineFamily = kind === 'LineChartVisual';
-  keys(config, ['FieldWells', 'Legend', 'DataLabels', 'Tooltip', 'Orientation', 'BarsArrangement', 'DonutOptions', 'TotalOptions', 'OpenSightSubtotalOptions', ...(lineFamily ? ['ForecastConfigurations', 'Type'] : []), ...(kind === 'KPIVisual' ? ['SortConfiguration', 'KPIOptions'] : [])], cp);
+  const categoryChart = kind === 'BarChartVisual' || lineFamily || kind === 'PieChartVisual';
+  keys(config, ['FieldWells', 'Legend', 'DataLabels', 'Tooltip', 'Orientation', 'BarsArrangement', 'DonutOptions', 'TotalOptions', 'OpenSightSubtotalOptions', ...(lineFamily ? ['ForecastConfigurations', 'Type'] : []), ...(categoryChart ? ['SortConfiguration'] : []), ...(kind === 'KPIVisual' ? ['SortConfiguration', 'KPIOptions'] : [])], cp);
   if (lineFamily && config.Type !== undefined && !['LINE', 'AREA', 'STACKED_AREA'].includes(config.Type as string)) fail('UNSUPPORTED_FEATURE', `${cp}.Type`, 'line chart type must be LINE, AREA or STACKED_AREA');
   const forecastCount = lineFamily ? forecastConfigurationCount(config.ForecastConfigurations, `${cp}.ForecastConfigurations`) : 0;
   let wp = `${cp}.FieldWells`;
@@ -446,6 +447,24 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
       aggregation: aggregationValue as Aggregation, path: fp };
   });
   if (!values.length) fail('INVALID_INPUT', `${wp}.Values`, 'at least one explicit measure is required');
+  if (categoryChart && config.SortConfiguration !== undefined) {
+    const sp = `${cp}.SortConfiguration`, sort = object(config.SortConfiguration, sp);
+    // Preserve the existing whole-block rejection path for unsupported category-chart sorts.
+    if (Object.keys(sort).some(key => key !== 'CategorySort')) fail('UNSUPPORTED_FEATURE', sp, 'unrecognized execution property');
+    if (sort.CategorySort !== undefined) {
+      const entries = array(sort.CategorySort, `${sp}.CategorySort`);
+      if (entries.length !== 1) fail('INVALID_INPUT', sp, 'expected exactly one category sort');
+      const wrapper = object(entries[0], sp);
+      keys(wrapper, ['FieldSort', 'AggregationSort'], sp);
+      if (Object.keys(wrapper).length !== 1) fail('INVALID_INPUT', sp, 'expected exactly one FieldSort or AggregationSort');
+      if (Object.hasOwn(wrapper, 'AggregationSort')) fail('UNSUPPORTED_FEATURE', `${sp}.CategorySort[0].AggregationSort`, 'aggregation sort is not yet admitted');
+      const fp = `${sp}.CategorySort[0].FieldSort`, fieldSort = object(wrapper.FieldSort, fp);
+      keys(fieldSort, ['FieldId', 'Direction'], fp);
+      const fieldId = string(fieldSort.FieldId, `${fp}.FieldId`);
+      if (dimensions.length !== 1 || fieldId !== dimensions[0]!.fieldId) fail('INVALID_INPUT', sp, 'category sort must reference the bound category dimension');
+      if (fieldSort.Direction !== undefined && fieldSort.Direction !== 'ASC' && fieldSort.Direction !== 'DESC') fail('INVALID_INPUT', sp, 'invalid category sort direction');
+    }
+  }
   if (kind === 'KPIVisual') {
     if (config.KPIOptions !== undefined) parseKpiOptions(config.KPIOptions, true, `${cp}.KPIOptions`, (path, message) => fail('UNSUPPORTED_FEATURE', path, message));
     if (dimensions.length > 1) fail('UNSUPPORTED_FEATURE', wp, 'KPI supports exactly one trend dimension');
