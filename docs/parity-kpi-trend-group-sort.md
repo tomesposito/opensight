@@ -39,9 +39,10 @@ fields, duplicate IDs, mixed datasets and nonempty targets fail closed.
 Other kinds continue to reject nonempty trend wells and `trendGroupSort`.
 
 If supplied, `trendGroupSort` must be an array with exactly one wrapper and
-exactly one `fieldSort`. Its ID must identify the bound trend dimension.
+exactly one `fieldSort` or `aggregationSort`. Its ID must identify the bound trend dimension.
+Measure sorting is described in [KPI trend aggregation sorts](parity-kpi-trend-aggregation-sort.md).
 Direction accepts ASC/DESC and defaults to ASC when omitted in a definition.
-Empty lists, multiple entries, aggregation sorts, malformed shapes, unknown
+Empty lists, multiple entries, malformed shapes, unknown
 keys at every level, unbound IDs and invalid directions raise named
 `CompileError`s. Clearing a sort removes the property.
 
@@ -108,10 +109,13 @@ unrelated edits retain it. Remaps clear missing trend references and rebind
 surviving wells, preserving native field IDs. O-generated replacement clears
 stale trend state. Imported options survive storage and preview.
 
-Bundle/native imports with an explicit valid sort direction become editable.
+Bundle/native imports with an explicit valid sort direction become editable,
+including measure aggregation sorts. Their draft shape extends `{fieldId, direction}`
+with `measureFieldId` (the bound measure column name) and `aggregation`; removing
+or replacing that measure clears the sort.
 Field IDs may differ from column names. Supported sorts survive unchanged
 export, editing, clearing and both dialect round-trips. Malformed, unbound,
-multiple-entry, aggregation-sort and missing-direction imports retain their
+multiple-entry and missing-direction imports retain their
 original definitions and diagnostics for verbatim export; unrelated edits
 preserve those retained sorts. The existing bundle envelope rejects non-object
 outer sort configurations.

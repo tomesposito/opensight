@@ -221,15 +221,19 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
       const { actions: _actions, columnHierarchies: _hierarchies, ...kpiBody } = body;
       const model = normalizeVisual('bundle', { [variant]: kpiBody });
       const rawSort = obj(config.sortConfiguration).trendGroupSort;
-      const explicit = obj(obj(list(rawSort)[0]).fieldSort).direction;
+      const wrapper = obj(list(rawSort)[0]);
+      const explicit = obj(wrapper.aggregationSort ?? wrapper.fieldSort).direction;
       if (model.trendGroupSort && explicit === undefined) kpiTrendProblem = 'Trend sort: retained, read-only; requires an explicit direction on KPI';
+      const trendSort = model.trendGroupSort;
+      const measureFieldId = trendSort?.measureFieldId === undefined ? undefined : model.measures.find(field => field.id === trendSort.measureFieldId)!.column;
+      if (measureFieldId !== undefined && !measures.includes(measureFieldId)) throw new Error('Trend sort: unbound draft measure');
       const targetAggregation = obj(obj(obj(list(wells.targetValues)[0]).numericalMeasureField).aggregationFunction).simpleNumericalAggregation as AuthorVisual['targetAggregation'];
       return {
         ...(model.targetMeasure ? { targetField: model.targetMeasure.column,
           ...(targetAggregation !== 'SUM' ? { targetAggregation } : {}),
         } : {}),
         ...(model.trendDimension ? { trendField: model.trendDimension.column } : {}),
-        ...(model.trendGroupSort && explicit !== undefined ? { kpiTrendSort: { ...model.trendGroupSort, fieldId: model.trendDimension!.column } } : {}),
+        ...(trendSort && explicit !== undefined ? { kpiTrendSort: { ...trendSort, fieldId: model.trendDimension!.column, ...(measureFieldId !== undefined ? { measureFieldId } : {}) } } : {}),
         ...(model.kpiOptions ? { kpiOptions: model.kpiOptions } : {}),
       };
     } catch (error) {
@@ -670,7 +674,10 @@ function projectVisual(visual: AuthorVisual, raw: BundleVisual, calculations: re
   const originalTrend = trendFields(originalWells).find(field => obj(field.column).columnName === visual.trendField);
   if (typeof originalTrend?.fieldId === 'string') {
     for (const field of trendFields(config.fieldWells)) field.fieldId = originalTrend.fieldId;
-    for (const wrapper of list(obj(config.sortConfiguration).trendGroupSort)) obj(obj(wrapper).fieldSort).fieldId = originalTrend.fieldId;
+    for (const wrapper of list(obj(config.sortConfiguration).trendGroupSort)) {
+      const sort = obj(wrapper);
+      obj(sort.aggregationSort ?? sort.fieldSort).fieldId = originalTrend.fieldId;
+    }
   }
   const targetFields = (value: unknown): Obj[] => Object.entries(obj(value)).flatMap(([key, child]) => key === 'targetValues'
     ? list(child).map(wrapper => obj(Object.values(obj(wrapper))[0])) : targetFields(child));
@@ -710,6 +717,7 @@ function exportVisual(v: AuthorVisual, raw: BundleVisual | undefined, calculatio
     rebind(config.fieldWells, LOCAL_IDENTIFIER);
     if (v.pivotColumnSort) rebind(obj(config.sortConfiguration).columnSort, LOCAL_IDENTIFIER);
     if (v.pivotRowSort) rebind(obj(config.sortConfiguration).rowSort, LOCAL_IDENTIFIER);
+    if (v.kpiTrendSort?.aggregation) rebind(obj(config.sortConfiguration).trendGroupSort, LOCAL_IDENTIFIER);
     for (const wrapper of list(obj(config.sortConfiguration).categorySort)) {
       if (obj(wrapper).aggregationSort !== undefined) rebind(obj(wrapper).aggregationSort, LOCAL_IDENTIFIER);
     }
