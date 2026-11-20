@@ -68,8 +68,58 @@ the brief. No static-demo rebuild was run; the supervisor handles it after merge
 No GitHub issue was created because this offline brief names no issue and
 forbids network access.
 
+## Native planner boundary
+
+Final review confirmed the separate query-engine `planVisual` validator still
+accepts only `FieldSort` for KPI trend sorts. A direct probe in each dialect
+returned `QueryEngineError` / `UNSUPPORTED_FEATURE` for `AggregationSort`.
+This remains outside the compiler/authoring work items in this brief. The new
+compiler accepts native definitions supplied with result rows; authored previews
+use grouped queries independently of this native validator. No native-plan
+execution support is claimed.
+
 ## Full root verification
 
-Full-root results are recorded in the item 8 checkpoint after running
-`TZ=UTC npm test`. No dependencies, AWS calls, network downloads, design edits,
-merge or push are part of this slice.
+The first `TZ=UTC npm test` run passed every preceding workspace and reached
+all 3,402 web tests. The default Chromium executable could not start in this
+exec context: a direct startup probe returned exit code 13 and
+`Hatch WebGL domain policy is required for browser startup`. Browser test pipes
+reported `ECONNRESET`; web reported 3,007 passed, 5 failed and 390 cancelled,
+with no skips. All new KPI tests and the 84 baseline comparisons passed in that
+run. Root conformance did not execute because the workspace command failed.
+No product assertion or timing threshold was changed.
+
+The complete root suite was rerun from the repository root and exited 0:
+
+```sh
+TZ=UTC OPENSIGHT_CHROMIUM="$HOME/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell" npm test
+```
+
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 1,500 | 0 | 35 |
+| Bundle parser | 213 | 0 | 0 |
+| CLI | 73 | 0 | 0 |
+| Embedding SDK | 10 | 0 | 0 |
+| Headless SDK | 28 | 0 | 0 |
+| Python headless SDK | 32 | 0 | 0 |
+| MCP server | 74 | 0 | 0 |
+| O interpreter | 42 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 870 | 0 | 2 |
+| Web | 3,402 | 0 | 0 |
+| Root conformance and site | 110 | 0 | 0 |
+| **Total** | **6,365** | **0** | **37** |
+
+There were **6,402 tests**, with **zero cancellations and zero todos**. These
+totals include the 32 Python tests reported separately from Node's summaries.
+All 37 skips are existing live-Postgres cases: 36 require `DATABASE_URL` and one
+requires live TLS PostgreSQL. No test was newly skipped. The full verified log
+is `/tmp/opensight-kpi-trend-aggregation-sort-root-verified.log`; the first run
+is `/tmp/opensight-kpi-trend-aggregation-sort-root-initial.log`.
+
+All eight numbered checkpoints are complete. TypeScript and the full suite pass;
+the working diff contains no dependency or package-lock change, no
+`SOLUTION_DESIGN.md` edit, and no static-demo change. No AWS calls, network
+downloads, merge or push were performed. The native planner boundary above
+remains documented, and visual fidelity is not measured.

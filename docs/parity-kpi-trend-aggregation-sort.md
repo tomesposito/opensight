@@ -91,5 +91,13 @@ retain their original definitions and diagnostics, including through unrelated
 edits. Compiler default direction does not silently turn a direction-less import
 into an editable sort.
 
+The separate native `planVisual` query endpoint still accepts only field-sort
+TrendGroupSort entries. An aggregation entry fails closed with
+`UNSUPPORTED_FEATURE` in both DuckDB and Postgres planning. This brief changes
+the web compiler and authoring paths; it does not extend that planner. The
+authored grouped-query/fixture path supplies result rows to the compiler and
+applies the new ordering there. Native compiler acceptance and editable imports
+do not imply native-query execution support.
+
 No dependency, hosted service or AWS call is needed. Visual fidelity is not
 measured. See [verification and captures](parity-kpi-trend-aggregation-sort-gap-notes.md).
