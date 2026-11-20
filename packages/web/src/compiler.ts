@@ -506,13 +506,30 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     const fsKey = key('fieldSort', 'FieldSort'), asKey = key('aggregationSort', 'AggregationSort');
     keys(wrapper, [fsKey, asKey], trendSortPath);
     if (Object.keys(wrapper).length !== 1) fail(trendSortPath, 'expected exactly one fieldSort or aggregationSort');
-    if (Object.hasOwn(wrapper, asKey)) fail(trendSortPath, 'aggregationSort is unsupported for KPI trend');
-    const fs = object(wrapper[fsKey], `${trendSortPath}.${fsKey}`);
-    keys(fs, [key('fieldId', 'FieldId'), key('direction', 'Direction')], trendSortPath);
+    const aggregate = Object.hasOwn(wrapper, asKey);
+    const fs = object(wrapper[aggregate ? asKey : fsKey], `${trendSortPath}.${aggregate ? asKey : fsKey}`);
+    keys(fs, [key('fieldId', 'FieldId'), key('direction', 'Direction'), ...(aggregate ? [key('aggregationFunction', 'AggregationFunction'), key('column', 'Column')] : [])], trendSortPath);
     const fieldId = text(fs[key('fieldId', 'FieldId')], trendSortPath);
     if (!trendDimension || fieldId !== trendDimension.id) fail(trendSortPath, 'trend group sort must reference the bound trend dimension');
     const direction = enumValue(fs[key('direction', 'Direction')], ['ASC', 'DESC'], 'ASC', trendSortPath) as 'ASC' | 'DESC';
     trendGroupSort = { fieldId, direction };
+    if (aggregate) {
+      const ap = `${trendSortPath}[0].${asKey}`;
+      const column = object(fs[key('column', 'Column')], `${ap}.column`);
+      keys(column, [key('dataSetIdentifier', 'DataSetIdentifier'), key('columnName', 'ColumnName')], `${ap}.column`);
+      const columnName = text(column[key('columnName', 'ColumnName')], `${ap}.column`);
+      const dataSet = text(column[key('dataSetIdentifier', 'DataSetIdentifier')], `${ap}.column`);
+      const measure = measures.find(f => f.column === columnName && f.dataSet === dataSet);
+      if (!measure) fail(ap, 'aggregation sort column must identify a bound measure');
+      const agg = object(fs[key('aggregationFunction', 'AggregationFunction')], `${ap}.aggregationFunction`);
+      const numericalKey = key('numericalAggregationFunction', 'NumericalAggregationFunction');
+      keys(agg, [numericalKey], ap);
+      const numerical = object(agg[numericalKey], `${ap}.${numericalKey}`);
+      const simpleKey = key('simpleNumericalAggregation', 'SimpleNumericalAggregation');
+      keys(numerical, [simpleKey], ap);
+      const aggregation = enumValue(text(numerical[simpleKey], ap), [...SORT_AGGREGATIONS], 'SUM', ap) as typeof SORT_AGGREGATIONS[number];
+      trendGroupSort = { fieldId, direction, aggregation, measureFieldId: measure.id };
+    }
   }
   const columnSortPath = `${sortPath}.${columnSortKey}`;
   const columnSorts = list(sort[columnSortKey], columnSortPath);
