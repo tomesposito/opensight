@@ -1,6 +1,6 @@
 // Captures an animated GIF storyboard for the repo README hero.
 // Adapted from ~/workspace/tools/screenshots/readme-gif.mjs and its later tours.
-// Drives the rebuilt file:// demo through Home, O, KPI trend authoring, Data prep and Sources.
+// Drives the rebuilt file:// demo through Home, O, KPI target and trend authoring, Data prep and Sources.
 // Frames land in OPENSIGHT_SCREENSHOT_OUTPUT/frames;
 // See the bottom of this file for the ffmpeg assembly commands.
 import assert from 'node:assert/strict';
@@ -43,11 +43,12 @@ try {
   await page.locator('.build-panel').getByRole('button', { name: 'Add visual', exact: true }).click();
   await page.getByRole('button', { name: 'Assign revenue', exact: true }).click();
   await page.getByLabel('Assign Trend group', { exact: true }).selectOption('order_date');
+  await page.getByLabel('Assign Target value', { exact: true }).selectOption('profit');
   await page.locator('.author-card .chart svg').waitFor();
   if (await page.locator('.properties-panel').getAttribute('open') === null) await page.locator('.properties-panel > summary').click();
   await openPropertySection(page, 'Trend sort'); await hold(1400);
   await page.getByLabel('Trend sort descending', { exact: true }).click(); await hold(1600);
-  assert.match(await page.locator('.fixture-notice').innerText(), /trended KPI previews group synthetic sales rows/);
+  assert.match(await page.locator('.fixture-notice').innerText(), /KPI target and trend previews aggregate synthetic sales rows/);
   await setMode('data-prep'); await hold(1400);
   await setMode('data-sources');
   await page.locator('.data-tools').getByRole('button', { name: 'Create data source', exact: true }).click();

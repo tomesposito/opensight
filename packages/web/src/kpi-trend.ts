@@ -2,6 +2,17 @@ import { groupedPeriodDate, resultDate } from '@opensight/query-engine/browser';
 import { compareCells } from './cell-sort.js';
 import type { Cell, Field, Row } from './model.js';
 
+/** Aggregate already grouped SUM results; nulls never manufacture a zero. */
+export function kpiTotal(values: readonly (number | null)[], fail: (message: string) => never): number | null {
+  let total: number | null = null;
+  for (const value of values) {
+    if (value === null) continue;
+    total = (total ?? 0) + value;
+    if (!Number.isFinite(total)) fail('KPI total must be finite');
+  }
+  return total;
+}
+
 /** Sort already grouped rows without mutating input or combining result values. */
 export function orderKpiTrend(rows: readonly Row[], field: Field, direction: 'ASC' | 'DESC', cell: (row: Row, field: Field) => Cell, fail: (message: string) => never): Row[] {
   const seen = new Set<string>();

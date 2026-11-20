@@ -15,7 +15,7 @@ import { SORT_AGGREGATIONS } from './model.js';
 import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visual-catalog.js';
 import { compileExtra } from './extra-charts.js';
 import { applyCategoryLimit, CATEGORY_LIMIT_KINDS } from './category-limit.js';
-import { kpiComparison, orderKpiTrend } from './kpi-trend.js';
+import { kpiComparison, kpiTotal, orderKpiTrend } from './kpi-trend.js';
 import { compareCells } from './cell-sort.js';
 import { applyDisplayOptions, legendTextStyle } from './display-options.js';
 import { FACETED_KINDS, applyFacetLimit, facetLayout, facetPanelGrids, facetTitles, groupRowsByFacet, type FacetGroup } from './facet-layout.js';
@@ -27,6 +27,8 @@ type Input = Pick<FixtureVisual, 'source' | 'rows' | 'bindings' | 'path' | 'them
 export interface CompiledVisual {
   model: VisualModel;
   narrative?: InsightNarrative;
+  kpiTrendArrow?: { direction: 'up' | 'down'; label: string };
+  kpiTarget?: { value: number | null; label: string; progress?: { ratio: number; percent: number; label: string } };
   option: EChartsOption;
   /** Ordered, validated cells also used by the accessible HTML data table. */
   table: { columns: string[]; visibleColumns?: string[]; rows: Cell[][]; rowKinds?: ('detail' | 'subtotal' | 'total')[];
@@ -300,9 +302,9 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   // kinds; every other kind still rejects the well.
   const smallMultiplesKey = key('smallMultiples', 'SmallMultiples');
   const faceted = FACETED_KINDS.includes(kind);
-  const unused = [key('colors', 'Colors'), key('targetValues', 'TargetValues'), ...(kind === 'kpi' ? [] : [key('trendGroups', 'TrendGroups')]), ...(faceted ? [] : [smallMultiplesKey])];
+  const unused = [key('colors', 'Colors'), ...(kind === 'kpi' ? [] : [key('targetValues', 'TargetValues'), key('trendGroups', 'TrendGroups')]), ...(faceted ? [] : [smallMultiplesKey])];
   const wellKey = (name: string) => key(name, kind === 'waterfall' && name === 'category' ? 'Categories' : name.startsWith('opensight') ? `OpenSight${name.slice(9)}` : name[0]!.toUpperCase() + name.slice(1));
-  keys(wells, [...(extra ? [...extra.dimensions, ...extra.measures].map(wellKey) : [categoryKey, valueKey]), ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...(kind === 'kpi' ? [key('trendGroups', 'TrendGroups')] : []), ...(kind === 'waterfall' ? [key('breakdowns', 'Breakdowns')] : []), ...(faceted ? [smallMultiplesKey] : []), ...unused], wpath);
+  keys(wells, [...(extra ? [...extra.dimensions, ...extra.measures].map(wellKey) : [categoryKey, valueKey]), ...(kind === 'pivot' ? [key('columns', 'Columns')] : []), ...(kind === 'kpi' ? [key('trendGroups', 'TrendGroups'), key('targetValues', 'TargetValues')] : []), ...(kind === 'waterfall' ? [key('breakdowns', 'Breakdowns')] : []), ...(faceted ? [smallMultiplesKey] : []), ...unused], wpath);
   for (const name of unused) if (list(wells[name], `${wpath}.${name}`).length) fail(`${wpath}.${name}`, 'field well not supported');
   const field = (value: unknown, measure: boolean, fp: string): Field => {
     const wrapper = object(value, fp);
@@ -347,6 +349,10 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     trendDimension = field(trends[0], false, tp);
   }
   const measures = measureNames.flatMap(name => list(wells[name], `${wpath}.${name}`).map((v, i) => field(v, true, `${wpath}.${name}[${i}]`)));
+  const targetKey = key('targetValues', 'TargetValues');
+  const targets = kind === 'kpi' ? list(wells[targetKey], `${wpath}.${targetKey}`) : [];
+  if (targets.length > 1) fail(`${wpath}.${targetKey}`, 'KPI supports exactly one target measure');
+  const targetMeasure = targets.length ? field(targets[0], true, `${wpath}.${targetKey}[0]`) : undefined;
   // Small multiples: one facet dimension, rendered as a grid of per-facet panels.
   let facet: Field | undefined;
   if (faceted) {
@@ -398,14 +404,13 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     if (kind === 'kpi' ? dimensions.length !== 0 : kind === 'pivot' || kind === 'table' ? dimensions.length < 1 : dimensions.length !== 1) fail(wpath, kind === 'kpi' ? 'KPI must have no category' : 'exactly one category/group field is supported');
     if (!measures.length || ((kind === 'pie' || kind === 'kpi') && measures.length !== 1)) fail(wpath, 'expected supported number of measures (pie/KPI: one)');
   }
-  const fields = [...dimensions, ...(trendDimension ? [trendDimension] : []), ...(breakdown ? [breakdown] : []), ...(facet ? [facet] : []), ...measures];
+  const fields = [...dimensions, ...(trendDimension ? [trendDimension] : []), ...(breakdown ? [breakdown] : []), ...(facet ? [facet] : []), ...measures, ...(targetMeasure ? [targetMeasure] : [])];
   if (new Set(fields.map(f => f.id)).size !== fields.length) fail(wpath, 'duplicate field IDs');
   if (new Set(fields.map(f => f.dataSet)).size !== 1) fail(wpath, 'multiple datasets are unsupported');
   const warnings: string[] = extra ? [`${p}: ${extra.note}`] : [];
   const kpiOptions = kind === 'kpi' && config[key('kpiOptions', 'KPIOptions')] !== undefined
     ? parseKpiOptions(config[key('kpiOptions', 'KPIOptions')], !bundle, `${cpath}.${key('kpiOptions', 'KPIOptions')}`, fail) : undefined;
-  if (kpiOptions?.progressBar?.visibility === 'VISIBLE') warnings.push('KPI progressBar is retained but cannot render without supported targetValues.');
-  if (kpiOptions?.trendArrows?.visibility === 'VISIBLE') warnings.push('KPI trendArrows are retained but are not rendered in this slice.');
+  if (kpiOptions?.progressBar?.visibility === 'VISIBLE' && !targetMeasure) warnings.push('KPI progressBar is retained but cannot render without supported targetValues.');
   const gauge = object(config[key('opensightGauge', 'OpenSightGauge')] ?? {}, cpath);
   keys(gauge, ['min', 'max'], cpath);
   const gaugeMin = gauge.min ?? 0, gaugeMax = gauge.max ?? 100, bins = config[key('opensightBins', 'OpenSightBins')] ?? 10;
@@ -704,6 +709,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     ...(fieldSortOptions.length ? { fieldSortOptions } : {}),
     ...(breakdownLimit ? { breakdownLimit } : {}),
     ...(trendDimension ? { trendDimension } : {}),
+    ...(targetMeasure ? { targetMeasure } : {}),
     ...(trendGroupSort ? { trendGroupSort } : {}),
     ...(kpiOptions ? { kpiOptions } : {}),
     ...(facet ? { facet } : {}),
@@ -726,7 +732,9 @@ export function compileVisual(input: Input): CompiledVisual {
   if (input.theme !== undefined && !themeValid(input.theme)) fail(input.path, 'invalid analysis theme');
   const theme = input.theme ?? LIGHT_THEME;
   const model = normalizeVisual(input.source, input.definition, input.path);
-  const fields = [...model.dimensions, ...(model.trendDimension ? [model.trendDimension] : []), ...(model.breakdown ? [model.breakdown] : []), ...(model.facet ? [model.facet] : []), ...model.measures];
+  let kpiTarget: CompiledVisual['kpiTarget'];
+  let kpiTrendArrow: CompiledVisual['kpiTrendArrow'];
+  const fields = [...model.dimensions, ...(model.trendDimension ? [model.trendDimension] : []), ...(model.breakdown ? [model.breakdown] : []), ...(model.facet ? [model.facet] : []), ...model.measures, ...(model.targetMeasure ? [model.targetMeasure] : [])];
   // Extra tooltip fields ride the result rows as additional measures; they never join the wells,
   // the series, or the data table. Their column alias is the field id (the query plans outputName = fieldId).
   const extraFields: Field[] = (model.tooltipExtraFields ?? []).map(e =>
@@ -750,6 +758,7 @@ export function compileVisual(input: Input): CompiledVisual {
     object(row, input.path);
     for (const field of fields) cell(row, field);
     for (const field of model.measures) number(row, field);
+    if (model.targetMeasure) number(row, model.targetMeasure);
   }
   // Extra tooltip fields are adornments, not load-bearing: a result set that cannot
   // supply one (pinned fixtures, hosted plans built from wells) warns loudly and skips
@@ -988,19 +997,43 @@ export function compileVisual(input: Input): CompiledVisual {
     if (!model.trendDimension && rows.length > 1) fail(input.path, 'KPI expects exactly one aggregate row, not a client-side sum');
     const row = rows[0];
     const values = rows.map(row => number(row, model.measures[0]!));
-    const value = model.trendDimension ? values.reduce<number | null>((sum, value) => value === null ? sum : (sum ?? 0) + value, null) : row ? number(row, model.measures[0]!) : null;
+    const value = model.trendDimension ? kpiTotal(values, message => fail(input.path, message)) : row ? number(row, model.measures[0]!) : null;
     if (value !== null && !Number.isFinite(value)) fail(input.path, 'KPI total must be finite');
+    if (model.targetMeasure) {
+      const targets = rows.map(row => number(row, model.targetMeasure!));
+      const target = model.trendDimension ? kpiTotal(targets, message => fail(input.path, `target: ${message}`)) : targets[0] ?? null;
+      kpiTarget = { value: target, label: target === null ? 'No value' : formatMetric(target, model.formatting?.metricFormats?.[model.measures[0]!.column]) ?? displayCell(target) };
+      if (model.kpiOptions?.progressBar?.visibility === 'VISIBLE') {
+        const ratio = value !== null && target !== null && target > 0 ? value / target : null;
+        if (ratio !== null && Number.isFinite(ratio)) {
+          kpiTarget.progress = { ratio, percent: Math.min(1, Math.max(0, ratio)) * 100, label: Number.isFinite(ratio * 100) ? `${displayCell(ratio * 100)}% of target` : `${ratio} times target` };
+        } else model.warnings.push(`KPI progressBar cannot render: ${target === null ? 'target is null' : target <= 0 ? 'target must be greater than zero' : value === null ? 'primary value is null' : 'ratio is not finite'}.`);
+      }
+    }
     const sparkline = !!model.trendDimension && rows.length >= 2 && model.kpiOptions?.sparkline?.visibility !== 'HIDDEN';
     const comparison = model.trendDimension && model.kpiOptions?.comparison ? kpiComparison(values, model.kpiOptions.comparison.comparisonMethod) : null;
-    const comparisonLabel = comparison === null ? undefined : `${displayCell(comparison)}${model.kpiOptions?.comparison?.comparisonMethod === 'PERCENT_DIFFERENCE' ? '%' : ''}`;
+    let comparisonLabel = comparison === null ? undefined : `${displayCell(comparison)}${model.kpiOptions?.comparison?.comparisonMethod === 'PERCENT_DIFFERENCE' ? '%' : ''}`;
+    if (model.kpiOptions?.trendArrows?.visibility === 'VISIBLE') {
+      if (comparison !== null && comparison !== 0) {
+        kpiTrendArrow = { direction: comparison > 0 ? 'up' : 'down', label: `Trend ${comparison > 0 ? 'up' : 'down'}: ${comparisonLabel}` };
+        comparisonLabel = `${comparison > 0 ? '↑' : '↓'} ${comparisonLabel}`;
+      } else model.warnings.push(`KPI trendArrows cannot render: ${comparison === null ? 'comparison is unavailable' : 'comparison is zero'}.`);
+    }
     const primaryComparison = model.kpiOptions?.primaryValueDisplayType === 'COMPARISON';
     if (primaryComparison && comparison === null) model.warnings.push('KPI COMPARISON is unavailable; falling back to ACTUAL.');
     const label = state === 'unavailable' ? DATA_REQUIRED_LABEL : state === 'empty' ? 'No results' : value === null ? 'No value' : formatMetric(value, model.formatting?.metricFormats?.[model.measures[0]!.column]) ?? displayCell(value);
     option.tooltip = { show: false };
-    option.graphic = [{ type: 'text', left: 'center', top: sparkline ? '12%' : 'middle', style: { text: primaryComparison && comparisonLabel !== undefined ? comparisonLabel : label, fill: (model.palette ?? theme.palette)[0], fontSize: value === null ? 22 : 56, fontWeight: 600, fontFamily: theme.fontFamily } }];
-    if (comparisonLabel !== undefined && !primaryComparison) option.graphic.push({ type: 'text', left: 'center', top: sparkline ? '42%' : '70%', style: { text: comparisonLabel, fill: theme.textColor, fontSize: 20, fontFamily: theme.fontFamily } });
+    option.graphic = [{ type: 'text', left: 'center', top: kpiTarget ? '8%' : sparkline ? '12%' : 'middle', style: { text: primaryComparison && comparisonLabel !== undefined ? comparisonLabel : label, fill: (model.palette ?? theme.palette)[0], fontSize: value === null ? 22 : 56, fontWeight: 600, fontFamily: theme.fontFamily } }];
+    if (comparisonLabel !== undefined && !primaryComparison) option.graphic.push({ type: 'text', left: 'center', top: kpiTarget ? '36%' : sparkline ? '42%' : '70%', style: { text: comparisonLabel, fill: theme.textColor, fontSize: 20, fontFamily: theme.fontFamily } });
+    if (kpiTarget) {
+      option.graphic.push({ type: 'text', left: 'center', top: sparkline ? '53%' : '62%', style: { text: `Target: ${kpiTarget.label}`, fill: theme.textColor, fontSize: 16, fontFamily: theme.fontFamily } });
+      if (kpiTarget.progress) option.graphic.push({ type: 'group', id: 'kpi-progress', left: 'center', top: sparkline ? '68%' : '82%', children: [
+        { type: 'rect', shape: { width: 200, height: 8, r: 4 }, style: { fill: theme.textColor, opacity: 0.15 } },
+        { type: 'rect', id: 'kpi-progress-fill', shape: { width: kpiTarget.progress.percent * 2, height: 8, r: 4 }, style: { fill: (model.palette ?? theme.palette)[0] } },
+      ] });
+    }
     if (sparkline) {
-      option.grid = { left: 24, right: 24, top: '60%', bottom: 16 };
+      option.grid = { left: 24, right: 24, top: kpiTarget ? '78%' : '60%', bottom: 16 };
       option.xAxis = { type: 'category', show: false, boundaryGap: false, data: rows.map(row => displayCell(cell(row, model.trendDimension!))) };
       option.yAxis = { type: 'value', show: false, scale: true };
       option.series = [{ type: 'line', data: values, connectNulls: false, showSymbol: false, silent: true, lineStyle: { width: 2 }, ...(model.kpiOptions?.sparkline?.type === 'AREA' ? { areaStyle: { opacity: 0.2 } } : {}) }];
@@ -1161,7 +1194,7 @@ export function compileVisual(input: Input): CompiledVisual {
       };
     }
   }
-  return { model, option, state, ...(forecastNote ? { forecastNote } : {}), ...(narrative ? { narrative } : {}), table: { ...(model.trendDimension ? { dimensionCount: 1 } : {}), columns: fields.map(f => fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
+  return { model, option, state, ...(kpiTrendArrow ? { kpiTrendArrow } : {}), ...(kpiTarget ? { kpiTarget } : {}), ...(forecastNote ? { forecastNote } : {}), ...(narrative ? { narrative } : {}), table: { ...(model.trendDimension ? { dimensionCount: 1 } : {}), columns: fields.map(f => f === model.targetMeasure ? `Target: ${fieldName(f, model.formatting)}` : fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
     ...(model.formatting ? { visibleColumns: fields.map(f => (model.measures.includes(f) ? model.formatting?.valueNamesVisible : model.formatting?.rowNamesVisible) === false ? '' : fieldName(f, model.formatting)) } : {}),
   } };
 }

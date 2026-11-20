@@ -55,6 +55,7 @@ function visualDiagnostics(visual: AuthorVisual, check: ReturnType<typeof fieldC
   const add = (name: string, location: string, expected?: Expected, noBoolean = false) => {
     result.push(...check(name, expected, noBoolean).map(problem => ({ ...problem, location, visualId: visual.id })));
   };
+  if (visual.targetField) add(visual.targetField, 'target value', 'measure');
   if (visual.trendField) add(visual.trendField, 'trend group', 'dimension', true);
   if (visual.dimension !== null) add(visual.dimension, 'dimension', 'dimension');
   for (const well of ['rows', 'columns', 'measures', 'smallMultiples', 'breakdowns'] as const) {

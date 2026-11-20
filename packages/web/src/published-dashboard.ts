@@ -24,5 +24,5 @@ export function readerControls(definition: BundleDefinition, sheet: BundleSheet)
 /** The v1 query contract uses field IDs as aliases, with date grains as aliases. */
 export function publishedBindings(visual: FixtureVisual): Record<string, string> {
   const model = normalizeVisual(visual.source, visual.definition, visual.path);
-  return Object.fromEntries([...model.dimensions, ...(model.trendDimension ? [model.trendDimension] : []), ...model.measures].map(f => [f.id, f.dateGranularity?.toLowerCase() ?? f.id]));
+  return Object.fromEntries([...model.dimensions, ...(model.trendDimension ? [model.trendDimension] : []), ...model.measures, ...(model.targetMeasure ? [model.targetMeasure] : [])].map(f => [f.id, f.dateGranularity?.toLowerCase() ?? f.id]));
 }

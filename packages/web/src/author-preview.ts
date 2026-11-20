@@ -1,4 +1,4 @@
-import { authorVisualProblem, dataFields, noDimensions, serializeVisual, visualDimensions } from './authoring.js';
+import { authorVisualProblem, kpiTargetFieldId, dataFields, noDimensions, serializeVisual, visualDimensions } from './authoring.js';
 import type { AuthorVisual, AuthorDataset, CalculatedField } from './authoring.js';
 import { buildAuthorQuery } from './author-query.js';
 import { executeFixtureQuery } from './fixture-query.js';
@@ -29,7 +29,7 @@ export function buildAuthorPreview(visual: AuthorVisual): FixtureVisual {
   // at the visual's grain; failures yield no rows.
   const faceted = FACETED_KINDS.includes(visual.kind) && !!visual.smallMultiples?.length;
   const brokenDown = visual.kind === 'waterfall' && !!visual.breakdowns?.length;
-  const rows = visual.tooltipExtraFields.length || faceted || brokenDown || visual.kind === 'kpi' && !!visual.trendField
+  const rows = visual.tooltipExtraFields.length || faceted || brokenDown || visual.kind === 'kpi' && !!(visual.trendField || visual.targetField)
     ? (() => { const request = buildAuthorQuery(visual); return request ? executeFixtureQuery(request).rows : null; })()
     : !authorVisualProblem(visual) && !visual.filters.length && visual.measures.length === 1 && visual.measures[0] === 'revenue' && grain
       ? oracles.get(grain) ?? null : null;
@@ -44,7 +44,7 @@ export function buildAuthorVisual(visual: AuthorVisual, calculations: readonly C
     ...(visual.filterActions?.length ? { filterActions: [...visual.filterActions] } : {}),
     ...(visual.urlActions?.length ? { urlActions: [...visual.urlActions] } : {}),
     ...(visual.navigationActions?.length ? { navigationActions: [...visual.navigationActions] } : {}),
-    bindings: Object.fromEntries([...visualDimensions(visual), ...((() => { try { const t = visual.kind === 'insight' && visual.insightConfiguration ? topBottomMoversTimeColumn(visual.insightConfiguration) : undefined; return t && !visualDimensions(visual).includes(t) ? [t] : []; } catch { return []; } })()), ...(FACETED_KINDS.includes(visual.kind) ? visual.smallMultiples ?? [] : []), ...(visual.kind === 'waterfall' ? visual.breakdowns ?? [] : [])].filter(name => dataFields(calculations, dataset).some(f => f.name === name && f.type === 'DATETIME')).map(name => [name, (visual.dateGrain ?? 'MONTH').toLowerCase()])),
+    bindings: { ...(visual.kind === 'kpi' && visual.targetField ? { [kpiTargetFieldId(visual)!]: kpiTargetFieldId(visual)! } : {}), ...Object.fromEntries([...visualDimensions(visual), ...((() => { try { const t = visual.kind === 'insight' && visual.insightConfiguration ? topBottomMoversTimeColumn(visual.insightConfiguration) : undefined; return t && !visualDimensions(visual).includes(t) ? [t] : []; } catch { return []; } })()), ...(FACETED_KINDS.includes(visual.kind) ? visual.smallMultiples ?? [] : []), ...(visual.kind === 'waterfall' ? visual.breakdowns ?? [] : [])].filter(name => dataFields(calculations, dataset).some(f => f.name === name && f.type === 'DATETIME')).map(name => [name, (visual.dateGrain ?? 'MONTH').toLowerCase()])) },
     placement: { column: 0, columns: 36, row: 0, rows: 6 },
     path: `author.${visual.id}`,
   };

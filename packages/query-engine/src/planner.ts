@@ -393,7 +393,7 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
   }
   const dimKey = kind === 'KPIVisual' ? 'TrendGroups' : kind === 'TableVisual' ? 'GroupBy' : 'Category';
   keys(wells, kind === 'KPIVisual' ? ['Values', 'TrendGroups', 'TargetValues'] : [dimKey, 'Values'], wp);
-  if (kind === 'KPIVisual') emptyArray(wells.TargetValues, `${wp}.TargetValues`);
+
   const ids = new Set<string>();
   const outputs = new Set<string>();
   // Field IDs are stable output names; one month dimension keeps the fixture's 'month' alias.
@@ -420,8 +420,11 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
     return { fieldId, outputName: outputName(fieldId, grain, fp), columnName: name,
       ...(month ? { granularity: grain as NonNullable<Dimension['granularity']> } : {}), scalarType: type, path: fp };
   });
-  const measures: Measure[] = array(wells.Values, `${wp}.Values`).map((value, i) => {
-    const p = `${wp}.Values[${i}]`;
+  const values = array(wells.Values, `${wp}.Values`);
+  const targets = kind === 'KPIVisual' && wells.TargetValues !== undefined ? array(wells.TargetValues, `${wp}.TargetValues`) : [];
+  if (targets.length > 1) fail('UNSUPPORTED_FEATURE', `${wp}.TargetValues`, 'KPI supports exactly one target measure');
+  const measures: Measure[] = [...values.map((value, i) => ({ value, p: `${wp}.Values[${i}]`, target: false })),
+    ...targets.map((value, i) => ({ value, p: `${wp}.TargetValues[${i}]`, target: true }))].map(({ value, p, target }) => {
     const [kind, f] = variant(value, p);
     equals(kind, 'NumericalMeasureField', p);
     const fp = `${p}.${kind}`;
@@ -435,17 +438,18 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
         !['SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'DISTINCT_COUNT'].includes(aggregationValue)) {
       fail('UNSUPPORTED_FEATURE', `${fp}.AggregationFunction`, 'expected explicit SUM, AVG, COUNT, MIN, MAX or DISTINCT_COUNT');
     }
+    if (target && aggregationValue !== 'SUM' && !name.startsWith('__metric_')) fail('UNSUPPORTED_FEATURE', `${fp}.AggregationFunction`, 'only explicit SUM result bindings are supported');
     // DISTINCT_COUNT counts distinct values of any scalar type; the other
     // aggregations are numeric-only.
     if (aggregationValue !== 'DISTINCT_COUNT' && binder.bind(name, fp).scalarType !== 'number') fail('TYPE_MISMATCH', fp, 'numerical measure requires a numeric column');
     return { fieldId, outputName: outputName(fieldId, undefined, fp), columnName: name,
       aggregation: aggregationValue as Aggregation, path: fp };
   });
-  if (!measures.length) fail('INVALID_INPUT', `${wp}.Values`, 'at least one explicit measure is required');
+  if (!values.length) fail('INVALID_INPUT', `${wp}.Values`, 'at least one explicit measure is required');
   if (kind === 'KPIVisual') {
     if (config.KPIOptions !== undefined) parseKpiOptions(config.KPIOptions, true, `${cp}.KPIOptions`, (path, message) => fail('UNSUPPORTED_FEATURE', path, message));
     if (dimensions.length > 1) fail('UNSUPPORTED_FEATURE', wp, 'KPI supports exactly one trend dimension');
-    if (dimensions.length && (measures.length !== 1 || measures[0]!.aggregation !== 'SUM')) fail('UNSUPPORTED_FEATURE', wp, 'trended KPI requires one SUM measure');
+    if (dimensions.length && (values.length !== 1 || measures.some(m => m.aggregation !== 'SUM'))) fail('UNSUPPORTED_FEATURE', wp, 'trended KPI requires one SUM measure and an explicit SUM target binding');
     if (config.SortConfiguration !== undefined) {
       const sp = `${cp}.SortConfiguration`, sort = object(config.SortConfiguration, sp);
       keys(sort, ['TrendGroupSort'], sp);
