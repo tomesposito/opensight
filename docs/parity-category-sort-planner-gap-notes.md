@@ -100,3 +100,13 @@ reference comparison, README changes or hero GIF regeneration are performed.
 Visual fidelity is not measured. No dependencies, package manifests, lockfiles
 or `SOLUTION_DESIGN.md` are changed. No AWS calls, network downloads, GitHub
 issue activity, push or merge are part of this work.
+
+## Checkpoints and final scope review
+
+All seven numbered checkpoints are committed only on
+`work/parity-category-sort-planner`: chart gates, aggregation validation,
+plan invariance, rejection/regression coverage, documentation, verification
+and this final scope review. The changed paths are limited to `planner.ts`,
+the new test file, the two new slice docs, the two historical addenda and
+`CHANGELOG.md`. The existing KPI validation block is byte-for-byte unchanged.
+Whitespace checks pass and the new documentation's local links resolve.
