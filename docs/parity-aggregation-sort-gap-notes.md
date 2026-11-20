@@ -123,3 +123,13 @@ or skipped to bypass the environment.
 All ten requested checkpoints are committed on `work/parity-aggregation-sort`.
 The working tree is clean; no merge, push or GitHub action was performed.
 `SOLUTION_DESIGN.md`, dependency manifests and lockfiles remain unchanged.
+
+## Follow-up: native category-sort planning
+
+The subsequent `parity-category-sort-planner` slice admits the native
+FieldSort/AggregationSort CategorySort shapes for bar, line/area and pie.
+It validates admission while preserving the entire plan, SQL and grouped
+fixture results. Display ordering remains with the compiler. See the
+[planner contract](parity-category-sort-planner.md) and
+[new verification evidence](parity-category-sort-planner-gap-notes.md);
+the compiler results and captures above remain historical evidence.

@@ -379,7 +379,8 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
   // ForecastConfigurations and the line Type are line-family only (issue #257):
   // on any other visual kind they remain unrecognized and fail closed above.
   const lineFamily = kind === 'LineChartVisual';
-  keys(config, ['FieldWells', 'Legend', 'DataLabels', 'Tooltip', 'Orientation', 'BarsArrangement', 'DonutOptions', 'TotalOptions', 'OpenSightSubtotalOptions', ...(lineFamily ? ['ForecastConfigurations', 'Type'] : []), ...(kind === 'KPIVisual' ? ['SortConfiguration', 'KPIOptions'] : [])], cp);
+  const categoryChart = kind === 'BarChartVisual' || lineFamily || kind === 'PieChartVisual';
+  keys(config, ['FieldWells', 'Legend', 'DataLabels', 'Tooltip', 'Orientation', 'BarsArrangement', 'DonutOptions', 'TotalOptions', 'OpenSightSubtotalOptions', ...(lineFamily ? ['ForecastConfigurations', 'Type'] : []), ...(categoryChart ? ['SortConfiguration'] : []), ...(kind === 'KPIVisual' ? ['SortConfiguration', 'KPIOptions'] : [])], cp);
   if (lineFamily && config.Type !== undefined && !['LINE', 'AREA', 'STACKED_AREA'].includes(config.Type as string)) fail('UNSUPPORTED_FEATURE', `${cp}.Type`, 'line chart type must be LINE, AREA or STACKED_AREA');
   const forecastCount = lineFamily ? forecastConfigurationCount(config.ForecastConfigurations, `${cp}.ForecastConfigurations`) : 0;
   let wp = `${cp}.FieldWells`;
@@ -446,6 +447,36 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
       aggregation: aggregationValue as Aggregation, path: fp };
   });
   if (!values.length) fail('INVALID_INPUT', `${wp}.Values`, 'at least one explicit measure is required');
+  if (categoryChart && config.SortConfiguration !== undefined) {
+    const sp = `${cp}.SortConfiguration`, sort = object(config.SortConfiguration, sp);
+    // Preserve the existing whole-block rejection path for unsupported category-chart sorts.
+    if (Object.keys(sort).some(key => key !== 'CategorySort')) fail('UNSUPPORTED_FEATURE', sp, 'unrecognized execution property');
+    if (sort.CategorySort !== undefined) {
+      const entries = array(sort.CategorySort, `${sp}.CategorySort`);
+      if (entries.length !== 1) fail('INVALID_INPUT', sp, 'expected exactly one category sort');
+      const wrapper = object(entries[0], sp);
+      keys(wrapper, ['FieldSort', 'AggregationSort'], sp);
+      if (Object.keys(wrapper).length !== 1) fail('INVALID_INPUT', sp, 'expected exactly one FieldSort or AggregationSort');
+      const aggregationSort = Object.hasOwn(wrapper, 'AggregationSort');
+      const variant = aggregationSort ? 'AggregationSort' : 'FieldSort';
+      const vp = `${sp}.CategorySort[0].${variant}`, entry = object(wrapper[variant], vp);
+      keys(entry, aggregationSort ? ['FieldId', 'Direction', 'Column', 'AggregationFunction'] : ['FieldId', 'Direction'], vp);
+      const fieldId = string(entry.FieldId, `${vp}.FieldId`);
+      if (!dimensions.length || fieldId !== dimensions[0]!.fieldId) fail('INVALID_INPUT', sp, 'category sort must reference the bound category dimension');
+      if (entry.Direction !== undefined && entry.Direction !== 'ASC' && entry.Direction !== 'DESC') fail('INVALID_INPUT', sp, 'invalid category sort direction');
+      if (aggregationSort) {
+        const name = column(entry.Column, `${vp}.Column`, binder);
+        if (!measures.some(m => m.columnName === name)) fail('INVALID_INPUT', `${vp}.Column`, 'aggregation sort column must identify a bound measure');
+        const fp = `${vp}.AggregationFunction`, aggregation = object(entry.AggregationFunction, fp);
+        keys(aggregation, ['NumericalAggregationFunction'], fp);
+        const np = `${fp}.NumericalAggregationFunction`, numerical = object(aggregation.NumericalAggregationFunction, np);
+        keys(numerical, ['SimpleNumericalAggregation'], np);
+        const value = string(numerical.SimpleNumericalAggregation, `${np}.SimpleNumericalAggregation`);
+        if (!['SUM', 'AVERAGE', 'MIN', 'MAX', 'COUNT', 'DISTINCT_COUNT'].includes(value)) fail('UNSUPPORTED_FEATURE', `${np}.SimpleNumericalAggregation`, 'expected SUM, AVERAGE, MIN, MAX, COUNT or DISTINCT_COUNT');
+      }
+      // Both variants validate consumer ordering only; query fields and aggregations stay unchanged.
+    }
+  }
   if (kind === 'KPIVisual') {
     if (config.KPIOptions !== undefined) parseKpiOptions(config.KPIOptions, true, `${cp}.KPIOptions`, (path, message) => fail('UNSUPPORTED_FEATURE', path, message));
     if (dimensions.length > 1) fail('UNSUPPORTED_FEATURE', wp, 'KPI supports exactly one trend dimension');
