@@ -457,12 +457,24 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
       const wrapper = object(entries[0], sp);
       keys(wrapper, ['FieldSort', 'AggregationSort'], sp);
       if (Object.keys(wrapper).length !== 1) fail('INVALID_INPUT', sp, 'expected exactly one FieldSort or AggregationSort');
-      if (Object.hasOwn(wrapper, 'AggregationSort')) fail('UNSUPPORTED_FEATURE', `${sp}.CategorySort[0].AggregationSort`, 'aggregation sort is not yet admitted');
-      const fp = `${sp}.CategorySort[0].FieldSort`, fieldSort = object(wrapper.FieldSort, fp);
-      keys(fieldSort, ['FieldId', 'Direction'], fp);
-      const fieldId = string(fieldSort.FieldId, `${fp}.FieldId`);
+      const aggregationSort = Object.hasOwn(wrapper, 'AggregationSort');
+      const variant = aggregationSort ? 'AggregationSort' : 'FieldSort';
+      const vp = `${sp}.CategorySort[0].${variant}`, entry = object(wrapper[variant], vp);
+      keys(entry, aggregationSort ? ['FieldId', 'Direction', 'Column', 'AggregationFunction'] : ['FieldId', 'Direction'], vp);
+      const fieldId = string(entry.FieldId, `${vp}.FieldId`);
       if (dimensions.length !== 1 || fieldId !== dimensions[0]!.fieldId) fail('INVALID_INPUT', sp, 'category sort must reference the bound category dimension');
-      if (fieldSort.Direction !== undefined && fieldSort.Direction !== 'ASC' && fieldSort.Direction !== 'DESC') fail('INVALID_INPUT', sp, 'invalid category sort direction');
+      if (entry.Direction !== undefined && entry.Direction !== 'ASC' && entry.Direction !== 'DESC') fail('INVALID_INPUT', sp, 'invalid category sort direction');
+      if (aggregationSort) {
+        const name = column(entry.Column, `${vp}.Column`, binder);
+        if (!measures.some(m => m.columnName === name)) fail('INVALID_INPUT', `${vp}.Column`, 'aggregation sort column must identify a bound measure');
+        const fp = `${vp}.AggregationFunction`, aggregation = object(entry.AggregationFunction, fp);
+        keys(aggregation, ['NumericalAggregationFunction'], fp);
+        const np = `${fp}.NumericalAggregationFunction`, numerical = object(aggregation.NumericalAggregationFunction, np);
+        keys(numerical, ['SimpleNumericalAggregation'], np);
+        const value = string(numerical.SimpleNumericalAggregation, `${np}.SimpleNumericalAggregation`);
+        if (!['SUM', 'AVERAGE', 'MIN', 'MAX', 'COUNT', 'DISTINCT_COUNT'].includes(value)) fail('UNSUPPORTED_FEATURE', `${np}.SimpleNumericalAggregation`, 'expected SUM, AVERAGE, MIN, MAX, COUNT or DISTINCT_COUNT');
+      }
+      // Both variants validate consumer ordering only; query fields and aggregations stay unchanged.
     }
   }
   if (kind === 'KPIVisual') {
