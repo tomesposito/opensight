@@ -23,6 +23,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Native bar, line/area and pie definitions now admit category field and measure-aggregate sorts with strict validation and unchanged query plans; the compiler/consumer still owns display ordering (phase-plan fallback: parity-category-sort-planner; no GitHub issue).
+
 - Native KPI definitions with a measure-based trend sort can now be planned/executed through the native query endpoint, with strict validation and unchanged grouped queries; the consumer/compiler still owns display ordering (phase-plan fallback: parity-kpi-trend-agg-sort-planner; no GitHub issue).
 
 - KPI trend groups can sort by a bound measure aggregate, with editable measure/aggregation/direction controls, null-last ordering, comparisons following the reordered groups, and validated draft/native/bundle round-trips (phase-plan fallback: kpi-trend-aggregation-sort; no GitHub issue).

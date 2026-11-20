@@ -92,3 +92,11 @@ The existing bundle envelope rejects non-object outer sort configurations.
 See [verification and captures](parity-aggregation-sort-gap-notes.md). The new
 test file is reached by the existing web test glob and root `npm test`.
 No broader QuickSight visual fidelity claim is made.
+
+## Follow-up: native category-sort planning
+
+The subsequent [native planner slice](parity-category-sort-planner.md) admits
+FieldSort and AggregationSort under CategorySort for bar, line/area and pie
+definitions. Plans and grouped query results remain unchanged; the compiler
+still owns display ordering. Native combo planning and other sort options
+remain outside that slice. Historical compiler evidence above is unchanged.
