@@ -101,3 +101,11 @@ No compiler, authoring, UI, demo, dependency or hosted infrastructure change is
 included. Native combo and other unsupported visual kinds gain nothing, even
 where the web compiler already supports their sorting. See
 [verification and scope limits](parity-category-sort-planner-gap-notes.md).
+
+## Follow-up (parity-category-limit-planner)
+
+`CategoryItemsLimit` has since joined `CategorySort` as an admitted
+`SortConfiguration` key on these category charts in the native planner, with
+the same validation-only, plan-invariant contract — see
+[parity-category-limit-planner.md](parity-category-limit-planner.md). The
+other keys named above remain rejected.

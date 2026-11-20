@@ -182,7 +182,8 @@ for (const variant of ['FieldSort', 'AggregationSort']) {
 }
 
 for (const chart of charts) for (const key of [
-  'CategoryItemsLimit', 'SmallMultiplesSort', 'SmallMultiplesLimitConfiguration',
+  // CategoryItemsLimit left this list in the category-limit planner slice: it is now admitted (see category-limit-planner.test.mjs).
+  'SmallMultiplesSort', 'SmallMultiplesLimitConfiguration',
   'TrendGroupSort', 'RowSort', 'ColumnSort', 'FieldSortOptions', 'BreakdownItemsLimit', 'Unexpected',
 ]) {
   test(`category chart keeps ${key} rejected: ${chart.name}`, () => {
