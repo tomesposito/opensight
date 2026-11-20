@@ -29,7 +29,7 @@
     "@types/react-dom": "^19.2.0",
     "react-test-renderer": "^19.3.0",
     "typescript": "^5.6.0",
-    "vite": "^8.0.0"
+    "vite": "^8.3.8"
   },
   "exports": {
     "./compiler": {
