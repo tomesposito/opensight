@@ -101,3 +101,12 @@ do not imply native-query execution support.
 
 No dependency, hosted service or AWS call is needed. Visual fidelity is not
 measured. See [verification and captures](parity-kpi-trend-aggregation-sort-gap-notes.md).
+
+## Follow-up: native planner boundary closed
+
+The subsequent [native planner slice](parity-kpi-trend-agg-sort-planner.md) closes
+the boundary recorded above: `planVisual` now admits the supported KPI
+`AggregationSort` definitions through the native query path. Admission validates
+the definition only; grouped SQL/results stay unchanged and the consumer/compiler
+still owns trend ordering. The earlier slice's history and result-based sorting
+limits remain as recorded.
