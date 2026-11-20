@@ -23,6 +23,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- KPI trend groups can sort by a bound measure aggregate, with editable measure/aggregation/direction controls, null-last ordering, comparisons following the reordered groups, and validated draft/native/bundle round-trips (phase-plan fallback: kpi-trend-aggregation-sort; no GitHub issue).
+
 - KPIs support an editable Target value, targets at the primary aggregate grain, accessible progress bars with honest unavailable states, and signed trend-comparison arrows; bundle/native imports retain unsupported definitions (phase-plan fallback: parity-kpi-targets; no GitHub issue).
 
 - KPIs support an optional date/categorical Trend group, typed ascending/descending TrendGroupSort, grouped SUM totals, line/area sparklines, last-group comparisons and editable bundle/native round-trips (phase-plan fallback: parity-kpi-trend-group-sort; no GitHub issue).
