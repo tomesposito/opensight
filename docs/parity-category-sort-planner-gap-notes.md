@@ -64,7 +64,29 @@ todos. Log: `/tmp/opensight-category-sort-planner-focused.log`.
 An initial run identified missing required policy fields in the new security
 test setup; the setup was corrected without relaxing any assertions.
 
-The full query-engine workspace suite is the next verification checkpoint.
+The full query-engine workspace command is:
+
+```sh
+TZ=UTC npm test --workspace @opensight/query-engine
+```
+
+The initial sandboxed run completed with **1,922 passed / 21 failed / 2
+skipped** (1,945 tests), with zero cancellations or todos. All 21 failures were
+existing MySQL/Redshift tests opening local TCP sockets: `listen EPERM` on
+`127.0.0.1`. A standalone loopback bind probe confirmed the sandbox restriction.
+Log: `/tmp/opensight-category-sort-planner-query-engine-sandbox.log`.
+The same full suite then passed with sandbox escalation so those existing
+loopback tests could execute; no assertions, skips or thresholds were changed.
+
+Final result: **1,943 passed / 0 failed / 2 skipped** (1,945 tests), with zero
+cancellations or todos. The command exited **0**. Log:
+`/tmp/opensight-category-sort-planner-query-engine.log`.
+The workspace command includes the strict package and test TypeScript builds.
+
+Both skips are existing live-Postgres integration tests (`postgres-live` and
+`prep-branching-live`) requiring `DATABASE_URL`. No new tests are skipped.
+The full root suite is left to the supervisor's independent verification,
+as permitted by the run brief; these counts cover the query-engine workspace.
 
 ## Limits
 
