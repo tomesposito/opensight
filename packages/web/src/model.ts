@@ -39,7 +39,7 @@ export interface VisualModel {
   /** Optional KPI target at the same aggregate grain as the primary measure. */
   targetMeasure?: Field;
   kpiOptions?: import('@opensight/query-engine/browser').KpiOptions;
-  trendGroupSort?: { fieldId: string; direction: 'ASC' | 'DESC' };
+  trendGroupSort?: { fieldId: string; direction: 'ASC' | 'DESC'; aggregation?: AggregationSort['aggregation']; measureFieldId?: string };
   /** Small-multiples facet dimension (pie only for now). Rendered as a grid of
    *  per-facet charts; part of the view-data table but never a series field. */
   facet?: Field;

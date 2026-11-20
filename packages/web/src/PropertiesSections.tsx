@@ -661,13 +661,35 @@ export function VisualPlacement({ visual, draft, dispatch }: SectionProps & { dr
 
 export function KpiTrendSortOptions({ visual, dispatch }: SectionProps) {
   if (visual.kind !== 'kpi' || !visual.trendField) return null;
+  const sort = visual.kpiTrendSort;
+  const setAggregationSort = (changes: Partial<AggregationSort> = {}) => {
+    if (!visual.measures.length) return;
+    dispatch({ type: 'kpi-trend-sort', sort: { fieldId: visual.trendField!, measureFieldId: visual.measures[0]!, aggregation: 'SUM', direction: 'ASC', ...sort, ...changes } });
+  };
+  const names = visual.formatting?.names;
+  const aggregationNames = { SUM: 'Sum', AVERAGE: 'Average', MIN: 'Min', MAX: 'Max', COUNT: 'Count', DISTINCT_COUNT: 'Distinct count' };
   return <details className="property-section"><summary>Trend sort</summary>
+    <div className="property-control-row" role="group" aria-label="Trend sort controls">
+      <label>Sort mode<select aria-label="Trend sort mode" value={sort?.aggregation ? 'measure' : 'field'} onChange={e => {
+        if (e.target.value === 'measure') setAggregationSort();
+        else if (e.target.value === 'field') dispatch({ type: 'kpi-trend-sort', sort: { fieldId: visual.trendField!, direction: sort?.direction ?? 'ASC' } });
+      }}><option value="field">Trend field</option><option value="measure" disabled={!visual.measures.length}>Measure</option></select></label>
+      {sort?.aggregation && <>
+        <label>Measure<select aria-label="Trend sort measure" value={sort.measureFieldId} onChange={e => setAggregationSort({ measureFieldId: e.target.value })}>
+          {visual.measures.map(field => <option key={field} value={field}>{names && Object.hasOwn(names, field) ? names[field] : field}</option>)}
+        </select></label>
+        <label>Aggregation<select aria-label="Trend sort aggregation" value={sort.aggregation} onChange={e => {
+          const aggregation = SORT_AGGREGATIONS.find(value => value === e.target.value);
+          if (aggregation) setAggregationSort({ aggregation });
+        }}>{SORT_AGGREGATIONS.map(value => <option key={value} value={value}>{aggregationNames[value]}</option>)}</select></label>
+      </>}
+    </div>
     <div className="property-inline kpi-trend-sort-direction" role="group" aria-label="Trend sort direction">
       {(['ASC', 'DESC'] as const).map(direction => <button type="button" key={direction}
         aria-label={`Trend sort ${direction === 'ASC' ? 'ascending' : 'descending'}`} aria-pressed={(visual.kpiTrendSort?.direction ?? 'ASC') === direction}
-        onClick={() => dispatch({ type: 'kpi-trend-sort', sort: { fieldId: visual.trendField!, direction } })}>{direction === 'ASC' ? '↑' : '↓'}</button>)}
+        onClick={() => dispatch({ type: 'kpi-trend-sort', sort: { fieldId: visual.trendField!, ...sort, direction } })}>{direction === 'ASC' ? '↑' : '↓'}</button>)}
       {visual.kpiTrendSort && <button type="button" onClick={() => dispatch({ type: 'kpi-trend-sort', sort: undefined })}>Reset trend sort</button>}
     </div>
-    <p className="field-hint">Orders trend groups by their values. Default is ascending; null groups stay last.</p>
+    <p className="field-hint">{sort?.aggregation ? 'Orders trend groups by the selected measure aggregate. Null aggregates stay last.' : 'Orders trend groups by their values. Default is ascending; null groups stay last.'}</p>
   </details>;
 }

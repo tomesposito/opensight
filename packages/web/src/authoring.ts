@@ -121,7 +121,7 @@ export interface AuthorVisual {
   targetField?: string;
   /** Explicit imported governed-metric target binding; ordinary targets default to SUM. */
   targetAggregation?: 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX' | 'DISTINCT_COUNT';
-  kpiTrendSort?: GroupSort;
+  kpiTrendSort?: KpiTrendSort;
   kpiOptions?: KpiOptions;
   smallMultiples?: string[];
   /** Waterfall breakdown field (QuickSight Breakdowns well). At most one. */
@@ -289,15 +289,21 @@ function cleanPivotColumnSort(visual: AuthorVisual): AuthorVisual {
 export function pivotRowSortValid(value: unknown): value is PivotRowSort {
   return pivotColumnSortValid(value);
 }
-export function kpiTrendSortValid(value: unknown): value is GroupSort {
-  return groupSortValid(value) && !!value.fieldId.trim() && value.fieldId === value.fieldId.trim();
+/** Trend sorts keep field sorts unchanged and add a paired measure/aggregation. */
+export interface KpiTrendSort extends GroupSort {
+  measureFieldId?: string;
+  aggregation?: AggregationSort['aggregation'];
+}
+export function kpiTrendSortValid(value: unknown): value is KpiTrendSort {
+  return (groupSortValid(value) || aggregationSortValid(value) && value.measureFieldId === value.measureFieldId.trim()) &&
+    !!value.fieldId.trim() && value.fieldId === value.fieldId.trim();
 }
 function cleanKpiTrend(visual: AuthorVisual): AuthorVisual {
   const dropOptions = visual.kind !== 'kpi' && Object.hasOwn(visual, 'kpiOptions');
   const dropTarget = Object.hasOwn(visual, 'targetField') && (visual.kind !== 'kpi' || !visual.targetField);
   const dropTargetAggregation = Object.hasOwn(visual, 'targetAggregation') && (visual.kind !== 'kpi' || !visual.targetField || !visual.targetAggregation);
   const dropTrend = Object.hasOwn(visual, 'trendField') && (visual.kind !== 'kpi' || !visual.trendField);
-  const dropSort = Object.hasOwn(visual, 'kpiTrendSort') && (!visual.kpiTrendSort || visual.kind !== 'kpi' || !visual.trendField || visual.kpiTrendSort.fieldId !== visual.trendField);
+  const dropSort = Object.hasOwn(visual, 'kpiTrendSort') && (!visual.kpiTrendSort || visual.kind !== 'kpi' || !visual.trendField || visual.kpiTrendSort.fieldId !== visual.trendField || !kpiTrendSortValid(visual.kpiTrendSort) || visual.kpiTrendSort.measureFieldId !== undefined && !visual.measures.includes(visual.kpiTrendSort.measureFieldId));
   if (!dropOptions && !dropTrend && !dropSort && !dropTarget && !dropTargetAggregation) return visual;
   const next = { ...visual };
   if (dropOptions) delete next.kpiOptions;
@@ -455,7 +461,7 @@ export type AuthorAction =
   | { type: 'group-sort'; sort: GroupSort | undefined }
   | { type: 'aggregation-sort'; sort: AggregationSort | undefined }
   | { type: 'pivot-column-sort'; sort: PivotColumnSort | undefined }
-  | { type: 'kpi-trend-sort'; sort: GroupSort | undefined }
+  | { type: 'kpi-trend-sort'; sort: KpiTrendSort | undefined }
   | { type: 'pivot-row-sort'; sort: PivotRowSort | undefined }
   | { type: 'pivot-field-sorts'; sorts: GroupSort[] | undefined }
   | { type: 'slice-limit'; limit: SliceLimit | undefined }
@@ -857,7 +863,7 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
         return next;
       }
       case 'kpi-trend-sort': {
-        if (action.sort !== undefined && (!kpiTrendSortValid(action.sort) || visual.kind !== 'kpi' || !visual.trendField || action.sort.fieldId !== visual.trendField)) return visual;
+        if (action.sort !== undefined && (!kpiTrendSortValid(action.sort) || visual.kind !== 'kpi' || !visual.trendField || action.sort.fieldId !== visual.trendField || action.sort.measureFieldId !== undefined && !visual.measures.includes(action.sort.measureFieldId))) return visual;
         const next = { ...visual };
         if (action.sort === undefined) delete next.kpiTrendSort;
         else next.kpiTrendSort = structuredClone(action.sort);
@@ -1252,7 +1258,11 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
     case 'kpi': return { kpiVisual: { ...body, chartConfiguration: {
       ...(visual.kpiOptions ? { kpiOptions: structuredClone(visual.kpiOptions) } : {}),
       fieldWells: { values, ...(visual.targetField ? { targetValues: [measureField(visual.targetField, kpiTargetFieldId(visual), visual.targetAggregation)] } : {}), ...(visual.trendField ? { trendGroups: [dimensionField(visual.trendField, visual.dateGrain, calculations, dataset)] } : {}) },
-      ...(visual.trendField && visual.kpiTrendSort ? { sortConfiguration: { trendGroupSort: [{ fieldSort: { ...visual.kpiTrendSort } }] } } : {}),
+      ...(visual.trendField && visual.kpiTrendSort ? { sortConfiguration: { trendGroupSort: [visual.kpiTrendSort.aggregation ? { aggregationSort: {
+        fieldId: visual.kpiTrendSort.fieldId, direction: visual.kpiTrendSort.direction,
+        aggregationFunction: { numericalAggregationFunction: { simpleNumericalAggregation: visual.kpiTrendSort.aggregation } },
+        column: { dataSetIdentifier: 'sales_data', columnName: visual.kpiTrendSort.measureFieldId! },
+      } } : { fieldSort: { ...visual.kpiTrendSort } }] } } : {}),
     } } };
   }
 }
@@ -1403,7 +1413,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       if (v.targetField && v.trendField && (v.targetAggregation ?? fields.find(f => f.name === v.targetField)?.metric?.defaultAggregation ?? 'SUM') !== 'SUM') return fail();
       if (v.targetField !== undefined && (v.kind !== 'kpi' || !fieldNames([v.targetField], 'measure'))) return fail();
       if (v.trendField !== undefined && (v.kind !== 'kpi' || !fieldNames([v.trendField], 'dimension') || !imported && !unresolvedAllowed && !['STRING', 'DATETIME'].includes(fields.find(f => f.name === v.trendField)?.type ?? ''))) return fail();
-      if (v.kpiTrendSort !== undefined && (!kpiTrendSortValid(v.kpiTrendSort) || v.kind !== 'kpi' || !v.trendField || v.kpiTrendSort.fieldId !== v.trendField)) return fail();
+      if (v.kpiTrendSort !== undefined && (!kpiTrendSortValid(v.kpiTrendSort) || v.kind !== 'kpi' || !v.trendField || v.kpiTrendSort.fieldId !== v.trendField || v.kpiTrendSort.measureFieldId !== undefined && !(v.measures as string[]).includes(v.kpiTrendSort.measureFieldId))) return fail();
       if (v.pivotRowSort !== undefined && (!pivotRowSortValid(v.pivotRowSort) || v.kind !== 'pivot' || !(v.rows as string[]).length || !(v.measures as string[]).includes(v.pivotRowSort.measureFieldId))) return fail();
       if (v.pivotFieldSorts !== undefined && (!pivotFieldSortsValid(v.pivotFieldSorts) || v.kind !== 'pivot' || v.pivotFieldSorts.some(sort => ![...v.rows as string[], ...v.columns as string[]].includes(sort.fieldId)))) return fail();
       if (v.sliceLimit !== undefined && !sliceLimitValid(v.sliceLimit)) return fail();
