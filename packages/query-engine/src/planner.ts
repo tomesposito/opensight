@@ -462,7 +462,7 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
       const vp = `${sp}.CategorySort[0].${variant}`, entry = object(wrapper[variant], vp);
       keys(entry, aggregationSort ? ['FieldId', 'Direction', 'Column', 'AggregationFunction'] : ['FieldId', 'Direction'], vp);
       const fieldId = string(entry.FieldId, `${vp}.FieldId`);
-      if (dimensions.length !== 1 || fieldId !== dimensions[0]!.fieldId) fail('INVALID_INPUT', sp, 'category sort must reference the bound category dimension');
+      if (!dimensions.length || fieldId !== dimensions[0]!.fieldId) fail('INVALID_INPUT', sp, 'category sort must reference the bound category dimension');
       if (entry.Direction !== undefined && entry.Direction !== 'ASC' && entry.Direction !== 'DESC') fail('INVALID_INPUT', sp, 'invalid category sort direction');
       if (aggregationSort) {
         const name = column(entry.Column, `${vp}.Column`, binder);
