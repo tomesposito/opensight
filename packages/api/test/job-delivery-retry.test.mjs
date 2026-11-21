@@ -9,6 +9,45 @@ const failingMail = () => { const mail = new StubMailTransport(); mail.send = as
 /** One attempt per tick; the advance keeps every backoff (capped at 1h) due. */
 const attemptTicks = async (f, runner, n) => { for (let i = 0; i < n; i++) { await runner.tick(); f.advance(3700000); } };
 
+for (const stale of [false, true]) {
+  test(`#296 H7 cumulative claim cap terminalizes ${stale ? 'a stale snapshot' : 'an exhausted pending row'} immediately`, async t => {
+    const f = await jobFixture(t); await f.put('job');
+    const c = await f.login(), run = await f.store.enqueue(c, 'job'); await f.runner.execute(run);
+    if (!stale) await f.db.transaction(c => c.query('UPDATE h7_deliveries SET total_attempts = ?', [MAX_DELIVERY_TOTAL_ATTEMPTS]));
+    const transaction = f.db.transaction.bind(f.db); let changed = false;
+    t.mock.method(f.db, 'transaction', work => transaction(c => work({ async query(sql, args) {
+      if (stale && !changed && sql.includes('attempts = attempts + 1')) {
+        changed = true; await c.query('UPDATE h7_deliveries SET total_attempts = ?', [MAX_DELIVERY_TOTAL_ATTEMPTS]);
+      }
+      return c.query(sql, args);
+    } })));
+    await f.runner.deliver();
+    const delivery = (await f.store.deliveries(c, 'job'))[0];
+    assert.equal(delivery.state, 'dead'); assert.equal(delivery.attempts, 0);
+    assert.equal(delivery.total_attempts, MAX_DELIVERY_TOTAL_ATTEMPTS);
+    assert.equal(delivery.error_code, 'JOB_DELIVERY_EXHAUSTED'); assert.equal(changed, stale);
+    assert.equal((await f.store.history(c, 'job'))[0].errorCode, 'JOB_DELIVERY_EXHAUSTED');
+    assert.equal(f.mail.messages.length, 0);
+  });
+}
+
+test('#296 H7 a lost receipt uses the committed cumulative count and cannot resend past 30', async t => {
+  const f = await jobFixture(t); await f.put('job');
+  const c = await f.login(), run = await f.store.enqueue(c, 'job'); await f.runner.execute(run);
+  const transaction = f.db.transaction.bind(f.db);
+  t.mock.method(f.db, 'transaction', work => transaction(c => work({ async query(sql, args) {
+    if (sql.includes('attempts = attempts + 1')) await c.query('UPDATE h7_deliveries SET total_attempts = ?', [MAX_DELIVERY_TOTAL_ATTEMPTS - 1]);
+    if (sql.includes("SET state = 'sent'")) throw new Error('interrupted receipt');
+    return c.query(sql, args);
+  } })));
+  await f.runner.deliver(); await f.runner.tick();
+  const delivery = (await f.store.deliveries(c, 'job'))[0];
+  assert.equal(delivery.state, 'dead'); assert.equal(delivery.attempts, 1);
+  assert.equal(delivery.total_attempts, MAX_DELIVERY_TOTAL_ATTEMPTS);
+  assert.equal((await f.store.history(c, 'job'))[0].errorCode, 'JOB_DELIVERY_EXHAUSTED');
+  assert.equal(f.mail.messages.length, 1);
+});
+
 test('H7 a retryable delivery dead-letters at the attempt cap and its occurrence settles exhausted', async t => {
   const f = await jobFixture(t, executor(), failingMail()); await f.put('job');
   const c = await f.login(), run = await f.store.enqueue(c, 'job');

@@ -1,4 +1,4 @@
-import { occurrenceTime, deliveryKey, deliveryRecipients, isRetryableDeliveryError } from './digest-delivery.js';
+import { occurrenceTime, deliveryKey, deliveryRecipients, isRetryableDeliveryError, MAX_DELIVERY_ATTEMPTS, MAX_DELIVERY_TOTAL_ATTEMPTS } from './digest-delivery.js';
 import { MetadataError, type SqlConnection, type SqlRow } from './metadata-db.js';
 import { checksum } from './metadata-operator.js';
 import { DurableExecution, type ExecutionEvent, type ExecutionHandle } from './durable-execution.js';
@@ -55,6 +55,12 @@ export class DurableJobs {
     const failed = rows.some(r => r.state !== 'sent'), dead = rows.some(r => r.state === 'dead');
     await c.query(`UPDATE h7_occurrences SET state = ?, error_code = ?, finished_at = ? WHERE ${scoped} AND occurrence_id = ? AND state = 'delivering'`,
       [failed ? 'failed' : 'succeeded', failed ? dead ? 'JOB_DELIVERY_EXHAUSTED' : 'JOB_DELIVERY_CANCELLED' : null, new Date(now).toISOString(), ...scopeArgs(run), run.id]);
+  }
+  private async exhaustDelivery(c: SqlConnection, event: ExecutionEvent, run: Occurrence, now: number): Promise<boolean> {
+    const rows = await c.query(`UPDATE h7_deliveries SET state = 'dead', error_code = 'JOB_DELIVERY_EXHAUSTED', message = NULL WHERE ${scoped} AND delivery_id = ? AND state IN ('pending','sending') AND (attempts >= ? OR total_attempts >= ?) RETURNING delivery_id`,
+      [...scopeArgs(run), event.aggregateId, MAX_DELIVERY_ATTEMPTS, MAX_DELIVERY_TOTAL_ATTEMPTS]);
+    if (rows.length) await this.settle(c, run, now);
+    return rows.length > 0;
   }
   private async terminal(c: SqlConnection, event: ExecutionEvent, code: string, now: number): Promise<void> {
     if (event.kind === 'job-due') {
@@ -137,7 +143,9 @@ export class DurableJobs {
   }
   private async deliver(handle: ExecutionHandle, sending: () => void, accepted: () => void): Promise<void> {
     const { run, delivery } = await this.execution.checked(handle, c => this.runRow(c, handle.event));
-    if (!delivery || ['sent', 'cancelled'].includes(String(delivery.state))) { await this.execution.complete(handle); return; }
+    if (!delivery || ['sent', 'cancelled', 'dead'].includes(String(delivery.state))) { await this.execution.complete(handle); return; }
+    const exhausted = await this.execution.checked(handle, (c, now) => this.exhaustDelivery(c, handle.event, run, now));
+    if (exhausted) { await this.execution.complete(handle); return; }
     if (!this.mail.configured) throw new MailError('SMTP_NOT_CONFIGURED');
     let address: string | undefined;
     const verify = async (): Promise<void> => this.execution.checked(handle, async c => {
@@ -171,10 +179,17 @@ export class DurableJobs {
         await this.executor.verifyDelivery?.(recipient); await verify();
       };
     }
-    await this.execution.checked(handle, async c => {
+    const claimed = await this.execution.checked(handle, async (c, now) => {
       await this.store.checkRun(c, run);
-      await c.query(`UPDATE h7_deliveries SET state = 'sending', attempts = attempts + 1, total_attempts = total_attempts + 1, message = NULL WHERE ${scoped} AND delivery_id = ?`, [...scopeArgs(run), handle.event.aggregateId]);
+      // DurableExecution fences interrupted claims and explicit ambiguous
+      // replays; either can still have a sending row. Both budgets apply to
+      // every new send, including those recovered/replayed attempts (#296).
+      const rows = await c.query(`UPDATE h7_deliveries SET state = 'sending', attempts = attempts + 1, total_attempts = total_attempts + 1, message = NULL WHERE ${scoped} AND delivery_id = ? AND state IN ('pending','sending') AND attempts < ? AND total_attempts < ? RETURNING delivery_id`,
+        [...scopeArgs(run), handle.event.aggregateId, MAX_DELIVERY_ATTEMPTS, MAX_DELIVERY_TOTAL_ATTEMPTS]);
+      if (!rows.length) await this.exhaustDelivery(c, handle.event, run, now);
+      return rows.length > 0;
     });
+    if (!claimed) { await this.execution.complete(handle); return; }
     await this.execution.sending(handle); sending();
     await this.mail.send(message, authorize);
     accepted();
