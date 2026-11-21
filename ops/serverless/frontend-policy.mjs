@@ -1,6 +1,6 @@
 // Public site files are deliberately bounded. Operator inputs never become assets.
 export const marketingFiles = Object.freeze([
-  'index.html', 'styles.css', 'app.js', 'robots.txt', 'sitemap.xml', 'demo/index.html',
+  'index.html', 'styles.css', 'app.js', 'robots.txt', 'sitemap.xml', 'demo/index.html', 'demo/app.js',
   'pricing/index.html', 'legal/terms/index.html', 'legal/privacy/index.html',
   'alternatives/quicksight/index.html', 'alternatives/tableau/index.html',
   'alternatives/power-bi/index.html', 'vs/metabase/index.html', 'vs/superset/index.html',

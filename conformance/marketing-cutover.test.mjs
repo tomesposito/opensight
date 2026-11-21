@@ -15,7 +15,7 @@ test('marketing release packages every local icon declared by the actual page', 
   const root = mkdtempSync(join(tmpdir(), 'opensight-marketing-icons-'));
   try {
     const target = join(root, 'frontend'), demo = join(root, 'demo.html');
-    mkdirSync(target); writeFileSync(demo, '<html>Offline demo</html>');
+    mkdirSync(target); writeFileSync(demo, '<html><script type="module">console.log("Offline demo")</script></html>');
     writeFileSync(join(target, 'manifest.json'), JSON.stringify({ version: 1, kind: 'frontend', files: { 'index.html': 'a'.repeat(64) } }));
     const site = fileURLToPath(new URL('../site/', import.meta.url));
     packageSites(site, demo, target);
@@ -77,7 +77,7 @@ test('marketing archive contains every public page, local reference and social p
   const root = mkdtempSync(join(tmpdir(), 'opensight-marketing-pages-'));
   try {
     const target = join(root, 'frontend'), demo = join(root, 'demo.html');
-    mkdirSync(target); writeFileSync(demo, '<html>Offline demo</html>');
+    mkdirSync(target); writeFileSync(demo, '<html><script type="module">console.log("Offline demo")</script></html>');
     writeFileSync(join(target, 'manifest.json'), JSON.stringify({ version: 1, kind: 'frontend', files: { 'index.html': 'a'.repeat(64) } }));
     const site = fileURLToPath(new URL('../site/', import.meta.url));
     packageSites(site, demo, target);
@@ -94,7 +94,7 @@ test('marketing archive contains every public page, local reference and social p
     for (const name of marketingFiles) {
       const bytes = readFileSync(join(target, name));
       assert.equal(manifest.files[name], createHash('sha256').update(bytes).digest('hex'));
-      if (name === 'marketing/demo/index.html') continue;
+      if (name.startsWith('marketing/demo/')) continue;
       assert.deepEqual(bytes, readFileSync(join(site, name.slice(10))));
       if (!name.endsWith('.html')) continue;
       const url = new URL('/' + name.slice(10), origin), html = bytes.toString();
@@ -127,7 +127,7 @@ test('D-77 package binds the exact approved site and rejects missing files, link
     mkdirSync(site); mkdirSync(target);
     const manifest = { version: 1, kind: 'frontend', files: { 'index.html': 'a'.repeat(64) } };
     writeFileSync(join(target, 'manifest.json'), JSON.stringify(manifest));
-    writeFileSync(demo, '<html>Offline demo</html>');
+    writeFileSync(demo, '<html><script type="module">console.log("Offline demo")</script></html>');
     for (const name of marketingFiles.filter(n => !n.includes('/demo/'))) {
       const path = join(site, name.slice(10)); mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, 'public content');
     }
@@ -139,7 +139,8 @@ test('D-77 package binds the exact approved site and rejects missing files, link
     packageSites(site, demo, target);
     const packaged = JSON.parse(readFileSync(join(target, 'manifest.json')));
     assert.equal(Object.keys(packaged.files).length, marketingFiles.length + 1);
-    assert.equal(readFileSync(join(target, 'marketing/demo/index.html'), 'utf8'), '<html>Offline demo</html>');
+    assert.equal(readFileSync(join(target, 'marketing/demo/index.html'), 'utf8'), '<html><script type="module" src="./app.js"></script></html>');
+    assert.equal(readFileSync(join(target, 'marketing/demo/app.js'), 'utf8'), 'console.log("Offline demo")');
     frontendFiles(packaged, true);
     delete packaged.files['marketing/styles.css'];
     assert.throws(() => frontendFiles(packaged), /MARKETING_BUNDLE_REQUIRED/);

@@ -18,7 +18,7 @@ function handler(event) {
     else if (uri === '/robots.txt') r.uri = '/marketing/robots.txt';
     else if (uri === '/sitemap.xml') r.uri = '/marketing/sitemap.xml';
     else if (page) r.uri = '/marketing/' + page[1] + '/index.html';
-    else if (uri === '/docs/docs.css' || uri === '/signup/signup.js') r.uri = '/marketing' + uri;
+    else if (uri === '/docs/docs.css' || uri === '/signup/signup.js' || uri === '/demo/app.js') r.uri = '/marketing' + uri;
     else if (/^\/(?:styles\.css|app\.js|assets\/[A-Za-z0-9_-]+\.(?:png|jpg|svg|mp4|webm|gif))$/.test(uri)) r.uri = '/marketing' + uri;
     else return denied;
   } else {

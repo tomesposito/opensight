@@ -14,7 +14,7 @@ const allowed = new Set([
   'aws_s3_bucket.frontend', 'aws_s3_bucket_public_access_block.frontend', 'aws_s3_bucket_ownership_controls.frontend',
   'aws_s3_bucket_versioning.frontend', 'aws_s3_bucket_server_side_encryption_configuration.frontend', 'aws_s3_bucket_policy.frontend',
   'aws_cloudfront_origin_access_control.frontend', 'aws_cloudfront_function.viewer', 'aws_wafv2_web_acl.application',
-  'aws_cloudfront_distribution.application', 'aws_cloudformation_stack.plan',
+  'aws_cloudfront_distribution.application', 'aws_cloudformation_stack.plan', 'aws_cloudfront_response_headers_policy.static[0]',
 ]);
 /** Known security/cost fields must resolve at plan time. Computed ARNs are bound
  * by the reviewed source digest, provider lock and remote state receipt. */
@@ -49,6 +49,15 @@ export function checkIngressPlan(plan, inputs) {
     if (r.type === 'aws_s3_bucket') check(v.bucket === inputs.frontend_bucket && v.force_destroy === false, 'BUCKET_CUSTODY');
     if (r.type === 'aws_s3_bucket_public_access_block') check(['block_public_acls', 'block_public_policy', 'ignore_public_acls', 'restrict_public_buckets'].every(k => v[k] === true), 'PUBLIC_BUCKET');
     if (r.type === 'aws_s3_bucket_versioning') check(v.versioning_configuration?.[0]?.status === 'Enabled', 'BUCKET_VERSIONS');
+    if (r.type === 'aws_cloudfront_response_headers_policy') {
+      const h = v.security_headers_config?.[0];
+      check(Boolean(inputs.static_content_security_policy) && v.name === `${inputs.deployment}-static-security`
+        && h?.content_security_policy?.[0]?.content_security_policy === inputs.static_content_security_policy
+        && h.content_security_policy[0].override === true && h.content_type_options?.[0]?.override === true
+        && h.strict_transport_security?.[0]?.access_control_max_age_sec === 31536000
+        && h.frame_options?.[0]?.frame_option === 'SAMEORIGIN'
+        && h.referrer_policy?.[0]?.referrer_policy === 'strict-origin-when-cross-origin', 'STATIC_CSP');
+    }
     if (r.type === 'aws_cloudfront_distribution') {
       check(v.enabled === true && v.retain_on_delete === true && [...(v.aliases ?? [])].sort().join() === [...new Set([new URL(inputs.public_origin).hostname, new URL(inputs.marketing_origin ?? inputs.public_origin).hostname])].sort().join() && v.ordered_cache_behavior?.length === 3 && !v.custom_error_response?.length, 'EDGE_SCOPE');
       if (inputs.marketing_origin) {
