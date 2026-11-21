@@ -247,8 +247,9 @@ function insightMeasure(raw: unknown, path: string, binder: ExpressionBinder): I
  * compiler's insightWells projection works the same way). Validation mirrors
  * the bundle-parser insight validation plus the web compiler's binding rules:
  * forecast properties share the chart forecast contract, movers bind
- * category+time and cannot combine with other computations, forecast and
- * period-to-date need a date dimension, and a uniqueValues-only insight
+ * category+time and cannot combine with other computations, forecast,
+ * period-to-date, period-over-period and anomaly need a date dimension,
+ * and a uniqueValues-only insight
  * carries a plan-only COUNT measure (the author-query treatment) that the
  * narrative compiler discards. Everything unvalidated fails closed.
  */
@@ -300,7 +301,7 @@ function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: re
     const ep = `${cp}.Computations[${i}]`;
     const [kind, c] = variant(value, ep);
     const kp = `${ep}.${kind}`;
-    if (!['Forecast', 'PeriodToDate', 'UniqueValues', 'TopBottomMovers', 'Anomaly', 'MaximumMinimum', 'TopBottomRanked'].includes(kind)) {
+    if (!['Forecast', 'PeriodToDate', 'UniqueValues', 'TopBottomMovers', 'Anomaly', 'MaximumMinimum', 'TopBottomRanked', 'PeriodOverPeriod'].includes(kind)) {
       fail('UNSUPPORTED_FEATURE', kp, 'insight computation is not executable in the native planning slice');
     }
     kinds.push(kind);
@@ -321,6 +322,10 @@ function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: re
       }
       if (c.Time !== undefined) timeIds.add(addDimension(insightDimension(c.Time, `${kp}.Time`, binder, 'date')).fieldId);
       if (c.Value !== undefined) addMeasure(insightMeasure(c.Value, `${kp}.Value`, binder));
+    } else if (kind === 'PeriodOverPeriod') {
+      keys(c, ['ComputationId', 'Name', 'Time', 'Value'], kp);
+      if (c.Time !== undefined) timeIds.add(addDimension(insightDimension(c.Time, `${kp}.Time`, binder, 'date')).fieldId);
+      if (c.Value !== undefined) addMeasure(insightMeasure(c.Value, `${kp}.Value`, binder));
     } else if (kind === 'UniqueValues') {
       keys(c, ['ComputationId', 'Name', 'Category'], kp);
       if (c.Category !== undefined) categoryIds.add(addDimension(insightDimension(c.Category, `${kp}.Category`, binder, 'category')).fieldId);
@@ -332,7 +337,7 @@ function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: re
         // narrative resolves category ?? time against the insight's single
         // dimension, so a date or a category binding is admitted, dispatched
         // on the variant; any other variant fails closed in insightDimension.
-        // Unlike forecast/period-to-date/anomaly, the narrative picks the
+        // Unlike forecast/period-to-date/period-over-period/anomaly, the narrative picks the
         // highest/lowest group of whatever dimension is bound, so no date
         // dimension is required.
         const [timeKind] = variant(c.Time, `${kp}.Time`);
@@ -348,7 +353,7 @@ function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: re
         // narrative resolves category ?? time against the insight's single
         // dimension, so a category or a date binding is admitted, dispatched
         // on the variant; any other variant fails closed in insightDimension.
-        // Unlike forecast/period-to-date/anomaly, the narrative ranks the
+        // Unlike forecast/period-to-date/period-over-period/anomaly, the narrative ranks the
         // groups of whatever dimension is bound, so no date dimension is
         // required.
         const [categoryKind] = variant(c.Category, `${kp}.Category`);
@@ -377,8 +382,8 @@ function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: re
   } else {
     if (dimensionsById.size !== 1) fail('INVALID_INPUT', cp, 'insight computations must derive exactly one dimension');
     dimensions = [...dimensionsById.values()];
-    if (kinds.some(kind => ['Forecast', 'PeriodToDate', 'Anomaly'].includes(kind)) && dimensions[0]!.granularity === undefined) {
-      fail('UNSUPPORTED_FEATURE', cp, 'forecast, period-to-date and anomaly computations require a date dimension');
+    if (kinds.some(kind => ['Forecast', 'PeriodToDate', 'Anomaly', 'PeriodOverPeriod'].includes(kind)) && dimensions[0]!.granularity === undefined) {
+      fail('UNSUPPORTED_FEATURE', cp, 'forecast, period-to-date, period-over-period and anomaly computations require a date dimension');
     }
   }
   const measures = [...measuresById.values()];
