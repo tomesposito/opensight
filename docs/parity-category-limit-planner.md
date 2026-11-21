@@ -34,8 +34,9 @@ No additional configuration or environment variables are required.
   between 1 and 100 inclusive.
 - `OtherCategories` may be omitted (the compiler's `INCLUDE` default). When
   present it must be `INCLUDE` or `EXCLUDE`.
-- Table, KPI and other visual gates are unchanged: KPI retains its existing
-  `TrendGroupSort` handling and tables still reject `SortConfiguration`.
+- KPI retains its existing `TrendGroupSort` handling. Tables now admit only
+  `RowSort` through the [table row-sort planner slice](parity-table-row-sort-planner.md)
+  and still reject `CategoryItemsLimit`; other visual gates are unchanged.
 
 Diagnostics follow the existing `QueryEngineError` conventions:
 

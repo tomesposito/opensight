@@ -73,3 +73,11 @@ unsupported and fail closed. No broader QuickSight fidelity claim is made.
 `test/*.test.mjs` glob, reached by root `npm test`. It covers both dialects,
 validation, typed ordering, totals, baselines, authoring/storage, bundle/native
 round-trips and Properties controls. See [verification and captures](parity-table-row-sort-gap-notes.md).
+
+## Follow-up (parity-table-row-sort-planner)
+
+Native/API `TableVisual` definitions now admit `RowSort` in the query planner,
+with strict validation and unchanged plans, SQL and fixture results — see
+[parity-table-row-sort-planner.md](parity-table-row-sort-planner.md). The
+compiler/consumer still owns display ordering; native query results alone do
+not acquire the requested row order.

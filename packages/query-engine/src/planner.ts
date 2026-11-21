@@ -380,7 +380,7 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
   // on any other visual kind they remain unrecognized and fail closed above.
   const lineFamily = kind === 'LineChartVisual';
   const categoryChart = kind === 'BarChartVisual' || lineFamily || kind === 'PieChartVisual';
-  keys(config, ['FieldWells', 'Legend', 'DataLabels', 'Tooltip', 'Orientation', 'BarsArrangement', 'DonutOptions', 'TotalOptions', 'OpenSightSubtotalOptions', ...(lineFamily ? ['ForecastConfigurations', 'Type'] : []), ...(categoryChart ? ['SortConfiguration'] : []), ...(kind === 'KPIVisual' ? ['SortConfiguration', 'KPIOptions'] : [])], cp);
+  keys(config, ['FieldWells', 'Legend', 'DataLabels', 'Tooltip', 'Orientation', 'BarsArrangement', 'DonutOptions', 'TotalOptions', 'OpenSightSubtotalOptions', ...(lineFamily ? ['ForecastConfigurations', 'Type'] : []), ...(categoryChart || kind === 'TableVisual' ? ['SortConfiguration'] : []), ...(kind === 'KPIVisual' ? ['SortConfiguration', 'KPIOptions'] : [])], cp);
   if (lineFamily && config.Type !== undefined && !['LINE', 'AREA', 'STACKED_AREA'].includes(config.Type as string)) fail('UNSUPPORTED_FEATURE', `${cp}.Type`, 'line chart type must be LINE, AREA or STACKED_AREA');
   const forecastCount = lineFamily ? forecastConfigurationCount(config.ForecastConfigurations, `${cp}.ForecastConfigurations`) : 0;
   let wp = `${cp}.FieldWells`;
@@ -486,6 +486,28 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
         if (!['SUM', 'AVERAGE', 'MIN', 'MAX', 'COUNT', 'DISTINCT_COUNT'].includes(value)) fail('UNSUPPORTED_FEATURE', `${np}.SimpleNumericalAggregation`, 'expected SUM, AVERAGE, MIN, MAX, COUNT or DISTINCT_COUNT');
       }
       // Both variants validate consumer ordering only; query fields and aggregations stay unchanged.
+    }
+  }
+  if (kind === 'TableVisual' && config.SortConfiguration !== undefined) {
+    const sp = `${cp}.SortConfiguration`, sort = object(config.SortConfiguration, sp);
+    // Preserve the whole-block rejection for every other table sort configuration key.
+    if (Object.keys(sort).some(key => key !== 'RowSort')) fail('UNSUPPORTED_FEATURE', sp, 'unrecognized execution property');
+    if (sort.RowSort !== undefined) {
+      const entries = array(sort.RowSort, `${sp}.RowSort`);
+      if (entries.length > 1) fail('INVALID_INPUT', sp, 'expected zero or one row sort');
+      if (entries.length) {
+        const wrapper = object(entries[0], sp);
+        if (Object.keys(wrapper).length !== 1 || !Object.hasOwn(wrapper, 'FieldSort') && !Object.hasOwn(wrapper, 'AggregationSort')) {
+          fail('INVALID_INPUT', sp, 'expected exactly one FieldSort');
+        }
+        if (Object.hasOwn(wrapper, 'AggregationSort')) fail('UNSUPPORTED_FEATURE', `${sp}.RowSort[0].AggregationSort`, 'aggregation sort is unsupported for table');
+        const fp = `${sp}.RowSort[0].FieldSort`, entry = object(wrapper.FieldSort, fp);
+        keys(entry, ['FieldId', 'Direction'], fp);
+        const fieldId = string(entry.FieldId, `${fp}.FieldId`);
+        if (!dimensions.some(d => d.fieldId === fieldId) && !measures.some(m => m.fieldId === fieldId)) fail('INVALID_INPUT', sp, 'row sort must reference a bound dimension or measure');
+        if (entry.Direction !== undefined && entry.Direction !== 'ASC' && entry.Direction !== 'DESC') fail('INVALID_INPUT', sp, 'invalid row sort direction');
+        // RowSort validates consumer ordering only; the complete query plan stays unchanged.
+      }
     }
   }
   if (kind === 'KPIVisual') {
