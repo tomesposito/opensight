@@ -1,4 +1,4 @@
-import { occurrenceTime, deliveryKey, deliveryRecipients, isRetryableDeliveryError, MAX_DELIVERY_ATTEMPTS } from './digest-delivery.js';
+import { occurrenceTime, deliveryKey, deliveryRecipients, isRetryableDeliveryError, MAX_DELIVERY_ATTEMPTS, MAX_DELIVERY_TOTAL_ATTEMPTS } from './digest-delivery.js';
 import { checksum } from './metadata-operator.js';
 import { MetadataError, type SqlConnection } from './metadata-db.js';
 import { MailError, type MailMessage, type MailTransport } from './mail.js';
@@ -24,8 +24,8 @@ export class JobRunner {
   async recover(): Promise<void> {
     await this.store.db.transaction(async c => {
       await c.query("UPDATE h7_occurrences SET state = 'queued' WHERE state = 'running'");
-      const exhausted = await c.query("UPDATE h7_deliveries SET state = 'dead', error_code = 'DELIVERY_INTERRUPTED', message = NULL WHERE state = 'sending' AND attempts >= ? RETURNING tenant_id, namespace_id, occurrence_id", [MAX_DELIVERY_ATTEMPTS]);
-      await c.query("UPDATE h7_deliveries SET state = 'pending', next_attempt = ?, error_code = 'DELIVERY_INTERRUPTED' WHERE state = 'sending' AND attempts < ?", [this.store.clock().toISOString(), MAX_DELIVERY_ATTEMPTS]);
+      const exhausted = await c.query("UPDATE h7_deliveries SET state = 'dead', error_code = CASE WHEN total_attempts >= ? THEN 'JOB_DELIVERY_EXHAUSTED' WHEN state = 'sending' THEN 'DELIVERY_INTERRUPTED' ELSE COALESCE(error_code, 'JOB_DELIVERY_EXHAUSTED') END, message = NULL WHERE state IN ('pending','sending') AND (attempts >= ? OR total_attempts >= ?) RETURNING tenant_id, namespace_id, occurrence_id", [MAX_DELIVERY_TOTAL_ATTEMPTS, MAX_DELIVERY_ATTEMPTS, MAX_DELIVERY_TOTAL_ATTEMPTS]);
+      await c.query("UPDATE h7_deliveries SET state = 'pending', next_attempt = ?, error_code = 'DELIVERY_INTERRUPTED' WHERE state = 'sending' AND attempts < ? AND total_attempts < ?", [this.store.clock().toISOString(), MAX_DELIVERY_ATTEMPTS, MAX_DELIVERY_TOTAL_ATTEMPTS]);
       for (const d of exhausted) await this.settleOccurrence(c, { tenantId: String(d.tenant_id), namespaceId: String(d.namespace_id), id: String(d.occurrence_id) });
     });
   }
@@ -138,7 +138,7 @@ export class JobRunner {
       const scope = { tenantId: String(d.tenant_id), namespaceId: String(d.namespace_id) }, id = String(d.delivery_id);
       const row = (await this.store.db.transaction(c => c.query(`SELECT * FROM h7_occurrences WHERE ${scoped} AND occurrence_id = ?`, [...scopeArgs(scope), d.occurrence_id!])))[0]!;
       const run = readOccurrence(row);
-      let accepted = false, attempt = Number(d.attempts) + 1;
+      let accepted = false, attempt = Number(d.attempts) + 1, totalAttempts = Number(d.total_attempts) + 1;
       try {
         const verify = async () => {
           await this.checkAccess?.(run.tenantId);
@@ -150,14 +150,18 @@ export class JobRunner {
         };
         // Exhausted pending rows need only terminal bookkeeping; below the
         // cap, keep authorization ahead of the attempt-consuming claim.
-        if (Number(d.attempts) < MAX_DELIVERY_ATTEMPTS) await verify();
+        if (Number(d.attempts) < MAX_DELIVERY_ATTEMPTS && Number(d.total_attempts) < MAX_DELIVERY_TOTAL_ATTEMPTS) await verify();
         const claimed = await this.store.db.transaction(async c => {
-          const exhausted = await c.query(`UPDATE h7_deliveries SET state = 'dead', error_code = COALESCE(error_code, 'JOB_DELIVERY_EXHAUSTED'), message = NULL WHERE ${scoped} AND delivery_id = ? AND state = 'pending' AND attempts >= ? RETURNING delivery_id`, [...scopeArgs(run), id, MAX_DELIVERY_ATTEMPTS]);
-          if (exhausted.length) { await this.settleOccurrence(c, run); return []; }
-          return c.query(`UPDATE h7_deliveries SET state = 'sending', attempts = attempts + 1, total_attempts = total_attempts + 1 WHERE ${scoped} AND delivery_id = ? AND state = 'pending' AND attempts < ? RETURNING delivery_id, attempts`, [...scopeArgs(run), id, MAX_DELIVERY_ATTEMPTS]);
+          const rows = await c.query(`UPDATE h7_deliveries SET state = 'sending', attempts = attempts + 1, total_attempts = total_attempts + 1 WHERE ${scoped} AND delivery_id = ? AND state = 'pending' AND attempts < ? AND total_attempts < ? RETURNING delivery_id, attempts, total_attempts`, [...scopeArgs(run), id, MAX_DELIVERY_ATTEMPTS, MAX_DELIVERY_TOTAL_ATTEMPTS]);
+          if (!rows.length) {
+            const exhausted = await c.query(`UPDATE h7_deliveries SET state = 'dead', error_code = CASE WHEN total_attempts >= ? THEN 'JOB_DELIVERY_EXHAUSTED' ELSE COALESCE(error_code, 'JOB_DELIVERY_EXHAUSTED') END, message = NULL WHERE ${scoped} AND delivery_id = ? AND state = 'pending' AND (attempts >= ? OR total_attempts >= ?) RETURNING delivery_id`, [MAX_DELIVERY_TOTAL_ATTEMPTS, ...scopeArgs(run), id, MAX_DELIVERY_ATTEMPTS, MAX_DELIVERY_TOTAL_ATTEMPTS]);
+            if (exhausted.length) await this.settleOccurrence(c, run);
+          }
+          return rows;
         });
         if (!claimed.length) continue;
         attempt = Number(claimed[0]!.attempts);
+        totalAttempts = Number(claimed[0]!.total_attempts);
         const owner = await this.store.context(run, run.ownerId);
         await this.checkAccess?.(run.tenantId);
         if (run.spec.kind === 'digest' && run.spec.destination === 'shared') {
@@ -200,9 +204,9 @@ export class JobRunner {
       } catch (error) {
         // Below the cap, leave an accepted send's lost receipt recoverable.
         // At the cap, end the ambiguous sequence without another send (#251).
-        if (accepted && attempt < MAX_DELIVERY_ATTEMPTS) throw error;
+        if (accepted && attempt < MAX_DELIVERY_ATTEMPTS && totalAttempts < MAX_DELIVERY_TOTAL_ATTEMPTS) throw error;
         const code = errorCode(error), retry = accepted || retryable(code);
-        const exhausted = retry && attempt >= MAX_DELIVERY_ATTEMPTS;
+        const exhausted = retry && (attempt >= MAX_DELIVERY_ATTEMPTS || totalAttempts >= MAX_DELIVERY_TOTAL_ATTEMPTS);
         const state = !retry ? 'cancelled' : exhausted ? 'dead' : 'pending';
         const delay = Math.min(3600000, 1000 * 2 ** Math.min(12, Number(d.attempts)));
         await this.store.db.transaction(async c => {

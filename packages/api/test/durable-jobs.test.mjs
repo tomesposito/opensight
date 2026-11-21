@@ -4,12 +4,59 @@ import { sr3Fixture } from './sr3-helpers.mjs';
 import { report, refresh, executor } from './job-helpers.mjs';
 import { MailError } from '../dist/mail.js';
 import { MetadataError } from '../dist/metadata-db.js';
-import { MAX_DELIVERY_RETRY_SEQUENCES } from '../dist/digest-delivery.js';
+import { DurableJobs } from '../dist/durable-jobs.js';
+import { MAX_DELIVERY_ATTEMPTS, MAX_DELIVERY_RETRY_SEQUENCES, MAX_DELIVERY_TOTAL_ATTEMPTS } from '../dist/digest-delivery.js';
 
 async function delivery(t, options) {
   const f = await sr3Fixture(t, options); await f.put();
   await f.store.enqueue(f.contexts[0], 'report'); await f.jobs.run(await f.event('job-execute'));
   return { ...f, envelope: await f.event('job-deliver') };
+}
+
+for (const [column, cap] of [['attempts', MAX_DELIVERY_ATTEMPTS], ['total_attempts', MAX_DELIVERY_TOTAL_ATTEMPTS]]) for (const stale of [false, true]) {
+  test(`#296 SR3 ${column} claim cap terminalizes ${stale ? 'a stale snapshot' : 'an exhausted pending row'} without sending`, async t => {
+    const f = await delivery(t);
+    if (!stale) await f.sql(`UPDATE h7_deliveries SET ${column} = ?`, [cap]);
+    const transaction = f.db.transaction.bind(f.db); let changed = false;
+    t.mock.method(f.db, 'transaction', work => transaction(c => work({ async query(sql, args) {
+      if (stale && !changed && sql.startsWith('UPDATE h7_deliveries') && sql.includes('attempts = attempts + 1')) {
+        changed = true; await c.query(`UPDATE h7_deliveries SET ${column} = ?`, [cap]);
+      }
+      return c.query(sql, args);
+    } })));
+    await f.jobs.run(f.envelope); await f.jobs.run(f.envelope);
+    const row = (await f.rows('h7_deliveries'))[0];
+    assert.equal(row.state, 'dead'); assert.equal(Number(row[column]), cap);
+    assert.equal(Number(row[column === 'attempts' ? 'total_attempts' : 'attempts']), 0);
+    assert.equal(row.error_code, 'JOB_DELIVERY_EXHAUSTED'); assert.equal(changed, stale);
+    assert.equal((await f.rows('h7_occurrences'))[0].error_code, 'JOB_DELIVERY_EXHAUSTED');
+    assert.equal((await f.rows('sr_outbox')).find(r => r.event_id === f.envelope.eventId).state, 'terminal');
+    assert.equal(f.mail.messages.length, 0);
+  });
+}
+
+for (const state of ['running', 'sending']) for (const total of [MAX_DELIVERY_TOTAL_ATTEMPTS, MAX_DELIVERY_TOTAL_ATTEMPTS + 1]) {
+  test(`#296 SR3 recovery of ${state} execution terminalizes cumulative ${total} without another send`, async t => {
+    const f = await delivery(t), handle = await f.jobs.execution.claim(f.envelope);
+    // A claim can be interrupted before or after recording SMTP intent.
+    await f.sql("UPDATE h7_deliveries SET state = 'sending', attempts = 1, total_attempts = ?, message = 'cached'", [total]);
+    if (state === 'sending') await f.jobs.execution.sending(handle);
+    f.time.now += 110001;
+    const restarted = new DurableJobs(f.store, f.executor, f.mail);
+    if (state === 'sending') await assert.rejects(restarted.run(f.envelope), { code: 'DELIVERY_AMBIGUOUS' });
+    else await restarted.run(f.envelope);
+    const dead = (await f.rows('h7_deliveries'))[0];
+    assert.equal(dead.state, 'dead'); assert.equal(Number(dead.attempts), 1);
+    assert.equal(Number(dead.total_attempts), total); assert.equal(dead.message, null);
+    assert.equal(dead.error_code, 'JOB_DELIVERY_EXHAUSTED');
+    assert.equal((await f.rows('h7_occurrences'))[0].error_code, 'JOB_DELIVERY_EXHAUSTED');
+    assert.equal((await f.rows('sr_outbox')).find(r => r.event_id === f.envelope.eventId).state, 'terminal');
+    if (state === 'sending') assert.equal((await f.rows('sr_execution')).find(r => r.event_id === f.envelope.eventId).state, 'ambiguous');
+    await restarted.run(f.envelope);
+    await assert.rejects(restarted.replay(f.envelope, true), { code: 'DISPATCH_REPLAY_DENIED' });
+    await assert.rejects(f.store.retryDelivery(f.contexts[0], 'report', dead.delivery_id), { code: 'DELIVERY_RETRY_BUDGET_EXHAUSTED' });
+    assert.deepEqual((await f.rows('h7_deliveries'))[0], dead); assert.equal(f.mail.messages.length, 0);
+  });
 }
 test('SR3 due hints coalesce missed intervals, arm the next one-shot, render per recipient and tolerate duplicate ack', async t => {
   const f = await sr3Fixture(t); await f.put(); const due = await f.event('job-due');
