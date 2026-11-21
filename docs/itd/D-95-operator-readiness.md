@@ -45,7 +45,8 @@ Dynamic API/embed behaviors must not inherit the static policy.
 - SMTP: independently parameterized exact sender address and verified SES identity
   ARN; both are required together. Default preserves existing installations.
   IAM permits SendRawEmail only from that address to the single approved sandbox
-  recipient; no new SMTP access keys. Probe sender follows the same contract.
+  recipient; authorize only the exact sender and verified destination identity ARNs
+  required by sandbox SES, with unchanged FromAddress/Recipients conditions; no new SMTP access keys. Probe sender follows the same contract.
 - Forwarding: isolated CloudFormation stack and Lambda, exact two aliases and one
   verified destination, receipt-rule scoped invocation/storage permissions,
   private AES256 S3 storage, TLS-only access, seven-day raw-mail retention and

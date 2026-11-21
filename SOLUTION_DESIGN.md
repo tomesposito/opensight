@@ -2177,6 +2177,8 @@ Before the next deployment, complete the existing operator handoffs using the
 bounded contract in [D-95](docs/itd/D-95-operator-readiness.md). Add a pinned,
 read-only dependency-audit job to CI; publication depends on both audit and build.
 Separate the SMTP sender address/verified identity from the budget-alert recipient,
+with only the exact sender and verified destination identity ARNs required by SES
+and unchanged fixed FromAddress/Recipients restrictions,
 retaining the one-recipient SES sandbox IAM restriction. Provision inbound support
 and privacy aliases using private parameters, SES receipt rules, encrypted private
 S3 retention, and a least-privilege Lambda forwarding only to the approved owner.
