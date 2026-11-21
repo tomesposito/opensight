@@ -248,8 +248,8 @@ function insightMeasure(raw: unknown, path: string, binder: ExpressionBinder): I
  * the bundle-parser insight validation plus the web compiler's binding rules:
  * forecast properties share the chart forecast contract, movers bind
  * category+time and cannot combine with other computations, forecast,
- * period-to-date, period-over-period and anomaly need a date dimension,
- * and a uniqueValues-only insight
+ * period-to-date, period-over-period, growth-rate and anomaly need a
+ * date dimension, and a uniqueValues-only insight
  * carries a plan-only COUNT measure (the author-query treatment) that the
  * narrative compiler discards. Everything unvalidated fails closed.
  */
@@ -301,7 +301,7 @@ function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: re
     const ep = `${cp}.Computations[${i}]`;
     const [kind, c] = variant(value, ep);
     const kp = `${ep}.${kind}`;
-    if (!['Forecast', 'PeriodToDate', 'UniqueValues', 'TopBottomMovers', 'Anomaly', 'MaximumMinimum', 'TopBottomRanked', 'PeriodOverPeriod'].includes(kind)) {
+    if (!['Forecast', 'PeriodToDate', 'UniqueValues', 'TopBottomMovers', 'Anomaly', 'MaximumMinimum', 'TopBottomRanked', 'PeriodOverPeriod', 'GrowthRate'].includes(kind)) {
       fail('UNSUPPORTED_FEATURE', kp, 'insight computation is not executable in the native planning slice');
     }
     kinds.push(kind);
@@ -322,8 +322,14 @@ function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: re
       }
       if (c.Time !== undefined) timeIds.add(addDimension(insightDimension(c.Time, `${kp}.Time`, binder, 'date')).fieldId);
       if (c.Value !== undefined) addMeasure(insightMeasure(c.Value, `${kp}.Value`, binder));
-    } else if (kind === 'PeriodOverPeriod') {
-      keys(c, ['ComputationId', 'Name', 'Time', 'Value'], kp);
+    } else if (kind === 'PeriodOverPeriod' || kind === 'GrowthRate') {
+      keys(c, kind === 'GrowthRate' ? ['ComputationId', 'Name', 'Time', 'Value', 'PeriodSize'] : ['ComputationId', 'Name', 'Time', 'Value'], kp);
+      // GrowthRate's own PeriodSize: the web narrative compiler supports
+      // only the latest period versus the previous period (PeriodSize 2);
+      // any other value fails closed, as an omitted PeriodSize means the
+      // same comparison. PeriodOverPeriod has no PeriodSize — it stays an
+      // unknown key there.
+      if (kind === 'GrowthRate' && c.PeriodSize !== undefined && c.PeriodSize !== 2) fail('UNSUPPORTED_FEATURE', `${kp}.PeriodSize`, 'only PeriodSize 2 (latest period versus previous period) is supported');
       if (c.Time !== undefined) timeIds.add(addDimension(insightDimension(c.Time, `${kp}.Time`, binder, 'date')).fieldId);
       if (c.Value !== undefined) addMeasure(insightMeasure(c.Value, `${kp}.Value`, binder));
     } else if (kind === 'UniqueValues') {
@@ -382,8 +388,8 @@ function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: re
   } else {
     if (dimensionsById.size !== 1) fail('INVALID_INPUT', cp, 'insight computations must derive exactly one dimension');
     dimensions = [...dimensionsById.values()];
-    if (kinds.some(kind => ['Forecast', 'PeriodToDate', 'Anomaly', 'PeriodOverPeriod'].includes(kind)) && dimensions[0]!.granularity === undefined) {
-      fail('UNSUPPORTED_FEATURE', cp, 'forecast, period-to-date, period-over-period and anomaly computations require a date dimension');
+    if (kinds.some(kind => ['Forecast', 'PeriodToDate', 'Anomaly', 'PeriodOverPeriod', 'GrowthRate'].includes(kind)) && dimensions[0]!.granularity === undefined) {
+      fail('UNSUPPORTED_FEATURE', cp, 'forecast, period-to-date, period-over-period, growth-rate and anomaly computations require a date dimension');
     }
   }
   const measures = [...measuresById.values()];
