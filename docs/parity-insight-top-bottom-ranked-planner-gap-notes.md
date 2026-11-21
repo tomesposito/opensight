@@ -52,14 +52,49 @@ TZ=UTC node --test --test-isolation=none \
   packages/query-engine/test/insight-maximum-minimum-planner.test.mjs
 ```
 
-The full root suite remains pending at checkpoint 4. Its command uses
-the installed Playwright headless shell:
+The full root suite exited **0** with **7,948 passed / 0 failed / 37
+skipped** (7,985 tests, zero cancellations and zero todos), using the
+installed Playwright headless shell:
 
 ```sh
 OPENSIGHT_CHROMIUM="$HOME/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell" TZ=UTC npm test
 ```
 
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 1,500 | 0 | 35 |
+| Bundle parser | 213 | 0 | 0 |
+| CLI | 73 | 0 | 0 |
+| Embedding SDK | 10 | 0 | 0 |
+| Headless SDK | 28 | 0 | 0 |
+| Python SDK | 32 | 0 | 0 |
+| MCP server | 74 | 0 | 0 |
+| O interpreter | 42 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 2,453 | 0 | 2 |
+| Web | 3,402 | 0 | 0 |
+| Root checks | 110 | 0 | 0 |
+| **Total** | **7,948** | **0** | **37** |
+
+All 37 skips require live PostgreSQL (35 API, 2 query engine): 36 report
+`DATABASE_URL is not set`, and one requires live TLS PostgreSQL. All 34
+new TopBottomRanked tests ran and passed in the query-engine suite. The
+total is exactly the MaximumMinimum slice's baseline (7,914 passed) plus
+the 34 new tests, with no other movement.
+
+The first root attempt aborted in the API runner with Node's native
+`InternalCallbackScope::Close()` / `execution_async_id()` assertion before
+reporting API test counts. The failed attempt was stopped (exit 143) and
+retained as `.opensight/verification/top-bottom-ranked-root-sandbox.log`;
+it is not a completed verification run. The unchanged root command was
+retried outside the restricted sandbox for local HTTP listeners, worker
+containment and browser execution. No tests were disabled or weakened.
+
 The focused log is `.opensight/verification/top-bottom-ranked-focused.log`.
+The completed full log is
+`.opensight/verification/top-bottom-ranked-root.log`, with its exit code
+in `top-bottom-ranked-root.exit` and per-runner counts and skip reasons
+in `top-bottom-ranked-root-summary.json` in the same directory.
 Local verification logs are kept under the ignored
 `.opensight/verification/` directory so they survive a VM reboot without
 adding generated output to Git.
@@ -94,9 +129,12 @@ are changed. No AWS calls or network downloads were made.
 
 Checkpoints 1–3 were already committed before the VM interruption and
 were preserved: the admission contract, planner validation, and tests.
-Documentation and verification continue on
-`work/parity-insight-top-bottom-ranked-planner`. Changed paths are limited
-to `packages/query-engine/src/planner.ts`, the new test file, the updated
+Checkpoint 4 (`e0487452`) adds the gap notes, changelog entry and focused
+verification. Checkpoint 5 records the full-suite results without
+rewriting any earlier checkpoint. All work stays on
+`work/parity-insight-top-bottom-ranked-planner`. Final scope review and
+`git diff --check` passed. Changed paths are limited to
+`packages/query-engine/src/planner.ts`, the new test file, the updated
 MaximumMinimum test, the two new slice docs and `CHANGELOG.md`.
 
 The watchdog owns the subsequent merge, publish, demo and completion
