@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Opening a deleted, missing or inaccessible notebook now shows an item-level "Notebook not found" error instead of the false server-wide "Notebooks are not available on this server" notice (#299): the Notebooks page reserves that notice for the hosted unsupported contract (`RESOURCE_NOT_FOUND`, #285) and for a failed notebook-list load, while a detail load's `NOTEBOOK_NOT_FOUND` is reported as the single notebook being gone.
+
 - Forecast work-bound regressions now assert the work itself (#298): `computeForecast` can report the grid tier selected, the filter runs and steps performed, and the seasonal ring-buffer writes via a `ForecastWorkStats` out-parameter, and the tests pin exact counts at the step-budget thresholds — a regression to the unconditional full grid (issue #262) or to the O(season-length) seasonal rotation now fails on counts instead of passing on output shape alone. No forecast results change.
 
 ### Changed

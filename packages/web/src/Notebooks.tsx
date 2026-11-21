@@ -25,7 +25,15 @@ export function Notebooks({ client, id, onOpen }: { client?: NotebookClient; id?
         const [n, sources, history] = await Promise.all([client.getNotebook(id, controller.signal), client.notebookDatasets(controller.signal), client.notebookRuns(id, controller.signal)]);
         if (!controller.signal.aborted) { setNotebook(n); setDatasets(sources.datasets); setRuns(history.runs); setEditing(n.canEdit && !n.published); setBindings({}); }
       }
-    })().catch(e => { if (!controller.signal.aborted) { if (e instanceof ApiError && (e.status === 404 || e.errorCode === 'RESOURCE_NOT_FOUND')) setUnsupported(true); else setError(message(e)); } }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    })().catch(e => { if (!controller.signal.aborted) {
+      // Service unavailability is only the hosted unsupported contract
+      // (RESOURCE_NOT_FOUND on any notebook path, #285) or a failed
+      // collection/capability check (the list load 404ing). A detail load's
+      // NOTEBOOK_NOT_FOUND is an item-level failure — that one notebook is
+      // deleted, missing or inaccessible — never proof the server has no
+      // notebook service (#299).
+      if (e instanceof ApiError && e.errorCode !== 'NOTEBOOK_NOT_FOUND' && (e.errorCode === 'RESOURCE_NOT_FOUND' || (!id && e.status === 404))) setUnsupported(true); else setError(message(e));
+    } }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [client, id]);
   const action = async (operation: () => Promise<void>) => {
