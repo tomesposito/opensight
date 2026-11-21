@@ -107,6 +107,17 @@ export class HostedAIReceipts {
     try {
       return await work({ receipt, beforeCommit: () => write(async () => {}),
         pending: (answer, chargedCount, managed, revisions) => write(async c => {
+          // Cap admission must serialize per tenant (#295): the reservation
+          // above is per idempotency key, so on Postgres two distinct keys can
+          // concurrently read the same usage, both see the last entry/byte
+          // slot, and both insert. A transaction-scoped advisory lock keyed by
+          // tenant holds the expiry cleanup, usage read and insert below
+          // inside one critical section; it releases at commit/rollback.
+          // SQLite needs no lock: its transactions already serialize
+          // (BEGIN IMMEDIATE behind the adapter's promise tail).
+          if (this.db.dialect === 'postgres') {
+            await c.query('SELECT pg_advisory_xact_lock(hashtextextended(?, 0))', [context.tenantId]);
+          }
           const created = this.clock(), now = new Date(created).toISOString();
           await c.query(`DELETE FROM ai_answer_receipts WHERE tenant_id = ? AND expires_at <= ? AND ${withoutActiveReservation}`, [context.tenantId, now, now]);
           const usage = (await c.query(`SELECT COUNT(*) AS entries, COALESCE(SUM(${this.byteLength('answer')} + ${this.byteLength('revisions')}), 0) AS bytes
