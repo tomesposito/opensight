@@ -14,7 +14,7 @@ run "independent_sender_keeps_single_recipient" {
     smtp_identity_arn = "arn:aws:ses:us-east-1:000000000000:identity/example.org"
   }
   assert {
-    condition     = jsondecode(aws_iam_user_policy.smtp.policy).Statement[0].Condition.StringEquals["ses:FromAddress"] == "support@example.org" && jsondecode(aws_iam_user_policy.smtp.policy).Statement[0].Condition["ForAllValues:StringEquals"]["ses:Recipients"] == ["owner@example.org"] && jsondecode(aws_iam_user_policy.smtp.policy).Statement[0].Resource == "arn:aws:ses:us-east-1:000000000000:identity/example.org"
+    condition     = jsondecode(aws_iam_user_policy.smtp.policy).Statement[0].Condition.StringEquals["ses:FromAddress"] == "support@example.org" && jsondecode(aws_iam_user_policy.smtp.policy).Statement[0].Condition["ForAllValues:StringEquals"]["ses:Recipients"] == ["owner@example.org"] && jsondecode(aws_iam_user_policy.smtp.policy).Statement[0].Resource == ["arn:aws:ses:us-east-1:000000000000:identity/example.org", "arn:aws:ses:us-east-1:000000000000:identity/owner@example.org"]
     error_message = "Sender separation must preserve the sandbox recipient restriction."
   }
 }

@@ -86,7 +86,13 @@ exports.handler = async event => {
     receipt: async (Bucket, Key) => JSON.parse((await io.read(Bucket, Key, await io.size(Bucket, Key))).toString()),
     complete: async (Bucket, Key, value) => s3.send(new PutObjectCommand({ Bucket, Key, Body: JSON.stringify(value), ContentType: 'application/json', ServerSideEncryption: 'AES256' })),
     send: async (sender, destination, bytes) => (await ses.send(new SendEmailCommand({ FromEmailAddress: sender,
-      Destination: { ToAddresses: [destination] }, Content: { Raw: { Data: bytes } } }))).MessageId,
+      Destination: { ToAddresses: [destination] }, Content: { Raw: { Data: bytes } } })).catch(error => {
+        const denied = error.name === 'AccessDeniedException';
+        // Emit only fixed classifications; provider messages can contain private identities.
+        const code = denied ? (String(error.message).includes('identity/' + destination) ? 'MAIL_DESTINATION_IDENTITY_DENIED' : 'MAIL_SEND_ACCESS_DENIED')
+          : ['MessageRejected','BadRequestException','TooManyRequestsException','MailFromDomainNotVerifiedException'].includes(error.name) ? 'MAIL_PROVIDER_' + error.name.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase() : 'MAIL_PROVIDER_FAILED';
+        console.error(code); throw Error('MAIL_SEND_RECONCILIATION_REQUIRED');
+      })).MessageId,
   };
   try { return await forward(event, process.env, io); }
   catch (error) {

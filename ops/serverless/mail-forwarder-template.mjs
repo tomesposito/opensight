@@ -30,7 +30,7 @@ export function forwardingTemplate() {
         Policies: [{ PolicyName: 'bounded-forwarding', PolicyDocument: { Version: '2012-10-17', Statement: [
           { Effect: 'Allow', Action: 's3:GetObject', Resource: [sub('${MailBucket.Arn}/raw/*'), sub('${MailBucket.Arn}/receipts/*')] },
           { Effect: 'Allow', Action: 's3:PutObject', Resource: sub('${MailBucket.Arn}/receipts/*') },
-          { Effect: 'Allow', Action: ['ses:SendEmail', 'ses:SendRawEmail'], Resource: sub('arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${Domain}'),
+          { Effect: 'Allow', Action: ['ses:SendEmail', 'ses:SendRawEmail'], Resource: [sub('arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${Domain}'), sub('arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${Destination}')],
             Condition: { StringEquals: { 'ses:FromAddress': sub('support@${Domain}') }, 'ForAllValues:StringEquals': { 'ses:Recipients': [ref('Destination')] }, Null: { 'ses:Recipients': 'false' } } },
           { Effect: 'Allow', Action: ['logs:CreateLogStream', 'logs:PutLogEvents'], Resource: sub('arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${Deployment}-contact-forwarder:*') },
           { Effect: 'Allow', Action: 'sqs:SendMessage', Resource: get('Failures','Arn') },

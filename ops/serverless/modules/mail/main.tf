@@ -22,7 +22,7 @@ resource "aws_iam_user_policy" "smtp" {
   policy = jsonencode({ Version = "2012-10-17", Statement = [{
     Effect   = "Allow"
     Action   = "ses:SendRawEmail"
-    Resource = coalesce(var.smtp_identity_arn, aws_sesv2_email_identity.alert.arn)
+    Resource = distinct([coalesce(var.smtp_identity_arn, aws_sesv2_email_identity.alert.arn), aws_sesv2_email_identity.alert.arn])
     Condition = {
       StringEquals                = { "ses:FromAddress" = coalesce(var.smtp_from_address, var.alert_email) }
       "ForAllValues:StringEquals" = { "ses:Recipients" = [var.alert_email] }

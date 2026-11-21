@@ -23,7 +23,8 @@ Send an external test to each alias and verify arrival at the configured mailbox
 The stack accepts exactly support/privacy at the configured domain and forwards
 only to its single verified destination. The raw original is attached, with fixed
 forwarding headers. SES v2 raw content requires the narrowly scoped SES send/raw
-send permissions. Incoming spam/virus failures and oversized mail fail closed.
+send permissions on the exact sender and verified destination identities, with
+fixed sender/recipient conditions. Incoming spam/virus failures and oversized mail fail closed.
 The account remains in the SES sandbox.
 
 Raw messages expire after seven days; send receipts after thirty. Logs and the
