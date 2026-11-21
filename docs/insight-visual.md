@@ -21,6 +21,18 @@ Computation field IDs, dataset, column, aggregation and date grain must agree
 with their bindings. Conflicting bindings cannot execute. Original imported
 JSON remains available for unchanged export, including blocked features.
 
+Explicit computation bindings are structurally validated before author well
+changes can replace them (#297). Each binding contains exactly one supported
+dimension or numerical-measure variant, with only supported field, column and
+aggregation properties. Field IDs and column names must be strings; optional
+dataset identifiers must be strings, and date grains must be DAY, MONTH,
+QUARTER or YEAR. Explicit measure bindings retain the SUM-only requirement.
+Invalid bindings produce no author query and remain unchanged during
+serialization so compilation reports the error. Valid imported bindings still
+follow well changes, including the separate movers time field. Draft admission
+checks binding shape and semantics without requiring those fields to exist in
+the current wells; normalization resolves field identities before execution.
+
 | Computation | Behavior |
 | --- | --- |
 | TotalAggregation | SUM of the bound measure's supplied groups. |

@@ -151,6 +151,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Insight visuals reject malformed or unsupported nested field bindings before changed author wells can replace them, preventing queries for invalid category, time, value, and comparison bindings while preserving valid well changes (#297).
+
 - Job deliveries now enforce both the 10-attempt sequence limit and the 30-attempt cumulative limit atomically in both runners, including recovery and operator retries. Migrated deliveries with 29 prior attempts can make only one more attempt, even after restart (#296).
 
 - Hosted AI receipt cap admission is now serialized per tenant on Postgres (#295): a transaction-scoped advisory lock keyed by tenant holds the expiry cleanup, usage read and receipt insert in one critical section, so concurrent requests under distinct idempotency keys can no longer both claim the final entry or byte slot. SQLite admission already serialized and is unchanged.
