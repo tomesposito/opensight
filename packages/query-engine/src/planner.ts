@@ -249,7 +249,9 @@ function insightMeasure(raw: unknown, path: string, binder: ExpressionBinder): I
  * forecast properties share the chart forecast contract, movers bind
  * category+time and cannot combine with other computations, forecast,
  * period-to-date, period-over-period, growth-rate and anomaly need a
- * date dimension, and a uniqueValues-only insight
+ * date dimension, metric comparison binds two required, distinct SUM
+ * measures (from and target) against a generic date-or-category
+ * dimension, and a uniqueValues-only insight
  * carries a plan-only COUNT measure (the author-query treatment) that the
  * narrative compiler discards. Everything unvalidated fails closed.
  */
@@ -301,7 +303,7 @@ function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: re
     const ep = `${cp}.Computations[${i}]`;
     const [kind, c] = variant(value, ep);
     const kp = `${ep}.${kind}`;
-    if (!['Forecast', 'PeriodToDate', 'UniqueValues', 'TopBottomMovers', 'Anomaly', 'MaximumMinimum', 'TopBottomRanked', 'PeriodOverPeriod', 'GrowthRate'].includes(kind)) {
+    if (!['Forecast', 'PeriodToDate', 'UniqueValues', 'TopBottomMovers', 'Anomaly', 'MaximumMinimum', 'TopBottomRanked', 'PeriodOverPeriod', 'GrowthRate', 'MetricComparison'].includes(kind)) {
       fail('UNSUPPORTED_FEATURE', kp, 'insight computation is not executable in the native planning slice');
     }
     kinds.push(kind);
@@ -366,6 +368,30 @@ function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: re
         addDimension(insightDimension(c.Category, `${kp}.Category`, binder, categoryKind === 'DateDimensionField' ? 'date' : 'category'));
       }
       if (c.Value !== undefined) addMeasure(insightMeasure(c.Value, `${kp}.Value`, binder));
+    } else if (kind === 'MetricComparison') {
+      keys(c, ['ComputationId', 'Name', 'Time', 'FromValue', 'TargetValue'], kp);
+      if (c.Time !== undefined) {
+        // QuickSight types Time as a generic dimension field and the web
+        // narrative resolves it against the insight's single dimension, so
+        // a date or a category binding is admitted, dispatched on the
+        // variant; any other variant fails closed in insightDimension.
+        // Unlike the period computations, the narrative sums both measures
+        // over all rows, so no date dimension is required.
+        const [timeKind] = variant(c.Time, `${kp}.Time`);
+        addDimension(insightDimension(c.Time, `${kp}.Time`, binder, timeKind === 'DateDimensionField' ? 'date' : 'category'));
+      }
+      // The web compiler resolves an omitted from/target binding
+      // positionally (measure index 0 / target index 1), but this planner
+      // derives measures by field identity, not position — an omitted
+      // binding has no identity whose distinctness can be checked — so
+      // both bindings are required here, and they must be distinct.
+      if (c.FromValue === undefined) fail('INVALID_INPUT', `${kp}.FromValue`, 'metric comparison requires a from value binding');
+      if (c.TargetValue === undefined) fail('INVALID_INPUT', `${kp}.TargetValue`, 'metric comparison requires a target value binding');
+      const from = insightMeasure(c.FromValue, `${kp}.FromValue`, binder);
+      addMeasure(from);
+      const target = insightMeasure(c.TargetValue, `${kp}.TargetValue`, binder);
+      addMeasure(target);
+      if (from.fieldId === target.fieldId) fail('INVALID_INPUT', `${kp}.TargetValue`, 'metric comparison requires two distinct bound measures');
     } else {
       keys(c, ['ComputationId', 'Name', 'Time', 'Category', 'Value', 'MoverSize', 'SortOrder', 'Type'], kp);
       if (c.Type !== 'TOP' && c.Type !== 'BOTTOM') fail('INVALID_INPUT', `${kp}.Type`, 'type must be TOP or BOTTOM');
