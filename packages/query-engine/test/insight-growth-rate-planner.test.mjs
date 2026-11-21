@@ -213,10 +213,9 @@ test('GrowthRate preserves collection rules with exact diagnostics', () => {
   ]) assert.throws(() => planVisual(insightRequest(computations)), { code, path }, JSON.stringify(computations).slice(0, 120));
 });
 
-test('TotalAggregation and MetricComparison remain unsupported with exact kind paths', () => {
+test('TotalAggregation remains unsupported with exact kind path', () => {
   for (const computation of [
     { TotalAggregation: { ComputationId: 'a', Value: insightValueField() } },
-    { MetricComparison: { ComputationId: 'a', Time: insightDateField(), FromValue: insightValueField(), TargetValue: insightValueField('profit', 'profit') } },
   ]) {
     const kind = Object.keys(computation)[0];
     assert.throws(() => planVisual(insightRequest([computation])), { code: 'UNSUPPORTED_FEATURE', path: computationPath(kind) });
