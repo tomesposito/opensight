@@ -78,8 +78,10 @@ This is **admissibility validation only**. An admitted MaximumMinimum
 computation derives the same dimensions and measures as the equivalent
 already-admitted computation over the same fields: the returned plan —
 dimensions, measures, calculations, filters, SQL and parameters — is
-identical, planning does not mutate the input, and `evaluatePlan` results
-are unchanged across DuckDB, PostgreSQL, MySQL, Redshift and Athena.
+identical apart from each field's binding path, which names the
+computation that owns the binding. Planning does not mutate the input,
+and `evaluatePlan` results are unchanged across DuckDB, PostgreSQL,
+MySQL, Redshift and Athena.
 
 The narrative consumer still owns picking the highest/lowest group and
 rendering the sentence, including its share-of-total and tie behavior.
