@@ -135,7 +135,6 @@ test('MaximumMinimum fails closed on malformed configuration and bindings', () =
     // The remaining unadmitted kinds stay rejected.
     [[{ TotalAggregation: { ComputationId: 'a', Value: insightValueField() } }], 'UNSUPPORTED_FEATURE'],
     [[{ GrowthRate: { ComputationId: 'a', Time: insightDateField(), Value: insightValueField() } }], 'UNSUPPORTED_FEATURE'],
-    [[{ TopBottomRanked: { ComputationId: 'a', Type: 'TOP', Category: insightCatField(), Value: insightValueField() } }], 'UNSUPPORTED_FEATURE'],
     [[{ PeriodOverPeriod: { ComputationId: 'a', Time: insightDateField(), Value: insightValueField() } }], 'UNSUPPORTED_FEATURE'],
     [[{ MetricComparison: { ComputationId: 'a', Time: insightDateField(), FromValue: insightValueField(), TargetValue: insightValueField('profit', 'profit') } }], 'UNSUPPORTED_FEATURE'],
   ]) assert.throws(() => planVisual(insightRequest(computations)), { code }, JSON.stringify(computations).slice(0, 120));
