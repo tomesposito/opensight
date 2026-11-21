@@ -147,6 +147,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Hosted AI receipt admission now counts retained answer and revision payloads in UTF-8 bytes on both databases (#294), matching how incoming payloads are measured, so retained non-ASCII receipts can no longer collectively exceed the per-tenant byte limit.
+
 - Hosted servers now answer every `/api/notebooks*` path with 404
   `RESOURCE_NOT_FOUND` instead of the generic 503 capability fallback
   (#285), so the Notebooks page on a hosted server shows its designed
