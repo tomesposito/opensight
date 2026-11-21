@@ -2199,3 +2199,13 @@ hosted/demo packages, real-browser CSP behavior, DNS/mail delivery and exact AWS
 readbacks. Merge with phase history and changelog, publish through the Git Database
 API, then deploy the newest attested release under the existing independent
 approval, maintenance/compatibility, rollback and live-acceptance gates.
+
+### Operator transition: retry counters and analytics quarantine (D-96)
+
+The authorized latest-release deployment uses registered maintenance for the
+unchanged egress/AI-receipt table inventory. Add nonnegative delivery cumulative
+attempt/retry counters with exact legacy backfill, and nullable analytics
+quarantine state. Preserve every other value, object, cleanup obligation, epoch
+and recovery entry. D-96 specifies snapshot normalization, PostgreSQL rehearsal,
+exact cloud authority, D-95 sender fingerprint recording and attested promotion.
+No arbitrary compatibility relabeling, billing activation or startup DDL bypass.
