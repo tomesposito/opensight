@@ -83,8 +83,35 @@ test commands were run.
 
 ## Full-suite verification
 
-Pending the supervisor's independent run and exact counts. The full
-root suite was not run for this branch, as instructed by the run brief.
+The supervisor's independent full root run exited **0** with **7,990
+passed / 0 failed / 37 skipped** (8,027 tests, zero cancellations and
+zero todos), using the installed Playwright headless shell:
+
+```sh
+OPENSIGHT_CHROMIUM="$HOME/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell" TZ=UTC npm test
+```
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 1,500 | 0 | 35 |
+| Bundle parser | 213 | 0 | 0 |
+| CLI | 73 | 0 | 0 |
+| Embedding SDK | 10 | 0 | 0 |
+| Headless SDK | 28 | 0 | 0 |
+| Python SDK | 32 | 0 | 0 |
+| MCP server | 74 | 0 | 0 |
+| O interpreter | 42 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 2,495 | 0 | 2 |
+| Web | 3,402 | 0 | 0 |
+| Root checks | 110 | 0 | 0 |
+| **Total** | **7,990** | **0** | **37** |
+
+All 37 skips require live PostgreSQL (35 API, 2 query engine). The
+total is exactly the TopBottomRanked slice's baseline (7,948 passed)
+plus the 42 new tests, with no other movement. The completed log is
+`.opensight/verification/period-over-period-root.log`, with its exit
+code in `period-over-period-root.exit` in the same directory.
 
 ## Offline demo and reference comparison
 
@@ -118,11 +145,11 @@ The four checkpoints follow the TopBottomRanked slice's pattern:
 2. `ae05be07` admits PeriodOverPeriod and requires a date dimension.
 3. `c3bd2b1b` adds focused coverage and updates the regression tables.
 4. Records these gap notes, the changelog entry and focused verification.
+5. (Supervisor) Records the independent full-suite verification above.
 
 All commits stay on `work/parity-insight-period-over-period-planner`.
 Final scope review and `git diff --check` passed. Changed paths are
 limited to `packages/query-engine/src/planner.ts`, the new test file,
 the updated MaximumMinimum and TopBottomRanked tests, the two new slice
-docs and `CHANGELOG.md`. The supervisor owns subsequent independent
-verification, merge, publish, demo and completion bookkeeping; this
-slice does not merge or push.
+docs and `CHANGELOG.md`. The supervisor owns the subsequent merge,
+publish, demo and completion bookkeeping.
