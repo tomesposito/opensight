@@ -255,9 +255,14 @@ export function normalizeInsight(config: unknown, dimensions: Field[], measures:
   });
 }
 
-/** Rebind imported computation fields when the author changes wells; preserve other options. */
+/**
+ * Rebind imported computation fields when the author changes wells; preserve
+ * other options. Invalid configurations are returned unchanged so callers such
+ * as serializeVisual cannot hide their errors from downstream compilation.
+ */
 export function rebindInsight(config: Obj, category: unknown[], values: unknown[]): Obj {
   try {
+  validateInsightConfiguration(config);
   const original = insightWells(config);
   const name = (raw: unknown) => Object.values(insightObject(raw))[0];
   const column = (raw: unknown) => insightObject(insightObject(name(raw)).column).columnName;
