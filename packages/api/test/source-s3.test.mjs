@@ -61,7 +61,7 @@ test('S3 stored snapshots retain source identity and reject owner, tenant, polic
   await f.sources.bind(a, 'source', { expectedVersion: 1, policy: { rowLevel: true, rowRules: [] } });
   await assert.rejects(prep.save(a, 'denied', { name: 'Denied', pipeline: pipeline('source'), expectedVersion: 0 }), { code: 'PREP_SECURITY_REJECTED' });
   await assert.rejects(f.sources.bind(a, 'source', { expectedVersion: 2, table: 'forged' }), { code: 'SOURCE_BINDING_IMMUTABLE' });
-  f.s3.configs = [];
+  f.s3.grants = [];
   await assert.rejects(f.sources.get(a, 'source'), { code: 'SOURCE_ENDPOINT_DENIED' });
   assert.equal(calls.length, 1);
 });
