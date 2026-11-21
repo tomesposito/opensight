@@ -67,6 +67,18 @@ test('notebook UI: a server without notebook routes shows the unavailable notice
   assert.match(rendered, /Notebooks are not available on this server/);
   assert.doesNotMatch(rendered, /notebook-error|Failed to execute/);
 });
+test('notebook UI: a missing notebook on a detail load is an item error, not the unavailable notice', async t => {
+  const ui = await mount(t, { id: 'gone', client: client({ getNotebook: async () => { throw new ApiError('NOTEBOOK_NOT_FOUND: Notebook not found.', 404, 'NOTEBOOK_NOT_FOUND'); } }) });
+  const rendered = JSON.stringify(ui.toJSON());
+  assert.match(rendered, /NOTEBOOK_NOT_FOUND/);
+  assert.doesNotMatch(rendered, /Notebooks are not available on this server/);
+});
+test('notebook UI: the hosted unsupported contract on a detail load still shows the unavailable notice', async t => {
+  const ui = await mount(t, { id: 'n', client: client({ getNotebook: async () => { throw new ApiError('RESOURCE_NOT_FOUND: Request failed', 404, 'RESOURCE_NOT_FOUND'); } }) });
+  const rendered = JSON.stringify(ui.toJSON());
+  assert.match(rendered, /Notebooks are not available on this server/);
+  assert.doesNotMatch(rendered, /notebook-error/);
+});
 test('notebook API client preserves structured payloads and named errors', async () => {
   const calls = [], api = createApiClient('', async (url, init) => { calls.push([url, init]); return new Response(JSON.stringify({ errorCode: 'NOTEBOOK_DATASET_ACCESS_DENIED', Message: 'Denied' }), { status: 403 }); });
   await assert.rejects(() => api.runNotebook('n', { minimum: 2 }, 's'), /NOTEBOOK_DATASET_ACCESS_DENIED/);
