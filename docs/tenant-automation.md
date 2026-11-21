@@ -70,6 +70,18 @@ One API process owns one scheduler. Multi-node scheduling remains H10.
   job create their own deliveries with their own budgets and proceed
   unaffected. The deliveries list and the retry response expose both
   counters.
+- Every delivery claim in both the single-node and durable-events runners
+  atomically requires room under both the 10-attempt sequence cap and the
+  30-attempt cumulative cap (#296). Operator retry keeps its existing checks
+  and grants at most the remaining cumulative allowance: a legacy delivery
+  migrated with 29 observed attempts can spend only one more after reopening.
+  Exhausted pending or interrupted deliveries dead-letter during recovery;
+  cumulative claim/recovery exhaustion uses `JOB_DELIVERY_EXHAUSTED` and
+  clears any cached message. A successful final send still settles normally.
+  A lost final receipt cannot permit another send. Durable recovery retains
+  ambiguous SMTP evidence in the execution record while terminalizing the
+  exhausted delivery and outbox event, preventing replay. Occurrence
+  settlement still waits for all recipients to reach a terminal state.
 
 ## User removal
 

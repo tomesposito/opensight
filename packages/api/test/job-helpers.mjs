@@ -8,6 +8,15 @@ export const schedule = { kind: 'interval', minutes: 1, timeZone: 'UTC' };
 export const report = { kind: 'report', dashboardId: 'dashboard', recipients: ['other'], enabled: true, schedule };
 export const refresh = { kind: 'refresh', target: { kind: 'dataset', id: 'dataset' }, enabled: true, schedule };
 export const executor = () => ({ begin() {}, async authorize() {}, async execute() { return {}; }, async render(c) { return { subject: 'Synthetic report', html: `<p>${c.namespaceId}/${c.userId}</p>` }; } });
+/** Exercise the real pre-#252 migration: only legacy attempts are observable. */
+export async function migrateLegacyDeliveryAttempts(db, attempts) {
+  await db.transaction(async c => {
+    await c.query('UPDATE h7_deliveries SET attempts = ?', [attempts]);
+    await c.query('ALTER TABLE h7_deliveries DROP COLUMN total_attempts');
+    await c.query('ALTER TABLE h7_deliveries DROP COLUMN retry_sequences');
+  });
+  await initializeJobs(db);
+}
 export async function jobFixture(t, execute = executor(), mail = new StubMailTransport(), clock) {
   const f = await sourceFixture(t);
   await initializeAuth(f.db); await initializeJobs(f.db);
