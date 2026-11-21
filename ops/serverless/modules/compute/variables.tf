@@ -156,3 +156,14 @@ variable "tags" {
   description = "Additional tags merged onto every resource."
   default     = {}
 }
+
+variable "smtp_from_address" {
+  type        = string
+  description = "Optional verified application sender, independent of the alert recipient."
+  sensitive   = true
+  default     = null
+  validation {
+    condition     = var.smtp_from_address == null ? true : can(regex("^[^ @\\r\\n]+@[^ @\\r\\n]+\\.[^ @\\r\\n]+$", var.smtp_from_address))
+    error_message = "Provide one verified sender address privately."
+  }
+}

@@ -25,7 +25,7 @@ locals {
     OPENSIGHT_EGRESS_PROFILE     = "ipv6"
     OPENSIGHT_SMTP_HOST          = "email-smtp.${var.region}.api.aws"
     OPENSIGHT_SMTP_PORT          = "465"
-    OPENSIGHT_SMTP_FROM          = var.alert_email
+    OPENSIGHT_SMTP_FROM          = coalesce(var.smtp_from_address, var.alert_email)
     OPENSIGHT_SMTP_SECRET_ARN    = var.secret_arns["smtp"]
     OPENSIGHT_RELEASE_DIGEST     = split("@", var.image_uri)[1]
     OPENSIGHT_ARTIFACT_BUCKET    = var.artifacts_bucket_id
@@ -53,7 +53,7 @@ locals {
       OPENSIGHT_PROBE_SCHEDULE_GROUP    = aws_scheduler_schedule_group.probe.name
       OPENSIGHT_PROBE_SCHEDULE_ROLE_ARN = aws_iam_role.schedule.arn
       OPENSIGHT_SMTP_SECRET_ARN         = var.secret_arns["smtp"]
-      OPENSIGHT_PROBE_MAIL_FROM         = var.alert_email
+      OPENSIGHT_PROBE_MAIL_FROM         = coalesce(var.smtp_from_address, var.alert_email)
       OPENSIGHT_PROBE_MAIL_TO           = var.alert_email
     })
   }
@@ -83,7 +83,7 @@ resource "aws_scheduler_schedule_group" "probe" {
 resource "aws_iam_role" "schedule" {
   name               = "${var.deployment}-schedule"
   assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "scheduler.amazonaws.com" }, Action = "sts:AssumeRole", Condition = { StringEquals = { "aws:SourceAccount" = var.account_id }, ArnEquals = { "aws:SourceArn" = aws_scheduler_schedule_group.probe.arn } } }] })
-  tags = var.tags
+  tags               = var.tags
 }
 
 resource "aws_iam_role_policy" "schedule" {
