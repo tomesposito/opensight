@@ -197,10 +197,9 @@ test('PeriodOverPeriod preserves collection rules with exact diagnostics', () =>
   ]) assert.throws(() => planVisual(insightRequest(computations)), { code, path }, JSON.stringify(computations).slice(0, 120));
 });
 
-test('TotalAggregation, GrowthRate and MetricComparison remain unsupported with exact kind paths', () => {
+test('TotalAggregation and MetricComparison remain unsupported with exact kind paths', () => {
   for (const computation of [
     { TotalAggregation: { ComputationId: 'a', Value: insightValueField() } },
-    { GrowthRate: { ComputationId: 'a', Time: insightDateField(), Value: insightValueField(), PeriodSize: 1 } },
     { MetricComparison: { ComputationId: 'a', Time: insightDateField(), FromValue: insightValueField(), TargetValue: insightValueField('profit', 'profit') } },
   ]) {
     const kind = Object.keys(computation)[0];
