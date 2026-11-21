@@ -18,7 +18,7 @@
     "@opensight/o-interpreter": "0.0.0",
     "@opensight/bundle-parser": "0.0.0",
     "echarts": "^6.0.0",
-    "react": "^19.2.0",
+    "react": "^19.3.1",
     "react-dom": "^19.2.0",
     "react-grid-layout": "^2.2.4",
     "@opensight/query-engine": "0.0.0"
