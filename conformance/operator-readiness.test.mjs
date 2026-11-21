@@ -37,7 +37,7 @@ test('contact concurrent duplicate claims allow only one provider send',async()=
 test('forwarding infrastructure scopes receipt authority and retains private mail',()=>{
   const t=forwardingTemplate(),r=t.Resources;assert.equal(t.Parameters.Destination.NoEcho,true);assert.equal(r.Function.Properties.ReservedConcurrentExecutions,1);assert.equal(r.Retry.Properties.MaximumRetryAttempts,0);
   assert.equal(r.MailBucket.DeletionPolicy,'Retain');assert.equal(r.MailBucket.Properties.PublicAccessBlockConfiguration.BlockPublicPolicy,true);
-  const policy=r.Role.Properties.Policies[0].PolicyDocument.Statement.find(x=>x.Action==='ses:SendEmail');assert.deepEqual(policy.Condition['ForAllValues:StringEquals']['ses:Recipients'],[{Ref:'Destination'}]);
+  const policy=r.Role.Properties.Policies[0].PolicyDocument.Statement.find(x=>Array.isArray(x.Action)&&x.Action.includes('ses:SendRawEmail'));assert.deepEqual(policy.Action,['ses:SendEmail','ses:SendRawEmail']);assert.deepEqual(policy.Condition['ForAllValues:StringEquals']['ses:Recipients'],[{Ref:'Destination'}]);
   assert.equal(r.Permission.Properties.Principal,'ses.amazonaws.com');assert.ok(r.Permission.Properties.SourceArn);assert.equal(r.Rule.Properties.Rule.Recipients.length,2);
 });
 test('static CSP rejects unreviewed origins and permits only exact bounded connect endpoints',()=>{
