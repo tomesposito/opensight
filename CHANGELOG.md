@@ -23,6 +23,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Native/API insight visuals with a TopBottomRanked computation (top/bottom groups of the bound date or category dimension) now pass query planning with strict type and result-size validation and unchanged query plans; the narrative consumer still owns ranking, limiting and rendering the groups (phase-plan fallback: parity-insight-top-bottom-ranked-planner; no GitHub issue).
+
 - Native/API insight visuals with a MaximumMinimum computation (highest/lowest group of the bound date or category dimension) now pass query planning with strict validation and unchanged query plans; the narrative consumer still owns picking and rendering the extreme group (phase-plan fallback: parity-insight-maximum-minimum-planner; no GitHub issue).
 
 - Native/API table visuals with a row sort now pass query planning with strict validation and unchanged query plans; the compiler/consumer still owns display ordering (phase-plan fallback: parity-table-row-sort-planner; no GitHub issue).
