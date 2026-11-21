@@ -30,7 +30,10 @@
  * would exceed MAX_FORECAST_GRID_STEPS filter steps for a series, a
  * deterministic coarser grid tier is used instead, down to a
  * single-point tier, so total work stays linear-bounded per series no
- * matter how long the history is.
+ * matter how long the history is. The work itself is countable: a caller
+ * may pass a ForecastWorkStats object and read back the tier selected,
+ * the filter runs and steps performed, and the ring-buffer writes, so
+ * the bound is asserted by the tests rather than assumed (issue #298).
  */
 
 export type ForecastGrain = 'YEAR' | 'QUARTER' | 'MONTH' | 'DAY';
@@ -170,14 +173,40 @@ function tierFitCount(tier: GridTier, seasonalAdmissible: boolean): number {
   return fits;
 }
 
-/** First (finest) tier whose estimated steps fit the budget; the
+/**
+ * Actual work one computeForecast grid search performed, filled into a
+ * caller-supplied object when one is passed (issue #298). The #262 work
+ * bound was previously asserted only by finite/deterministic output, so
+ * a regression to the unconditional full grid — or to the old O(m)
+ * seasonal rotation — would have passed the tests; these counters let
+ * the regressions assert the work itself:
+ * - `tierIndex`: which GRID_TIERS entry the budget selected (0 = full).
+ * - `fitsRun`: every filter run, grid points plus each candidate's
+ *   winner re-run.
+ * - `filterSteps`: observations actually processed across all runs.
+ * - `seasonalUpdates`: ring-buffer writes — exactly one per seasonal
+ *   filter step, where the pre-#262 rotation copied m elements per step.
+ */
+export interface ForecastWorkStats {
+  tierIndex: number;
+  fitsRun: number;
+  filterSteps: number;
+  seasonalUpdates: number;
+}
+
+/** Index of the tier the step budget selects for a series of length n:
+ *  the first (finest) tier whose estimated steps fit the budget; the
  *  single-point tier is the floor and is used even past the budget —
  *  six fits is the least work any ETS search can do. */
-function pickGridTier(n: number, seasonalAdmissible: boolean): GridTier {
-  for (const tier of GRID_TIERS) {
-    if (tierFitCount(tier, seasonalAdmissible) * n <= MAX_FORECAST_GRID_STEPS) return tier;
+export function forecastGridTierIndex(n: number, seasonalAdmissible: boolean): number {
+  for (let i = 0; i < GRID_TIERS.length; i++) {
+    if (tierFitCount(GRID_TIERS[i]!, seasonalAdmissible) * n <= MAX_FORECAST_GRID_STEPS) return i;
   }
-  return GRID_TIERS[GRID_TIERS.length - 1]!;
+  return GRID_TIERS.length - 1;
+}
+
+function pickGridTier(n: number, seasonalAdmissible: boolean): GridTier {
+  return GRID_TIERS[forecastGridTierIndex(n, seasonalAdmissible)]!;
 }
 
 /**
@@ -191,7 +220,8 @@ function pickGridTier(n: number, seasonalAdmissible: boolean): GridTier {
  * the fitted array is not retained (grid search discards all but the
  * winner's fitted values anyway).
  */
-function runFilter(y: readonly number[], m: number, cand: Candidate, alpha: number, beta: number, phi: number, gamma: number, collectFitted = true): Fit {
+function runFilter(y: readonly number[], m: number, cand: Candidate, alpha: number, beta: number, phi: number, gamma: number, collectFitted = true, work?: ForecastWorkStats): Fit {
+  if (work) work.fitsRun++;
   const n = y.length;
   const seasonal = cand.seasonal && m >= 2;
   let level: number, trendValue = 0;
@@ -218,6 +248,7 @@ function runFilter(y: readonly number[], m: number, cand: Candidate, alpha: numb
   const start = seasonal ? m : 1;
   for (let t = 0; t < n; t++) {
     if (t < start) continue;
+    if (work) work.filterSteps++;
     const yhat = level + c * trendValue + (seasonal ? s[sHead]! : 0);
     const e = y[t]! - yhat;
     if (!Number.isFinite(yhat) || !Number.isFinite(e)) { valid = false; break; }
@@ -239,6 +270,7 @@ function runFilter(y: readonly number[], m: number, cand: Candidate, alpha: numb
     if (seasonal) {
       const updated = s[sHead]! + gamma * e;
       s[sHead] = updated;
+      if (work) work.seasonalUpdates++;
       sHead = (sHead + 1) % m;
       seasonalFinite = Number.isFinite(updated);
     }
@@ -286,7 +318,7 @@ function fitUsable(fit: Fit): boolean {
     && fit.fitted.every(v => v === null || Number.isFinite(v));
 }
 
-function fitCandidate(y: readonly number[], m: number, cand: Candidate, tier: GridTier): Fit | null {
+function fitCandidate(y: readonly number[], m: number, cand: Candidate, tier: GridTier, work?: ForecastWorkStats): Fit | null {
   const seasonal = cand.seasonal && m >= 2;
   const alphas = tier.values, betas = cand.trend === 'none' ? [0] : tier.values, phis = cand.trend === 'damped' ? tier.phis : [1], gammas = seasonal ? tier.values : [0];
   let best: Fit | undefined;
@@ -294,7 +326,7 @@ function fitCandidate(y: readonly number[], m: number, cand: Candidate, tier: Gr
   for (const alpha of alphas) for (const beta of betas) for (const phi of phis) for (const gamma of gammas) {
     // Grid fits run without retaining fitted values (issue #262):
     // scoring never reads them, and only the winner's are returned.
-    const fit = runFilter(y, m, cand, alpha, beta, phi, gamma, false);
+    const fit = runFilter(y, m, cand, alpha, beta, phi, gamma, false, work);
     if (!fitUsable(fit)) continue;
     // Every grid point of one candidate shares k and errors, so the AICc
     // correction is a constant across the grid (or undefined for all of
@@ -306,7 +338,7 @@ function fitCandidate(y: readonly number[], m: number, cand: Candidate, tier: Gr
   if (!best) return null;
   // Re-run the winning grid point once, retaining its fitted values.
   // The filter is deterministic, so this reproduces the winning fit.
-  const winner = runFilter(y, m, cand, best.alpha, best.beta, best.phi, best.gamma, true);
+  const winner = runFilter(y, m, cand, best.alpha, best.beta, best.phi, best.gamma, true, work);
   return fitUsable(winner) ? winner : null;
 }
 
@@ -328,7 +360,7 @@ export interface ForecastResult {
  * (nulls are skipped — the series is its ordered non-null points). Returns null
  * when fewer than MIN_FORECAST_POINTS usable points exist.
  */
-export function computeForecast(values: readonly (number | null)[], grain: ForecastGrain, config: ForecastConfig): ForecastResult | null {
+export function computeForecast(values: readonly (number | null)[], grain: ForecastGrain, config: ForecastConfig, work?: ForecastWorkStats): ForecastResult | null {
   const y = values.filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
   const n = y.length;
   if (n < MIN_FORECAST_POINTS) return null;
@@ -353,7 +385,8 @@ export function computeForecast(values: readonly (number | null)[], grain: Forec
   // correction is undefined at exactly two cycles — so the consistent
   // scoring is a common criterion, never a per-candidate mix.
   const tier = pickGridTier(n, seasonalAdmissible);
-  const fits = candidates.map(cand => fitCandidate(y, m, cand, tier)).filter((f): f is Fit => f !== null);
+  if (work) { work.tierIndex = forecastGridTierIndex(n, seasonalAdmissible); work.fitsRun = 0; work.filterSteps = 0; work.seasonalUpdates = 0; }
+  const fits = candidates.map(cand => fitCandidate(y, m, cand, tier, work)).filter((f): f is Fit => f !== null);
   // No finite model remains (issue #261): the surfaces' unavailable result,
   // never a forecast carrying infinite or NaN numbers.
   if (fits.length === 0) return null;
