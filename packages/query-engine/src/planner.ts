@@ -300,7 +300,7 @@ function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: re
     const ep = `${cp}.Computations[${i}]`;
     const [kind, c] = variant(value, ep);
     const kp = `${ep}.${kind}`;
-    if (!['Forecast', 'PeriodToDate', 'UniqueValues', 'TopBottomMovers', 'Anomaly', 'MaximumMinimum'].includes(kind)) {
+    if (!['Forecast', 'PeriodToDate', 'UniqueValues', 'TopBottomMovers', 'Anomaly', 'MaximumMinimum', 'TopBottomRanked'].includes(kind)) {
       fail('UNSUPPORTED_FEATURE', kp, 'insight computation is not executable in the native planning slice');
     }
     kinds.push(kind);
@@ -337,6 +337,22 @@ function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: re
         // dimension is required.
         const [timeKind] = variant(c.Time, `${kp}.Time`);
         addDimension(insightDimension(c.Time, `${kp}.Time`, binder, timeKind === 'DateDimensionField' ? 'date' : 'category'));
+      }
+      if (c.Value !== undefined) addMeasure(insightMeasure(c.Value, `${kp}.Value`, binder));
+    } else if (kind === 'TopBottomRanked') {
+      keys(c, ['ComputationId', 'Name', 'Category', 'Value', 'Type', 'ResultSize'], kp);
+      if (c.Type !== 'TOP' && c.Type !== 'BOTTOM') fail('INVALID_INPUT', `${kp}.Type`, 'type must be TOP or BOTTOM');
+      if (c.ResultSize !== undefined && (typeof c.ResultSize !== 'number' || !Number.isInteger(c.ResultSize) || c.ResultSize < 1 || c.ResultSize > 20)) fail('INVALID_INPUT', `${kp}.ResultSize`, 'resultSize must be an integer between 1 and 20');
+      if (c.Category !== undefined) {
+        // QuickSight types Category as a generic dimension field and the web
+        // narrative resolves category ?? time against the insight's single
+        // dimension, so a category or a date binding is admitted, dispatched
+        // on the variant; any other variant fails closed in insightDimension.
+        // Unlike forecast/period-to-date/anomaly, the narrative ranks the
+        // groups of whatever dimension is bound, so no date dimension is
+        // required.
+        const [categoryKind] = variant(c.Category, `${kp}.Category`);
+        addDimension(insightDimension(c.Category, `${kp}.Category`, binder, categoryKind === 'DateDimensionField' ? 'date' : 'category'));
       }
       if (c.Value !== undefined) addMeasure(insightMeasure(c.Value, `${kp}.Value`, binder));
     } else {
