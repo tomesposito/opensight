@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SqliteMetadataDatabase } from '../dist/metadata-db.js';
+import { Pool } from 'pg';
+import { randomUUID } from 'node:crypto';
+import { PostgresMetadataDatabase, SqliteMetadataDatabase } from '../dist/metadata-db.js';
 import { HostedAIReceipts, initializeAiAnswerReceipts } from '../dist/hosted-ai-receipts.js';
 import { checksum } from '../dist/metadata-operator.js';
 
@@ -245,3 +247,71 @@ test('#249 receipt admission limits require positive safe integers', async t => 
   assert.doesNotThrow(() => new HostedAIReceipts(f.db));
   assert.doesNotThrow(() => f.nextStore({}));
 });
+
+test('#295 Postgres admission takes the per-tenant advisory lock before reading usage', async () => {
+  const calls = [];
+  const pool = { async connect() { return {
+    async query(sql, values = []) {
+      calls.push([sql, [...values]]);
+      if (sql.includes('INSERT INTO ai_answer_receipt_reservations')) return { rows: [{ owner: 'o' }] };
+      if (sql.includes('UPDATE ai_answer_receipt_reservations')) return { rows: [{ owner: 'o' }] };
+      if (sql.includes('COUNT(*) AS entries')) return { rows: [{ entries: 0, bytes: 0 }] };
+      if (sql.includes('INSERT INTO ai_answer_receipts')) return { rows: [{ idempotency_key: 'key' }] };
+      if (sql.includes("SET state = 'committed'")) return { rows: [{ idempotency_key: 'key' }] };
+      return { rows: [] };
+    },
+    release() {},
+  }; } };
+  const store = new HostedAIReceipts(new PostgresMetadataDatabase(pool));
+  await store.run(context, route, 'key', 'hash', async attempt => {
+    await attempt.pending({}, 1, true, revisions);
+    await attempt.committed();
+  });
+  const lockAt = calls.findIndex(([sql]) => sql.includes('pg_advisory_xact_lock'));
+  const countAt = calls.findIndex(([sql]) => sql.includes('COUNT(*) AS entries'));
+  assert.ok(lockAt >= 0, 'advisory lock query issued');
+  assert.deepEqual(calls[lockAt][1], [context.tenantId]);
+  assert.ok(countAt > lockAt, 'usage read happens after the lock');
+});
+
+test('#295 live Postgres: distinct keys racing for the last entry slot retain exactly one receipt',
+  { skip: process.env.DATABASE_URL ? false : 'DATABASE_URL is not set', timeout: 30000 }, async t => {
+    const schema = `ai295_${randomUUID().replaceAll('-', '')}`;
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 6, options: `-c search_path=${schema}` });
+    t.after(async () => { await pool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); await pool.end(); });
+    await pool.query(`CREATE SCHEMA ${schema}`);
+    const inner = new PostgresMetadataDatabase(pool);
+    await initializeAiAnswerReceipts(inner);
+    // Hold the first admission just before its insert, lock already taken,
+    // until the second admission has either settled (unfixed race) or is
+    // observed blocked behind the lock (bounded wait). The final state —
+    // one success, one capacity rejection, one retained row — is the
+    // deterministic assertion either way.
+    let armed = true, markHeld, releaseFirst;
+    const held = new Promise(r => { markHeld = r; });
+    const gate = new Promise(r => { releaseFirst = r; });
+    const db = { dialect: 'postgres', durable: true,
+      transaction: work => inner.transaction(async c => work({ query: async (sql, values) => {
+        if (armed && sql.startsWith('INSERT INTO ai_answer_receipts VALUES')) { armed = false; markHeld(); await gate; }
+        return c.query(sql, values);
+      } })) };
+    const store = new HostedAIReceipts(db, Date.now, { OPENSIGHT_AI_RECEIPT_PER_TENANT_MAX_ENTRIES: '1' });
+    const save = (key, namespaceId) => store.run({ ...context, namespaceId }, route, key, 'hash', async attempt => {
+      assert.equal(attempt.receipt, undefined);
+      await attempt.pending({}, 1, true, revisions);
+      await attempt.committed();
+    });
+    const first = save('first', 'namespace-a');
+    await held;
+    const second = save('second', 'namespace-b');
+    const secondOutcome = second.then(() => 'resolved', error => error);
+    await Promise.race([secondOutcome, new Promise(r => setTimeout(r, 3000))]);
+    releaseFirst();
+    await first;
+    const outcome = await secondOutcome;
+    assert.equal(outcome?.code, 'IDEMPOTENCY_CAPACITY_EXCEEDED');
+    assert.equal(outcome?.status, 429);
+    const rows = await inner.transaction(c => c.query('SELECT * FROM ai_answer_receipts'));
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].idempotency_key, 'first');
+  });
