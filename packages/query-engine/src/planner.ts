@@ -450,7 +450,18 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
   if (categoryChart && config.SortConfiguration !== undefined) {
     const sp = `${cp}.SortConfiguration`, sort = object(config.SortConfiguration, sp);
     // Preserve the existing whole-block rejection path for unsupported category-chart sorts.
-    if (Object.keys(sort).some(key => key !== 'CategorySort')) fail('UNSUPPORTED_FEATURE', sp, 'unrecognized execution property');
+    if (Object.keys(sort).some(key => key !== 'CategorySort' && key !== 'CategoryItemsLimit')) fail('UNSUPPORTED_FEATURE', sp, 'unrecognized execution property');
+    if (sort.CategoryItemsLimit !== undefined) {
+      // CategoryItemsLimit validates consumer limiting only; query fields and aggregations stay unchanged.
+      const lp = `${sp}.CategoryItemsLimit`, limit = object(sort.CategoryItemsLimit, lp);
+      keys(limit, ['ItemsLimit', 'OtherCategories'], lp);
+      if (limit.ItemsLimit !== undefined && (!Number.isInteger(limit.ItemsLimit) || (limit.ItemsLimit as number) < 1 || (limit.ItemsLimit as number) > 100)) {
+        fail('INVALID_INPUT', `${lp}.ItemsLimit`, 'category items limit must be an integer between 1 and 100');
+      }
+      if (limit.OtherCategories !== undefined && limit.OtherCategories !== 'INCLUDE' && limit.OtherCategories !== 'EXCLUDE') {
+        fail('INVALID_INPUT', `${lp}.OtherCategories`, 'category items limit OtherCategories must be INCLUDE or EXCLUDE');
+      }
+    }
     if (sort.CategorySort !== undefined) {
       const entries = array(sort.CategorySort, `${sp}.CategorySort`);
       if (entries.length !== 1) fail('INVALID_INPUT', sp, 'expected exactly one category sort');
