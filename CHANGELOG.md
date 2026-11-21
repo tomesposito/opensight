@@ -11,6 +11,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ## [Unreleased]
 
+### Fixed
+
+- Forecast work-bound regressions now assert the work itself (#298): `computeForecast` can report the grid tier selected, the filter runs and steps performed, and the seasonal ring-buffer writes via a `ForecastWorkStats` out-parameter, and the tests pin exact counts at the step-budget thresholds — a regression to the unconditional full grid (issue #262) or to the O(season-length) seasonal rotation now fails on counts instead of passing on output shape alone. No forecast results change.
+
 ### Changed
 
 - Separate the verified application email sender from the sandbox recipient and budget-alert address (#117).
