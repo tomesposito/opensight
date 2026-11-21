@@ -86,8 +86,35 @@ needed. No other test commands were run at this checkpoint.
 
 ## Full-suite verification
 
-Pending the supervisor's independent full root run; this section is
-completed in the final checkpoint before merge.
+The supervisor's independent full root run exited **0** with **8,034
+passed / 0 failed / 37 skipped** (8,071 tests, zero cancellations and
+zero todos), using the installed Playwright headless shell:
+
+```sh
+OPENSIGHT_CHROMIUM="$HOME/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell" TZ=UTC npm test
+```
+
+| Runner | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 1,500 | 0 | 35 |
+| Bundle parser | 213 | 0 | 0 |
+| CLI | 73 | 0 | 0 |
+| Embedding SDK | 10 | 0 | 0 |
+| Headless SDK | 28 | 0 | 0 |
+| Python SDK | 32 | 0 | 0 |
+| MCP server | 74 | 0 | 0 |
+| O interpreter | 42 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 2,539 | 0 | 2 |
+| Web | 3,402 | 0 | 0 |
+| Root checks | 110 | 0 | 0 |
+| **Total** | **8,034** | **0** | **37** |
+
+All 37 skips require live PostgreSQL (35 API, 2 query engine). The
+total is exactly the PeriodOverPeriod slice's baseline (7,990 passed)
+plus the 44 new tests, with no other movement. The completed log is
+`.opensight/verification/growth-rate-root.log`, with its exit
+code in `growth-rate-root.exit` in the same directory.
 
 ## Offline demo and reference comparison
 
@@ -122,11 +149,12 @@ The checkpoints follow the PeriodOverPeriod slice's pattern:
 1. `7ad52c9c` specifies the admission and planning contract.
 2. `5d907093` admits GrowthRate and requires a date dimension.
 3. `44d65b2c` adds focused coverage and updates the regression tables.
-4. Records these gap notes, the changelog entry and focused verification.
+4. `33f59822` records these gap notes, the changelog entry and focused verification.
 5. (Supervisor) Records the independent full-suite verification above.
 
 All commits stay on `work/parity-insight-growth-rate-planner`.
-Final scope review and `git diff --check` passed at checkpoint 4.
+Final scope review and `git diff --check` passed at checkpoint 4 and
+again before merge.
 Changed paths are limited to `packages/query-engine/src/planner.ts`,
 the new test file, the updated PeriodOverPeriod, MaximumMinimum and
 TopBottomRanked tests, the two new slice docs and `CHANGELOG.md`. The
