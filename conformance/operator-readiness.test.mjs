@@ -1,7 +1,9 @@
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { staticCsp, staticHeadersPolicy, attachStaticPolicy } from '../ops/serverless/static-security-policy.mjs';
+import { staticCsp, attachStaticCspFunction } from '../ops/serverless/static-security-policy.mjs';
 import { hostedDemo } from '../ops/serverless/package-sites.mjs';
 import { forwardingTemplate } from '../ops/serverless/mail-forwarder-template.mjs';
 const { forward, settings, rawMessage, MAX_INPUT } = createRequire(import.meta.url)('../ops/serverless/mail-forwarder.cjs');
@@ -46,11 +48,34 @@ test('static CSP rejects unreviewed origins and permits only exact bounded conne
   assert.match(c,/script-src 'self';/);assert.doesNotMatch(c,/unsafe-eval|script-src[^;]*unsafe-inline|https:\/\/\*/);assert.match(c,/object-src 'none'/);
   for(const origin of ['http://app.example.org','https://user@app.example.org','https://app.example.org/path','https://*.example.org','https://app.example.org:8443'])assert.throws(()=>staticCsp({...inputs,appOrigin:origin}));
   assert.throws(()=>staticCsp({...inputs,transitionScriptHashes:['sha256-injected; unsafe-inline']}));
-  assert.equal(staticHeadersPolicy('example-policy',inputs).SecurityHeadersConfig.ContentSecurityPolicy.Override,true);
 });
-test('static policy attaches exclusively to frontend while preserving dynamic embed responses',()=>{
-  const d={DefaultCacheBehavior:{TargetOriginId:'frontend'},CacheBehaviors:{Items:[{PathPattern:'/assets/*',TargetOriginId:'frontend'},{PathPattern:'/api/*',TargetOriginId:'api'},{PathPattern:'/embed/sessions/*',TargetOriginId:'api'}]}};
-  const n=attachStaticPolicy(d,'00000000-0000-0000-0000-000000000000');assert.equal(n.CacheBehaviors.Items[1].ResponseHeadersPolicyId,undefined);assert.equal(n.CacheBehaviors.Items[2].ResponseHeadersPolicyId,undefined);assert.equal(d.DefaultCacheBehavior.ResponseHeadersPolicyId,undefined);
+test('static CSP function preserves all dynamic and existing static associations',()=>{
+  const arn='arn:aws:cloudfront::000000000000:function/example-csp';
+  const d={DefaultCacheBehavior:{TargetOriginId:'frontend',ResponseHeadersPolicyId:'managed',FunctionAssociations:{Quantity:1,Items:[{EventType:'viewer-request',FunctionARN:'request'}]}},CacheBehaviors:{Items:[{PathPattern:'/assets/*',TargetOriginId:'frontend',ResponseHeadersPolicyId:'managed'},{PathPattern:'/api/*',TargetOriginId:'api'},{PathPattern:'/embed/sessions/*',TargetOriginId:'api',FunctionAssociations:{Quantity:1,Items:[{EventType:'viewer-request',FunctionARN:'api'}]}}]}};
+  const n=attachStaticCspFunction(d,arn);
+  assert.deepEqual(n.CacheBehaviors.Items.slice(1),d.CacheBehaviors.Items.slice(1));
+  assert.equal(n.DefaultCacheBehavior.ResponseHeadersPolicyId,'managed');
+  assert.deepEqual(n.DefaultCacheBehavior.FunctionAssociations.Items[0],d.DefaultCacheBehavior.FunctionAssociations.Items[0]);
+  assert.equal(n.DefaultCacheBehavior.FunctionAssociations.Quantity,2);
+  assert.equal(n.CacheBehaviors.Items[0].FunctionAssociations.Items[0].FunctionARN,arn);
+  assert.equal(d.DefaultCacheBehavior.FunctionAssociations.Quantity,1);
+  assert.deepEqual(attachStaticCspFunction(n,arn),n);
+  assert.throws(()=>attachStaticCspFunction(n,arn+'-other'),/CONFLICT/);
+  const lambda=structuredClone(d);lambda.DefaultCacheBehavior.LambdaFunctionAssociations={Items:[{EventType:'viewer-response'}]};
+  assert.throws(()=>attachStaticCspFunction(lambda,arn),/CONFLICT/);
+  assert.throws(()=>attachStaticCspFunction(d,'invalid'),/ARN_INVALID/);
+  const bad=structuredClone(d);bad.CacheBehaviors.Items[0].PathPattern='/api/*';assert.throws(()=>attachStaticCspFunction(bad,arn),/SCOPE_INVALID/);
+});
+test('static response handler adds CSP without changing body, cookies, status or other headers',()=>{
+  const policy=staticCsp({appOrigin:'https://app.example.org'});
+  const source=readFileSync(new URL('../ops/serverless/edge-static-response.js',import.meta.url),'utf8').replace('__OPENSIGHT_CSP__',JSON.stringify(policy));
+  for(const statusCode of [200,206,301,304]) {
+    const response={statusCode,statusDescription:'example',body:{encoding:'text',data:'hello'},cookies:{session:{value:'unchanged'}},headers:{'x-test':{value:'kept'},'content-security-policy':{value:'old'}}};
+    const original=structuredClone(response),context={event:{response}};
+    const result=runInNewContext(source+'; handler(event)',context);assert.equal(result,response);
+    assert.equal(result.headers['content-security-policy'].value,policy);
+    delete result.headers['content-security-policy'];delete original.headers['content-security-policy'];assert.deepEqual(result,original);
+  }
 });
 test('hosted demo splits its exact executable bytes without permitting extra or external scripts',()=>{
   const source=Buffer.from('<html><script type="module">const x=1;</script><style>body{}</style></html>'),r=hostedDemo(source);
