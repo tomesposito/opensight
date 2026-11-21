@@ -160,7 +160,9 @@ export class JobStore {
    * have room, checked here inside the tenant-locked transaction before
    * any mutation or rearm, so a refused retry leaves the delivery dead,
    * its occurrence settled, the durable event terminal and its execution
-   * record intact. The budget binds owner and administrator alike. */
+   * record intact. Reopening grants only the remaining cumulative allowance:
+   * both runners enforce it atomically on every attempt claim (#296).
+   * The budget binds owner and administrator alike. */
   async retryDelivery(context: TenantContext, id: string, deliveryId: string) {
     identifier(deliveryId);
     const requested = await this.checked(context, async (c, admin) => {
