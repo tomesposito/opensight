@@ -36,18 +36,33 @@ credential-chain fallback. SDK endpoint overrides and region redirects are
 disabled. Resolved values go only to the server-side SDK client; API responses and
 stored config never contain them.
 
-Hosted operators set `OPENSIGHT_S3_SOURCES` to a JSON array of permitted configs,
-for example (all credential fields below are variable names):
+Hosted operators set `OPENSIGHT_S3_SOURCES` to a JSON array of **grants**. Each
+grant binds one exact config to the tenants allowed to use the operator's
+credentials for it, for example (all credential fields below are variable
+names):
 
 ```json
-[{"regionEnv":"S3_REGION","accessKeyIdEnv":"S3_ACCESS_KEY_ID","secretAccessKeyEnv":"S3_SECRET_ACCESS_KEY","bucket":"example-bucket","key":"data/sales.csv","prefix":"data/"}]
+[{"config":{"regionEnv":"S3_REGION","accessKeyIdEnv":"S3_ACCESS_KEY_ID","secretAccessKeyEnv":"S3_SECRET_ACCESS_KEY","bucket":"example-bucket","key":"data/sales.csv","prefix":"data/"},"tenantIds":["tenant-a"]}]
 ```
 
+`tenantIds` is required and non-empty. Optional `namespaceIds` and `userIds`
+narrow the grant further within those tenants; when present, the verified
+session's namespace/principal must be a member. **Migration (issue #300):**
+entries in the pre-#300 bare-config shape carry no tenant scope and are
+rejected at startup with `SOURCE_ENDPOINT_CONFIG_INVALID` — wrap each config
+as above and name its tenants. An unscoped grant never remains valid by
+default.
+
 The array is bounded at 256 entries and defaults to empty. Requests must match
-an entire entry exactly. This follows the database operator-endpoint boundary:
-authors cannot choose arbitrary server credential variables, buckets or object
-keys. Listing another key does not authorize reading it; the operator must
-allowlist its config separately. The configured AWS principal needs
+a grant's config exactly **and** fall inside its scope, checked against the
+server-verified tenant context at browse, at source creation, and again on
+every subsequent admission of a stored S3 source (narrowing or removing a
+grant revokes existing sources for the excluded tenants). This follows the
+database operator-endpoint boundary: authors cannot choose arbitrary server
+credential variables, buckets or object keys, and knowing another tenant's
+allowlisted config does not authorize browsing or ingesting it. Listing
+another key does not authorize reading it; the operator must allowlist its
+config separately. The configured AWS principal needs
 `GetObject` on the object and, for browsing, `ListBucket` for the prefix. Permission
 to browse is not required for a direct object read. No IAM resources are created.
 

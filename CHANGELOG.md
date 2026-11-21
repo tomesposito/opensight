@@ -17,6 +17,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 - Forecast work-bound regressions now assert the work itself (#298): `computeForecast` can report the grid tier selected, the filter runs and steps performed, and the seasonal ring-buffer writes via a `ForecastWorkStats` out-parameter, and the tests pin exact counts at the step-budget thresholds — a regression to the unconditional full grid (issue #262) or to the O(season-length) seasonal rotation now fails on counts instead of passing on output shape alone. No forecast results change.
 
+### Security
+
+- S3 operator grants are now scoped to the tenants allowed to use them (#300): each `OPENSIGHT_S3_SOURCES` entry binds its exact config to required `tenantIds` (plus optional `namespaceIds`/`userIds`), enforced at browse, at source creation, and on every later admission of a stored S3 source — knowing another tenant's allowlisted config no longer lets an author browse or ingest it with the operator's credentials. Pre-#300 bare-config entries are rejected at startup; operators must wrap each config in the grant shape and name its tenants.
+
 ### Changed
 
 - Separate the verified application email sender from the sandbox recipient and budget-alert address (#117).
