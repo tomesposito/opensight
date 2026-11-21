@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeForecast, forecastConfigValid, DEFAULT_FORECAST_CONFIG, MIN_FORECAST_POINTS, MAX_FORECAST_GRID_STEPS } from '../build/test/forecast.js';
+import { computeForecast, forecastConfigValid, forecastGridTierIndex, DEFAULT_FORECAST_CONFIG, MIN_FORECAST_POINTS, MAX_FORECAST_GRID_STEPS } from '../build/test/forecast.js';
 
 const cfg = { ...DEFAULT_FORECAST_CONFIG };
 const round = (xs, d = 4) => xs.map(x => x === null ? null : +x.toFixed(d));
@@ -181,9 +181,18 @@ test('work bound: maximum-seasonality workload (m=366, n=732) forecasts seasonal
   // slow sine at this season length is legitimately tracked one-step by
   // trend models and loses to them on the seasonal initials' AIC penalty.)
   const y = Array.from({ length: 732 }, (_, i) => 100 + ((i % 366) < 183 ? 20 : -20) + i * 0.01);
-  const r = computeForecast(y, 'DAY', { ...cfg, seasonality: 366 });
+  const work = {};
+  const r = computeForecast(y, 'DAY', { ...cfg, seasonality: 366 }, work);
   assert.ok(r, 'forecast exists');
   assert.equal(r.seasonalApplied, true);
+  // Issue #298: the work bound is asserted as work, not just output.
+  // Full grid = 5,610 fits (510 non-seasonal + 5,100 seasonal) plus one
+  // winner re-run per candidate (6). Non-seasonal runs process n-1
+  // steps, seasonal runs n-m: 513 x 731 + 5,103 x 366 = 2,242,701 steps.
+  // Seasonal updates are exactly one ring-buffer write per seasonal
+  // step (5,103 x 366) — the old O(m) rotation would have copied 366
+  // elements per step here (~683M element copies for the same search).
+  assert.deepEqual(work, { tierIndex: 0, fitsRun: 5616, filterSteps: 2242701, seasonalUpdates: 1867698 });
   assert.equal(r.fitted.length, 732);
   assert.ok(Number.isFinite(r.sigma));
   for (const p of r.future) {
@@ -201,9 +210,54 @@ test('work bound: a very long seasonal series still forecasts under the coarsene
   // old per-observation O(m) rotation this input could not finish in
   // reasonable time at any grid size.
   const y = Array.from({ length: 20000 }, (_, i) => 50 + 10 * Math.sin(2 * Math.PI * (i % 366) / 366) + (i % 7));
-  const r = computeForecast(y, 'DAY', { ...cfg, seasonality: 366 });
+  const work = {};
+  const r = computeForecast(y, 'DAY', { ...cfg, seasonality: 366 }, work);
   assert.ok(r, 'forecast exists');
   assert.equal(r.fitted.length, 20000);
   assert.ok(r.future.every(p => Number.isFinite(p.value) && Number.isFinite(p.lower) && Number.isFinite(p.upper)));
   assert.deepEqual(computeForecast(y, 'DAY', { ...cfg, seasonality: 366 }), r);
+  // Issue #298: the coarsening actually happened, in exact work terms.
+  // Tier 3's grid is 84 fits (21 non-seasonal + 63 seasonal) plus 6
+  // winner re-runs: 24 x 19,999 + 66 x 19,634 = 1,775,820 filter steps,
+  // inside the 5M budget. The unconditional full grid this replaces
+  // would run 5,616 fits and ~110M steps on this fixture — a regression
+  // to it fails these counts, not just a wall-clock hope.
+  assert.deepEqual(work, { tierIndex: 3, fitsRun: 90, filterSteps: 1775820, seasonalUpdates: 1295844 });
+  assert.ok(work.filterSteps <= MAX_FORECAST_GRID_STEPS);
+});
+
+test('work bound: tier selection steps down exactly at the budget thresholds', () => {
+  // Issue #298. Tier fit counts (grid fits across all candidates):
+  // non-seasonal 510 / 150 / 52 / 21 / 3 for tiers 0-4; seasonal adds
+  // the gamma grid: 5,610 / 1,050 / 260 / 84 / 6. A tier holds while
+  // fits x n <= MAX_FORECAST_GRID_STEPS (5,000,000), so each boundary
+  // below is floor(5,000,000 / fits) on one side and +1 on the other.
+  const cases = [
+    // [seasonalAdmissible, last n on tier, tier, first n on next tier, next tier]
+    [false, 9803, 0, 9804, 1],
+    [false, 33333, 1, 33334, 2],
+    [false, 96153, 2, 96154, 3],
+    [false, 238095, 3, 238096, 4],
+    [true, 891, 0, 892, 1],
+    [true, 4761, 1, 4762, 2],
+    [true, 19230, 2, 19231, 3],
+    [true, 59523, 3, 59524, 4],
+  ];
+  for (const [seasonal, lastN, tier, firstN, nextTier] of cases) {
+    assert.equal(forecastGridTierIndex(lastN, seasonal), tier, `n=${lastN} seasonal=${seasonal}`);
+    assert.equal(forecastGridTierIndex(firstN, seasonal), nextTier, `n=${firstN} seasonal=${seasonal}`);
+  }
+  // The single-point tier is the floor: arbitrarily long series stay on it.
+  assert.equal(forecastGridTierIndex(10_000_000, true), 4);
+  assert.equal(forecastGridTierIndex(10_000_000, false), 4);
+});
+
+test('work bound: a short series performs exactly the full-grid work', () => {
+  // Issue #298. 12 points, no admissible seasonality (12 < 2 x 12):
+  // tier 0's 510 grid fits + 3 winner re-runs, each processing n-1 = 11
+  // steps, and no seasonal work at all.
+  const work = {};
+  const r = computeForecast(trendSeries, 'MONTH', cfg, work);
+  assert.ok(r);
+  assert.deepEqual(work, { tierIndex: 0, fitsRun: 513, filterSteps: 5643, seasonalUpdates: 0 });
 });
