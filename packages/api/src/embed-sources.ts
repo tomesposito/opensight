@@ -23,7 +23,7 @@ export class EmbedSources extends HostedSources {
     return { ...sourceBody(source.body), id, version: source.version };
   }
   override async payload(context: TenantContext, source: HostedSource): Promise<unknown> {
-    this.active(source);
+    this.active(source, context);
     const current = await this.metadata.embedDatasetSource(context, this.dataset(context, source.id));
     if (source.binding.version === 4) {
       if (!this.artifacts) embedFailure('SOURCE_ARTIFACT_READER_REQUIRED', 503);
@@ -33,7 +33,7 @@ export class EmbedSources extends HostedSources {
         const actual = await this.metadata.embedDatasetSource(context, this.dataset(context, source.id)), body = sourceBody(actual.source.body);
         if (actual.source.id !== current.source.id || actual.source.ownerId !== current.source.ownerId || actual.source.version !== source.version
           || body.binding.objectId !== source.binding.objectId) embedFailure('METADATA_REVISED', 403);
-        this.active({ ...body, id: source.id, version: actual.source.version });
+        this.active({ ...body, id: source.id, version: actual.source.version }, context);
       };
       await verify(); const result = await this.artifacts(context, current.source, verify); await verify(); return result;
     }

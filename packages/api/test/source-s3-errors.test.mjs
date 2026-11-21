@@ -83,7 +83,7 @@ test('S3 schemas reject forged snapshot shapes and operator allowlist errors', a
     assert.throws(() => sourceBody({ binding: { ...source.binding, ...changes }, policy: source.policy, secretId: source.secretId }));
   }
   for (const raw of ['null', '{}', '[{}]', JSON.stringify(Array(257).fill(config)), '{']) assert.throws(() => hostedS3Settings({ OPENSIGHT_S3_SOURCES: raw }), { code: 'SOURCE_ENDPOINT_CONFIG_INVALID' });
-  assert.deepEqual(hostedS3Settings({}).configs, []);
+  assert.deepEqual(hostedS3Settings({}).grants, []);
 });
 test('S3 build permission gates browsing and reading before any SDK call', async t => {
   t.mock.method(S3Client.prototype, 'send', () => assert.fail('reader reached SDK'));

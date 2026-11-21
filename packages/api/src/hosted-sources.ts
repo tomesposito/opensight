@@ -6,7 +6,7 @@ import { TenantMetadata, type TenantContext } from './metadata.js';
 import { object, identifier, type MetadataResource } from './metadata-resources.js';
 import { encryptMetadataSecret, decryptMetadataSecret } from './metadata-secrets.js';
 import { sourceBody, isQueryConnectorId, sourceCredentials, sourcePolicy, sourceError, type SourceBody, type SourceEndpoint } from './source-schema.js';
-import { hostedS3Settings, permittedS3Config, type HostedS3Settings } from './source-s3-config.js';
+import { hostedS3Settings, permittedS3Config, type HostedS3Settings, type S3GrantScope } from './source-s3-config.js';
 import type { JsonObject } from './mapping.js';
 
 export interface HostedSource extends SourceBody { id: string; version: number }
@@ -36,15 +36,15 @@ export class HostedSources {
     const r = await this.metadata.get(context, this.key(context, 'source', id));
     return { ...sourceBody(r.body), id: r.id, version: r.version };
   }
-  active(source: HostedSource): void {
+  active(source: HostedSource, context: S3GrantScope): void {
     if (source.binding.state === 'expired') sourceError('UPLOAD_EXPIRED', 403);
     if (source.binding.state !== 'active') sourceError('SOURCE_RETIRED', 403);
     if (source.binding.expiresAt && Date.parse(source.binding.expiresAt) <= this.clock()) sourceError('UPLOAD_EXPIRED', 403);
-    if (source.binding.connectorId === 's3') permittedS3Config(source.binding.s3Config, this.s3);
+    if (source.binding.connectorId === 's3') permittedS3Config(source.binding.s3Config, this.s3, context);
     if (source.binding.endpointId) this.endpoint(source.binding.endpointId, source.binding.connectorId);
   }
   async get(context: TenantContext, id: string): Promise<HostedSource> {
-    const source = await this.stored(context, id); this.active(source); return source;
+    const source = await this.stored(context, id); this.active(source, context); return source;
   }
   summary(source: HostedSource) {
     const { columns, connectorId, state, expiresAt, rowCount } = source.binding;
@@ -66,7 +66,7 @@ export class HostedSources {
     await verify(); const sample = await this.readPayload(context, source, true); await verify(); return sample;
   }
   private async readPayload(context: TenantContext, source: HostedSource, bounded = false): Promise<unknown> {
-    this.active(source);
+    this.active(source, context);
     if (source.binding.version === 4) {
       if (!this.artifacts) sourceError('SOURCE_ARTIFACT_READER_REQUIRED', 503);
       const revisions = await this.metadata.revisions(context), key = this.key(context, 'source', source.id);
@@ -75,7 +75,7 @@ export class HostedSources {
         await this.metadata.assertRevisions(context, revisions);
         const actual = await this.metadata.get(context, key), body = sourceBody(actual.body);
         if (actual.version !== source.version || body.binding.objectId !== source.binding.objectId) sourceError('METADATA_REVISED', 403);
-        this.active({ ...body, id: source.id, version: actual.version });
+        this.active({ ...body, id: source.id, version: actual.version }, context);
       };
       const reader = bounded ? this.artifacts.boundedSample : this.artifacts;
       if (!reader) prepFail('UNSUPPORTED_PREP_STEP', '$.joinDiagnostics', 'Source artifact adapter has no bounded reader');
@@ -118,12 +118,12 @@ export class HostedSources {
   }
   async browseS3(context: TenantContext, raw: unknown, signal?: AbortSignal) {
     await this.capability(context, 'build');
-    const r = object(raw, ['config']), config = permittedS3Config(r.config, this.s3);
+    const r = object(raw, ['config']), config = permittedS3Config(r.config, this.s3, context);
     return listS3Objects(config, { ...this.s3, signal });
   }
   private async createS3(context: TenantContext, id: string, raw: unknown, parse: UploadParser, signal?: AbortSignal): Promise<ReturnType<HostedSources['summary']>> {
     const r = object(structuredClone(raw), ['connectorId', 'config', 'fileConfig', 'columns', 'expiresAt', 'policy']);
-    const config = permittedS3Config(r.config, this.s3);
+    const config = permittedS3Config(r.config, this.s3, context);
     if (typeof r.expiresAt !== 'string' || !Number.isFinite(Date.parse(r.expiresAt)) || new Date(r.expiresAt).toISOString() !== r.expiresAt || Date.parse(r.expiresAt) <= this.clock()) sourceError('UPLOAD_EXPIRY_REQUIRED');
     if (r.policy === undefined) sourceError('SOURCE_POLICY_REQUIRED', 403);
     object(r.policy, ['rowLevel', 'rowRules', 'columnGrants', 'protectedColumns']);
