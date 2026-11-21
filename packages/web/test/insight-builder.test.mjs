@@ -9,7 +9,7 @@ import { importBundle, exportBundle } from '../build/test/bundle-authoring.js';
 import { buildAuthorQuery } from '../build/test/author-query.js';
 import { compileVisual } from '../build/test/compiler.js';
 import { convertDefinition } from '../build/test/definition-converter.js';
-import { normalizeInsight } from '../build/test/insight-configuration.js';
+import { normalizeInsight, rebindInsight } from '../build/test/insight-configuration.js';
 import { DEFAULT_FORECAST_CONFIG } from '../build/test/forecast.js';
 const add = () => authorReducer(emptyDraft(), { type: 'add', kind: 'insight' });
 const visual = d => activeSheet(d).visuals[0];
@@ -61,7 +61,7 @@ test('unsupported native computations and properties appear in import reports, b
     [c => { c.CustomNarrative = { Narrative: '${forecast.result}' }; }, 'INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED'],
     [c => { c.Computations = [{ GrowthRate: { ComputationId: 'growth', Time: c.Computations[0].TopBottomRanked.Category, Value: c.Computations[0].TopBottomRanked.Value } }]; }, 'INSIGHT_TIME_REQUIRED'],
     [c => { c.NativeFutureOption = true; }, 'INSIGHT_CONFIGURATION_UNSUPPORTED'],
-    [c => { c.Computations[0].TopBottomRanked.Value.NumericalMeasureField.Column = {}; }, 'expected a nonempty string'],
+    [c => { c.Computations[0].TopBottomRanked.Value.NumericalMeasureField.Column = {}; }, 'INSIGHT_FIELD_UNBOUND'],
   ]) {
     const api = nativeApi(); change(api.Sheets[0].Visuals[0].InsightVisual.InsightConfiguration);
     const resource = serializeDraft(add()); resource.definition = convertDefinition(api);
@@ -105,6 +105,35 @@ test('builder insight presets persist ranked N and block unsupported definitions
   draft = authorReducer(draft, { type: 'insight', configuration: { computations: [{ forecast: { computationId: 'f' } }] } });
   assert.doesNotThrow(() => serializeVisual(visual(draft)));
   assert.throws(() => compile(draft), /INSIGHT_TIME_REQUIRED/);
+});
+
+test('rebinding and author serialization preserve malformed bindings for compiler rejection (issue #297)', () => {
+  const dim = name => ({ categoricalDimensionField: { fieldId: name, column: { columnName: name, dataSetIdentifier: 'sales_data' } } });
+  const value = name => ({ numericalMeasureField: { fieldId: name, column: { columnName: name, dataSetIdentifier: 'sales_data' }, aggregationFunction: { simpleNumericalAggregation: 'SUM' } } });
+  for (const [kind, slot] of [['uniqueValues', 'category'], ['forecast', 'time'], ['totalAggregation', 'value'], ['metricComparison', 'fromValue'], ['metricComparison', 'targetValue']]) {
+    for (const malformed of [{ unsupportedDimensionField: {} }, { ...value('revenue'), extra: {} }, { numericalMeasureField: { ...value('revenue').numericalMeasureField, aggregationFunction: { simpleNumericalAggregation: 'AVERAGE' } } }]) {
+      const configuration = { computations: [{ [kind]: { computationId: 'c', [slot]: malformed } }] };
+      const before = structuredClone(configuration);
+      assert.strictEqual(rebindInsight(configuration, [dim('category')], [value('profit')]), configuration, `${kind}.${slot}`);
+      assert.deepEqual(configuration, before);
+      const d = add(); visual(d).insightConfiguration = configuration;
+      assert.throws(() => validateDraft(d), /Invalid or unsupported author draft/);
+      const definition = serializeVisual(visual(d));
+      assert.deepEqual(definition.insightVisual.insightConfiguration, before);
+      assert.throws(() => compileVisual({ source: 'bundle', definition, rows: null, path: '$', bindings: {} }), /INSIGHT_(FIELD_UNBOUND|CONFIGURATION_UNSUPPORTED)/);
+    }
+  }
+});
+
+test('well-independent insight bindings remain saveable in unfinished drafts (issue #297)', () => {
+  const category = { categoricalDimensionField: { fieldId: 'old-category', column: { columnName: 'missing-category', dataSetIdentifier: 'old-data' } } };
+  const value = { numericalMeasureField: { fieldId: 'old-value', column: { columnName: 'missing-value', dataSetIdentifier: 'old-data' }, aggregationFunction: { simpleNumericalAggregation: 'SUM' } } };
+  const configuration = { computations: [{ topBottomRanked: { computationId: 'c', type: 'TOP', category, value } }] };
+  const d = add(); Object.assign(visual(d), { dimension: null, measures: [], insightConfiguration: configuration });
+  assert.doesNotThrow(() => validateDraft(d));
+  assert.deepEqual(serializeVisual(visual(d)).insightVisual.insightConfiguration, configuration);
+  assert.throws(() => normalizeInsight(configuration, [{ id: 'region', column: 'region', dataSet: 'sales_data' }], [{ id: 'revenue', column: 'revenue', dataSet: 'sales_data' }]), /INSIGHT_FIELD_UNBOUND/);
+  assert.equal(buildAuthorQuery(visual(d)), null);
 });
 
 test('forecast authoring option dispatches the preset and round-trips through normalization and bundles', async t => {

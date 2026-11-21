@@ -70,6 +70,27 @@ function moversProperties(body: Obj): void {
   if (body.sortOrder !== undefined && body.sortOrder !== 'PERCENT_DIFFERENCE' && body.sortOrder !== 'ABSOLUTE_DIFFERENCE') insightFail('INSIGHT_COMPUTATION_INVALID', 'sortOrder must be PERCENT_DIFFERENCE or ABSOLUTE_DIFFERENCE');
 }
 
+/** Validate explicit binding syntax and semantics without resolving it against wells. */
+function bindingShape(raw: unknown, measure: boolean): { variant: string; field: Obj; column: Obj } {
+  const pairs = Object.entries(insightObject(raw));
+  if (pairs.length !== 1) return insightFail('INSIGHT_FIELD_UNBOUND', 'expected one field variant');
+  const [variant, value] = pairs[0]!;
+  const expected = measure ? ['numericalMeasureField'] : ['categoricalDimensionField', 'numericalDimensionField', 'dateDimensionField'];
+  if (!expected.includes(variant)) insightFail('INSIGHT_FIELD_UNBOUND', `unsupported field ${variant}`);
+  const field = insightObject(value), column = insightObject(field.column);
+  allowed(field, ['fieldId', 'column', ...(measure ? ['aggregationFunction'] : variant === 'dateDimensionField' ? ['dateGranularity'] : [])]);
+  allowed(column, ['columnName', 'dataSetIdentifier']);
+  if (typeof field.fieldId !== 'string' || typeof column.columnName !== 'string') insightFail('INSIGHT_FIELD_UNBOUND', 'fieldId and columnName must be strings');
+  if (column.dataSetIdentifier !== undefined && typeof column.dataSetIdentifier !== 'string') insightFail('INSIGHT_FIELD_UNBOUND', 'dataSetIdentifier must be a string');
+  if (variant === 'dateDimensionField' && field.dateGranularity !== undefined && !['DAY', 'MONTH', 'QUARTER', 'YEAR'].includes(field.dateGranularity as string))
+    insightFail('INSIGHT_FIELD_UNBOUND', 'dateGranularity must be DAY, MONTH, QUARTER or YEAR');
+  if (measure) {
+    const agg = insightObject(field.aggregationFunction); allowed(agg, ['simpleNumericalAggregation']);
+    if (agg.simpleNumericalAggregation !== 'SUM') insightFail('INSIGHT_FIELD_UNBOUND', 'only explicit SUM bindings are supported');
+  }
+  return { variant, field, column };
+}
+
 function computations(config: unknown): [Kind, Obj][] | undefined {
   const c = insightObject(config);
   if (Object.hasOwn(c, 'customNarrative')) insightFail('INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED', 'custom narrative templates and placeholders are not supported');
@@ -96,6 +117,9 @@ function computations(config: unknown): [Kind, Obj][] | undefined {
       : kind === 'periodToDate' ? ['time', 'value', 'periodTimeGranularity'] : kind === 'uniqueValues' ? ['category']
       : kind === 'topBottomMovers' ? ['time', 'category', 'value', 'type', 'moverSize', 'sortOrder'] : ['time', 'value'];
     allowed(body, ['computationId', 'name', ...specific]);
+    for (const slot of ['category', 'time', 'value', 'fromValue', 'targetValue']) {
+      if (body[slot] !== undefined) bindingShape(body[slot], slot !== 'category' && slot !== 'time');
+    }
     if (kind === 'forecast') forecastProperties(body.forecastProperties);
     if (kind === 'anomaly') anomalyDetection(body.anomalyDetection);
     if (kind === 'periodToDate') periodTimeGranularity(body.periodTimeGranularity);
@@ -124,9 +148,11 @@ export function projectInsightBody(body: Obj): Obj {
  * admission, author query construction and the compiler (via normalizeInsight):
  * every computation is a known, well-formed variant with only supported
  * properties, computation IDs are unique, and topBottomMovers computations
- * never mix with other computations. Field-binding and dimension/measure
- * requirements are normalizeInsight's layer, enforced before querying and at
- * compile time — not here, so an in-progress draft stays saveable.
+ * never mix with other computations. Present field bindings must have supported
+ * shapes and semantics before rebinding can replace them. Field existence in
+ * the wells and dimension/measure requirements remain normalizeInsight's layer,
+ * enforced before querying and at compile time, so an in-progress draft stays
+ * saveable even when its fields are not yet assigned.
  */
 export function validateInsightConfiguration(config: unknown): void {
   const entries = computations(config);
@@ -177,18 +203,7 @@ export function normalizeInsight(config: unknown, dimensions: Field[], measures:
   ];
   const binding = (raw: unknown, fields: Field[], fallback: number): number => {
     if (raw === undefined) return fallback;
-    const wrapper = insightObject(raw), pairs = Object.entries(wrapper);
-    if (pairs.length !== 1) return insightFail('INSIGHT_FIELD_UNBOUND', 'expected one field variant');
-    const [variant, value] = pairs[0]!, f = insightObject(value), column = insightObject(f.column);
-    const measure = fields === measures;
-    const expected = measure ? ['numericalMeasureField'] : ['categoricalDimensionField', 'numericalDimensionField', 'dateDimensionField'];
-    if (!expected.includes(variant)) insightFail('INSIGHT_FIELD_UNBOUND', `unsupported field ${variant}`);
-    allowed(f, ['fieldId', 'column', ...(measure ? ['aggregationFunction'] : variant === 'dateDimensionField' ? ['dateGranularity'] : [])]);
-    allowed(column, ['columnName', 'dataSetIdentifier']);
-    if (measure) {
-      const agg = insightObject(f.aggregationFunction); allowed(agg, ['simpleNumericalAggregation']);
-      if (agg.simpleNumericalAggregation !== 'SUM') insightFail('INSIGHT_FIELD_UNBOUND', 'only explicit SUM bindings are supported');
-    }
+    const { variant, field: f, column } = bindingShape(raw, fields === measures);
     const index = fields.findIndex(field => (variant === 'dateDimensionField') === !!field.dateGranularity && field.id === f.fieldId && field.column === column.columnName && field.dataSet === column.dataSetIdentifier
       && (variant !== 'dateDimensionField' || field.dateGranularity === (f.dateGranularity ?? 'DAY')));
     if (index < 0) insightFail('INSIGHT_FIELD_UNBOUND', 'computation references an unbound or conflicting field');
@@ -240,9 +255,14 @@ export function normalizeInsight(config: unknown, dimensions: Field[], measures:
   });
 }
 
-/** Rebind imported computation fields when the author changes wells; preserve other options. */
+/**
+ * Rebind imported computation fields when the author changes wells; preserve
+ * other options. Invalid configurations are returned unchanged so callers such
+ * as serializeVisual cannot hide their errors from downstream compilation.
+ */
 export function rebindInsight(config: Obj, category: unknown[], values: unknown[]): Obj {
   try {
+  validateInsightConfiguration(config);
   const original = insightWells(config);
   const name = (raw: unknown) => Object.values(insightObject(raw))[0];
   const column = (raw: unknown) => insightObject(insightObject(name(raw)).column).columnName;

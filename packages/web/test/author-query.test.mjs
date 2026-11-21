@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createApiClient, QueryError } from '../build/test/api-client.js';
-import { activeSheet, authorReducer, emptyDraft, validateDraft } from '../build/test/authoring.js';
+import { activeSheet, authorReducer, emptyDraft, serializeVisual, validateDraft } from '../build/test/authoring.js';
+import { normalizeInsight } from '../build/test/insight-configuration.js';
 import { buildAuthorQuery, loadAuthorRows } from '../build/test/author-query.js';
 import { buildAuthorVisual } from '../build/test/author-preview.js';
 import { compileVisual } from '../build/test/compiler.js';
@@ -235,4 +236,110 @@ test('cancelling a pending reopen retry prevents any later query', async t => {
   await new Promise(setImmediate);
   abort.abort(); await assert.rejects(pending, { name: 'AbortError' });
   t.mock.timers.tick(5000); assert.equal(calls, 1);
+});
+
+const insightDimension = (name, date = false) => ({ [date ? 'dateDimensionField' : 'categoricalDimensionField']: {
+  fieldId: name, column: { columnName: name, dataSetIdentifier: 'sales_data' }, ...(date ? { dateGranularity: 'MONTH' } : {}),
+} });
+const insightMeasure = name => ({ numericalMeasureField: { fieldId: name, column: { columnName: name, dataSetIdentifier: 'sales_data' }, aggregationFunction: { simpleNumericalAggregation: 'SUM' } } });
+const insightSlots = {
+  totalAggregation: ['value'], maximumMinimum: ['time', 'value'], topBottomRanked: ['category', 'value'],
+  growthRate: ['time', 'value'], periodOverPeriod: ['time', 'value'], metricComparison: ['time', 'fromValue', 'targetValue'],
+  forecast: ['time', 'value'], periodToDate: ['time', 'value'], uniqueValues: ['category'],
+  topBottomMovers: ['category', 'time', 'value'], anomaly: ['time', 'value'],
+};
+for (const [kind, slots] of Object.entries(insightSlots)) {
+  test(`${kind} rejects malformed nested bindings before author queries (issue #297)`, async () => {
+    const bindings = { category: insightDimension('region'), time: insightDimension('order_date', true),
+      value: insightMeasure('revenue'), fromValue: insightMeasure('revenue'), targetValue: insightMeasure('profit') };
+    const options = kind === 'maximumMinimum' ? { type: 'MAXIMUM' } : ['topBottomRanked', 'topBottomMovers'].includes(kind) ? { type: 'TOP' } : {};
+    const base = { ...visual('insight'), dimension: slots.includes('category') || kind === 'totalAggregation' ? 'region' : 'order_date',
+      measures: kind === 'uniqueValues' ? [] : kind === 'metricComparison' ? ['revenue', 'profit'] : ['revenue'],
+      insightConfiguration: { computations: [{ [kind]: { computationId: 'c', ...options, ...Object.fromEntries(slots.map(slot => [slot, bindings[slot]])) } }] } };
+    const request = buildAuthorQuery(base);
+    assert.ok(request, `${kind}: valid control must query`);
+    const dimensions = request.dimensions.map(d => ({ id: d.fieldId, column: d.columnName, dataSet: 'sales_data', ...(d.granularity ? { dateGranularity: d.granularity } : {}) }));
+    const measures = base.measures.map(name => ({ id: name, column: name, dataSet: 'sales_data' }));
+    assert.doesNotThrow(() => normalizeInsight(base.insightConfiguration, dimensions, measures));
+    let calls = 0;
+    const client = { async queryDataset() { calls++; return { rows: [] }; } };
+    for (const slot of slots) {
+      const measure = !['category', 'time'].includes(slot);
+      const mutations = [
+        ['null binding', () => null], ['array binding', () => []], ['primitive binding', () => 'region'], ['empty binding', () => ({})],
+        ['unknown variant', () => ({ unsupportedDimensionField: {} })],
+        ['multiple variants', raw => ({ ...raw, unsupportedDimensionField: {} })],
+        ['wrong slot variant', () => measure ? insightDimension('revenue') : insightMeasure('region')],
+        ['null field', raw => ({ [Object.keys(raw)[0]]: null })],
+        ['array field', raw => ({ [Object.keys(raw)[0]]: [] })],
+        ['primitive field', raw => ({ [Object.keys(raw)[0]]: 1 })],
+        ['extra field property', (raw, field) => { field.unsupported = true; return raw; }],
+        ['missing fieldId', (raw, field) => { delete field.fieldId; return raw; }],
+        ['non-string fieldId', (raw, field) => { field.fieldId = 1; return raw; }],
+        ['missing column', (raw, field) => { delete field.column; return raw; }],
+        ['null column', (raw, field) => { field.column = null; return raw; }],
+        ['array column', (raw, field) => { field.column = []; return raw; }],
+        ['extra column property', (raw, field) => { field.column.unsupported = true; return raw; }],
+        ['missing columnName', (raw, field) => { delete field.column.columnName; return raw; }],
+        ['non-string columnName', (raw, field) => { field.column.columnName = 1; return raw; }],
+        ['non-string dataset', (raw, field) => { field.column.dataSetIdentifier = 1; return raw; }],
+      ];
+      if (measure) mutations.push(
+        ['missing aggregation', (raw, field) => { delete field.aggregationFunction; return raw; }],
+        ...[null, [], 'SUM', {}, { simpleNumericalAggregation: 'AVERAGE' }, { simpleNumericalAggregation: 'COUNT' },
+          { simpleNumericalAggregation: 'SUM', unsupported: true }, { percentileAggregation: { percentileValue: 50 } }]
+          .map(aggregation => [`unsupported aggregation ${JSON.stringify(aggregation)}`, (raw, field) => { field.aggregationFunction = aggregation; return raw; }]),
+        ['date grain on measure', (raw, field) => { field.dateGranularity = 'MONTH'; return raw; }],
+      );
+      else mutations.push(
+        ['aggregation on dimension', (raw, field) => { field.aggregationFunction = { simpleNumericalAggregation: 'SUM' }; return raw; }],
+        ['unsupported date grain', (raw, field) => { field.dateGranularity = 'WEEK'; return raw; }],
+      );
+      for (const [label, mutate] of mutations) {
+        const item = structuredClone(base), raw = item.insightConfiguration.computations[0][kind][slot];
+        item.insightConfiguration.computations[0][kind][slot] = mutate(raw, Object.values(raw)[0]);
+        let directError;
+        assert.throws(() => normalizeInsight(item.insightConfiguration, dimensions, measures), error => {
+          directError = error; return /^INSIGHT_(FIELD_UNBOUND|CONFIGURATION_INVALID|CONFIGURATION_UNSUPPORTED)$/.test(error.code);
+        }, `${slot}: ${label}`);
+        const before = structuredClone(item), query = buildAuthorQuery(item);
+        assert.equal(query, null, `${slot}: ${label} (${directError.code})`);
+        if (query) await loadAuthorRows(client, query, controller().signal);
+        assert.deepEqual(item, before, `${slot}: query validation must not mutate the visual`);
+      }
+    }
+    assert.equal(calls, 0);
+  });
+}
+
+test('valid imported insight bindings still follow changed author wells and preserve movers time (issue #297)', () => {
+  const oldDimension = (name, date = false) => {
+    const raw = insightDimension(name, date), field = Object.values(raw)[0];
+    field.fieldId = `imported-${name}`; field.column.dataSetIdentifier = 'old-data';
+    if (date) field.dateGranularity = 'DAY';
+    return raw;
+  };
+  const oldMeasure = name => { const raw = insightMeasure(name); raw.numericalMeasureField.fieldId = `imported-${name}`; raw.numericalMeasureField.column.dataSetIdentifier = 'old-data'; return raw; };
+  const cases = [
+    ['uniqueValues', { category: oldDimension('old-category') }, 'category', [], ['category']],
+    ['forecast', { time: oldDimension('old-date', true), value: oldMeasure('old-value'), forecastProperties: { periodsForward: 5 } }, 'order_date', ['profit'], ['order_date']],
+    ['metricComparison', { time: oldDimension('old-date', true), fromValue: oldMeasure('old-from'), targetValue: oldMeasure('old-target') }, 'order_date', ['profit', 'revenue'], ['order_date']],
+    ['topBottomMovers', { type: 'BOTTOM', category: oldDimension('old-category'), time: oldDimension('order_date', true), value: oldMeasure('old-value'), moverSize: 2, sortOrder: 'ABSOLUTE_DIFFERENCE' }, 'category', ['profit'], ['category', 'order_date']],
+  ];
+  for (const [kind, fields, dimension, measures, expectedDimensions] of cases) {
+    const item = { ...visual('insight'), dimension, measures, dateGrain: 'MONTH', insightConfiguration: { computations: [{ [kind]: { computationId: 'c', name: 'Imported computation', ...fields } }] } };
+    const before = structuredClone(item), query = buildAuthorQuery(item);
+    assert.ok(query, kind);
+    assert.deepEqual(query.dimensions.map(d => d.columnName), expectedDimensions);
+    assert.ok(query.dimensions.filter(d => d.columnName === 'order_date').every(d => d.granularity === 'MONTH'));
+    if (measures.length) assert.deepEqual(query.measures.map(m => m.columnName), measures);
+    const compiled = compileVisual({ source: 'bundle', definition: serializeVisual(item), rows: null, path: '$', bindings: {} });
+    assert.deepEqual(compiled.model.dimensions.map(d => d.column), expectedDimensions);
+    const requests = normalizeInsight(compiled.model.insightConfiguration, compiled.model.dimensions, compiled.model.measures);
+    assert.equal(requests[0].kind, kind); assert.equal(requests[0].measure, 0);
+    if (kind === 'metricComparison') assert.equal(requests[0].target, 1);
+    if (kind === 'forecast') assert.equal(requests[0].forecast.periodsForward, 5);
+    if (kind === 'topBottomMovers') assert.deepEqual(requests[0], { kind, id: 'c', measure: 0, type: 'BOTTOM', size: 2, sortOrder: 'ABSOLUTE_DIFFERENCE' });
+    assert.deepEqual(item, before);
+  }
 });
