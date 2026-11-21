@@ -187,6 +187,24 @@ test('#249 tenant byte admission counts answer and revisions and rejects oversiz
   assert.equal(rows[0].idempotency_key, 'new');
 });
 
+test('#294 tenant byte admission counts retained non-ASCII payloads in UTF-8 bytes, not characters', async t => {
+  const f = await fixture(t), answer = 'é'.repeat(64);
+  const serializedAnswer = JSON.stringify(answer), serializedRevisions = JSON.stringify(revisions);
+  const rowBytes = Buffer.byteLength(serializedAnswer) + Buffer.byteLength(serializedRevisions);
+  const rowChars = serializedAnswer.length + serializedRevisions.length;
+  assert.ok(rowBytes > rowChars);
+  // Two rows fit by bytes; a third fits only if retained rows are miscounted
+  // as characters (2*rowChars + rowBytes <= limit < 3*rowBytes).
+  const store = f.nextStore({ OPENSIGHT_AI_RECEIPT_PER_TENANT_MAX_BYTES: String(2 * rowBytes + rowChars) });
+  await saveReceipt(store, 'one', context, answer);
+  await saveReceipt(store, 'two', context, answer);
+  const before = await storedRows(f.db, 'ai_answer_receipts');
+  assert.equal(before.length, 2);
+  await assert.rejects(saveReceipt(store, 'three', context, answer), { code: 'IDEMPOTENCY_CAPACITY_EXCEEDED', status: 429 });
+  assert.deepEqual(await storedRows(f.db, 'ai_answer_receipts'), before);
+  await saveReceipt(store, 'three', { ...context, tenantId: 'other-tenant' }, answer);
+});
+
 test('#249 pending admission reclaims receipts expiring during generation but protects active replays', async t => {
   const f = await fixture(t);
   const rowBytes = Buffer.byteLength('{}') + Buffer.byteLength(JSON.stringify(revisions));

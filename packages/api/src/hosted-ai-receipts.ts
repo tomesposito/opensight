@@ -47,6 +47,11 @@ export async function initializeAiAnswerReceipts(db: Database): Promise<void> {
 export class HostedAIReceipts {
   private readonly maxEntries: number;
   private readonly maxBytes: number;
+  // Retained payloads are admitted against a byte limit, so the aggregate must
+  // count UTF-8 bytes, not characters: LENGTH() on TEXT counts characters in
+  // both engines. Same dialect split as manifests.ts (octet_length / blob cast).
+  private readonly byteLength = (column: string): string =>
+    this.db.dialect === 'postgres' ? `octet_length(${column})` : `length(CAST(${column} AS BLOB))`;
   constructor(private readonly db: Database, private readonly clock: () => number = Date.now, env: NodeJS.ProcessEnv = process.env) {
     this.maxEntries = positive(env, 'OPENSIGHT_AI_RECEIPT_PER_TENANT_MAX_ENTRIES', 250);
     this.maxBytes = positive(env, 'OPENSIGHT_AI_RECEIPT_PER_TENANT_MAX_BYTES', 16 * 1024 * 1024);
@@ -104,7 +109,7 @@ export class HostedAIReceipts {
         pending: (answer, chargedCount, managed, revisions) => write(async c => {
           const created = this.clock(), now = new Date(created).toISOString();
           await c.query(`DELETE FROM ai_answer_receipts WHERE tenant_id = ? AND expires_at <= ? AND ${withoutActiveReservation}`, [context.tenantId, now, now]);
-          const usage = (await c.query(`SELECT COUNT(*) AS entries, COALESCE(SUM(LENGTH(answer) + LENGTH(revisions)), 0) AS bytes
+          const usage = (await c.query(`SELECT COUNT(*) AS entries, COALESCE(SUM(${this.byteLength('answer')} + ${this.byteLength('revisions')}), 0) AS bytes
             FROM ai_answer_receipts WHERE tenant_id = ?`, [context.tenantId]))[0];
           const serializedAnswer = JSON.stringify(answer), serializedRevisions = JSON.stringify(revisions);
           const newBytes = Buffer.byteLength(serializedAnswer) + Buffer.byteLength(serializedRevisions);
