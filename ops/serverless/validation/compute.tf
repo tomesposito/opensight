@@ -26,7 +26,7 @@ locals {
     OPENSIGHT_EGRESS_PROFILE     = "ipv6"
     OPENSIGHT_SMTP_HOST          = "email-smtp.${var.region}.api.aws"
     OPENSIGHT_SMTP_PORT          = "465"
-    OPENSIGHT_SMTP_FROM          = var.alert_email
+    OPENSIGHT_SMTP_FROM          = coalesce(var.smtp_from_address, var.alert_email)
     OPENSIGHT_SMTP_SECRET_ARN    = aws_secretsmanager_secret.runtime["smtp"].arn
     OPENSIGHT_RELEASE_DIGEST     = split("@", var.image_uri)[1]
     OPENSIGHT_ARTIFACT_BUCKET    = aws_s3_bucket.artifacts.id
@@ -54,7 +54,7 @@ locals {
       OPENSIGHT_PROBE_SCHEDULE_GROUP    = aws_scheduler_schedule_group.probe.name
       OPENSIGHT_PROBE_SCHEDULE_ROLE_ARN = aws_iam_role.schedule.arn
       OPENSIGHT_SMTP_SECRET_ARN         = aws_secretsmanager_secret.runtime["smtp"].arn
-      OPENSIGHT_PROBE_MAIL_FROM         = var.alert_email
+      OPENSIGHT_PROBE_MAIL_FROM         = coalesce(var.smtp_from_address, var.alert_email)
       OPENSIGHT_PROBE_MAIL_TO           = var.alert_email
     })
   }

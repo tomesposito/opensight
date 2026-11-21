@@ -956,3 +956,7 @@ failed on denied loopback listeners and a timezone-sensitive date test; rerunnin
 with socket access and explicit UTC passed. This validates the existing baseline,
 not the proposed hosted behavior. No UI changed, so screenshots/demo media were
 not regenerated for this documentation-only draft. No service was deployed.
+
+- [D-95: bounded AWS/GitHub operator readiness](itd/D-95-operator-readiness.md) — #110/#117/#209/#236, 2026-11-21.
+
+- [D-96 — Retry counters and analytics quarantine maintenance](itd/D-96-retry-analytics-maintenance.md): exact additive registered transition with retained cleanup and D-95 sender configuration evidence.

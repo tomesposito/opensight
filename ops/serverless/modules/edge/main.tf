@@ -247,12 +247,12 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "frontend" {
 resource "aws_s3_bucket_policy" "frontend" {
   bucket = aws_s3_bucket.frontend.id
   policy = jsonencode({ Version = "2012-10-17", Statement = [
-    { Sid = "RequireTLS", Effect = "Deny", Principal = "*", Action = "s3:*",
+    { Sid      = "RequireTLS", Effect = "Deny", Principal = "*", Action = "s3:*",
       Resource = [aws_s3_bucket.frontend.arn, "${aws_s3_bucket.frontend.arn}/*"],
-      Condition = { Bool = { "aws:SecureTransport" = "false" } } },
-    { Sid = "OnlyThisDistribution", Effect = "Allow", Principal = { Service = "cloudfront.amazonaws.com" },
+    Condition = { Bool = { "aws:SecureTransport" = "false" } } },
+    { Sid    = "OnlyThisDistribution", Effect = "Allow", Principal = { Service = "cloudfront.amazonaws.com" },
       Action = "s3:GetObject", Resource = "${aws_s3_bucket.frontend.arn}/frontend/*",
-      Condition = { StringEquals = { "AWS:SourceArn" = aws_cloudfront_distribution.application.arn } } }
+    Condition = { StringEquals = { "AWS:SourceArn" = aws_cloudfront_distribution.application.arn } } }
   ] })
 }
 
@@ -356,7 +356,7 @@ resource "aws_cloudfront_distribution" "application" {
     allowed_methods            = ["GET", "HEAD"]
     cached_methods             = ["GET", "HEAD"]
     cache_policy_id            = data.aws_cloudfront_cache_policy.disabled.id
-    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.static.id
+    response_headers_policy_id = var.static_content_security_policy == null ? data.aws_cloudfront_response_headers_policy.static.id : aws_cloudfront_response_headers_policy.static[0].id
     compress                   = true
   }
   ordered_cache_behavior {
@@ -366,7 +366,7 @@ resource "aws_cloudfront_distribution" "application" {
     allowed_methods            = ["GET", "HEAD"]
     cached_methods             = ["GET", "HEAD"]
     cache_policy_id            = data.aws_cloudfront_cache_policy.assets.id
-    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.static.id
+    response_headers_policy_id = var.static_content_security_policy == null ? data.aws_cloudfront_response_headers_policy.static.id : aws_cloudfront_response_headers_policy.static[0].id
     compress                   = true
   }
   dynamic "ordered_cache_behavior" {
@@ -425,6 +425,31 @@ resource "aws_route53_record" "site" {
     precondition {
       condition     = !var.enable_free_plan || try(aws_cloudformation_stack.plan[0].outputs["Status"] == "ACTIVE" && aws_cloudformation_stack.plan[0].outputs["Tier"] == "FREE", false)
       error_message = "Public cutover requires the active Free subscription and separate operator acceptance."
+    }
+  }
+}
+
+# Static frontend policy only. API and per-session embed headers stay independent.
+resource "aws_cloudfront_response_headers_policy" "static" {
+  count = var.static_content_security_policy == null ? 0 : 1
+  name  = "${var.deployment}-static-security"
+  security_headers_config {
+    content_security_policy {
+      content_security_policy = var.static_content_security_policy
+      override                = true
+    }
+    strict_transport_security {
+      access_control_max_age_sec = 31536000
+      override                   = false
+    }
+    content_type_options { override = true }
+    frame_options {
+      frame_option = "SAMEORIGIN"
+      override     = false
+    }
+    referrer_policy {
+      referrer_policy = "strict-origin-when-cross-origin"
+      override        = false
     }
   }
 }

@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Changed
 
+- Separate the verified application email sender from the sandbox recipient and budget-alert address (#117).
+
 - Prep join diagnostics now support hosted file/S3 uploads, nested BLAZE/STORED snapshots, and governed input tables with bounded preview counts and honest truncation provenance (#288). Older uploads or artifacts without a persisted sample require explicit re-upload or refresh; diagnostics never recompute cached recipes.
 
 - Forecast grid search work is now bounded (issue #262): the seasonal state rotates through a ring buffer (O(1) per observation instead of an O(season-length) array copy), fitted values are retained only for each candidate's winning grid point, and a step budget (`MAX_FORECAST_GRID_STEPS`) steps very long series down to deterministic coarser grid tiers — the maximum-seasonality case (season 366, 732 observations) still runs the full grid, with identical results on ordinary series.
@@ -22,6 +24,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 - Marketing meta batch: the page titles and meta descriptions on the home, pricing, QuickSight/Tableau/Power BI alternatives, Metabase/Superset versus and docs pages now match the approved values exactly — no truncated titles and no auto-truncated excerpt descriptions on those pages; the docs generator carries the approved docs values as explicit meta overrides (#238).
 
 ### Added
+
+- Bounded SES forwarding for support/privacy aliases with private retention and duplicate-send protection (#209).
 
 - Native/API insight visuals with a MetricComparison computation (one measure compared against a distinct target measure over the bound date or category dimension) now pass query planning with strict binding, required-measure, distinct-measure and SUM validation and unchanged query plans; the narrative consumer still owns comparison math and sentence rendering (phase-plan fallback: parity-insight-metric-comparison-planner; no GitHub issue).
 
@@ -617,6 +621,9 @@ Unreleased entries into a new version section (see AGENTS.md §1).
   unavailable (#138).
 
 ### Security
+
+- Gate release publication on dependency auditing and update vulnerable dependencies (#111, #236).
+- Enforce a scoped static-site Content Security Policy while retaining hosted demo behavior (#110).
 
 - Operator grant/decline of a waiting-list paid request is now bound to the
   tier the operator reviewed: both operator surfaces send the displayed tier

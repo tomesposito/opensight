@@ -133,7 +133,7 @@ resource "aws_cloudfront_distribution" "application" {
     allowed_methods            = ["GET", "HEAD"]
     cached_methods             = ["GET", "HEAD"]
     cache_policy_id            = data.aws_cloudfront_cache_policy.disabled.id
-    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.static.id
+    response_headers_policy_id = var.static_content_security_policy == null ? data.aws_cloudfront_response_headers_policy.static.id : aws_cloudfront_response_headers_policy.static[0].id
     compress                   = true
     dynamic "function_association" {
       for_each = aws_cloudfront_function.static
@@ -150,7 +150,7 @@ resource "aws_cloudfront_distribution" "application" {
     allowed_methods            = ["GET", "HEAD"]
     cached_methods             = ["GET", "HEAD"]
     cache_policy_id            = data.aws_cloudfront_cache_policy.assets.id
-    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.static.id
+    response_headers_policy_id = var.static_content_security_policy == null ? data.aws_cloudfront_response_headers_policy.static.id : aws_cloudfront_response_headers_policy.static[0].id
     compress                   = true
     dynamic "function_association" {
       for_each = aws_cloudfront_function.static
@@ -229,6 +229,31 @@ resource "aws_route53_record" "app" {
     precondition {
       condition     = try(aws_cloudformation_stack.plan.outputs["Status"] == "ACTIVE" && aws_cloudformation_stack.plan.outputs["Tier"] == "FREE", false)
       error_message = "App cutover requires the active Free subscription."
+    }
+  }
+}
+
+# Static frontend policy only. API and per-session embed headers stay independent.
+resource "aws_cloudfront_response_headers_policy" "static" {
+  count = var.static_content_security_policy == null ? 0 : 1
+  name  = "${var.deployment}-static-security"
+  security_headers_config {
+    content_security_policy {
+      content_security_policy = var.static_content_security_policy
+      override                = true
+    }
+    strict_transport_security {
+      access_control_max_age_sec = 31536000
+      override                   = false
+    }
+    content_type_options { override = true }
+    frame_options {
+      frame_option = "SAMEORIGIN"
+      override     = false
+    }
+    referrer_policy {
+      referrer_policy = "strict-origin-when-cross-origin"
+      override        = false
     }
   }
 }

@@ -272,3 +272,38 @@ test('#229 serverless backups preserve answer receipts and migrate pre-receipt i
  assert.equal((await migrateRegistered(legacy.db, legacy.env, old, oldRegistry, operation, 'sqlite')).replayed, true);
  for (const table of aiReceiptTables) assert.deepEqual(await legacy.db.transaction(c => c.query(`SELECT * FROM ${table}`)), []);
 });
+
+async function retainedLegacyDelivery(f) {
+ await f.db.transaction(async c => {
+  await c.query('ALTER TABLE h7_deliveries DROP COLUMN total_attempts');
+  await c.query('ALTER TABLE h7_deliveries DROP COLUMN retry_sequences');
+  await c.query('ALTER TABLE analytics_events DROP COLUMN quarantine_reason');
+  await c.query("INSERT INTO h7_jobs (tenant_id,namespace_id,job_id,owner_id,version,spec,stopped) SELECT tenant_id,namespace_id,'retained-job',user_id,1,'{}',1 FROM h2_memberships WHERE user_id='admin' LIMIT 1");
+  await c.query("INSERT INTO h7_occurrences (tenant_id,namespace_id,occurrence_id,job_id,owner_id,initiated_by,job_version,due,spec,revisions,state,created_at,finished_at) SELECT tenant_id,namespace_id,'retained-occurrence',job_id,owner_id,owner_id,1,'2026-11-01T00:00:00Z','{}','{}','succeeded','2026-11-01T00:00:00Z','2026-11-01T00:00:01Z' FROM h7_jobs");
+  await c.query("INSERT INTO h7_deliveries (tenant_id,namespace_id,delivery_id,job_id,occurrence_id,recipient_id,state,attempts,next_attempt,sent_at) SELECT tenant_id,namespace_id,'retained-delivery',job_id,occurrence_id,owner_id,'sent',3,'2026-11-01T00:00:00Z','2026-11-01T00:00:01Z' FROM h7_occurrences");
+ });
+ return snapshotServerless(f.db,'test',randomUUID(),Date.now()+3600000,['a'.repeat(32)],'sqlite');
+}
+test('D-96 registered retry migration backfills exact retained attempts and replays without changing counters',async t=>{
+ const f=await fixture(t),snapshot=await retainedLegacyDelivery(f),{migrateRegistered}=await import('../dist/serverless-backup.js');
+ assert.equal(snapshot.tables.h7_deliveries.length,1);
+ const registry={...f.registry,epoch:snapshot.epoch,backups:{[snapshot.id]:checksum(snapshot)}},operation=randomUUID();
+ assert.equal((await migrateRegistered(f.db,f.env,snapshot,registry,operation,'sqlite')).replayed,false);
+ assert.equal((await migrateRegistered(f.db,f.env,snapshot,registry,operation,'sqlite')).replayed,true);
+ assert.equal(checksum(await f.db.transaction(c=>c.query('SELECT * FROM h7_deliveries'))),checksum(snapshot.tables.h7_deliveries.map(r=>({...r,total_attempts:3,retry_sequences:0}))));
+ await assert.rejects(f.db.transaction(c=>c.query('UPDATE h7_deliveries SET total_attempts=-1')));
+ await f.db.transaction(c=>c.query('UPDATE h7_deliveries SET retry_sequences=1'));
+ await assert.rejects(migrateRegistered(f.db,f.env,snapshot,registry,operation,'sqlite'),{code:'MIGRATION_PRESERVATION_FAILED'});
+});
+test('D-96 registered retry migration rolls back DDL and values if backfill drifts',async t=>{
+ const f=await fixture(t),snapshot=await retainedLegacyDelivery(f),{migrateRegistered}=await import('../dist/serverless-backup.js');
+ const registry={...f.registry,epoch:snapshot.epoch,backups:{[snapshot.id]:checksum(snapshot)}},operation=randomUUID();
+ const injected={durable:true,transaction:work=>f.db.transaction(c=>work({query:async(sql,args)=>{
+  const result=await c.query(sql,args);
+  if(sql==='UPDATE h7_deliveries SET total_attempts = attempts WHERE total_attempts < attempts')await c.query('UPDATE h7_deliveries SET total_attempts=99');
+  return result;
+ }}))};
+ await assert.rejects(migrateRegistered(injected,f.env,snapshot,registry,operation,'sqlite'),{code:'MIGRATION_PRESERVATION_FAILED'});
+ assert.equal(checksum(await f.db.transaction(c=>c.query('SELECT * FROM h7_deliveries'))),checksum(snapshot.tables.h7_deliveries));
+ assert.equal((await f.db.transaction(c=>c.query("PRAGMA table_info(analytics_events)"))).some(r=>r.name==='quarantine_reason'),false);
+});

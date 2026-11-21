@@ -9,9 +9,8 @@ Issue #111. Two scanning layers:
   (`.github/dependabot.yml`). GitHub Actions updates stay SHA-pinned, matching
   the repo's existing pinning practice.
 
-(The `.github/` files are the repo owner's web-UI step (pending): the
-automation credential cannot publish under `.github/`. The exact contents are
-recorded on issue #111.)
+The audit job also gates release publication; a successful build cannot publish
+while the audit fails. Owner publication access is required for workflow updates.
 
 ## Severity bar
 
