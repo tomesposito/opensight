@@ -2209,3 +2209,15 @@ quarantine state. Preserve every other value, object, cleanup obligation, epoch
 and recovery entry. D-96 specifies snapshot normalization, PostgreSQL rehearsal,
 exact cloud authority, D-95 sender fingerprint recording and attested promotion.
 No arbitrary compatibility relabeling, billing activation or startup DDL bypass.
+
+
+#### D-95 Free-plan CSP correction
+
+The existing CloudFront Free plan rejects custom response headers policies.
+Preserve that plan and its managed security headers. Enforce the generated CSP
+with a viewer-response CloudFront Function on the two static frontend behaviors
+only, preserving viewer-request functions and all dynamic API/embed headers.
+The function changes only CSP; conflicting response-function associations fail
+closed. Origin error responses of 400 or higher keep managed headers because
+CloudFront does not invoke viewer-response functions for those responses. See
+[D-95](docs/itd/D-95-operator-readiness.md) for the measured restriction and checks.
