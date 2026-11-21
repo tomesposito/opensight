@@ -48,6 +48,24 @@ test('#296 H7 a lost receipt uses the committed cumulative count and cannot rese
   assert.equal(f.mail.messages.length, 1);
 });
 
+for (const state of ['pending', 'sending']) for (const total of [MAX_DELIVERY_TOTAL_ATTEMPTS, MAX_DELIVERY_TOTAL_ATTEMPTS + 1]) {
+  test(`#296 H7 recovery terminalizes ${state} at cumulative ${total} even below the sequence cap`, async t => {
+    const f = await jobFixture(t); await f.put('job');
+    const c = await f.login(), run = await f.store.enqueue(c, 'job'); await f.runner.execute(run);
+    await f.db.transaction(c => c.query("UPDATE h7_deliveries SET state = ?, attempts = 1, total_attempts = ?, message = 'cached', next_attempt = ?", [state, total, new Date(f.store.clock().getTime() + 86400000).toISOString()]));
+    const restarted = new JobRunner(f.store, f.executor, f.mail);
+    await restarted.recover();
+    const dead = (await f.store.deliveries(c, 'job'))[0];
+    assert.equal(dead.state, 'dead'); assert.equal(dead.attempts, 1); assert.equal(dead.total_attempts, total);
+    assert.equal(dead.error_code, 'JOB_DELIVERY_EXHAUSTED');
+    assert.equal((await f.db.transaction(c => c.query('SELECT message FROM h7_deliveries')))[0].message, null);
+    assert.equal((await f.store.history(c, 'job'))[0].errorCode, 'JOB_DELIVERY_EXHAUSTED');
+    await restarted.recover(); await restarted.deliver(); await restarted.tick();
+    assert.deepEqual(await f.store.deliveries(c, 'job'), [dead]); assert.equal(f.mail.messages.length, 0);
+    await assert.rejects(f.store.retryDelivery(c, 'job', dead.delivery_id), { code: 'DELIVERY_RETRY_BUDGET_EXHAUSTED' });
+  });
+}
+
 test('H7 a retryable delivery dead-letters at the attempt cap and its occurrence settles exhausted', async t => {
   const f = await jobFixture(t, executor(), failingMail()); await f.put('job');
   const c = await f.login(), run = await f.store.enqueue(c, 'job');

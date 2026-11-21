@@ -18,7 +18,12 @@ export class DurableJobs {
   constructor(readonly store: JobStore, readonly executor: JobExecutor, readonly mail: MailTransport) {
     if (!store.dispatch) throw new MetadataError('DISPATCH_CONFIG_INVALID', 503);
     this.execution = new DurableExecution(store.dispatch, (c, event, code, now) => this.terminal(c, event, code, now), async (c, event) => {
-      if (event.kind === 'job-deliver') await c.query(`UPDATE h7_deliveries SET error_code = 'DELIVERY_AMBIGUOUS' WHERE ${scoped} AND delivery_id = ? AND state = 'sending'`, [...scopeArgs(event.scope), event.aggregateId]);
+      if (event.kind !== 'job-deliver') return;
+      await c.query(`UPDATE h7_deliveries SET error_code = 'DELIVERY_AMBIGUOUS' WHERE ${scoped} AND delivery_id = ? AND state = 'sending'`, [...scopeArgs(event.scope), event.aggregateId]);
+      const { run } = await this.runRow(c, event), now = await store.dispatch!.time(c);
+      // Keep the execution's ambiguous SMTP evidence, but an exhausted
+      // delivery and its event must never be replayed into another send.
+      if (await this.exhaustDelivery(c, event, run, now)) await store.dispatch!.terminal(c, event.eventId, event.epoch);
     });
   }
   private async due(c: SqlConnection, event: ExecutionEvent) {

@@ -24,8 +24,8 @@ export class JobRunner {
   async recover(): Promise<void> {
     await this.store.db.transaction(async c => {
       await c.query("UPDATE h7_occurrences SET state = 'queued' WHERE state = 'running'");
-      const exhausted = await c.query("UPDATE h7_deliveries SET state = 'dead', error_code = 'DELIVERY_INTERRUPTED', message = NULL WHERE state = 'sending' AND attempts >= ? RETURNING tenant_id, namespace_id, occurrence_id", [MAX_DELIVERY_ATTEMPTS]);
-      await c.query("UPDATE h7_deliveries SET state = 'pending', next_attempt = ?, error_code = 'DELIVERY_INTERRUPTED' WHERE state = 'sending' AND attempts < ?", [this.store.clock().toISOString(), MAX_DELIVERY_ATTEMPTS]);
+      const exhausted = await c.query("UPDATE h7_deliveries SET state = 'dead', error_code = CASE WHEN total_attempts >= ? THEN 'JOB_DELIVERY_EXHAUSTED' WHEN state = 'sending' THEN 'DELIVERY_INTERRUPTED' ELSE COALESCE(error_code, 'JOB_DELIVERY_EXHAUSTED') END, message = NULL WHERE state IN ('pending','sending') AND (attempts >= ? OR total_attempts >= ?) RETURNING tenant_id, namespace_id, occurrence_id", [MAX_DELIVERY_TOTAL_ATTEMPTS, MAX_DELIVERY_ATTEMPTS, MAX_DELIVERY_TOTAL_ATTEMPTS]);
+      await c.query("UPDATE h7_deliveries SET state = 'pending', next_attempt = ?, error_code = 'DELIVERY_INTERRUPTED' WHERE state = 'sending' AND attempts < ? AND total_attempts < ?", [this.store.clock().toISOString(), MAX_DELIVERY_ATTEMPTS, MAX_DELIVERY_TOTAL_ATTEMPTS]);
       for (const d of exhausted) await this.settleOccurrence(c, { tenantId: String(d.tenant_id), namespaceId: String(d.namespace_id), id: String(d.occurrence_id) });
     });
   }
