@@ -8,11 +8,88 @@ import { buildAuthorVisual } from '../build/test/author-preview.js';
 import { buildAuthorQuery } from '../build/test/author-query.js';
 import { executeFixtureQuery } from '../build/test/fixture-query.js';
 import { activeSheet, authorReducer, emptyDraft, serializeVisual } from '../build/test/authoring.js';
+import { normalizeInsight, validateInsightConfiguration } from '../build/test/insight-configuration.js';
 const dim = name => ({ categoricalDimensionField: { fieldId: name, column: { columnName: name, dataSetIdentifier: 'data' } } });
 const measure = name => ({ numericalMeasureField: { fieldId: name, column: { columnName: name, dataSetIdentifier: 'data' }, aggregationFunction: { simpleNumericalAggregation: 'SUM' } } });
 const input = (rows = [{ category: 'A', revenue: 100 }, { category: 'B', revenue: 300 }]) => ({ source: 'bundle', path: '$.insight', bindings: {}, rows, definition: { insightVisual: { visualId: 'insight', chartConfiguration: { fieldWells: { insightAggregatedFieldWells: { category: [dim('category')], values: [measure('revenue')] } } } } } });
 const body = source => source.definition.insightVisual;
 const wells = source => body(source).chartConfiguration.fieldWells.insightAggregatedFieldWells;
+
+test('insight structural validation checks every explicit binding slot in every computation (issue #297)', () => {
+  const slots = {
+    totalAggregation: ['value'], maximumMinimum: ['time', 'value'], topBottomRanked: ['category', 'value'],
+    growthRate: ['time', 'value'], periodOverPeriod: ['time', 'value'], metricComparison: ['time', 'fromValue', 'targetValue'],
+    forecast: ['time', 'value'], periodToDate: ['time', 'value'], uniqueValues: ['category'],
+    topBottomMovers: ['category', 'time', 'value'], anomaly: ['time', 'value'],
+  };
+  for (const [kind, keys] of Object.entries(slots)) {
+    const options = kind === 'maximumMinimum' ? { type: 'MAXIMUM' } : ['topBottomRanked', 'topBottomMovers'].includes(kind) ? { type: 'TOP' } : {};
+    const configuration = { computations: [{ [kind]: { computationId: 'c', ...options } }] };
+    assert.doesNotThrow(() => validateInsightConfiguration(configuration), `${kind}: optional bindings`);
+    for (const slot of keys) {
+      for (const raw of [null, [], 'region', {}, { unsupportedDimensionField: {} }, { ...dim('region'), ...measure('revenue') }]) {
+        const malformed = { computations: [{ [kind]: { computationId: 'c', ...options, [slot]: raw } }] };
+        assert.throws(() => validateInsightConfiguration(malformed), /INSIGHT_(FIELD_UNBOUND|CONFIGURATION_INVALID)/, `${kind}.${slot}`);
+      }
+    }
+  }
+});
+
+test('insight binding shape and SUM semantics agree in structural validation and normalization', () => {
+  const dimensions = [{ id: 'category', column: 'category', dataSet: 'data' }];
+  const measures = [{ id: 'revenue', column: 'revenue', dataSet: 'data' }];
+  for (const [kind, slot, create] of [['uniqueValues', 'category', () => dim('category')], ['totalAggregation', 'value', () => measure('revenue')]]) {
+    const mutations = [
+      [raw => { raw[Object.keys(raw)[0]] = null; }, 'CONFIGURATION_INVALID'],
+      [raw => { Object.values(raw)[0].fieldId = 1; }, 'FIELD_UNBOUND'],
+      [raw => { delete Object.values(raw)[0].fieldId; }, 'FIELD_UNBOUND'],
+      [raw => { Object.values(raw)[0].extra = true; }, 'CONFIGURATION_UNSUPPORTED'],
+      [raw => { Object.values(raw)[0].column = []; }, 'CONFIGURATION_INVALID'],
+      [raw => { Object.values(raw)[0].column.columnName = 1; }, 'FIELD_UNBOUND'],
+      [raw => { delete Object.values(raw)[0].column.columnName; }, 'FIELD_UNBOUND'],
+      [raw => { Object.values(raw)[0].column.dataSetIdentifier = 1; }, 'FIELD_UNBOUND'],
+      [raw => { Object.values(raw)[0].column.extra = true; }, 'CONFIGURATION_UNSUPPORTED'],
+      [raw => { Object.values(raw)[0].dateGranularity = 'MONTH'; }, 'CONFIGURATION_UNSUPPORTED'],
+    ];
+    if (slot === 'value') mutations.push(
+      [raw => { delete raw.numericalMeasureField.aggregationFunction; }, 'CONFIGURATION_INVALID'],
+      [raw => { raw.numericalMeasureField.aggregationFunction = []; }, 'CONFIGURATION_INVALID'],
+      [raw => { raw.numericalMeasureField.aggregationFunction = {}; }, 'FIELD_UNBOUND'],
+      [raw => { raw.numericalMeasureField.aggregationFunction.simpleNumericalAggregation = 'AVERAGE'; }, 'FIELD_UNBOUND'],
+      [raw => { raw.numericalMeasureField.aggregationFunction.extra = true; }, 'CONFIGURATION_UNSUPPORTED'],
+      [raw => { raw.numericalMeasureField.aggregationFunction = { percentileAggregation: { percentileValue: 50 } }; }, 'CONFIGURATION_UNSUPPORTED'],
+    );
+    else mutations.push([raw => { raw.categoricalDimensionField.aggregationFunction = { simpleNumericalAggregation: 'SUM' }; }, 'CONFIGURATION_UNSUPPORTED']);
+    for (const [mutate, code] of mutations) {
+      const raw = create(); mutate(raw);
+      const configuration = { computations: [{ [kind]: { computationId: 'c', [slot]: raw } }] };
+      const matches = error => error.code === `INSIGHT_${code}`;
+      assert.throws(() => validateInsightConfiguration(configuration), matches);
+      assert.throws(() => normalizeInsight(configuration, dimensions, measures), matches);
+    }
+    const wrongVariant = { computations: [{ [kind]: { computationId: 'c', [slot]: slot === 'value' ? dim('category') : measure('revenue') } }] };
+    assert.throws(() => validateInsightConfiguration(wrongVariant), /INSIGHT_FIELD_UNBOUND/);
+  }
+});
+
+test('insight structural validation accepts supported dimension variants without resolving fields', () => {
+  for (const variant of ['categoricalDimensionField', 'numericalDimensionField', 'dateDimensionField']) {
+    const grains = variant === 'dateDimensionField' ? [undefined, 'DAY', 'MONTH', 'QUARTER', 'YEAR'] : [undefined];
+    for (const dateGranularity of grains) {
+      const field = { fieldId: 'unassigned', column: { columnName: 'missing' }, ...(dateGranularity ? { dateGranularity } : {}) };
+      const configuration = { computations: [{ uniqueValues: { computationId: 'c', category: { [variant]: field } } }] };
+      assert.doesNotThrow(() => validateInsightConfiguration(configuration));
+      assert.throws(() => normalizeInsight(configuration, [{ id: 'region', column: 'region' }], []), /INSIGHT_FIELD_UNBOUND/);
+    }
+  }
+  for (const dateGranularity of [null, 1, {}, 'WEEK']) {
+    const configuration = { computations: [{ uniqueValues: { computationId: 'c', category: { dateDimensionField: {
+      fieldId: 'date', column: { columnName: 'date' }, dateGranularity,
+    } } } }] };
+    assert.throws(() => validateInsightConfiguration(configuration), /INSIGHT_FIELD_UNBOUND/);
+  }
+});
+
 test('insight compiler emits graphic narrative text, computed emphasis, theme and unchanged data rows', () => {
   const source = input(), before = structuredClone(source); source.theme = DARK_THEME;
   const c = compileVisual(source);
