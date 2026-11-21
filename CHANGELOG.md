@@ -147,6 +147,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Hosted AI receipt cap admission is now serialized per tenant on Postgres (#295): a transaction-scoped advisory lock keyed by tenant holds the expiry cleanup, usage read and receipt insert in one critical section, so concurrent requests under distinct idempotency keys can no longer both claim the final entry or byte slot. SQLite admission already serialized and is unchanged.
+
 - Hosted AI receipt admission now counts retained answer and revision payloads in UTF-8 bytes on both databases (#294), matching how incoming payloads are measured, so retained non-ASCII receipts can no longer collectively exceed the per-tenant byte limit.
 
 - Hosted servers now answer every `/api/notebooks*` path with 404
