@@ -23,6 +23,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Native/API insight visuals with a MetricComparison computation (one measure compared against a distinct target measure over the bound date or category dimension) now pass query planning with strict binding, required-measure, distinct-measure and SUM validation and unchanged query plans; the narrative consumer still owns comparison math and sentence rendering (phase-plan fallback: parity-insight-metric-comparison-planner; no GitHub issue).
+
 - Native/API insight visuals with a GrowthRate computation (latest period versus previous period over the bound date dimension, PeriodSize 2) now pass query planning with strict date, SUM and period-size validation and unchanged query plans; the narrative consumer still owns growth-rate math and sentence rendering (phase-plan fallback: parity-insight-growth-rate-planner; no GitHub issue).
 
 - Native/API insight visuals with a PeriodOverPeriod computation (period comparison over the bound date dimension) now pass query planning with strict date and SUM binding validation and unchanged query plans; the narrative consumer still owns period comparison math and sentence rendering (phase-plan fallback: parity-insight-period-over-period-planner; no GitHub issue).

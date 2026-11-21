@@ -155,6 +155,5 @@ test('TopBottomRanked fails closed on malformed configuration and bindings', () 
     [[rankedComputation(), { TopBottomMovers: { ComputationId: 'm', Type: 'TOP', Category: insightCatField(), Time: insightDateField(), Value: insightValueField() } }], 'UNSUPPORTED_FEATURE'],
     // The remaining unadmitted kinds stay rejected.
     [[{ TotalAggregation: { ComputationId: 'a', Value: insightValueField() } }], 'UNSUPPORTED_FEATURE'],
-    [[{ MetricComparison: { ComputationId: 'a', Time: insightDateField(), FromValue: insightValueField(), TargetValue: insightValueField('profit', 'profit') } }], 'UNSUPPORTED_FEATURE'],
   ]) assert.throws(() => planVisual(insightRequest(computations)), { code }, JSON.stringify(computations).slice(0, 120));
 });
