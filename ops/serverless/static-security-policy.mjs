@@ -16,25 +16,19 @@ export function staticCsp({ appOrigin, artifactOrigins = [], transitionScriptHas
   if (csp.length > 1783) throw Error('CSP_TOO_LONG');
   return csp;
 }
-export function staticHeadersPolicy(name, settings) {
-  if (!/^[A-Za-z0-9_-]{1,128}$/.test(name)) throw Error('CSP_NAME_INVALID');
-  return { Name: name, Comment: 'Reviewed static frontend security; dynamic embed responses excluded',
-    SecurityHeadersConfig: {
-      ContentSecurityPolicy: { ContentSecurityPolicy: staticCsp(settings), Override: true },
-      StrictTransportSecurity: { AccessControlMaxAgeSec: 31536000, Override: false },
-      ContentTypeOptions: { Override: true }, FrameOptions: { FrameOption: 'SAMEORIGIN', Override: false },
-      ReferrerPolicy: { ReferrerPolicy: 'strict-origin-when-cross-origin', Override: false },
-    } };
-}
-export function attachStaticPolicy(distribution, policyId) {
-  if (!/^[a-f0-9-]{36}$/.test(policyId)) throw Error('CSP_POLICY_ID_INVALID');
-  const next = structuredClone(distribution), behaviors = [next.DefaultCacheBehavior, ...(next.CacheBehaviors?.Items ?? [])];
-  let changed = 0;
-  for (const behavior of behaviors) {
-    if (behavior.TargetOriginId === 'frontend') { behavior.ResponseHeadersPolicyId = policyId; changed++; }
-    else if (behavior.ResponseHeadersPolicyId) throw Error('CSP_DYNAMIC_POLICY_PRESENT');
-  }
-  if (changed !== 2 || next.DefaultCacheBehavior.TargetOriginId !== 'frontend'
+export function attachStaticCspFunction(distribution, functionArn) {
+  if (!/^arn:aws:cloudfront::[0-9]{12}:function\/[A-Za-z0-9_-]{1,64}$/.test(functionArn)) throw Error('CSP_FUNCTION_ARN_INVALID');
+  const next = structuredClone(distribution);
+  const behaviors = [next.DefaultCacheBehavior, ...(next.CacheBehaviors?.Items ?? [])];
+  const frontend = behaviors.filter(b => b.TargetOriginId === 'frontend');
+  if (frontend.length !== 2 || next.DefaultCacheBehavior.TargetOriginId !== 'frontend'
     || !next.CacheBehaviors.Items.some(b => b.PathPattern === '/assets/*' && b.TargetOriginId === 'frontend')) throw Error('CSP_BEHAVIOR_SCOPE_INVALID');
+  for (const behavior of frontend) {
+    const items = behavior.FunctionAssociations?.Items ?? [];
+    if (items.some(item => item.EventType === 'viewer-response' && item.FunctionARN !== functionArn)
+      || (behavior.LambdaFunctionAssociations?.Items ?? []).some(item => item.EventType === 'viewer-response')) throw Error('CSP_RESPONSE_FUNCTION_CONFLICT');
+    if (!items.some(item => item.EventType === 'viewer-response')) items.push({ FunctionARN: functionArn, EventType: 'viewer-response' });
+    behavior.FunctionAssociations = { Quantity: items.length, Items: items };
+  }
   return next;
 }
