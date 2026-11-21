@@ -2169,3 +2169,31 @@ The egress/AI-receipt transition also adds nullable text access-request columns
 registered-backup normalization and immutable runner reconciliation specified in
 [D-94](docs/itd/D-94-egress-receipt-maintenance.md). Every original row value remains
 exact and newly added values must be null; all other preservation gates remain.
+
+
+### Phase 5 AWS/GitHub readiness (2026-11-21; #110, #117, #209, #236)
+
+Before the next deployment, complete the existing operator handoffs using the
+bounded contract in [D-95](docs/itd/D-95-operator-readiness.md). Add a pinned,
+read-only dependency-audit job to CI; publication depends on both audit and build.
+Separate the SMTP sender address/verified identity from the budget-alert recipient,
+retaining the one-recipient SES sandbox IAM restriction. Provision inbound support
+and privacy aliases using private parameters, SES receipt rules, encrypted private
+S3 retention, and a least-privilege Lambda forwarding only to the approved owner.
+No account IDs, recipient addresses, credentials, DNS selectors, or mail contents
+enter source control. Keep Stripe and SES sandboxed.
+
+Static app/marketing/demo responses receive an enforced CSP: same-origin scripts
+without unsafe-inline/eval, inline styles required by React/ECharts, same-origin
+frames, self/data/blob images, self/blob media, no objects/base overrides, and
+connect only to self, the configured app origin and exact approved artifact-bucket
+HTTPS origins. Preserve dynamic API/embed headers and per-session frame policy.
+Package the hosted demo's single inline module as a separate bounded, hashed
+manifest member; the downloadable offline HTML remains self-contained. The
+existing demo's exact script hash may be allowed only during migration.
+
+Verify rejection/boundary tests, full root npm test, isolated PostgreSQL, rebuilt
+hosted/demo packages, real-browser CSP behavior, DNS/mail delivery and exact AWS
+readbacks. Merge with phase history and changelog, publish through the Git Database
+API, then deploy the newest attested release under the existing independent
+approval, maintenance/compatibility, rollback and live-acceptance gates.
