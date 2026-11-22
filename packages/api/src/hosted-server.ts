@@ -651,6 +651,12 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       // contract the web page maps to its designed unavailable notice — rather
       // than the generic 503 capability fallback, which it shows as an error.
       if (path === '/api/notebooks' || path.startsWith('/api/notebooks/')) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
+      // Input tables are local-store only in v1 (#161): on a hosted server
+      // every input-table path answers the same 404 RESOURCE_NOT_FOUND
+      // contract, so the Tables page shows its input-tables unavailable
+      // notice instead of hiding the hosted computed tables behind a page
+      // error (#307).
+      if (path === '/api/input-tables' || path.startsWith('/api/input-tables/')) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
       throw new MetadataError('HOSTED_CAPABILITY_UNAVAILABLE', 503);
     })().catch((error: unknown) => {
       errors++; request.resume();
