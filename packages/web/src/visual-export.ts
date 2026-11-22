@@ -27,7 +27,7 @@ const CSV_FORMULA_PREFIX = /^[=+\-@\t\r]/;
 const defuseCsvFormula = (text: string): string =>
   CSV_FORMULA_PREFIX.test(text) ? `'${text}` : text;
 
-const csvCell = (value: unknown): string => {
+export const csvCell = (value: unknown): string => {
   if (value === null || value === undefined) return '';
   const text = typeof value === 'string' ? defuseCsvFormula(value) : String(value);
   return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;

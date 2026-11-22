@@ -289,7 +289,7 @@ test('download egress uses existing reservations, refuses known over-cap sizes b
   const { createServer } = await import('node:http'); const { once } = await import('node:events');
   const f = await fixture(t); await initializeUsage(f.db); await f.prep.execute(await f.login(), 'computed', 'publish');
   const c = await f.login();
-  let bytes; await f.prep.download(c, 'computed', { format: 'csv' }, async result => { bytes = result.bytes; });
+  let bytes; await f.prep.download(c, 'computed', { format: 'csv' }, async result => { const chunks = []; for await (const chunk of result.body) chunks.push(chunk); bytes = Buffer.concat(chunks); assert.equal(bytes.length, result.byteLength); });
   const usage = new HostedUsage(f.db, { defaults: { apiCalls: 100, computeAttempts: 100, storageBytes: 100000000, egressBytes: bytes.length }, tenants: {} });
   const tooLarge = await usage.reserveEgress(c);
   await assert.rejects(usage.assertEgressSize(tooLarge, bytes.length + 1), { code: 'USAGE_LIMIT_EXCEEDED' }); await usage.releaseEgress(tooLarge);
@@ -308,7 +308,7 @@ test('#308 hosted download holds admission until its transmission callback compl
   for (const fail of [false, true]) {
     const entered = Promise.withResolvers(), finish = Promise.withResolvers();
     const pending = f.prep.download(c, 'computed', { format: 'csv' }, async result => {
-      assert.ok(result.bytes.length); entered.resolve(); await finish.promise;
+      assert.ok(result.byteLength); entered.resolve(); await finish.promise;
       if (fail) throw new Error('transmission failed');
     });
     const outcome = fail ? assert.rejects(pending, /transmission failed/) : pending;

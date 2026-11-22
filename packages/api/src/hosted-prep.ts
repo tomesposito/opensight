@@ -337,7 +337,7 @@ export class HostedPrep {
       await this.data.finish(context, graph.leaves, graph.revisions); scope.check();
       // Transmission owns the work reservation, including retained input/output
       // and worker capacity, until finish or disconnect cleanup has completed.
-      await transmit(result); return { bytes: result.bytes.length };
+      await transmit(result); return { bytes: result.byteLength };
     }, graph.revisions);
   }
   async execute(context: TenantContext, id: string, path: 'rows' | 'query' | 'refresh' | 'publish', input: unknown = {}, visual?: { analysis: unknown; visualId: string; dataSetArn: string }) {
