@@ -240,7 +240,11 @@ function compile(raw: unknown, sources: readonly PrepSource[], options: PrepComp
     const side = (stage: Stage, which: 'left' | 'right', n: number) => {
       const projection = d.keys.map((k, i) => {
         const value = q(k[which]);
-        return `${keyColumns[i]!.type === 'DATETIME' ? timestamp(value, dialect) : value} AS ${q(`key_${i}`)}`;
+        // Diagnostics must compare keys with native join equality, so DATETIME and
+        // numeric keys travel as lossless text (full timestamp precision, exact
+        // decimal/bigint digits), never the preview's millisecond/Number forms.
+        // prepJoinSampleResult canonicalizes the numeric text before counting.
+        return `${['DATETIME', 'INTEGER', 'DECIMAL'].includes(keyColumns[i]!.type) ? `CAST(${value} AS VARCHAR)` : value} AS ${q(`key_${i}`)}`;
       }).join(', ');
       const probes = [...new Set(stage.inputs)].map(id => `EXISTS (SELECT 1 FROM ${sampled.get(id)!.from} OFFSET ${PREP_JOIN_SAMPLE_LIMIT} LIMIT 1)`);
       return `(SELECT ${n} AS ${q('__side')}, ${projection} FROM ${stage.from} LIMIT ${PREP_JOIN_SAMPLE_LIMIT + 1}) UNION ALL (SELECT ${n + 2} AS ${q('__side')}, ${keyColumns.map(c => `NULL AS ${q(c.name)}`).join(', ')} WHERE ${probes.join(' OR ') || 'FALSE'})`;

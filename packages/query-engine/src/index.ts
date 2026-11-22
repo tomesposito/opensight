@@ -65,6 +65,6 @@ export { discoverDatabaseSources, rdsSourceConfig, RdsDiscoveryError, type RdsDi
 export { suggestPrepJoinKeys } from './prep-join.js';
 export { compilePrepJoinSample, type PrepJoinSamplePlan } from './prep.js';
 export * from './prep-join-diagnostics.js';
-export { diagnosePrepJoinDuckDb, diagnosePrepJoinPostgres, prepJoinSampleResult } from './prep-executor.js';
+export { diagnosePrepJoinDuckDb, diagnosePrepJoinPostgres, prepJoinSampleResult, canonicalNumericKey } from './prep-executor.js';
 
 export { parseKpiOptions, type KpiOptions } from './kpi-options.js';

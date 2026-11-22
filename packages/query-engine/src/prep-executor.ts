@@ -65,9 +65,45 @@ export async function previewPrepPostgres(raw: unknown, sources: readonly PrepSo
   }
 }
 
+/** Canonical text for a numeric join key: SQL-equal values (1.0 vs 1.00, +1 vs 1,
+ * exponent forms of the same value) share one key, while distinct values keep
+ * distinct keys at full precision — never routed through a lossy Number. */
+export function canonicalNumericKey(value: unknown): string {
+  let text: string;
+  if (typeof value === 'bigint') text = value.toString();
+  else if (typeof value === 'number') { if (!Number.isFinite(value)) return prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Invalid sampled join key'); text = String(value); }
+  else if (typeof value === 'string') text = value.trim();
+  else return prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Invalid sampled join key');
+  const match = /^([+-]?)(\d+(?:\.\d*)?|\.\d+)(?:[eE]([+-]?\d+))?$/.exec(text);
+  if (!match) return prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Invalid sampled join key');
+  const exponent = match[3] === undefined ? 0 : Number(match[3]);
+  if (!Number.isSafeInteger(exponent) || Math.abs(exponent) > 10_000) return prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Invalid sampled join key');
+  const [intPart, fracPart = ''] = match[2]!.split('.');
+  const digits = intPart + fracPart, point = intPart.length + exponent;
+  let plain: string;
+  if (point <= 0) plain = `0.${'0'.repeat(-point)}${digits}`;
+  else if (point >= digits.length) plain = digits + '0'.repeat(point - digits.length);
+  else plain = `${digits.slice(0, point)}.${digits.slice(point)}`;
+  const [plainInt, plainFrac = ''] = plain.split('.');
+  const canonicalInt = plainInt.replace(/^0+(?=\d)/, ''), canonicalFrac = plainFrac.replace(/0+$/, '');
+  const canonical = canonicalFrac ? `${canonicalInt}.${canonicalFrac}` : canonicalInt;
+  return canonical === '0' ? '0' : (match[1] === '-' ? `-${canonical}` : canonical);
+}
+/** Decode a sampled join key without losing the precision the native join sees.
+ * The sample compiler projects DATETIME and numeric keys as lossless text;
+ * STRING/BOOLEAN keys keep the shared preview normalization. */
+function normalizeJoinKey(value: unknown, column: PrepColumn): string | boolean | null {
+  if (value === null) return null;
+  if (column.type === 'DATETIME') {
+    if (typeof value === 'string') return value;
+    return prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Invalid sampled join key');
+  }
+  if (column.type === 'INTEGER' || column.type === 'DECIMAL') return canonicalNumericKey(value);
+  return normalizePrepScalar(value, column);
+}
 /** Decode the compiler's side/probe records, then use the shared count semantics. */
 export function prepJoinSampleResult(plan: PrepJoinSamplePlan, rawRows: readonly Record<string, unknown>[], budget = new PrepJoinBudget()): PrepJoinDiagnostics {
-  const rows = rawRows.map((row, i) => { if (i % 128 === 0) budget.check(); return Object.fromEntries(plan.columns.map(c => [c.name, normalizePrepScalar(row[c.name], c)])); });
+  const rows = rawRows.map((row, i) => { if (i % 128 === 0) budget.check(); return Object.fromEntries(plan.columns.map(c => [c.name, c.name === '__side' ? normalizePrepScalar(row[c.name], c) : normalizeJoinKey(row[c.name], c)])); });
   if (rows.some(r => ![0, 1, 2, 3].includes(Number(r.__side)))) prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Invalid sample side');
   const keys = plan.columns.slice(1).map(c => ({ left: c.name, right: c.name }));
   return prepJoinDiagnostics(rows.filter(r => r.__side === 0), rows.filter(r => r.__side === 1), keys,
