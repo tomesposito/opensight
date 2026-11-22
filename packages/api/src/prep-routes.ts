@@ -1,5 +1,6 @@
 import { compilePrepJoinSample, diagnosePrepJoinPostgres, PrepJoinBudget, PREP_JOIN_SAMPLE_LIMIT } from '@opensight/query-engine';
 import { tableDownload, tableDownloadFormat, sendTableDownload } from './table-download.js';
+import { LocalTableDownloads } from './local-table-download.js';
 import type { HostedUsage } from './hosted-usage.js';
 import { StoredTableFiles, storedMaterialization, storedFailure, storedStatus, storedCapacity, checkStoredQuota, type StoredMaterialization } from './stored-tables.js';
 import { metricQuery, metricDefinition, type MetricLookup } from './metric-consumption.js';
@@ -93,6 +94,7 @@ export class PrepRoutes {
    * requested sources, with at most limit rows, including the truncation probe. */
   inputTableSamples?: (identity: Identity, sourceIds: readonly string[], limit: number) => PrepMemoryTable[];
   private readonly blaze = new BlazeStore();
+  private readonly downloads = new LocalTableDownloads(this.blaze.limits);
   private readonly configured = new Map<string, string>();
   private requirement(identity: Identity, id: string, state = this.store.read()): string | null {
     return materializationReason(id, state.datasets.filter(e => this.owned(identity, e)).map(e => ({ id: e.resource.dataSetId, pipeline: e.resource.opensightPrep!, mode: e.execution?.mode ?? 'DIRECT_QUERY' })));
@@ -204,8 +206,11 @@ export class PrepRoutes {
       const body = prepObject(await readBody(request), ['format'], '$'), format = tableDownloadFormat(body.format);
       if (!this.downloadsEnabled) throw new MetadataError('DOWNLOADS_DISABLED', 403);
       if (existing.execution?.mode !== 'STORED') throw new MetadataError('STORED_MODE_REQUIRED', 409);
-      const table = await this.files.read(key, existing.materialization, this.blaze.limits);
-      await sendTableDownload(response, tableDownload(id, table, format), this.downloadUsage ? { usage: this.downloadUsage, scope: { tenantId: identity.namespaceId, namespaceId: identity.namespaceId } } : undefined); return;
+      await this.downloads.run(identity, request, response, async scope => {
+        const table = await this.files.read(key, existing.materialization, this.blaze.limits);
+        const result = await tableDownload(scope, id, table, format);
+        await sendTableDownload(response, result, this.downloadUsage ? { usage: this.downloadUsage, scope: { tenantId: identity.namespaceId, namespaceId: identity.namespaceId } } : undefined);
+      }); return;
     }
     if (action === 'execution') {
       method(request, response, ['GET', 'PUT']);

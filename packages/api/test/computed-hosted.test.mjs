@@ -288,16 +288,31 @@ test('download egress uses existing reservations, refuses known over-cap sizes b
   const { sendTableDownload } = await import('../dist/table-download.js');
   const { createServer } = await import('node:http'); const { once } = await import('node:events');
   const f = await fixture(t); await initializeUsage(f.db); await f.prep.execute(await f.login(), 'computed', 'publish');
-  const c = await f.login(), download = await f.prep.download(c, 'computed', { format: 'csv' });
-  const usage = new HostedUsage(f.db, { defaults: { apiCalls: 100, computeAttempts: 100, storageBytes: 100000000, egressBytes: download.bytes.length }, tenants: {} });
+  const c = await f.login();
+  let bytes; await f.prep.download(c, 'computed', { format: 'csv' }, async result => { bytes = result.bytes; });
+  const usage = new HostedUsage(f.db, { defaults: { apiCalls: 100, computeAttempts: 100, storageBytes: 100000000, egressBytes: bytes.length }, tenants: {} });
   const tooLarge = await usage.reserveEgress(c);
-  await assert.rejects(usage.assertEgressSize(tooLarge, download.bytes.length + 1), { code: 'USAGE_LIMIT_EXCEEDED' }); await usage.releaseEgress(tooLarge);
-  const server = createServer((_req, res) => void sendTableDownload(res, download, { usage, scope: c }));
+  await assert.rejects(usage.assertEgressSize(tooLarge, bytes.length + 1), { code: 'USAGE_LIMIT_EXCEEDED' }); await usage.releaseEgress(tooLarge);
+  const server = createServer((_req, res) => void f.prep.download(c, 'computed', { format: 'csv' }, result => sendTableDownload(res, result, { usage, scope: c })));
   server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => { server.close(); server.closeAllConnections(); });
-  const response = await fetch(`http://127.0.0.1:${server.address().port}`); assert.equal(response.status, 200); assert.deepEqual(Buffer.from(await response.arrayBuffer()), download.bytes);
+  const response = await fetch(`http://127.0.0.1:${server.address().port}`); assert.equal(response.status, 200); assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
   // Allow the async durable settlement at stream completion to finish.
-  for (let i = 0; i < 50; i++) { const row = await f.db.transaction(db => db.query("SELECT admitted FROM h8_usage WHERE metric = 'egressBytes'")); if (Number(row[0]?.admitted) === download.bytes.length) break; await new Promise(r => setTimeout(r, 10)); }
-  const row = await f.db.transaction(db => db.query("SELECT admitted FROM h8_usage WHERE metric = 'egressBytes'")); assert.equal(Number(row[0].admitted), download.bytes.length);
+  for (let i = 0; i < 50; i++) { const row = await f.db.transaction(db => db.query("SELECT admitted FROM h8_usage WHERE metric = 'egressBytes'")); if (Number(row[0]?.admitted) === bytes.length) break; await new Promise(r => setTimeout(r, 10)); }
+  const row = await f.db.transaction(db => db.query("SELECT admitted FROM h8_usage WHERE metric = 'egressBytes'")); assert.equal(Number(row[0].admitted), bytes.length);
   await assert.rejects(usage.reserveEgress(c), { code: 'USAGE_LIMIT_EXCEEDED' });
-  f.prep.downloadsEnabled = false; await assert.rejects(f.prep.download(c, 'computed', { format: 'csv' }), { code: 'DOWNLOADS_DISABLED' });
+  f.prep.downloadsEnabled = false; await assert.rejects(f.prep.download(c, 'computed', { format: 'csv' }, async () => assert.fail('disabled download transmitted')), { code: 'DOWNLOADS_DISABLED' });
+});
+test('#308 hosted download holds admission until its transmission callback completes, including failure', async t => {
+  const f = await fixture(t); await f.prep.execute(await f.login(), 'computed', 'publish');
+  const c = await f.login();
+  for (const fail of [false, true]) {
+    const entered = Promise.withResolvers(), finish = Promise.withResolvers();
+    const pending = f.prep.download(c, 'computed', { format: 'csv' }, async result => {
+      assert.ok(result.bytes.length); entered.resolve(); await finish.promise;
+      if (fail) throw new Error('transmission failed');
+    });
+    const outcome = fail ? assert.rejects(pending, /transmission failed/) : pending;
+    await entered.promise; assert.equal(f.budgets.node().running, 1);
+    finish.resolve(); await outcome; assert.equal(f.budgets.node().running, 0);
+  }
 });

@@ -7,6 +7,7 @@ import type { BlazeTable } from './blaze.js';
 import { MetadataError } from './metadata-db.js';
 import type { HostedUsage } from './hosted-usage.js';
 import type { Scope } from './metadata-resources.js';
+import type { WorkScope } from './budgets.js';
 
 /** App workspace setting. Embedded sessions retain embedding.features.download
  * (currently unsupported/false) and never enter these authenticated prep routes. */
@@ -15,22 +16,26 @@ export function workspaceDownloads(env: NodeJS.ProcessEnv = process.env): boolea
   if (value !== undefined && value !== 'true' && value !== 'false') throw new MetadataError('DOWNLOAD_CONFIG_INVALID', 503);
   return value !== 'false';
 }
-export interface TableDownload { bytes: Buffer; contentType: string; filename: string }
+export interface TableDownload { bytes: Buffer; contentType: string; filename: string; signal: AbortSignal }
 export function tableDownloadFormat(value: unknown): 'csv' | 'xlsx' {
   if (value !== 'csv' && value !== 'xlsx') throw new MetadataError('STORED_DOWNLOAD_FORMAT_INVALID', 400);
   return value;
 }
-export function tableDownload(id: string, table: BlazeTable, format: 'csv' | 'xlsx'): TableDownload {
+export async function tableDownload(scope: WorkScope, id: string, table: BlazeTable, format: 'csv' | 'xlsx'): Promise<TableDownload> {
+  // Admit the retained input, encoder scratch and output copies before touching
+  // cells or constructing any worksheet, row objects, strings or buffers.
+  const cells = (table.rowCount + 1) * table.columns.length;
+  scope.memory(table.bytes * (format === 'csv' ? 12 : 48) + cells * (format === 'csv' ? 128 : 1024) + 1048576);
   const headers = table.columns.map(c => c.name);
   if (format === 'csv') {
     const text = table.rowCount ? rowsToCsv(table.rows()) : rowsToCsv([Object.fromEntries(headers.map(h => [h, null]))]).slice(0, -(headers.length + 1));
-    return { bytes: Buffer.from(text), contentType: 'text/csv; charset=utf-8', filename: `${id}.csv` };
+    return { bytes: Buffer.from(text), contentType: 'text/csv; charset=utf-8', filename: `${id}.csv`, signal: scope.signal };
   }
   const workbook = utils.book_new();
   // SheetJS string cells remain text, including strings beginning with '='.
   utils.book_append_sheet(workbook, utils.aoa_to_sheet([headers, ...Array.from({ length: table.rowCount }, (_, r) => headers.map((_, c) => table.value(r, c)))]), 'Table');
   return { bytes: Buffer.from(write(workbook, { type: 'buffer', bookType: 'xlsx', compression: true }) as Uint8Array),
-    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', filename: `${id}.xlsx` };
+    contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', filename: `${id}.xlsx`, signal: scope.signal };
 }
 const admissions = new WeakMap<ServerResponse, (bytes: number) => Promise<void>>();
 /** Use the enclosing hosted request's reservation; never meter a response twice. */
@@ -39,13 +44,15 @@ export async function sendTableDownload(response: ServerResponse, result: TableD
   const reservation = local ? await local.usage.reserveEgress(local.scope) : undefined;
   let served = 0, admitted = false;
   try {
+    result.signal.throwIfAborted();
     if (reservation) await local!.usage.assertEgressSize(reservation, result.bytes.length);
     await admissions.get(response)?.(result.bytes.length);
+    result.signal.throwIfAborted();
     admitted = true;
     response.writeHead(200, { 'Content-Type': result.contentType, 'Content-Length': result.bytes.length,
       'Content-Disposition': `attachment; filename="${result.filename}"`, 'Cache-Control': 'no-store' });
     const chunks = function* () { for (let offset = 0; offset < result.bytes.length; offset += 65536) yield result.bytes.subarray(offset, offset + 65536); };
-    await pipeline(Readable.from(chunks()), new Transform({ transform(chunk: Buffer, _encoding, done) { served += chunk.length; done(null, chunk); } }), response);
+    await pipeline(Readable.from(chunks()), new Transform({ transform(chunk: Buffer, _encoding, done) { served += chunk.length; done(null, chunk); } }), response, { signal: result.signal });
   } catch (error) { if (!response.destroyed) throw error; }
   finally { if (reservation) { if (admitted) await local!.usage.settleEgress(reservation, served); else await local!.usage.releaseEgress(reservation); } }
 }
