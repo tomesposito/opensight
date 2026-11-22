@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { PGlite } from '@electric-sql/pglite';
-import { prepJoinDiagnostics, PrepJoinBudget, compilePrepJoinSample, PREP_JOIN_SAMPLE_LIMIT as N } from '../dist/index.js';
+import { prepJoinDiagnostics, PrepJoinBudget, compilePrepJoinSample, prepJoinSampleResult, canonicalNumericKey, PREP_JOIN_SAMPLE_LIMIT as N } from '../dist/index.js';
 const keys = [{ left: 'id', right: 'id' }];
 const rows = (...ids) => ids.map(id => ({ id }));
 const sources = ['left', 'right'].map(id => ({ id, table: id, connectorId: 'file', security: 'unrestricted', columns: [{ name: 'id', type: 'INTEGER' }] }));
@@ -49,6 +49,56 @@ for (const dialect of ['duckdb', 'postgres']) test(`${dialect}: bounded physical
     const branch = { ...pipeline, steps: [{ id: 'renamed', kind: 'rename', config: { column: 'id', name: 'key' } }, { ...join, config: { ...join.config, source: { step: 'renamed' }, keys: [{ left: 'key', right: 'key' }] } }] };
     const b = compilePrepJoinSample(branch, sources.map(s => ({ ...s, connectorId: dialect === 'postgres' ? 'postgresql' : 'file' })), 'join', { dialect });
     assert.equal((await query(b.sql, b.parameters)).length, N * 2 + 2);
+  } finally { if (dialect === 'duckdb') { db.closeSync(); instance.closeSync(); } else await db.close(); }
+});
+test('canonical numeric keys: SQL-equal spellings share a key, distinct precision never collides', () => {
+  assert.equal(canonicalNumericKey('1.00'), '1'); assert.equal(canonicalNumericKey('1.0'), '1');
+  assert.equal(canonicalNumericKey('-0.00'), '0'); assert.equal(canonicalNumericKey('+007.500'), '7.5');
+  assert.equal(canonicalNumericKey('1e3'), '1000'); assert.equal(canonicalNumericKey('1.5e-3'), '0.0015');
+  assert.equal(canonicalNumericKey('9007199254740993'), '9007199254740993');
+  assert.notEqual(canonicalNumericKey('123456789.1234567891'), canonicalNumericKey('123456789.1234567892'));
+  assert.equal(canonicalNumericKey(9007199254740993n), '9007199254740993');
+  assert.throws(() => canonicalNumericKey('abc'), { code: 'PREP_EXECUTION_FAILED' });
+  assert.throws(() => canonicalNumericKey('NaN'), { code: 'PREP_EXECUTION_FAILED' });
+});
+test('sample result decoding preserves native key equality (microsecond datetimes, exact decimals)', () => {
+  const plan = type => ({ columns: [{ name: '__side', type: 'INTEGER' }, { name: 'key_0', type }] });
+  const run = (type, left, right) => prepJoinSampleResult(plan(type), [...left.map(v => ({ __side: 0, key_0: v })), ...right.map(v => ({ __side: 1, key_0: v }))]);
+  const ts = run('DATETIME', ['2026-01-01T00:00:00.000001Z', '2026-01-01T00:00:00.000002Z'], ['2026-01-01T00:00:00.000002Z', '2026-01-01T00:00:00.000003Z']);
+  assert.equal(ts.matchedRows, 1); assert.equal(ts.unmatchedLeft, 1); assert.equal(ts.unmatchedRight, 1);
+  const dec = run('DECIMAL', ['1.00', '123456789.1234567891'], ['1.0', '123456789.1234567892']);
+  assert.equal(dec.matchedRows, 1); assert.equal(dec.unmatchedLeft, 1); assert.equal(dec.unmatchedRight, 1);
+  assert.throws(() => run('DATETIME', [42], []), { code: 'PREP_EXECUTION_FAILED' });
+});
+for (const dialect of ['duckdb', 'postgres']) test(`${dialect}: diagnostics agree with an actual join on sub-millisecond and precision-sensitive keys`, async () => {
+  const instance = dialect === 'duckdb' ? await DuckDBInstance.create(':memory:') : new PGlite();
+  const db = dialect === 'duckdb' ? await instance.connect() : instance;
+  const query = async (sql, params = []) => dialect === 'duckdb' ? (await db.runAndReadAll(sql, params)).getRowObjects() : (await db.query(sql, params)).rows;
+  try {
+    const cases = [
+      { column: 'ts', type: 'DATETIME', sqlType: 'TIMESTAMP',
+        left: ['2026-01-01 00:00:00.000001', '2026-01-01 00:00:00.000002', '2026-01-01 00:00:00.123456'],
+        right: ['2026-01-01 00:00:00.000002', '2026-01-01 00:00:00.123456', '2026-01-01 00:00:00.123457'] },
+      { column: 'amt', type: 'DECIMAL', sqlType: 'DECIMAL(38,10)',
+        left: ['123456789.1234567891', '123456789.1234567892', '42.5'],
+        right: ['123456789.1234567892', '42.50', '7'] },
+      { column: 'id', type: 'INTEGER', sqlType: 'BIGINT',
+        left: ['9007199254740993', '9007199254740992'], right: ['9007199254740992', '9007199254740994'] },
+    ];
+    for (const c of cases) {
+      await query(`DROP TABLE IF EXISTS "left"`); await query(`DROP TABLE IF EXISTS "right"`);
+      await query(`CREATE TABLE "left" (${c.column} ${c.sqlType})`); await query(`CREATE TABLE "right" (${c.column} ${c.sqlType})`);
+      for (const v of c.left) await query(`INSERT INTO "left" VALUES ('${v}')`);
+      for (const v of c.right) await query(`INSERT INTO "right" VALUES ('${v}')`);
+      const actual = Number(Object.values((await query(`SELECT COUNT(*) AS n FROM "left" l JOIN "right" r ON l.${c.column} = r.${c.column}`))[0])[0]);
+      const typed = ['left', 'right'].map(id => ({ id, table: id, connectorId: dialect === 'postgres' ? 'postgresql' : 'file', security: 'unrestricted', columns: [{ name: c.column, type: c.type }] }));
+      const p = { version: 1, input: 'left', steps: [{ id: 'join', kind: 'join', config: { source: 'right', joinType: 'inner', keys: [{ left: c.column, right: c.column }], prefix: 'r_' } }] };
+      const plan = compilePrepJoinSample(p, typed, 'join', { dialect });
+      const diagnostics = prepJoinSampleResult(plan, await query(plan.sql, plan.parameters));
+      assert.equal(diagnostics.matchedRows, actual, `${c.column}: diagnostics ${diagnostics.matchedRows} != actual join ${actual}`);
+      assert.equal(diagnostics.unmatchedLeft, c.left.length - (c.column === 'ts' ? 2 : c.column === 'amt' ? 2 : 1));
+      assert.equal(diagnostics.leftTruncated, false); assert.equal(diagnostics.rightTruncated, false);
+    }
   } finally { if (dialect === 'duckdb') { db.closeSync(); instance.closeSync(); } else await db.close(); }
 });
 test('sample compiler retains named configuration/security errors and nested prepared inputs', () => {

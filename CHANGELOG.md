@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Prep join diagnostics now count matches with native join-key equality (#311): datetime and numeric join keys travel through the diagnostics sample as lossless text (full timestamp precision, exact decimal/bigint digits) and numeric keys are canonicalized before counting, so timestamps differing below a millisecond and decimals differing beyond float precision no longer count as matches, while SQL-equal spellings (1.0 vs 1.00) still do. Diagnostic counts again agree with actual join execution in both dialects.
+
 - Prep join diagnostics no longer fail on MySQL/MariaDB and Redshift sources larger than the 10,000-row sample (#310): the sample/probe row contract is now explicit in the read limits — diagnostics reads forward the probe row (row 10,001) to the sink so truncation is reported instead of erroring, while ordinary dataset reads keep treating that row as the overflow sentinel and byte guards still apply to every row including the probe.
 
 - Stored (computed) table generations orphaned by a crash around publication are now recovered (#309): deferred deletions of leased generations are persisted in a per-key journal, startup and pre-publish reconciliation delete any generation the metadata does not reference while never unlinking a referenced or actively leased file, and storage accounting counts the current generation plus a pending replacement together instead of taking the larger of the two.
