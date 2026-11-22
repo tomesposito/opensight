@@ -38,7 +38,7 @@ export interface DiscoveredDatabase {
 function fail(code: RdsDiscoveryErrorCode): never { throw new RdsDiscoveryError(code); }
 const INSTANCE_ENGINES: Readonly<Record<string, string>> = {
   postgres: 'postgresql', mysql: 'mysql', mariadb: 'mariadb',
-  'aurora-postgresql': 'postgresql', 'aurora-mysql': 'mysql', redshift: 'redshift-manual',
+  'aurora-postgresql': 'postgresql', 'aurora-mysql': 'mysql',
 };
 const CLUSTER_ENGINES: Readonly<Record<string, string>> = {
   'aurora-postgresql': 'postgresql', 'aurora-mysql': 'mysql',
@@ -137,9 +137,11 @@ async function pageAll(client: RdsDiscoveryClient, signal: AbortSignal, kind: 'i
 }
 /**
  * List DB instances and clusters in the configured region through the RDS API
- * and classify each by engine into its manual connector. The three discovery
- * registry entries (rds, aurora, redshift) share this one implementation and
- * schema; the entry selects configuration only. Results are complete or the
+ * and classify each by engine into its manual connector. The two discovery
+ * registry entries (rds, aurora) share this one implementation and
+ * schema; the entry selects configuration only. Redshift is deliberately not
+ * discoverable here: its clusters live behind Redshift's own DescribeClusters
+ * API, which this service does not call (#304). Results are complete or the
  * call fails — never a partial list presented as discovery.
  */
 export async function discoverDatabaseSources(connectorId: string, raw: unknown, options: RdsDiscoveryOptions = {}): Promise<readonly DiscoveredDatabase[]> {
@@ -162,7 +164,7 @@ const POSTGRES_ENV_NAMES = ['connectionEnv'] as const;
  */
 export function rdsSourceConfig(discovered: Pick<DiscoveredDatabase, 'connectorId'>, envNames: unknown): ConnectorConfig {
   const connectorId = discovered?.connectorId;
-  const allowed: readonly string[] = connectorId === 'postgresql' ? POSTGRES_ENV_NAMES : ['mysql', 'mariadb', 'redshift-manual'].includes(connectorId ?? '') ? SQL_ENV_NAMES : [];
+  const allowed: readonly string[] = connectorId === 'postgresql' ? POSTGRES_ENV_NAMES : ['mysql', 'mariadb'].includes(connectorId ?? '') ? SQL_ENV_NAMES : [];
   if (!allowed.length) throw new ConnectorError('INVALID_CONNECTOR_CONFIG', '$.connectorId', 'Discovered connector cannot create a source');
   if (!envNames || typeof envNames !== 'object' || Array.isArray(envNames) || ![Object.prototype, null].includes(Object.getPrototypeOf(envNames))) throw new ConnectorError('INVALID_CONNECTOR_CONFIG', '$.envNames', 'Expected an environment name object');
   const input = envNames as Record<string, unknown>;
