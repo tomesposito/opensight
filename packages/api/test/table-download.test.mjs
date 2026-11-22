@@ -5,6 +5,8 @@ import { BlazeTable } from '../dist/blaze.js';
 import { tableDownload } from '../dist/table-download.js';
 import { budgetConfig } from './budget-helpers.mjs';
 import { rowsToCsv } from '@opensight/web/exports';
+import { getEventListeners } from 'node:events';
+import { read as readXlsx, utils as xlsxUtils } from 'xlsx';
 
 const context = { tenantId: 'test', namespaceId: 'test', userId: 'author', authorizationRevision: 1 };
 function table(rows = [['=SUM(A1)', 3]]) {
@@ -57,5 +59,40 @@ for (const stage of ['sizing', 'streaming']) test(`#308 CSV cancellation interru
     for await (const _chunk of result.body) { /* consume until cancelled */ }
   }), { code: 'EXECUTION_CANCELLED' });
   assert.ok(reads >= 100 && reads < 1000, `only bounded work after cancellation: ${reads}`);
+  assert.deepEqual(budgets.node(), { running: 0, queued: 0 });
+});
+test('#308 XLSX encodes in a contained worker and preserves typed cells, formulas as text and empty headers', async t => {
+  const budgets = new TenantBudgets(budgetConfig, () => {});
+  for (const rows of [[], [['=1+1', 12], ['+cmd', false], ['雪😀', null]]]) {
+    const input = table(rows);
+    t.mock.method(input, 'rows', () => assert.fail('XLSX must not create row objects'));
+    await budgets.run(context, false, async () => {}, async () => {
+      const scope = budgets.current(context), before = budgets.snapshot(context.tenantId).workerExecutions;
+      const result = await tableDownload(scope, 'table', input, 'xlsx'), chunks = [];
+      assert.equal(budgets.snapshot(context.tenantId).workerExecutions, before + 1);
+      for await (const chunk of result.body) { assert.ok(chunk.length <= 65536); chunks.push(chunk); }
+      const bytes = Buffer.concat(chunks); assert.equal(bytes.length, result.byteLength);
+      const book = readXlsx(bytes, { type: 'buffer' }), sheet = book.Sheets.Table;
+      assert.deepEqual(xlsxUtils.sheet_to_json(sheet, { header: 1, defval: null }), [['text', 'value'], ...rows]);
+      if (rows.length) { assert.equal(sheet.A2.t, 's'); assert.equal(sheet.A2.v, '=1+1'); assert.equal(sheet.A2.f, undefined); }
+      assert.equal(getEventListeners(scope.signal, 'abort').length, 0, 'worker exit removes cancellation listener');
+    });
+  }
+});
+test('#308 XLSX cancellation during worker encoding keeps admission until the child is reaped', async t => {
+  const budgets = new TenantBudgets(budgetConfig, () => {}), input = table(Array.from({ length: 500 }, () => ['=text', 1]));
+  let encoding = false, scope;
+  await assert.rejects(budgets.run(context, false, async () => {}, async () => {
+    scope = budgets.current(context);
+    const started = scope.workerStarted.bind(scope);
+    t.mock.method(scope, 'workerStarted', () => {
+      started(); encoding = true; scope.cancel();
+      assert.equal(budgets.node().running, 1, 'cancel does not release the live worker');
+    });
+    await tableDownload(scope, 'table', input, 'xlsx');
+    assert.fail('cancelled workbook published');
+  }), { code: 'EXECUTION_CANCELLED' });
+  assert.equal(encoding, true);
+  assert.equal(getEventListeners(scope.signal, 'abort').length, 0);
   assert.deepEqual(budgets.node(), { running: 0, queued: 0 });
 });

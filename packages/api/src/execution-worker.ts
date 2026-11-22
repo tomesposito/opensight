@@ -12,10 +12,22 @@ process.once('message', (request: WorkerRequest) => {
     const watchdog = new Worker(new URL('./execution-watchdog.js', import.meta.url), { workerData: { parentPid: /^PPid:\s+(\d+)/m.exec(readFileSync('/proc/self/status', 'utf8'))?.[1], deadline: request.deadline, rssBytes: request.rssBytes } });
     watchdog.unref();
     watchdog.on('error', () => process.kill(process.pid, 'SIGKILL'));
-    process.send?.({ executing: true });
+    if (request.task.kind !== 'xlsx') process.send?.({ executing: true });
     const { task, limits, memoryMb } = request, output = new BlazeTable(limits);
     let result: unknown;
-    if (task.kind === 'upload') {
+    if (task.kind === 'xlsx') {
+      const { utils, write } = await import('xlsx');
+      process.send?.({ executing: true });
+      const workbook = utils.book_new(), worksheet = utils.aoa_to_sheet([task.table.source.columns.map(c => c.name)]);
+      // No second all-rows matrix. SheetJS strings, including leading '=', stay text.
+      for (let r = 0; r < task.table.rows.length; r++) utils.sheet_add_aoa(worksheet, [task.table.rows[r]!], { origin: r + 1 });
+      utils.book_append_sheet(workbook, worksheet, 'Table');
+      const bytes: unknown = write(workbook, { type: 'buffer', bookType: 'xlsx', compression: true });
+      if (!Buffer.isBuffer(bytes) || bytes.length > task.maxBytes) throw Object.assign(new Error(), { code: 'TENANT_BUDGET_EXCEEDED' });
+      // Never JSON-stringify binary output or copy it into another Buffer.
+      process.send?.({ result: bytes, bytes: bytes.length }, () => process.disconnect?.());
+      return;
+    } else if (task.kind === 'upload') {
       const parsed = parseUpload(task.request); output.start(parsed.columns); for (const row of parsed.rows) output.row(row);
       result = { columns: output.columns, rows: parsed.rows };
     } else if (task.kind === 'parquet-write') {

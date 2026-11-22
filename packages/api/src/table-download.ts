@@ -3,12 +3,13 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
 import { csvCell } from '@opensight/web/exports';
-import { utils, write } from 'xlsx';
+import type { PrepScalar } from '@opensight/query-engine';
 import type { BlazeTable } from './blaze.js';
 import { MetadataError } from './metadata-db.js';
 import type { HostedUsage } from './hosted-usage.js';
 import type { Scope } from './metadata-resources.js';
 import type { WorkScope } from './budgets.js';
+import { containedWork } from './contained-work.js';
 
 /** App workspace setting. Embedded sessions retain embedding.features.download
  * (currently unsupported/false) and never enter these authenticated prep routes. */
@@ -27,8 +28,12 @@ export async function tableDownload(scope: WorkScope, id: string, table: BlazeTa
   // cells or constructing any worksheet, row objects, strings or buffers.
   const cells = (table.rowCount + 1) * table.columns.length;
   const maxChars = table.columns.reduce((n, c) => Math.max(n, c.name.length), scope.limits.cellChars);
+  // XML escaping, cell tags and ZIP metadata, including small/empty workbooks.
+  const xlsxBytes = CHUNK_BYTES + table.bytes * 8 + cells * 128;
   scope.memory(format === 'csv' ? table.bytes + 16 * maxChars + 256 * table.columns.length + 4 * CHUNK_BYTES
-    : table.bytes * 48 + cells * 1024 + 1048576);
+    // Input/wire/IPC copies, worksheet objects, XML/ZIP scratch and output IPC
+    // copies all fit the envelope before even constructing the wire rows.
+    : table.bytes * 4 + cells * 512 + xlsxBytes * 4 + 4 * CHUNK_BYTES);
   const headers = table.columns.map(c => c.name);
   if (format === 'csv') {
     // Match rowsToCsv's Object.keys ordering (including numeric column names),
@@ -43,10 +48,14 @@ export async function tableDownload(scope: WorkScope, id: string, table: BlazeTa
     scope.check();
     return { body: csvChunks(scope, table, columns), byteLength, contentType: 'text/csv; charset=utf-8', filename: `${id}.csv`, signal: scope.signal };
   }
-  const workbook = utils.book_new();
-  // SheetJS string cells remain text, including strings beginning with '='.
-  utils.book_append_sheet(workbook, utils.aoa_to_sheet([headers, ...Array.from({ length: table.rowCount }, (_, r) => headers.map((_, c) => table.value(r, c)))]), 'Table');
-  const bytes = Buffer.from(write(workbook, { type: 'buffer', bookType: 'xlsx', compression: true }) as Uint8Array);
+  const rows: PrepScalar[][] = [];
+  for (let r = 0; r < table.rowCount; r++) {
+    if (r % 256 === 0) { await yieldTurn(); scope.check(); }
+    rows.push(headers.map((_, c) => table.value(r, c)));
+  }
+  const bytes = await containedWork<Buffer>(scope, { kind: 'xlsx', maxBytes: xlsxBytes,
+    table: { source: { id, table: 'output', connectorId: 'file', columns: table.columns, security: 'unrestricted' }, rows } },
+  { maxRows: scope.limits.sourceRows, cellChars: scope.limits.cellChars, datasetBytes: scope.limits.workingBytes, maxBytes: scope.limits.cacheBytes });
   return { body: bufferChunks(scope, bytes), byteLength: bytes.length,
     contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', filename: `${id}.xlsx`, signal: scope.signal };
 }
