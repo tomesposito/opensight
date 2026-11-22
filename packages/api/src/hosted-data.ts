@@ -241,7 +241,7 @@ export class HostedData {
       await this.finish(context, [a]); budget.check(); return table;
     }
     const connection = await this.connection(context, a); budget.check();
-    await this.streamer(a)(read, connection, { ...this.limits(context), maxRows: PREP_JOIN_SAMPLE_LIMIT }, {
+    await this.streamer(a)(read, connection, { ...this.limits(context), maxRows: PREP_JOIN_SAMPLE_LIMIT, allowProbeRow: true }, {
       ...sink, row: values => {
         budget.check();
         if (table.rowCount >= PREP_JOIN_SAMPLE_LIMIT + 1) prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Source exceeded the bounded sample contract');

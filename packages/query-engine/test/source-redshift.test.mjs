@@ -39,6 +39,17 @@ for (const mode of ['sentinel', 'extra', 'guard', 'untrusted-guard', 'long', 'un
   await assert.rejects(streamSourceRedshift(read, h.connection, limits, output), e => mode === 'consumer' ? e === consumer : e.code === (mode.startsWith('unknown') ? 'UNSUPPORTED_FEATURE' : mode === 'untrusted-guard' ? 'PREP_EXECUTION_FAILED' : 'TOO_LARGE'));
   assert.deepEqual(h.errors, []);
 });
+test('Redshift probe contract: the maxRows+1 row is forwarded, anything beyond it or byte-oversized still fails', async t => {
+  const probeLimits = { ...limits, allowProbeRow: true };
+  const three = await redshiftHarness(t, { evaluate: () => ({ fields, rows: [row, row, row] }) });
+  const sampled = sink(); await streamSourceRedshift(read, three.connection, probeLimits, sampled);
+  assert.equal(sampled.rows.length, 3, 'sample rows plus the probe row reach the diagnostics sink');
+  const four = await redshiftHarness(t, { evaluate: () => ({ fields, rows: [row, row, row, row] }) });
+  await assert.rejects(streamSourceRedshift(read, four.connection, probeLimits, sink()), e => e.code === 'TOO_LARGE');
+  const guarded = await redshiftHarness(t, { evaluate: () => ({ fields, rows: [row, row, [row[0], row[1], row[2], 't']] }) });
+  await assert.rejects(streamSourceRedshift(read, guarded.connection, probeLimits, sink()), e => e.code === 'TOO_LARGE', 'byte guard still applies to the probe row');
+  assert.deepEqual(three.errors, []); assert.deepEqual(four.errors, []); assert.deepEqual(guarded.errors, []);
+});
 test('Redshift RLS, CLS, TLS and pre-aborted reads fail before sockets', async t => {
   const h = await redshiftHarness(t), abort = new AbortController(); abort.abort();
   await assert.rejects(streamSourceRedshift(read, h.connection, limits, sink(), { signal: abort.signal }), { code: 'EXECUTION_CANCELLED' });

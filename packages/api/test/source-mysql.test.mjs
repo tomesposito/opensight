@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { streamSourceMySql } from '@opensight/query-engine';
+import { streamSourceMySql, PrepJoinBudget } from '@opensight/query-engine';
 import { sourceFixture, policy } from './source-helpers.mjs';
 import { mysqlHarness } from './mysql-harness.mjs';
 import { HostedData } from '../dist/hosted-data.js';
@@ -132,6 +132,35 @@ test('MySQL source stream enforces sink bounds, preserves consumer errors, cance
   assert.equal(harness.authentications.length, before);
   for (let i = 0; i < 20 && harness.sockets.size; i++) await delay(5);
   assert.equal(harness.sockets.size, 0);
+});
+
+test('MySQL probe contract: diagnostics sample of 10,000 rows plus its probe row passes; dataset reads still oversize on it', async t => {
+  const bigColumns = [{ name: 'region', type: 'STRING' }];
+  const bigRows = Array.from({ length: 10_001 }, (_, i) => [`region-${i}`]);
+  const harness = await mysqlHarness(t, { columns: bigColumns, rows: bigRows, password: 'synthetic-password' });
+  const read = { source: { id: 'input', connectorId: 'mysql', schema: 'opensight', table: 'sales', columns: bigColumns, security: 'unrestricted' }, columns: ['region'],
+    security: { namespaceId: 'ns', userId: 'admin', users: [{ id: 'admin', namespaceId: 'ns' }], groups: [], policy: { namespaceId: 'ns', dataSetArn: 'input', rowLevel: false, rowRules: [] } } };
+  const collecting = () => ({ rows: [], start() {}, row(values) { this.rows.push(values); }, oversized() { throw Object.assign(new Error('too large'), { code: 'TOO_LARGE' }); } });
+  const sampled = collecting();
+  await streamSourceMySql(read, harness.connection, { maxRows: 10_000, cellChars: 1000, allowProbeRow: true }, sampled);
+  assert.equal(sampled.rows.length, 10_001, 'sample rows plus the probe row reach the diagnostics sink');
+  await assert.rejects(streamSourceMySql(read, harness.connection, { maxRows: 10_000, cellChars: 1000 }, collecting()), e => e.code === 'TOO_LARGE');
+  harness.mode = 'extra-rows';
+  await assert.rejects(streamSourceMySql(read, harness.connection, { maxRows: 2, cellChars: 1000, allowProbeRow: true }, collecting()), e => e.code === 'TOO_LARGE', 'a row beyond the probe is still oversized');
+  assert.deepEqual(harness.errors, []);
+});
+
+test('Hosted join diagnostics bounded sample returns 10,001 rows from a larger MySQL source', async t => {
+  const password = randomBytes(24).toString('hex');
+  const bigColumns = [{ name: 'region', type: 'STRING' }, { name: 'amount', type: 'INTEGER' }];
+  const bigRows = Array.from({ length: 10_001 }, (_, i) => [`region-${i % 7}`, i]);
+  const harness = await mysqlHarness(t, { columns: bigColumns, rows: bigRows, password });
+  const f = await sourceFixture(t, { endpoints: [{ id: 'reference', connectorId: 'mysql', host: '127.0.0.1', port: harness.port, database: 'opensight', tls: false }] });
+  const context = await f.login(), data = new HostedData(f.sources, undefined, f.budgets);
+  await data.createSource(context, 'big', { connectorId: 'mysql', endpointId: 'reference', schema: 'opensight', table: 'sales', columns: bigColumns, credentials: { username: 'synthetic', password }, policy });
+  const table = await data.boundedSample(context, await data.admit(context, 'big', 'prep'), new PrepJoinBudget());
+  assert.equal(table.rowCount, 10_001);
+  assert.deepEqual(harness.errors, []);
 });
 
 test('MySQL execution deadline cancels stalled authentication before the independent connection cap', async t => {
