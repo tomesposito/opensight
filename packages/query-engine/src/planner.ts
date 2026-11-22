@@ -642,6 +642,9 @@ function sql(plan: Omit<QueryPlan, 'sql' | 'parameters'>, parameters: ParameterV
     from = relation;
   }
   if (plan.postProcess) {
+    // Shared calculations need the complete source selection: a SQL LIMIT here
+    // would corrupt aggregates. Executors must fail on result-budget overflow,
+    // never pass truncated source rows to evaluateSqlPlan.
     const columns = [...plan.sourceColumns.filter(c => !plan.deniedColumns?.includes(c.name)).map(c => ({ name: c.name, type: c.scalarType })), ...plan.calculations.filter(c => c.expression.level === 'row').map(c => ({ name: c.name, type: c.expression.scalarType }))];
     const projections = columns.map(c => `${c.type === 'datetime' ? plan.dialect === 'athena' ? athenaTimestamp(q(c.name)) : plan.dialect === 'redshift' ? redshiftTimestamp(q(c.name)) : plan.dialect === 'mysql' ? mysqlTimestamp(q(c.name)) : plan.dialect === 'postgres' ? `TO_CHAR(${q(c.name)}, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')` : `STRFTIME(${q(c.name)}, '%Y-%m-%dT%H:%M:%S.%gZ')` : q(c.name)} AS ${q(c.name)}`);
     return `${ctes.length ? `WITH ${ctes.join(',\n')}\n` : ''}SELECT ${projections.join(', ')} FROM ${from}`;

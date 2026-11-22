@@ -98,6 +98,20 @@ test('Redshift retains 10-second setup and streaming deadlines and tears down a 
   for (let i = 0; i < 50 && harness.sockets.size; i++) await delay(5);
   assert.equal(harness.sockets.size, 0); assert.deepEqual(harness.errors, []);
 });
+
+test('Redshift post-processing uses all bounded source rows and rejects overflow instead of partial aggregates', async t => {
+  const r = redshiftRequest(); calculation(r, 'percentOfTotal(sum({revenue}))'); r.analysis.Definition.FilterGroups = [];
+  const harness = await redshiftHarness(t, { evaluate(sql) {
+    assert.doesNotMatch(sql, /\bLIMIT\b/i);
+    return { fields: [{ name: 'region', oid: 1043 }, { name: 'revenue', oid: 1700 }], rows: [['East', '1'], ['West', '3']] };
+  } });
+  const bounded = { ...options, maxRows: 2, maxBytes: 10, environment: { ...environment, DB_PORT: String(harness.port) } };
+  const result = await executeRedshift(r, bounded);
+  assert.equal(result.plan.postProcess, true);
+  assert.deepEqual(result.rows, [{ region: 'East', calculated: 0.25 }, { region: 'West', calculated: 0.75 }]);
+  await assert.rejects(executeRedshift(r, { ...bounded, maxRows: 1 }), { code: 'EXECUTION_ERROR' });
+  assert.deepEqual(harness.errors, []);
+});
 for (const mode of ['error', 'drop', 'bad-auth', 'tls-required', 'unknown-type', 'empty-unknown-type', 'nonfinite']) test(`Redshift wire failure is sanitized and closes: ${mode}`, async t => {
   const harness = await redshiftHarness(t, { evaluate: () => ({ fields: [{ name: 'result', oid: mode === 'nonfinite' ? 701 : 4000 }], rows: mode === 'empty-unknown-type' ? [] : [[mode === 'nonfinite' ? 'NaN' : null]] }) });
   harness.mode = mode;
