@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Prep join diagnostics no longer fail on MySQL/MariaDB and Redshift sources larger than the 10,000-row sample (#310): the sample/probe row contract is now explicit in the read limits — diagnostics reads forward the probe row (row 10,001) to the sink so truncation is reported instead of erroring, while ordinary dataset reads keep treating that row as the overflow sentinel and byte guards still apply to every row including the probe.
+
 - Stored (computed) table generations orphaned by a crash around publication are now recovered (#309): deferred deletions of leased generations are persisted in a per-key journal, startup and pre-publish reconciliation delete any generation the metadata does not reference while never unlinking a referenced or actively leased file, and storage accounting counts the current generation plus a pending replacement together instead of taking the larger of the two.
 
 - Table downloads now admit encoding memory before allocating copies, stream CSV in bounded chunks, and isolate XLSX encoding in a cancellable worker (#308). Slow or disconnected clients keep their response memory and work reservations until transmission or cleanup finishes, so concurrent downloads cannot bypass admission.
