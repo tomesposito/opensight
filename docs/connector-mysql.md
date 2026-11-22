@@ -72,8 +72,30 @@ The library uses prepared positional parameters, including repeated expression
 bindings, and validates plans before opening sockets. Verified TLS is enabled;
 optional `caEnv` resolves a PEM CA value. The trusted library-only
 `allowInsecureLoopback` option permits plaintext only on `127.0.0.1` / `::1`.
-Setup/query timeouts are 3/10 seconds and each call destroys its connection.
+Setup has a 3-second connection cap, and a 10-second deadline covers connection,
+session setup, preparation and streaming. Each call destroys its connection.
 Driver failures become sanitized `EXECUTION_ERROR` errors.
+
+The library consumes the callback-free prepared query's `.stream()` API;
+mysql2 does not collect a second result array (#303). Binary prepared binding
+is retained because default text-protocol backslash escaping is incompatible
+with the exact `NO_BACKSLASH_ESCAPES` session above. The existing numeric
+conversion preserves unsafe integers as strings and rejects nonfinite values.
+
+Hard result caps are **100,000 rows**, **64 MiB cumulative raw values**, and
+**16 KiB per cell** for both MySQL and MariaDB. `MySqlExecuteOptions.maxRows`,
+`maxBytes`, and `maxCellBytes` may only lower those caps. Invalid options
+(anything other than a positive safe integer within the cap) fail with
+`INVALID_INPUT` before connecting. Values are charged before conversion or
+retention: strings use UTF-8 byte length, numbers/dates their string form,
+buffers their byte length, and NULL zero bytes. The cell cap conservatively
+uses the same magnitude as the existing BLAZE 16,384-character row intake bound
+in bytes per cell. These value budgets do not measure total JavaScript heap usage.
+
+Any breach stops consumption, destroys the stream and connection, and raises
+a sanitized `EXECUTION_ERROR`. No partial rows or aggregate are returned.
+Shared post-processing still selects source rows without a SQL `LIMIT` and
+runs only on the complete result after it passes the budgets.
 
 The SQL mapping targets MySQL 8.0.22+ (CTEs, double casts and the 0900 binary
 collation). Date grouping/arithmetic/formatting, ordinary aggregates, numeric

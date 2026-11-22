@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Redshift and MySQL/MariaDB library queries now enforce row, per-cell and cumulative byte limits while streaming, before drivers buffer the full result (#303). Oversized results close the connection and fail explicitly instead of risking unbounded memory or returning partial aggregates; trusted callers can lower the hard caps.
+
 - Athena execution parameters are now encoded as typed SQL literals (#301): string and datetime parameters are sent as quoted literals with apostrophes escaped, so string/date filters match instead of being read as expressions, while numeric parameters stay bare. Numeric-looking strings and expression-shaped input stay inert quoted literals, and the parameters remain separate from the query string.
 
 - Opening a deleted, missing or inaccessible notebook now shows an item-level "Notebook not found" error instead of the false server-wide "Notebooks are not available on this server" notice (#299): the Notebooks page reserves that notice for the hosted unsupported contract (`RESOURCE_NOT_FOUND`, #285) and for a failed notebook-list load, while a detail load's `NOTEBOOK_NOT_FOUND` is reported as the single notebook being gone.
