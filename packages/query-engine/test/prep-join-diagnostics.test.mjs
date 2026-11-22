@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { PGlite } from '@electric-sql/pglite';
-import { prepJoinDiagnostics, PrepJoinBudget, compilePrepJoinSample, prepJoinSampleResult, canonicalNumericKey, PREP_JOIN_SAMPLE_LIMIT as N } from '../dist/index.js';
+import { prepJoinDiagnostics, PrepJoinBudget, compilePrepJoinSample, prepJoinSampleResult, PREP_JOIN_SAMPLE_LIMIT as N } from '../dist/index.js';
 const keys = [{ left: 'id', right: 'id' }];
 const rows = (...ids) => ids.map(id => ({ id }));
 const sources = ['left', 'right'].map(id => ({ id, table: id, connectorId: 'file', security: 'unrestricted', columns: [{ name: 'id', type: 'INTEGER' }] }));
@@ -42,33 +42,34 @@ for (const dialect of ['duckdb', 'postgres']) test(`${dialect}: bounded physical
     const p = { ...pipeline, steps: [{ id: 'filter', kind: 'filter', config: { filters: [{ columnName: 'id', values: [1,2] }] } }, join] };
     const plan = compilePrepJoinSample(p, sources.map(s => ({ ...s, connectorId: dialect === 'postgres' ? 'postgresql' : 'file' })), 'join', { dialect });
     assert.match(plan.sql, /AS MATERIALIZED \(SELECT \* FROM "left" LIMIT 10001\)/);
-    const result = await query(plan.sql, plan.parameters);
-    const side = n => result.filter(r => Number(r.__side) === n).map(r => Number(r.key_0));
-    assert.deepEqual(side(0), [1,2]); assert.equal(side(1).length, 4); assert.equal(side(2).length, 1); assert.equal(side(3).length, 0);
+    const result = prepJoinSampleResult(plan, await query(plan.sql, plan.parameters));
+    assert.equal(result.matchedRows, 2); assert.equal(result.unmatchedLeft, 1); assert.equal(result.unmatchedRight, 2);
+    assert.equal(result.leftRowsSampled, 2); assert.equal(result.rightRowsSampled, 4);
+    assert.equal(result.leftTruncated, true); assert.equal(result.rightTruncated, false);
     assert.deepEqual(plan.sampleSources.map(s => s.id), ['left','right']);
     const branch = { ...pipeline, steps: [{ id: 'renamed', kind: 'rename', config: { column: 'id', name: 'key' } }, { ...join, config: { ...join.config, source: { step: 'renamed' }, keys: [{ left: 'key', right: 'key' }] } }] };
     const b = compilePrepJoinSample(branch, sources.map(s => ({ ...s, connectorId: dialect === 'postgres' ? 'postgresql' : 'file' })), 'join', { dialect });
-    assert.equal((await query(b.sql, b.parameters)).length, N * 2 + 2);
+    const bd = prepJoinSampleResult(b, await query(b.sql, b.parameters));
+    // The branch joins the renamed left stage against itself: every sampled key matches once.
+    assert.equal(bd.matchedRows, N); assert.equal(bd.unmatchedLeft, 0); assert.equal(bd.unmatchedRight, 0);
+    assert.equal(bd.leftRowsSampled, N); assert.equal(bd.rightRowsSampled, N);
+    assert.equal(bd.leftTruncated, true); assert.equal(bd.rightTruncated, true);
   } finally { if (dialect === 'duckdb') { db.closeSync(); instance.closeSync(); } else await db.close(); }
 });
-test('canonical numeric keys: SQL-equal spellings share a key, distinct precision never collides', () => {
-  assert.equal(canonicalNumericKey('1.00'), '1'); assert.equal(canonicalNumericKey('1.0'), '1');
-  assert.equal(canonicalNumericKey('-0.00'), '0'); assert.equal(canonicalNumericKey('+007.500'), '7.5');
-  assert.equal(canonicalNumericKey('1e3'), '1000'); assert.equal(canonicalNumericKey('1.5e-3'), '0.0015');
-  assert.equal(canonicalNumericKey('9007199254740993'), '9007199254740993');
-  assert.notEqual(canonicalNumericKey('123456789.1234567891'), canonicalNumericKey('123456789.1234567892'));
-  assert.equal(canonicalNumericKey(9007199254740993n), '9007199254740993');
-  assert.throws(() => canonicalNumericKey('abc'), { code: 'PREP_EXECUTION_FAILED' });
-  assert.throws(() => canonicalNumericKey('NaN'), { code: 'PREP_EXECUTION_FAILED' });
-});
-test('sample result decoding preserves native key equality (microsecond datetimes, exact decimals)', () => {
-  const plan = type => ({ columns: [{ name: '__side', type: 'INTEGER' }, { name: 'key_0', type }] });
-  const run = (type, left, right) => prepJoinSampleResult(plan(type), [...left.map(v => ({ __side: 0, key_0: v })), ...right.map(v => ({ __side: 1, key_0: v }))]);
-  const ts = run('DATETIME', ['2026-01-01T00:00:00.000001Z', '2026-01-01T00:00:00.000002Z'], ['2026-01-01T00:00:00.000002Z', '2026-01-01T00:00:00.000003Z']);
-  assert.equal(ts.matchedRows, 1); assert.equal(ts.unmatchedLeft, 1); assert.equal(ts.unmatchedRight, 1);
-  const dec = run('DECIMAL', ['1.00', '123456789.1234567891'], ['1.0', '123456789.1234567892']);
-  assert.equal(dec.matchedRows, 1); assert.equal(dec.unmatchedLeft, 1); assert.equal(dec.unmatchedRight, 1);
-  assert.throws(() => run('DATETIME', [42], []), { code: 'PREP_EXECUTION_FAILED' });
+test('sample result decoding validates the aggregate row shape and fails closed on drift', () => {
+  const plan = { columns: [{ name: 'matchedRows', type: 'INTEGER' }, { name: 'unmatchedLeft', type: 'INTEGER' }, { name: 'unmatchedRight', type: 'INTEGER' },
+    { name: 'maxLeftMultiplicity', type: 'INTEGER' }, { name: 'maxRightMultiplicity', type: 'INTEGER' },
+    { name: 'leftRowsSampled', type: 'INTEGER' }, { name: 'rightRowsSampled', type: 'INTEGER' },
+    { name: 'leftTruncated', type: 'BOOLEAN' }, { name: 'rightTruncated', type: 'BOOLEAN' }] };
+  const row = { matchedRows: '6', unmatchedLeft: '4', unmatchedRight: '2', maxLeftMultiplicity: '2', maxRightMultiplicity: '3',
+    leftRowsSampled: '6', rightRowsSampled: '5', leftTruncated: 'f', rightTruncated: 't' };
+  assert.deepEqual(prepJoinSampleResult(plan, [row]), { basis: 'bounded-preview', sampleLimit: N, timedOut: false,
+    matchedRows: 6, unmatchedLeft: 4, unmatchedRight: 2, fanOut: true, maxLeftMultiplicity: 2, maxRightMultiplicity: 3,
+    leftRowsSampled: 6, rightRowsSampled: 5, leftTruncated: false, rightTruncated: true });
+  assert.throws(() => prepJoinSampleResult(plan, []), { code: 'PREP_EXECUTION_FAILED' });
+  assert.throws(() => prepJoinSampleResult(plan, [row, row]), { code: 'PREP_EXECUTION_FAILED' });
+  assert.throws(() => prepJoinSampleResult(plan, [{ ...row, matchedRows: '-1' }]), { code: 'PREP_EXECUTION_FAILED' });
+  assert.throws(() => prepJoinSampleResult(plan, [{ ...row, leftTruncated: 'yes' }]), { code: 'PREP_EXECUTION_FAILED' });
 });
 for (const dialect of ['duckdb', 'postgres']) test(`${dialect}: diagnostics agree with an actual join on sub-millisecond and precision-sensitive keys`, async () => {
   const instance = dialect === 'duckdb' ? await DuckDBInstance.create(':memory:') : new PGlite();
@@ -76,18 +77,25 @@ for (const dialect of ['duckdb', 'postgres']) test(`${dialect}: diagnostics agre
   const query = async (sql, params = []) => dialect === 'duckdb' ? (await db.runAndReadAll(sql, params)).getRowObjects() : (await db.query(sql, params)).rows;
   try {
     const cases = [
-      { column: 'ts', type: 'DATETIME', sqlType: 'TIMESTAMP',
+      { column: 'ts', type: 'DATETIME', leftSqlType: 'TIMESTAMP', rightSqlType: 'TIMESTAMP',
         left: ['2026-01-01 00:00:00.000001', '2026-01-01 00:00:00.000002', '2026-01-01 00:00:00.123456'],
         right: ['2026-01-01 00:00:00.000002', '2026-01-01 00:00:00.123456', '2026-01-01 00:00:00.123457'] },
-      { column: 'amt', type: 'DECIMAL', sqlType: 'DECIMAL(38,10)',
+      { column: 'amt', type: 'DECIMAL', leftSqlType: 'DECIMAL(38,10)', rightSqlType: 'DECIMAL(38,10)',
         left: ['123456789.1234567891', '123456789.1234567892', '42.5'],
         right: ['123456789.1234567892', '42.50', '7'] },
-      { column: 'id', type: 'INTEGER', sqlType: 'BIGINT',
+      { column: 'id', type: 'INTEGER', leftSqlType: 'BIGINT', rightSqlType: 'BIGINT',
         left: ['9007199254740993', '9007199254740992'], right: ['9007199254740992', '9007199254740994'] },
+      // Mixed native types under one prep type: native coercion decides equality, not text form.
+      { column: 'amt', type: 'DECIMAL', leftSqlType: 'REAL', rightSqlType: 'DOUBLE PRECISION',
+        left: ['0.1', '0.5'], right: ['0.1', '0.5'] },
+      { column: 'amt', type: 'DECIMAL', leftSqlType: 'DOUBLE PRECISION', rightSqlType: 'DECIMAL(38,17)',
+        left: ['0.1'], right: ['0.10000000000000001'] },
+      { column: 'ts', type: 'DATETIME', leftSqlType: 'DATE', rightSqlType: 'TIMESTAMP',
+        left: ['2026-01-01', '2026-01-02'], right: ['2026-01-01 00:00:00', '2026-01-03 00:00:00'] },
     ];
     for (const c of cases) {
       await query(`DROP TABLE IF EXISTS "left"`); await query(`DROP TABLE IF EXISTS "right"`);
-      await query(`CREATE TABLE "left" (${c.column} ${c.sqlType})`); await query(`CREATE TABLE "right" (${c.column} ${c.sqlType})`);
+      await query(`CREATE TABLE "left" (${c.column} ${c.leftSqlType})`); await query(`CREATE TABLE "right" (${c.column} ${c.rightSqlType})`);
       for (const v of c.left) await query(`INSERT INTO "left" VALUES ('${v}')`);
       for (const v of c.right) await query(`INSERT INTO "right" VALUES ('${v}')`);
       const actual = Number(Object.values((await query(`SELECT COUNT(*) AS n FROM "left" l JOIN "right" r ON l.${c.column} = r.${c.column}`))[0])[0]);
@@ -95,8 +103,9 @@ for (const dialect of ['duckdb', 'postgres']) test(`${dialect}: diagnostics agre
       const p = { version: 1, input: 'left', steps: [{ id: 'join', kind: 'join', config: { source: 'right', joinType: 'inner', keys: [{ left: c.column, right: c.column }], prefix: 'r_' } }] };
       const plan = compilePrepJoinSample(p, typed, 'join', { dialect });
       const diagnostics = prepJoinSampleResult(plan, await query(plan.sql, plan.parameters));
-      assert.equal(diagnostics.matchedRows, actual, `${c.column}: diagnostics ${diagnostics.matchedRows} != actual join ${actual}`);
-      assert.equal(diagnostics.unmatchedLeft, c.left.length - (c.column === 'ts' ? 2 : c.column === 'amt' ? 2 : 1));
+      assert.equal(diagnostics.matchedRows, actual, `${c.leftSqlType}/${c.rightSqlType}: diagnostics ${diagnostics.matchedRows} != actual join ${actual}`);
+      assert.equal(diagnostics.unmatchedLeft, c.left.length - actual, `${c.column} unmatchedLeft`);
+      assert.equal(diagnostics.unmatchedRight, c.right.length - actual, `${c.column} unmatchedRight`);
       assert.equal(diagnostics.leftTruncated, false); assert.equal(diagnostics.rightTruncated, false);
     }
   } finally { if (dialect === 'duckdb') { db.closeSync(); instance.closeSync(); } else await db.close(); }

@@ -13,7 +13,7 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
-- Prep join diagnostics now count matches with native join-key equality (#311): datetime and numeric join keys travel through the diagnostics sample as lossless text (full timestamp precision, exact decimal/bigint digits) and numeric keys are canonicalized before counting, so timestamps differing below a millisecond and decimals differing beyond float precision no longer count as matches, while SQL-equal spellings (1.0 vs 1.00) still do. Diagnostic counts again agree with actual join execution in both dialects.
+- Prep join diagnostics now count matches with native join-key equality (#311): the counts are computed by the engine over the bounded samples with a real grouped join on the raw key values, instead of formatting keys to milliseconds and comparing them as JavaScript numbers/strings. Timestamps differing below a millisecond, decimals differing beyond float precision, and mixed native types (REAL vs DOUBLE, DATE vs TIMESTAMP) now count exactly as an actual join counts them, in both dialects.
 
 - Prep join diagnostics no longer fail on MySQL/MariaDB and Redshift sources larger than the 10,000-row sample (#310): the sample/probe row contract is now explicit in the read limits — diagnostics reads forward the probe row (row 10,001) to the sink so truncation is reported instead of erroring, while ordinary dataset reads keep treating that row as the overflow sentinel and byte guards still apply to every row including the probe.
 

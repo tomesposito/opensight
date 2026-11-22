@@ -236,23 +236,39 @@ function compile(raw: unknown, sources: readonly PrepSource[], options: PrepComp
   if (diagnosticStep !== undefined) {
     if (!diagnostic) prepFail('PREP_NOT_FOUND', '$.through', 'Configured join step not found');
     const d = diagnostic;
-    const keyColumns = d.keys.map((k, i) => ({ ...d.left.columns.find(c => c.name === k.left)!, name: `key_${i}` }));
-    const side = (stage: Stage, which: 'left' | 'right', n: number) => {
-      const projection = d.keys.map((k, i) => {
-        const value = q(k[which]);
-        // Diagnostics must compare keys with native join equality, so DATETIME and
-        // numeric keys travel as lossless text (full timestamp precision, exact
-        // decimal/bigint digits), never the preview's millisecond/Number forms.
-        // prepJoinSampleResult canonicalizes the numeric text before counting.
-        return `${['DATETIME', 'INTEGER', 'DECIMAL'].includes(keyColumns[i]!.type) ? `CAST(${value} AS VARCHAR)` : value} AS ${q(`key_${i}`)}`;
-      }).join(', ');
+    // Counts are computed by the engine itself over the bounded samples, using
+    // native join equality on the raw key values. Shipping keys to JS — as
+    // millisecond-formatted datetimes or Numbers — counted matches a real join
+    // never makes (sub-millisecond timestamps, precision-sensitive decimals,
+    // mixed native types), so no key value leaves the engine here.
+    const keyNames = d.keys.map((_, i) => q(`key_${i}`));
+    const sample = (stage: Stage, which: 'left' | 'right', tag: string) => {
+      const projection = d.keys.map((k, i) => `${q(k[which])} AS ${q(`key_${i}`)}`).join(', ');
+      const raw = `${prefix}diag_${tag}`, grouped = `${prefix}grp_${tag}`;
       const probes = [...new Set(stage.inputs)].map(id => `EXISTS (SELECT 1 FROM ${sampled.get(id)!.from} OFFSET ${PREP_JOIN_SAMPLE_LIMIT} LIMIT 1)`);
-      return `(SELECT ${n} AS ${q('__side')}, ${projection} FROM ${stage.from} LIMIT ${PREP_JOIN_SAMPLE_LIMIT + 1}) UNION ALL (SELECT ${n + 2} AS ${q('__side')}, ${keyColumns.map(c => `NULL AS ${q(c.name)}`).join(', ')} WHERE ${probes.join(' OR ') || 'FALSE'})`;
+      return { raw, grouped,
+        ctes: [`${q(raw)} AS (SELECT ${projection} FROM ${stage.from} LIMIT ${PREP_JOIN_SAMPLE_LIMIT + 1})`,
+          `${q(grouped)} AS (SELECT ${keyNames.join(', ')}, COUNT(*) AS ${q('n')} FROM (SELECT * FROM ${q(raw)} LIMIT ${PREP_JOIN_SAMPLE_LIMIT}) GROUP BY ${keyNames.join(', ')})`],
+        truncated: `(EXISTS (SELECT 1 FROM ${q(raw)} OFFSET ${PREP_JOIN_SAMPLE_LIMIT} LIMIT 1)${probes.length ? ` OR ${probes.join(' OR ')}` : ''})` };
     };
+    const l = sample(d.left, 'left', 'l'), r = sample(d.right, 'right', 'r');
+    const eq = keyNames.map(name => `l.${name} = r.${name}`).join(' AND ');
+    const count = (expr: string) => `CAST(${expr} AS BIGINT)`;
+    const sql = `WITH ${[...ctes.slice(0, d.ctes), ...l.ctes, ...r.ctes].join(',\n')}\nSELECT ${[
+      `${count(`COALESCE((SELECT SUM(l.${q('n')} * r.${q('n')}) FROM ${q(l.grouped)} l JOIN ${q(r.grouped)} r ON ${eq}), 0)`)} AS ${q('matchedRows')}`,
+      `${count(`COALESCE((SELECT SUM(l.${q('n')}) FROM ${q(l.grouped)} l WHERE NOT EXISTS (SELECT 1 FROM ${q(r.grouped)} r WHERE ${eq})), 0)`)} AS ${q('unmatchedLeft')}`,
+      `${count(`COALESCE((SELECT SUM(r.${q('n')}) FROM ${q(r.grouped)} r WHERE NOT EXISTS (SELECT 1 FROM ${q(l.grouped)} l WHERE ${eq})), 0)`)} AS ${q('unmatchedRight')}`,
+      `${count(`COALESCE((SELECT MAX(l.${q('n')}) FROM ${q(l.grouped)} l JOIN ${q(r.grouped)} r ON ${eq}), 0)`)} AS ${q('maxLeftMultiplicity')}`,
+      `${count(`COALESCE((SELECT MAX(r.${q('n')}) FROM ${q(l.grouped)} l JOIN ${q(r.grouped)} r ON ${eq}), 0)`)} AS ${q('maxRightMultiplicity')}`,
+      `${count(`COALESCE((SELECT SUM(${q('n')}) FROM ${q(l.grouped)}), 0)`)} AS ${q('leftRowsSampled')}`,
+      `${count(`COALESCE((SELECT SUM(${q('n')}) FROM ${q(r.grouped)}), 0)`)} AS ${q('rightRowsSampled')}`,
+      `${l.truncated} AS ${q('leftTruncated')}`, `${r.truncated} AS ${q('rightTruncated')}`].join(', ')}`;
     return { dialect, pipeline, stages, through: diagnosticStep, limit: PREP_JOIN_SAMPLE_LIMIT,
-      columns: [{ name: '__side', type: 'INTEGER' }, ...keyColumns], parameters: parameters.slice(0, d.parameters),
-      sql: `${d.ctes ? `WITH ${ctes.slice(0, d.ctes).join(',\n')}\n` : ''}${side(d.left, 'left', 0)} UNION ALL ${side(d.right, 'right', 1)}`,
-      sampleSources: [...sampled.values()].filter(s => ctes.slice(0, d.ctes).some(c => c.startsWith(`${s.from} AS `))).map(s => s.source) };
+      columns: [{ name: 'matchedRows', type: 'INTEGER' }, { name: 'unmatchedLeft', type: 'INTEGER' }, { name: 'unmatchedRight', type: 'INTEGER' },
+        { name: 'maxLeftMultiplicity', type: 'INTEGER' }, { name: 'maxRightMultiplicity', type: 'INTEGER' },
+        { name: 'leftRowsSampled', type: 'INTEGER' }, { name: 'rightRowsSampled', type: 'INTEGER' },
+        { name: 'leftTruncated', type: 'BOOLEAN' }, { name: 'rightTruncated', type: 'BOOLEAN' }] as PrepColumn[], parameters: parameters.slice(0, d.parameters),
+      sql, sampleSources: [...sampled.values()].filter(s => ctes.slice(0, d.ctes).some(c => c.startsWith(`${s.from} AS `))).map(s => s.source) };
   }
   const projection = selectedColumns.map(c => `${c.type === 'DATETIME' ? timestamp(q(c.name), dialect) : q(c.name)} AS ${q(c.name)}`).join(', ');
   const withSql = selectedCtes ? `WITH ${ctes.slice(0, selectedCtes).join(',\n')}\n` : '';
