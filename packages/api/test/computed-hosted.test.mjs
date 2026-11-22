@@ -54,6 +54,27 @@ test('load captures the generation selected under the stored-child read lease (#
   assert.deepEqual(preview.rows.map(row => row.amount), [10, 20, 30]);
   assert.deepEqual((await prep.execute(c, 'computed', 'rows')).rows.map(row => row.amount), [99]);
 });
+test('stored parents stamp only generations actually read and detect subsequent refreshes (#306)', async t => {
+  const f = await nestedFixture(t), { c, prep } = f;
+  await prep.execute(c, 'nested', 'publish');
+  const child = (await f.metadata.get(c, storedKey(c, 'computed'))).body.materialization;
+  const parent = (await f.metadata.get(c, storedKey(c, 'nested'))).body.materialization;
+  assert.deepEqual(JSON.parse(parent.stamp)[2], [['computed', 2, child.generation]]);
+  assert.equal((await prep.get(c, 'nested')).execution.state, 'current');
+  await prep.save(c, 'outer', { name: 'Outer', pipeline: { version: 1, input: { dataset: 'nested' }, steps: [] }, expectedVersion: 0 });
+  await prep.configure(c, 'outer', { ...settings, expectedVersion: 1 });
+  const read = f.data.storedFiles.read.bind(f.data.storedFiles), reads = [];
+  f.data.storedFiles.read = async (...args) => { reads.push(JSON.parse(args[0]).at(-1)); return read(...args); };
+  await prep.execute(c, 'outer', 'publish');
+  assert.deepEqual(reads, ['nested']);
+  const outer = (await f.metadata.get(c, storedKey(c, 'outer'))).body.materialization;
+  assert.deepEqual(JSON.parse(outer.stamp)[2], [['nested', 2, parent.generation], ['computed', 2, null]]);
+  assert.equal((await prep.get(c, 'outer')).execution.state, 'current');
+  const replacement = await replaceChild(f);
+  assert.notEqual(replacement.generation, child.generation);
+  assert.equal((await prep.get(c, 'nested')).execution.state, 'stale');
+  assert.deepEqual((await prep.execute(c, 'nested', 'rows')).rows.map(row => row.amount), [10, 20, 30]);
+});
 test('hosted publish is durable, refresh errors retain rows, and source revisions label stale', async t => {
   const f = await fixture(t), { prep } = f;
   const first = await prep.execute(await f.login(), 'computed', 'publish');
