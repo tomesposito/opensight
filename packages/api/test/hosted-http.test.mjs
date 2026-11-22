@@ -90,6 +90,19 @@ test('Issue #285: hosted notebook paths answer 404 RESOURCE_NOT_FOUND so the web
   const sibling = await request('/api/notebooksx', { headers });
   assert.equal(sibling.status, 503); assert.equal(sibling.body.errorCode, 'HOSTED_CAPABILITY_UNAVAILABLE');
 });
+test('Issue #307: hosted input-table paths answer 404 RESOURCE_NOT_FOUND so computed tables stay visible', async t => {
+  const f = await authFixture(t), { request } = await serving(t, f), session = await f.login(), headers = { authorization: `Bearer ${session.token}` };
+  for (const [path, method] of [['/api/input-tables', 'GET'], ['/api/input-tables', 'POST'], ['/api/input-tables/some-id', 'GET'], ['/api/input-tables/some-id/rows', 'POST'], ['/api/input-tables/some-id/audit', 'GET']]) {
+    const result = await request(path, { method, headers, ...(method === 'POST' ? { body: {} } : {}) });
+    assert.equal(result.status, 404, `${method} ${path}`);
+    assert.equal(result.body.errorCode, 'RESOURCE_NOT_FOUND', `${method} ${path}`);
+  }
+  // Fail-closed is unchanged: unauthenticated input-table requests still 401, never the 404 notice contract.
+  assert.equal((await request('/api/input-tables')).status, 401);
+  // A merely similar prefix is not an input-table path and keeps the generic hosted fallback.
+  const sibling = await request('/api/input-tablesx', { headers });
+  assert.equal(sibling.status, 503); assert.equal(sibling.body.errorCode, 'HOSTED_CAPABILITY_UNAVAILABLE');
+});
 test('H2 tenant administrators cannot provision or use operator credentials as tenant sessions', async t => {
   const f = await authFixture(t), { request, operator } = await serving(t, f), session = await f.login(), tenantHeaders = { authorization: `Bearer ${session.token}` };
   for (const [path, method] of [['/api/host/tenants', 'POST'], [`/api/host/tenants/${f.tenant.tenantId}/suspend`, 'POST'], [`/api/host/tenants/${f.tenant.tenantId}/resume`, 'POST'], [`/api/host/tenants/${f.tenant.tenantId}`, 'DELETE']]) {
