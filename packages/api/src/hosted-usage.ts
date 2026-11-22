@@ -109,7 +109,9 @@ export async function resourceBytes(c: SqlConnection, scope: Scope): Promise<num
         const body = JSON.parse(String(r.body)) as { materialization?: { bytes?: unknown }; storedReservationBytes?: unknown };
         const stored = typeof body.materialization?.bytes === 'number' && Number.isSafeInteger(body.materialization.bytes) && body.materialization.bytes >= 0 ? body.materialization.bytes : 0;
         const reserved = typeof body.storedReservationBytes === 'number' && Number.isSafeInteger(body.storedReservationBytes) && body.storedReservationBytes >= 0 ? body.storedReservationBytes : 0;
-        artifact = Math.max(stored, reserved);
+        // The current generation and a pending replacement coexist on disk
+        // during a publish, so both count (#309; max() understated it).
+        artifact = stored + reserved;
       } catch { artifact = 0; }
     }
     return n + Buffer.byteLength(String(r.body), 'utf8') + artifact;

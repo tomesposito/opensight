@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Stored (computed) table generations orphaned by a crash around publication are now recovered (#309): deferred deletions of leased generations are persisted in a per-key journal, startup and pre-publish reconciliation delete any generation the metadata does not reference while never unlinking a referenced or actively leased file, and storage accounting counts the current generation plus a pending replacement together instead of taking the larger of the two.
+
 - Table downloads now admit encoding memory before allocating copies, stream CSV in bounded chunks, and isolate XLSX encoding in a cancellable worker (#308). Slow or disconnected clients keep their response memory and work reservations until transmission or cleanup finishes, so concurrent downloads cannot bypass admission.
 
 - Hosted Tables page no longer hides computed tables when input tables are unavailable (#307): hosted input-table paths now answer 404 `RESOURCE_NOT_FOUND` (the #285 contract), and the Tables page renders that as an input-tables unavailable notice alongside the computed tables instead of a page-level "Could not load tables" error. Authorization and other input-table errors still fail the page.
