@@ -221,7 +221,9 @@ export class HostedPrep {
   async remove(context: TenantContext, id: string, expectedVersion: number) {
     const stored = await this.stored(context, id);
     await this.data.sources.metadata.remove(context, this.key(context, id), expectedVersion);
-    await this.data.storedFiles.remove(this.cacheKey(context, id), stored.materialization); await this.data.cache?.invalidate(this.cacheKey(context, id));
+    await this.data.storedFiles.remove(this.cacheKey(context, id), stored.materialization);
+    await this.data.storedFiles.reconcileKey(this.cacheKey(context, id), []); // no generation is referenced after deletion (#309)
+    await this.data.cache?.invalidate(this.cacheKey(context, id));
   }
   async joinDiagnostics(context: TenantContext, id: string, input: unknown) {
     const raw = object(structuredClone(input), ['pipeline', 'through']);
@@ -352,6 +354,10 @@ export class HostedPrep {
     if (stored.execution.mode === 'STORED' && (path === 'refresh' || path === 'publish')) {
       return this.data.storedFiles.exclusive(key, async () => {
         const capacity = storedCapacity(this.data.limits(context));
+        // Recover generations orphaned around an earlier metadata swap
+        // (crash before commit leaves the new file; crash after commit
+        // leaves the old one) before admitting new bytes (#309).
+        await this.data.storedFiles.reconcileKey(key, stored.materialization ? [stored.materialization.generation] : []);
         await this.data.sources.metadata.materialization(context, id, stored.version, { reserve: capacity }, graph.revisions);
         let value: import('./stored-tables.js').StoredMaterialization | undefined, committed = false;
         try {
