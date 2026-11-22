@@ -36,7 +36,7 @@ test('Redshift config, database mismatch, unsupported SQL and security reject be
   const unsupported = redshiftRequest(); calculation(unsupported, "parseInt('2')");
   await assert.rejects(executeRedshift(unsupported, options), { code: 'UNSUPPORTED_FEATURE' });
   await assert.rejects(executeConnector('redshift-manual', config, redshiftRequest(), {}), { code: 'CONNECTOR_NOT_CONFIGURED' });
-  await assert.rejects(executeConnector('redshift', { regionEnv: 'REGION' }, r), { code: 'CONNECTOR_NOT_IMPLEMENTED' });
+  await assert.rejects(executeConnector('redshift', { regionEnv: 'REGION', resourceEnv: 'RESOURCE', credentialsEnv: 'CREDENTIALS' }, r), { code: 'CONNECTOR_NOT_IMPLEMENTED' });
   assert.equal(connect.mock.callCount(), 0);
 });
 test('Redshift production connection verifies TLS and pins connect/query timeouts', async t => {
