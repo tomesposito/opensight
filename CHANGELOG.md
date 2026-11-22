@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Redshift auto-discovery no longer claims RDS discovery (#304): the discovery service only calls the RDS API, which cannot see Redshift clusters (they live behind Redshift's own `DescribeClusters` API), so the `redshift` registry entry is now an honest hosted stub, RDS responses are no longer classified into the manual Redshift connector, and the docs say so. RDS/Aurora discovery and the manual Redshift connector are unchanged.
+
 - Redshift and MySQL/MariaDB library queries now enforce row, per-cell and cumulative byte limits while streaming, before drivers buffer the full result (#303). Oversized results close the connection and fail explicitly instead of risking unbounded memory or returning partial aggregates; trusted callers can lower the hard caps.
 
 - Athena execution parameters are now encoded as typed SQL literals (#301): string and datetime parameters are sent as quoted literals with apostrophes escaped, so string/date filters match instead of being read as expressions, while numeric parameters stay bare. Numeric-looking strings and expression-shaped input stay inert quoted literals, and the parameters remain separate from the query string.

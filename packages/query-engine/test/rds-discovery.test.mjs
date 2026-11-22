@@ -23,7 +23,7 @@ function fake(handlers = {}) {
 }
 
 test('discovery entries are registry discovery connectors with a region-name-only schema', () => {
-  for (const id of ['rds', 'aurora', 'redshift']) {
+  for (const id of ['rds', 'aurora']) {
     const definition = connectorDefinition(id);
     assert.equal(definition.implementation, 'discovery'); assert.equal(definition.category, 'AWS');
     assert.deepEqual(Object.keys(definition.schema), ['regionEnv']);
@@ -34,18 +34,29 @@ test('discovery entries are registry discovery connectors with a region-name-onl
   for (const id of ['s3-analytics', 'iot-analytics']) assert.equal(connectorDefinition(id).implementation, 'hosted');
 });
 
+test('redshift auto-discovery is a hosted stub, never RDS discovery (#304)', async () => {
+  // Redshift clusters are exposed through Redshift's own DescribeClusters API,
+  // which this service does not call; the RDS API cannot discover them.
+  const definition = connectorDefinition('redshift');
+  assert.equal(definition.implementation, 'hosted'); assert.equal(definition.category, 'AWS');
+  assert.equal(connectorState('redshift', true).message, 'Needs a hosted connector implementation');
+  const f = fake();
+  await assert.rejects(discoverDatabaseSources('redshift', config, f.options), { code: 'CONNECTOR_NOT_IMPLEMENTED' });
+  assert.equal(f.calls.length, 0);
+});
+
 test('discovery classifies instances and clusters by engine into manual connectors', async () => {
   const f = fake({
     DescribeDBInstancesCommand: () => ({ DBInstances: [
       instance('pg-main', 'postgres'), instance('my-main', 'mysql'), instance('maria-main', 'mariadb'),
-      instance('aur-pg', 'aurora-postgresql'), instance('aur-my', 'aurora-mysql'), instance('shift-main', 'redshift'),
+      instance('aur-pg', 'aurora-postgresql'), instance('aur-my', 'aurora-mysql'),
     ] }),
     DescribeDBClustersCommand: () => ({ DBClusters: [cluster('aur-pg-cluster', 'aurora-postgresql'), cluster('aur-my-cluster', 'aurora-mysql')] }),
   });
   const found = await discoverDatabaseSources('rds', config, f.options);
   assert.deepEqual(found.map(d => [d.identifier, d.connectorId]), [
     ['pg-main', 'postgresql'], ['my-main', 'mysql'], ['maria-main', 'mariadb'],
-    ['aur-pg', 'postgresql'], ['aur-my', 'mysql'], ['shift-main', 'redshift-manual'],
+    ['aur-pg', 'postgresql'], ['aur-my', 'mysql'],
     ['aur-pg-cluster', 'postgresql'], ['aur-my-cluster', 'mysql'],
   ]);
   assert.deepEqual({ ...found[0] }, { kind: 'instance', identifier: 'pg-main', engine: 'postgres', connectorId: 'postgresql', endpoint: 'pg-main.abc123.us-east-1.rds.amazonaws.com', port: 5432, databaseName: 'app' });
@@ -58,6 +69,9 @@ test('unclassifiable engines and endpoint-less resources stay unlisted, never gu
   const f = fake({
     DescribeDBInstancesCommand: () => ({ DBInstances: [
       instance('oracle-main', 'oracle-ee'), instance('mssql-main', 'sqlserver-ex'),
+      // The RDS API never returns Redshift clusters (they live behind the
+      // Redshift API); even a response claiming the engine stays unlisted.
+      instance('shift-main', 'redshift'),
       instance('creating', 'postgres', { Endpoint: undefined }),
       { DBInstanceIdentifier: 'no-engine-endpoint', Engine: 'custom' },
     ] }),
@@ -72,7 +86,7 @@ test('discovery returns endpoints and identifiers only — never credentials or 
     DescribeDBInstancesCommand: () => ({ DBInstances: [instance('pg-main', 'postgres', { MasterUserPassword: 'do-not-return', VpcSecurityGroups: [{ VpcSecurityGroupId: 'sg-123' }] })] }),
     DescribeDBClustersCommand: () => ({ DBClusters: [cluster('aur', 'aurora-mysql', { MasterUserPassword: 'do-not-return' })] }),
   });
-  const found = await discoverDatabaseSources('redshift', config, f.options);
+  const found = await discoverDatabaseSources('rds', config, f.options);
   const serialized = JSON.stringify(found);
   for (const leaked of ['admin', 'do-not-return', 'MasterUsername', 'sg-123']) assert.ok(!serialized.includes(leaked), `discovery leaked ${leaked}`);
   for (const entry of found) assert.deepEqual(Object.keys(entry).sort(), ['connectorId', 'databaseName', 'endpoint', 'engine', 'identifier', 'kind', 'port']);
@@ -150,4 +164,6 @@ test('source creation builds validated manual-connector configs from user-suppli
   assert.throws(() => rdsSourceConfig(my, { hostEnv: 'MY_HOST' }), { code: 'INVALID_CONNECTOR_CONFIG' });
   assert.throws(() => rdsSourceConfig(pg, { connectionEnv: 'PG_CONNECTION', passwordEnv: 'MY_PASSWORD' }), { code: 'INVALID_CONNECTOR_CONFIG' });
   assert.throws(() => rdsSourceConfig({ connectorId: 's3' }, { connectionEnv: 'X' }), { code: 'INVALID_CONNECTOR_CONFIG' });
+  // Discovery can never produce a Redshift result (#304), so it cannot create one either.
+  assert.throws(() => rdsSourceConfig({ connectorId: 'redshift-manual' }, { hostEnv: 'RS_HOST', portEnv: 'RS_PORT', databaseEnv: 'RS_DB', userEnv: 'RS_USER', passwordEnv: 'RS_PASSWORD' }), { code: 'INVALID_CONNECTOR_CONFIG' });
 });

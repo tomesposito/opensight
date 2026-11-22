@@ -40,8 +40,11 @@ export const connectors: readonly ConnectorDefinition[] = [
     bucket: { kind: 'string', label: 'Bucket', required: true }, key: { kind: 'string', label: 'Object key', required: true },
     prefix: { kind: 'string', label: 'Browse prefix' },
   } },
-  ...[['rds', 'RDS (auto-discovery)'], ['aurora', 'Aurora'], ['redshift', 'Redshift (auto-discovery)']].map(([id, name]): ConnectorDefinition => ({ id: id!, name: name!, category: 'AWS', schema: { regionEnv: env('AWS region environment variable') }, implementation: 'discovery' })),
-  ...[['s3-analytics', 'S3 Analytics'], ['iot-analytics', 'AWS IoT Analytics']].map(([id, name]): ConnectorDefinition => ({ id: id!, name: name!, category: 'AWS', schema: aws, implementation: 'hosted' })),
+  ...[['rds', 'RDS (auto-discovery)'], ['aurora', 'Aurora']].map(([id, name]): ConnectorDefinition => ({ id: id!, name: name!, category: 'AWS', schema: { regionEnv: env('AWS region environment variable') }, implementation: 'discovery' })),
+  // Redshift auto-discovery is a hosted stub, not discovery: Redshift clusters are
+  // exposed through Redshift's own DescribeClusters API, never through the RDS API
+  // the discovery service calls, so advertising discovery here would be fake (#304).
+  ...[['s3-analytics', 'S3 Analytics'], ['iot-analytics', 'AWS IoT Analytics'], ['redshift', 'Redshift (auto-discovery)']].map(([id, name]): ConnectorDefinition => ({ id: id!, name: name!, category: 'AWS', schema: aws, implementation: 'hosted' })),
 ];
 // Registry metadata is shared by API and browser. Callers cannot change validation rules.
 for (const connector of connectors) {

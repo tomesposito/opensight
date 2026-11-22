@@ -1,19 +1,27 @@
-# RDS / Aurora / Redshift auto-discovery — issue #274
+# RDS / Aurora auto-discovery — issue #274
 
-The three AWS auto-discovery registry entries — **RDS (auto-discovery)**,
-**Aurora** and **Redshift (auto-discovery)** — are implemented as a **library
-discovery service**, using the Apache-2.0 AWS SDK for JavaScript v3
-(`@aws-sdk/client-rds` **3.1149.0**). Its installed `package.json` and `LICENSE`
-were checked before wiring it in, matching the other AWS clients the project
-already uses. No other dependency or license exception was introduced.
+The two AWS auto-discovery registry entries — **RDS (auto-discovery)** and
+**Aurora** — are implemented as a **library discovery service**, using the
+Apache-2.0 AWS SDK for JavaScript v3 (`@aws-sdk/client-rds` **3.1149.0**). Its
+installed `package.json` and `LICENSE` were checked before wiring it in,
+matching the other AWS clients the project already uses. No other dependency
+or license exception was introduced.
 
 `discoverDatabaseSources(connectorId, config, options)` lists DB instances and
 clusters in the configured region through the RDS API
 (`DescribeDBInstances` / `DescribeDBClusters`) and classifies each by engine
 into the manual connector a source created from it will use. It is exported
-from `@opensight/query-engine`, **not** its browser entry. The three registry
+from `@opensight/query-engine`, **not** its browser entry. The two registry
 entries share this one implementation and schema; the entry selects
 configuration only.
+
+**Redshift auto-discovery is not part of this service** (#304). Redshift
+clusters are exposed through Redshift's own `DescribeClusters` API, never
+through the RDS API, so an RDS-backed "Redshift discovery" entry could only
+ever return nothing while claiming otherwise. The `redshift` registry entry
+is therefore a hosted stub — it reports that it needs a hosted connector
+implementation — until a bounded, operator-scoped Redshift implementation
+exists. The manual Redshift connector (`redshift-manual`) is unaffected.
 
 ## Configuration
 
@@ -39,7 +47,6 @@ finish before client construction or I/O.
 | DB instance | `mariadb` | MariaDB |
 | DB instance | `aurora-postgresql` | PostgreSQL |
 | DB instance | `aurora-mysql` | MySQL |
-| DB instance | `redshift` | Redshift (manual) |
 | DB cluster | `aurora-postgresql` | PostgreSQL |
 | DB cluster | `aurora-mysql` | MySQL |
 
@@ -86,4 +93,5 @@ policies or prove live-account behavior. No tests call AWS. **Live
 verification in Tom's AWS account is his follow-on**, as is hosted
 provisioning: wiring discovery into the hosted source-creation API and the
 web gallery's one-click flow builds on this library contract, and the static
-demo cannot call AWS. S3 Analytics and IoT Analytics remain hosted stubs.
+demo cannot call AWS. S3 Analytics, IoT Analytics and Redshift
+auto-discovery remain hosted stubs.
