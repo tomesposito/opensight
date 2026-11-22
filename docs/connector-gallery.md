@@ -52,8 +52,11 @@ S3 now supports [hosted API ingestion and prefix browsing](connector-s3.md).
 The current source-creation dialog still excludes AWS connectors; S3 provisioning
 is through the documented API, not a simulated connection in the gallery.
 
-RDS, Aurora and Redshift auto-discovery are implemented as a
+RDS and Aurora auto-discovery are implemented as a
 [library discovery service](connector-rds-discovery.md): their cards report the
-need for an operator-configured discovery connection. Hosted provisioning and
-the gallery's one-click source creation from a discovery result are follow-on
-work, not a simulated flow in the gallery.
+need for an operator-configured discovery connection. Redshift auto-discovery
+is a hosted stub: Redshift clusters are not visible through the RDS API, so it
+reports that it needs a hosted connector implementation instead of pretending
+to discover. Hosted provisioning and the gallery's one-click source creation
+from a discovery result are follow-on work, not a simulated flow in the
+gallery.
