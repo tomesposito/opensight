@@ -64,20 +64,45 @@ export class HostedPrep {
     if (validate) this.plan(graph, id); // Validate every stage, including branches outside the selected output.
     await this.data.finish(context, leaves, revisions); return graph;
   }
-  private readStored(context: TenantContext, id: string) {
-    return this.data.storedFiles.readCurrent(this.cacheKey(context, id), async () => (await this.stored(context, id)).materialization, this.data.limits(context));
+  private readStored(context: TenantContext, id: string, consumed?: Map<string, string>) {
+    return this.data.storedFiles.readCurrent(this.cacheKey(context, id), async () => {
+      const value = (await this.stored(context, id)).materialization;
+      // Capture the pointer selected under readCurrent's lease, not metadata
+      // observed after the read: a refresh can replace it while we execute.
+      if (value) consumed?.set(id, value.generation);
+      return value;
+    }, this.data.limits(context));
   }
-  private async materializationStamp(context: TenantContext, id: string, version: number, graph: Graph): Promise<string> {
-    const dependencies = [];
-    for (const [childId, mode] of graph.modes) {
-      const child = await this.stored(context, childId);
-      dependencies.push([childId, mode.version, child.materialization?.generation ?? null]);
-    }
+  /** Execution stops at cached datasets. Descendants still participate in graph
+   * policy/definition checks, but their current generations were not consumed. */
+  private inputs(graph: Graph) {
+    const sources = new Set<string>(), cached = new Set<string>(), visited = new Set<string>();
+    const visit = (pipeline: PrepPipeline): void => {
+      for (const ref of references(pipeline)) {
+        if (typeof ref === 'string') { sources.add(ref); continue; }
+        if (visited.has(ref.dataset)) continue;
+        visited.add(ref.dataset);
+        if (!graph.reader && graph.modes.get(ref.dataset)!.execution.mode !== 'DIRECT_QUERY') cached.add(ref.dataset);
+        else visit(graph.datasets.find(d => d.id === ref.dataset)!.pipeline);
+      }
+    };
+    visit(graph.pipeline); return { sources, cached };
+  }
+  private materializationStamp(id: string, version: number, graph: Graph, consumed: ReadonlyMap<string, string>): string {
+    const dependencies = [...graph.modes].map(([childId, mode]) => [childId, mode.version, consumed.get(childId) ?? null]);
     return JSON.stringify([id, version, dependencies, graph.leaves.map(a => [a.source.id, a.source.version])]);
+  }
+  private async currentMaterializationStamp(context: TenantContext, id: string, version: number, graph: Graph): Promise<string> {
+    const current = new Map<string, string>();
+    for (const childId of this.inputs(graph).cached) if (graph.modes.get(childId)!.execution.mode === 'STORED') {
+      const value = (await this.stored(context, childId)).materialization;
+      if (value) current.set(childId, value.generation);
+    }
+    return this.materializationStamp(id, version, graph, current);
   }
   private async storedState(context: TenantContext, id: string, stored: Awaited<ReturnType<HostedPrep['stored']>>, graph: Graph) {
     const value = stored.materialization;
-    if (value?.state === 'current' && value.stamp !== await this.materializationStamp(context, id, stored.version, graph)) {
+    if (value?.state === 'current' && value.stamp !== await this.currentMaterializationStamp(context, id, stored.version, graph)) {
       const stale = { ...value, state: 'stale' as const };
       try {
         // Status-only write: CAS on the captured generation so a delayed
@@ -100,25 +125,17 @@ export class HostedPrep {
     return compilePrep(g.pipeline, this.sources(g), { datasets: g.datasets, datasetId: id, ...(through === undefined ? {} : { through }) });
   }
   private async load(context: TenantContext, id: string, g: Graph, output: BlazeTable, through?: string | null) {
-    const scope = this.data.scope(context);
-    const tables: WireTable[] = [], sources = this.sources(g), datasets = structuredClone(g.datasets), needed = new Set<string>(), visited = new Set<string>();
-    const visit = async (p: PrepPipeline): Promise<void> => {
-      for (const ref of references(p)) {
-        if (typeof ref === 'string') { needed.add(ref); continue; }
-        if (visited.has(ref.dataset)) continue;
-        visited.add(ref.dataset);
-        const d = datasets.find(d => d.id === ref.dataset)!, mode = g.modes.get(ref.dataset)!;
-        if (!g.reader && ['BLAZE', 'STORED'].includes(mode.execution.mode)) {
-          const key = this.cacheKey(context, ref.dataset), stamp = JSON.stringify([mode.version, g.revisions]);
-          const table = mode.execution.mode === 'STORED' ? await this.readStored(context, ref.dataset) : await this.data.cache!.read(scope, key, stamp); scope.rows(table.rowCount);
-          d.materialized = { id: `cached_${tables.length}`, table: `cached_${tables.length}`, connectorId: 'file', columns: table.columns, security: 'unrestricted' };
-          tables.push(await wireTable(scope, table, d.materialized));
-        } else await visit(d.pipeline);
-      }
-    };
+    const scope = this.data.scope(context), consumed = new Map<string, string>();
+    const tables: WireTable[] = [], sources = this.sources(g), datasets = structuredClone(g.datasets), inputs = this.inputs(g);
     // Check every cache dependency before opening any leaf. Full graph policy checks already ran.
-    await visit(g.pipeline);
-    for (const [i, a] of g.leaves.entries()) if (needed.has(a.source.id)) {
+    for (const childId of inputs.cached) {
+      const d = datasets.find(d => d.id === childId)!, mode = g.modes.get(childId)!;
+      const key = this.cacheKey(context, childId), stamp = JSON.stringify([mode.version, g.revisions]);
+      const table = mode.execution.mode === 'STORED' ? await this.readStored(context, childId, consumed) : await this.data.cache!.read(scope, key, stamp); scope.rows(table.rowCount);
+      d.materialized = { id: `cached_${tables.length}`, table: `cached_${tables.length}`, connectorId: 'file', columns: table.columns, security: 'unrestricted' };
+      tables.push(await wireTable(scope, table, d.materialized));
+    }
+    for (const [i, a] of g.leaves.entries()) if (inputs.sources.has(a.source.id)) {
       const table = await this.data.table(context, a, sources[i]!.columns.map(c => c.name));
       tables.push(await wireTable(scope, table, sources[i]!));
     }
@@ -127,6 +144,7 @@ export class HostedPrep {
     const sink = this.data.sink(context, output); sink.start(result.columns);
     for (const [i, row] of result.rows.entries()) { if (i % 256 === 0) await yieldTurn(); sink.row(row); }
     await this.data.finish(context, g.leaves, g.revisions);
+    return consumed;
   }
   async save(context: TenantContext, id: string, input: unknown) {
     const raw = object(structuredClone(input), ['name', 'pipeline', 'expectedVersion']);
@@ -337,10 +355,15 @@ export class HostedPrep {
         let value: import('./stored-tables.js').StoredMaterialization | undefined, committed = false;
         try {
           return await this.data.work(context, true, graph.leaves, async () => {
-            const output = new BlazeTable(this.data.limits(context)); await this.load(context, id, graph, output);
+            const output = new BlazeTable(this.data.limits(context)), consumed = await this.load(context, id, graph, output);
             await this.data.finish(context, graph.leaves, graph.revisions);
-            value = await this.data.storedFiles.write(key, output, await this.materializationStamp(context, id, stored.version, graph), capacity);
-            await this.data.sources.metadata.materialization(context, id, stored.version, { value, reserve: 0 }, graph.revisions);
+            const expectedDependencies = [...this.inputs(graph).cached].filter(childId => graph.modes.get(childId)!.execution.mode === 'STORED').map(childId => {
+              const generation = consumed.get(childId);
+              if (!generation) throw new MetadataError('STORED_GENERATION_CHANGED', 409);
+              return { id: childId, version: graph.modes.get(childId)!.version, generation };
+            });
+            value = await this.data.storedFiles.write(key, output, this.materializationStamp(id, stored.version, graph, consumed), capacity);
+            await this.data.sources.metadata.materialization(context, id, stored.version, { value, reserve: 0, expectedDependencies }, graph.revisions);
             committed = true;
             await this.data.storedFiles.remove(key, stored.materialization);
             return { ...storedStatus(value), downloadsEnabled: this.downloadsEnabled, version: stored.version };

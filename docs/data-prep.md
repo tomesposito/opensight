@@ -432,7 +432,17 @@ the old table or the new one, never a partial one. A failed refresh keeps the
 last good table serving and records the state `refresh-failed` with the
 pipeline's named error and its time. When an input dataset changes, the table
 is labeled `stale`; its stored rows keep serving under that label. There is no
-automatic or scheduled refresh in v1. The Data section's **Tables** surface
+automatic or scheduled refresh in v1. Hosted publication stamps the stored-child
+generations actually consumed under their read leases (#306). The metadata
+transaction checks their definition versions, stored mode and generations before
+committing the parent. A competing child refresh rejects publication with
+`STORED_GENERATION_CHANGED`; the unpublished artifact is removed, its storage
+reservation is released, and an existing parent keeps its last good rows with
+`refresh-failed` status. Retry explicitly to consume the newer child generation.
+Only stored artifacts actually read contribute generation IDs: execution stops
+at a cached input, while the complete graph's definitions and source revisions
+remain in the freshness stamp and policy checks.
+The Data section's **Tables** surface
 lists computed tables and input tables together, marked by kind, with rows,
 size, last refreshed, and state; its empty state offers a single
 **Create from a dataset** action. A published table offers **Download** of the
