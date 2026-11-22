@@ -2,11 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TenantBudgets } from '../dist/budgets.js';
 import { BlazeTable } from '../dist/blaze.js';
-import { tableDownload } from '../dist/table-download.js';
+import { tableDownload, sendTableDownload, downloadAdmission } from '../dist/table-download.js';
 import { budgetConfig } from './budget-helpers.mjs';
 import { rowsToCsv } from '@opensight/web/exports';
 import { getEventListeners } from 'node:events';
 import { read as readXlsx, utils as xlsxUtils } from 'xlsx';
+import { createServer, get } from 'node:http';
+import { once } from 'node:events';
+import { randomBytes } from 'node:crypto';
+import { LocalTableDownloads } from '../dist/local-table-download.js';
 
 const context = { tenantId: 'test', namespaceId: 'test', userId: 'author', authorizationRevision: 1 };
 function table(rows = [['=SUM(A1)', 3]]) {
@@ -95,4 +99,132 @@ test('#308 XLSX cancellation during worker encoding keeps admission until the ch
   assert.equal(encoding, true);
   assert.equal(getEventListeners(scope.signal, 'abort').length, 0);
   assert.deepEqual(budgets.node(), { running: 0, queued: 0 });
+});
+
+for (const format of ['csv', 'xlsx']) test(`#308 concurrent slow ${format} clients retain aggregate admission through finish and disconnect`, { timeout: 15000 }, async t => {
+  const config = structuredClone(budgetConfig);
+  config.defaults.running = 3; config.defaults.queued = 0; config.defaults.workingBytes = 32 * 1048576;
+  config.node.running = 4; config.node.workingBytes = 64 * 1048576;
+  const budgets = new TenantBudgets(config, () => {});
+  const input = table(Array.from({ length: 2000 }, (_, i) => [randomBytes(72).toString('base64'), i]));
+  const started = new Map(), completed = new Map(), responses = new Map(), expected = new Map(), written = new Map(), settled = new Map();
+  let encodings = 0;
+  const server = createServer((request, response) => {
+    const id = request.url, controller = new AbortController();
+    responses.set(id, response);
+    response.once('close', () => { if (!response.writableFinished) controller.abort(); });
+    void (async () => {
+      try {
+        await budgets.run(context, false, async () => {}, async () => {
+          encodings++;
+          const result = await tableDownload(budgets.current(context), 'table', input, format);
+          expected.set(id, result.byteLength); assert.ok(result.byteLength > 65536);
+          // Hold the real HTTP socket's drain deterministically. Small fixtures
+          // otherwise fit OS send buffers even when the remote client pauses.
+          if (id !== '/fast') response.cork();
+          const write = response.write;
+          response.write = function (chunk, ...args) {
+            written.set(id, (written.get(id) ?? 0) + chunk.length);
+            const ready = write.call(this, chunk, ...args);
+            started.get(id)?.resolve(); return ready;
+          };
+          await sendTableDownload(response, result, { scope: context, usage: {
+            reserveEgress: async () => id,
+            assertEgressSize: async (reservation, bytes) => assert.equal(bytes, expected.get(reservation)),
+            settleEgress: async (reservation, bytes) => settled.set(reservation, bytes),
+            releaseEgress: async () => assert.fail('admitted response must settle'),
+          } });
+        }, controller.signal);
+        completed.get(id)?.resolve('finished');
+      } catch (error) {
+        if (!response.headersSent && !response.destroyed) response.writeHead(429).end(error.code);
+        completed.get(id)?.resolve(error.code);
+      }
+    })();
+  });
+  const clients = [];
+  t.after(async () => { for (const client of clients) client.destroy(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await budgets.shutdown(); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const request = id => {
+    const result = Promise.withResolvers(); started.set(id, Promise.withResolvers()); completed.set(id, Promise.withResolvers());
+    const client = get(`http://127.0.0.1:${server.address().port}${id}`, response => {
+      const chunks = []; response.on('data', chunk => chunks.push(chunk));
+      response.once('end', () => result.resolve({ status: response.statusCode, bytes: Buffer.concat(chunks) }));
+      response.once('error', () => result.resolve({ disconnected: true }));
+    });
+    client.once('error', () => result.resolve({ disconnected: true })); clients.push(client);
+    return { client, result: result.promise };
+  };
+  const first = request('/first'), second = request('/second');
+  await Promise.all([started.get('/first').promise, started.get('/second').promise]);
+  assert.deepEqual(budgets.node(), { running: 2, queued: 0 });
+  assert.equal(settled.size, 0, 'pending transmissions retain egress and work');
+  const refused = await request('/refused').result;
+  assert.equal(refused.status, 429); assert.equal(refused.bytes.toString(), 'TENANT_BUDGET_EXCEEDED');
+  assert.equal(encodings, 2, 'aggregate refusal precedes loading/copying/encoding');
+  responses.get('/first').uncork();
+  const served = await first.result;
+  assert.equal(served.status, 200); assert.equal(served.bytes.length, expected.get('/first'));
+  assert.equal(await completed.get('/first').promise, 'finished');
+  assert.equal(budgets.node().running, 1);
+  assert.equal(settled.get('/first'), served.bytes.length);
+  const fast = await request('/fast').result;
+  assert.equal(fast.status, 200); assert.equal(fast.bytes.length, expected.get('/fast'));
+  assert.equal(await completed.get('/fast').promise, 'finished');
+  assert.equal(encodings, 3);
+  second.client.destroy(); await second.result;
+  assert.equal(await completed.get('/second').promise, 'EXECUTION_CANCELLED');
+  assert.equal(settled.get('/second'), written.get('/second'), 'settle writes, not prefetched CSV/output capacity');
+  assert.ok(settled.get('/second') > 0 && settled.get('/second') < expected.get('/second'));
+  assert.deepEqual(budgets.node(), { running: 0, queued: 0 });
+});
+
+test('#308 egress denial consumes no body and releases the local reservation; hosted admission is reused', async t => {
+  const budgets = new TenantBudgets(budgetConfig, () => {}), events = [];
+  const { Writable } = await import('node:stream');
+  const response = new Writable({ write(_chunk, _encoding, callback) { callback(); } });
+  response.writeHead = () => assert.fail('denied download wrote headers');
+  await budgets.run(context, false, async () => {}, async () => {
+    const result = await tableDownload(budgets.current(context), 'table', table(), 'csv');
+    result.body = { async *[Symbol.asyncIterator]() { assert.fail('denial consumed the stream'); } };
+    const usage = {
+      reserveEgress: async () => { events.push('reserve'); return 'reservation'; },
+      assertEgressSize: async (reservation, bytes) => { assert.equal(reservation, 'reservation'); assert.equal(bytes, result.byteLength); events.push('assert'); throw Object.assign(new Error(), { code: 'USAGE_LIMIT_EXCEEDED' }); },
+      releaseEgress: async () => events.push('release'),
+      settleEgress: async () => assert.fail('denied download settled'),
+    };
+    await assert.rejects(sendTableDownload(response, result, { usage, scope: context }), { code: 'USAGE_LIMIT_EXCEEDED' });
+    assert.deepEqual(events, ['reserve', 'assert', 'release']);
+    downloadAdmission(response, async bytes => { assert.equal(bytes, result.byteLength); events.push('hosted'); throw Object.assign(new Error(), { code: 'USAGE_LIMIT_EXCEEDED' }); });
+    await assert.rejects(sendTableDownload(response, result), { code: 'USAGE_LIMIT_EXCEEDED' });
+    assert.deepEqual(events, ['reserve', 'assert', 'release', 'hosted']);
+  });
+});
+
+for (const format of ['csv', 'xlsx']) test(`#308 HTTP disconnect during ${format} encoding cancels work before transmission`, { timeout: 10000 }, async t => {
+  const downloads = new LocalTableDownloads({ maxBytes: 64 * 1048576, datasetBytes: 16 * 1048576, maxRows: 100000, cellChars: 16384 });
+  const input = table(Array.from({ length: 1000 }, () => ['=text', 1])), done = Promise.withResolvers();
+  let client, scope, encoding = false, headers = false;
+  const server = createServer((request, response) => {
+    const head = response.writeHead;
+    response.writeHead = function (...args) { headers = true; return head.apply(this, args); };
+    void downloads.run(context, request, response, async admitted => {
+      scope = admitted;
+      if (format === 'csv') {
+        let reads = 0; const value = input.value;
+        t.mock.method(input, 'value', (...args) => { if (++reads === 100) { encoding = true; client.destroy(); } return value(...args); });
+      } else {
+        const started = scope.workerStarted.bind(scope);
+        t.mock.method(scope, 'workerStarted', () => { started(); encoding = true; client.destroy(); });
+      }
+      await sendTableDownload(response, await tableDownload(scope, 'table', input, format));
+    }).then(() => done.resolve('finished'), error => done.resolve(error.code));
+  });
+  t.after(() => { client?.destroy(); server.closeAllConnections(); server.close(); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  client = get(`http://127.0.0.1:${server.address().port}`, response => response.resume()); client.on('error', () => {});
+  assert.equal(await done.promise, 'EXECUTION_CANCELLED');
+  assert.equal(encoding, true); assert.equal(headers, false);
+  assert.equal(scope.signal.aborted, true);
+  assert.equal(getEventListeners(scope.signal, 'abort').length, 0, 'worker is reaped before the download rejects');
 });
