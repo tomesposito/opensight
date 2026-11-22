@@ -79,9 +79,10 @@ export class HostedDataRoutes {
       if (['share', 'permissions', 'embed'].includes(action)) { await this.prep.get(context, id); sourceError(action === 'embed' ? 'PREP_EMBED_REFUSED' : 'PREP_SHARING_REFUSED', 403); }
       if (action === 'download') {
         method(request, response, ['POST']);
-        const result = await this.prep.download(context, id, await input());
-        await recheck(); await this.data.publication(context, revisions);
-        await sendTableDownload(response, result); return true;
+        await this.prep.download(context, id, await input(), async result => {
+          await recheck(); await this.data.publication(context, revisions);
+          await sendTableDownload(response, result);
+        }); return true;
       }
       if (action === 'prep') {
         method(request, response, ['GET', 'PUT', 'DELETE']);

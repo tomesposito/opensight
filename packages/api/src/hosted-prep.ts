@@ -325,19 +325,20 @@ export class HostedPrep {
       throw error;
     }
   }
-  async download(context: TenantContext, id: string, input: unknown): Promise<TableDownload> {
+  async download(context: TenantContext, id: string, input: unknown, transmit: (download: TableDownload) => Promise<void>): Promise<void> {
     const raw = object(input, ['format']), format = tableDownloadFormat(raw.format);
     if (!this.downloadsEnabled) throw new MetadataError('DOWNLOADS_DISABLED', 403);
     const stored = await this.stored(context, id);
     if (stored.execution.mode !== 'STORED') throw new MetadataError('STORED_MODE_REQUIRED', 409);
     const graph = await this.graph(context, id, stored.resource.opensightPrep!, undefined, false);
-    let result: TableDownload | undefined;
     await this.data.work(context, false, graph.leaves, async () => {
-      const table = await this.readStored(context, id); this.data.scope(context).rows(table.rowCount);
-      result = tableDownload(id, table, format); this.data.scope(context).memory(table.bytes + result.bytes.length);
-      await this.data.finish(context, graph.leaves, graph.revisions); return { bytes: result.bytes.length };
+      const table = await this.readStored(context, id), scope = this.data.scope(context); scope.rows(table.rowCount);
+      const result = await tableDownload(scope, id, table, format);
+      await this.data.finish(context, graph.leaves, graph.revisions); scope.check();
+      // Transmission owns the work reservation, including retained input/output
+      // and worker capacity, until finish or disconnect cleanup has completed.
+      await transmit(result); return { bytes: result.byteLength };
     }, graph.revisions);
-    return result!;
   }
   async execute(context: TenantContext, id: string, path: 'rows' | 'query' | 'refresh' | 'publish', input: unknown = {}, visual?: { analysis: unknown; visualId: string; dataSetArn: string }) {
     const stored = await this.stored(context, id), graph = await this.graph(context, id, stored.resource.opensightPrep!), key = this.cacheKey(context, id);

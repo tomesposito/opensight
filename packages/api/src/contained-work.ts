@@ -16,6 +16,8 @@ export type WorkerTask =
   | { kind: 'upload'; request: UploadRequest }
   | { kind: 'parquet-write'; path: string; columns: PrepColumn[]; rows: PrepScalar[][]; cachedInputs: CachedInput[] }
   | { kind: 'parquet-read'; path: string; columns: PrepColumn[]; rowCount: number; decodedBytes: number; cachedInputs: CachedInput[] }
+  /** tableDownload admits the complete encoding/IPC envelope before wire rows. */
+  | { kind: 'xlsx'; table: WireTable; maxBytes: number }
   | { kind: 'visual'; table: WireTable; analysis: unknown; visualId: string; dataSetArn: string; period?: { columnName: string; start: string; end: string } }
   | { kind: 'query'; table: WireTable; query: InteractiveQuery };
 export interface WorkerRequest { task: WorkerTask; limits: BlazeLimits; memoryMb: number; resultBytes: number; deadline: number; rssBytes: number }
@@ -32,14 +34,14 @@ export async function wireTable(scope: WorkScope, table: BlazeTable, source: Pre
 }
 /** A child owns all untrusted synchronous evaluation and native DuckDB allocation.
  * The parent kills and REAPS it before releasing admission, including IPC/parent death. */
-export async function containedWork<T extends TableResult | QueryResult | ParquetWriteResult | PrepJoinDiagnostics = TableResult | QueryResult>(scope: WorkScope, task: WorkerTask, limits: BlazeLimits, executionMs?: number): Promise<T> {
+export async function containedWork<T extends TableResult | QueryResult | ParquetWriteResult | PrepJoinDiagnostics | Buffer = TableResult | QueryResult>(scope: WorkScope, task: WorkerTask, limits: BlazeLimits, executionMs?: number): Promise<T> {
   scope.check();
   if (process.platform !== 'linux') throw new MetadataError('WORKER_CONTAINMENT_UNAVAILABLE', 503);
   // A procfs mounted in a different PID namespace cannot observe our children. Fail closed.
   try { await readFile(`/proc/${process.pid}/status`, 'utf8'); } catch { throw new MetadataError('WORKER_CONTAINMENT_UNAVAILABLE', 503); }
   scope.check();
   return new Promise<T>((resolve, reject) => {
-    const remaining = Math.floor((scope.limits.workingBytes - scope.workingBytes) / 2);
+    const remaining = task.kind === 'xlsx' ? task.maxBytes : Math.floor((scope.limits.workingBytes - scope.workingBytes) / 2);
     if (remaining < 256) { reject(new MetadataError('TENANT_BUDGET_EXCEEDED', 429)); return; }
     const child = fork(new URL('./execution-worker.js', import.meta.url), [], {
       stdio: ['ignore', 'ignore', 'ignore', 'ipc'], serialization: 'advanced',
@@ -70,7 +72,12 @@ export async function containedWork<T extends TableResult | QueryResult | Parque
       else {
         try {
           if (!Number.isSafeInteger(message.bytes) || Number(message.bytes) < 0) throw new MetadataError('WORKER_EXECUTION_FAILED', 503);
-          scope.memory(Number(message.bytes)); result = message.result;
+          if (task.kind === 'xlsx') {
+            // Reserved before encoding, including both sides of the IPC copy.
+            if (!Buffer.isBuffer(message.result) || message.result.length !== message.bytes || message.result.length > task.maxBytes) throw new MetadataError('WORKER_EXECUTION_FAILED', 503);
+            scope.check();
+          } else scope.memory(Number(message.bytes));
+          result = message.result;
         } catch (e) { error = e; child.kill('SIGKILL'); }
       }
       // Worker has finished and disconnected; exit is still required before publication.
