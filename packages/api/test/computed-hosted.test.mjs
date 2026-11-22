@@ -145,6 +145,40 @@ test('materialization checks dependency definitions and generations in its publi
   }
   await metadata.materialization(c, 'nested', parent.version, { value: parent.body.materialization, expectedDependencies: [dependency] });
 });
+for (const kind of ['direct-recipe', 'append', 'join']) {
+  test(`stored generations are captured through ${kind} references (#306)`, async t => {
+    const f = await nestedFixture(t), { c, prep, metadata } = f;
+    let pipeline;
+    if (kind === 'direct-recipe') {
+      await prep.save(c, 'bridge', { name: 'Bridge', pipeline: { version: 1, input: { dataset: 'computed' }, steps: [] }, expectedVersion: 0 });
+      assert.equal((await prep.get(c, 'bridge')).execution.mode, 'DIRECT_QUERY');
+      pipeline = { version: 1, input: { dataset: 'bridge' }, steps: [] };
+    } else {
+      const config = kind === 'append' ? { source: f.source.id }
+        : { source: { dataset: 'computed' }, joinType: 'inner', keys: [{ left: 'region', right: 'region' }], prefix: 'r_' };
+      pipeline = { version: 1, input: kind === 'append' ? { dataset: 'computed' } : f.source.id, steps: [{ id: 'step', kind, config }] };
+    }
+    await prep.save(c, 'nested', { name: 'Nested', pipeline, expectedVersion: 2 });
+    await prep.execute(c, 'nested', 'publish');
+    const child = (await metadata.get(c, storedKey(c, 'computed'))).body.materialization;
+    const parent = (await metadata.get(c, storedKey(c, 'nested'))).body.materialization;
+    const dependencies = JSON.parse(parent.stamp)[2];
+    assert.deepEqual(dependencies.filter(([, , generation]) => generation !== null), [['computed', 2, child.generation]]);
+    assert.equal(parent.rowCount, kind === 'append' ? 6 : kind === 'join' ? 5 : 3);
+    assert.equal((await prep.get(c, 'nested')).execution.state, 'current');
+    await replaceChild(f);
+    assert.equal((await prep.get(c, 'nested')).execution.state, 'stale');
+  });
+}
+test('publication fails closed if execution omits a stored dependency generation (#306)', async t => {
+  const f = await nestedFixture(t), { c, prep, metadata } = f;
+  const load = prep.load.bind(prep);
+  prep.load = async (...args) => { await load(...args); return new Map(); };
+  await assert.rejects(prep.execute(c, 'nested', 'publish'), { code: 'STORED_GENERATION_CHANGED' });
+  const parent = (await metadata.get(c, storedKey(c, 'nested'))).body;
+  assert.equal(parent.materialization, undefined);
+  assert.equal(Number(parent.storedReservationBytes), 0);
+});
 test('hosted publish is durable, refresh errors retain rows, and source revisions label stale', async t => {
   const f = await fixture(t), { prep } = f;
   const first = await prep.execute(await f.login(), 'computed', 'publish');

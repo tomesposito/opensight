@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Computed table publication now records the stored-child generations actually read and rejects a concurrent child refresh before committing the parent (#306). A rejected refresh keeps the last good parent table with a named failure, removes the unpublished artifact, and releases its storage reservation; older rows can no longer be mislabeled current by stamping a newer child generation.
+
 - Computed table freshness status can no longer restore a deleted stored generation (#305): materialization status writes (stale marking and refresh-failure records) are now generation compare-and-swap — if a concurrent refresh has published a newer generation and removed the old file, the delayed status write is rejected with `STORED_GENERATION_CHANGED` and the newer pointer stands, instead of pointing metadata at a removed file and failing reads with `STORED_ARTIFACT_INVALID` until the next refresh.
 
 - Redshift auto-discovery no longer claims RDS discovery (#304): the discovery service only calls the RDS API, which cannot see Redshift clusters (they live behind Redshift's own `DescribeClusters` API), so the `redshift` registry entry is now an honest hosted stub, RDS responses are no longer classified into the manual Redshift connector, and the docs say so. RDS/Aurora discovery and the manual Redshift connector are unchanged.
