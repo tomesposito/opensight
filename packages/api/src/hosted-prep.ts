@@ -222,7 +222,14 @@ export class HostedPrep {
     const stored = await this.stored(context, id);
     await this.data.sources.metadata.remove(context, this.key(context, id), expectedVersion);
     await this.data.storedFiles.remove(this.cacheKey(context, id), stored.materialization);
-    await this.data.storedFiles.reconcileKey(this.cacheKey(context, id), []); // no generation is referenced after deletion (#309)
+    if (this.data.storedFiles.durable) {
+      // Recover any sibling generation orphaned around an earlier swap
+      // (#309). If the dataset was concurrently recreated, keep its live
+      // generation; deployments without a stored-files directory skip this.
+      let keep: string[] = [];
+      try { const again = await this.stored(context, id); if (again.materialization) keep = [again.materialization.generation]; } catch { /* deleted: nothing is referenced */ }
+      await this.data.storedFiles.reconcileKey(this.cacheKey(context, id), keep);
+    }
     await this.data.cache?.invalidate(this.cacheKey(context, id));
   }
   async joinDiagnostics(context: TenantContext, id: string, input: unknown) {
@@ -356,8 +363,13 @@ export class HostedPrep {
         const capacity = storedCapacity(this.data.limits(context));
         // Recover generations orphaned around an earlier metadata swap
         // (crash before commit leaves the new file; crash after commit
-        // leaves the old one) before admitting new bytes (#309).
-        await this.data.storedFiles.reconcileKey(key, stored.materialization ? [stored.materialization.generation] : []);
+        // leaves the old one) before admitting new bytes (#309). The keep
+        // pointer is re-read inside this per-key lock: the `stored` value
+        // captured before the lock may predate a concurrent publish, and
+        // reconciling against it would delete the generation that publish
+        // just committed (#309 review).
+        const fresh = await this.stored(context, id);
+        await this.data.storedFiles.reconcileKey(key, fresh.materialization ? [fresh.materialization.generation] : []);
         await this.data.sources.metadata.materialization(context, id, stored.version, { reserve: capacity }, graph.revisions);
         let value: import('./stored-tables.js').StoredMaterialization | undefined, committed = false;
         try {
@@ -372,7 +384,14 @@ export class HostedPrep {
             value = await this.data.storedFiles.write(key, output, this.materializationStamp(id, stored.version, graph, consumed), capacity);
             await this.data.sources.metadata.materialization(context, id, stored.version, { value, reserve: 0, expectedDependencies }, graph.revisions);
             committed = true;
-            await this.data.storedFiles.remove(key, stored.materialization);
+            const unlinked = await this.data.storedFiles.remove(key, stored.materialization);
+            if (!unlinked && stored.materialization) {
+              // The previous generation is leased and stays on disk: keep its
+              // bytes charged as the reservation until a later publish's
+              // reconciliation settles it, instead of dropping them from
+              // storage accounting at commit (#309 review).
+              try { await this.data.sources.metadata.materialization(context, id, stored.version, { reserve: stored.materialization.bytes }, graph.revisions); } catch { /* accounting only; the publish itself committed */ }
+            }
             return { ...storedStatus(value), downloadsEnabled: this.downloadsEnabled, version: stored.version };
           }, graph.revisions);
         } catch (error) {

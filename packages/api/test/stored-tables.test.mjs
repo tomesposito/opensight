@@ -94,6 +94,26 @@ test('Issue #309 releasing the last lease deletes the retired generation and set
   assert.deepEqual(await readdir(dirFor(root, key)), [`${current.generation}.parquet`]);
 });
 
+test('Issue #309 remove reports deferral and pendingBytes charges the journaled generation until unlink', async t => {
+  const { root, files } = await fixture(t), key = 'tenant-e';
+  const value = await write(files, key, [1]);
+  files.readers.set(key, 1); // active lease
+  assert.equal(await files.remove(key, value), false, 'deferred behind the lease');
+  assert.equal(await files.pendingBytes(key), value.bytes);
+  files.readers.delete(key);
+  await files.release(key);
+  assert.equal(await files.pendingBytes(key), 0);
+  assert.equal(await exists(fileFor(root, key, value.generation)), false);
+});
+
+test('Issue #309 reconciliation is a no-op for deployments without a stored-files directory', async () => {
+  const files = new StoredTableFiles(undefined);
+  assert.equal(files.durable, false);
+  assert.equal(await files.reconcileKey('anything', []), 0);
+  assert.equal(await files.sweep(new Map()), 0);
+  assert.equal(await files.pendingBytes('anything'), 0);
+});
+
 test('Issue #309 usage accounting counts the current generation and a pending reservation together', async () => {
   const body = JSON.stringify({ materialization: { bytes: 100 }, storedReservationBytes: 50 });
   const c = { query: async () => [{ kind: 'prepared-dataset', body }] };

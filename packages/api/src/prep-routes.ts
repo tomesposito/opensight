@@ -73,9 +73,11 @@ export class PrepRoutes {
       // admitting new bytes (#309).
       await this.files.reconcileKey(this.key(identity, id), entry.materialization ? [entry.materialization.generation] : []);
       // The current generation stays on disk while its replacement is written,
-      // so this dataset's own bytes count toward used storage too (#309).
-      const used = this.store.read().datasets.filter(e => e.namespaceId === identity.namespaceId)
-        .reduce((n, e) => n + (e.materialization?.bytes ?? 0), 0);
+      // so this dataset's own bytes count toward used storage too (#309), as
+      // do generations whose deletion is deferred behind a read lease.
+      const namespace = this.store.read().datasets.filter(e => e.namespaceId === identity.namespaceId);
+      let used = namespace.reduce((n, e) => n + (e.materialization?.bytes ?? 0), 0);
+      for (const e of namespace) used += await this.files.pendingBytes(this.key(e, e.resource.dataSetId));
       checkStoredQuota(this.storageLimit(identity), used, capacity);
       const table = new BlazeTable(this.blaze.limits);
       await this.materialize(identity, id, table);
