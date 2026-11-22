@@ -349,7 +349,14 @@ export class HostedPrep {
           if (committed) throw error;
           if (value) await this.data.storedFiles.remove(key, value);
           try { await this.data.sources.metadata.materialization(context, id, stored.version, { reserve: 0, ...(stored.materialization ? { value: storedFailure(stored.materialization, error), expectedGeneration: stored.materialization.generation } : {}) }); }
-          catch (recordError) { if (!(recordError instanceof MetadataError && ['STORED_DEFINITION_CHANGED', 'STORED_GENERATION_CHANGED', 'STORED_MODE_REQUIRED', 'RESOURCE_NOT_FOUND', 'AUTHORIZATION_REVISED', 'METADATA_WRITE_FORBIDDEN'].includes(recordError.code))) throw recordError; }
+          catch (recordError) {
+            // A generation conflict rejects the bundled reserve release too:
+            // release this refresh's reservation on its own so it cannot leak
+            // against the newer generation's quota gauge (#305 review).
+            if (recordError instanceof MetadataError && recordError.code === 'STORED_GENERATION_CHANGED') {
+              try { await this.data.sources.metadata.materialization(context, id, stored.version, { reserve: 0 }); } catch { /* the original error below still propagates */ }
+            } else if (!(recordError instanceof MetadataError && ['STORED_DEFINITION_CHANGED', 'STORED_MODE_REQUIRED', 'RESOURCE_NOT_FOUND', 'AUTHORIZATION_REVISED', 'METADATA_WRITE_FORBIDDEN'].includes(recordError.code))) throw recordError;
+          }
           throw error;
         }
       });

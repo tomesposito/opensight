@@ -77,6 +77,27 @@ test('a delayed stale marking cannot restore a generation a refresh replaced (#3
   assert.equal(pointer.generation, refreshedGeneration); assert.equal(pointer.state, 'current');
   assert.deepEqual((await prep.execute(await f.login(), 'computed', 'rows')).rows, rows);
 });
+test('a failed refresh against a superseded generation still releases its reservation (#305)', async t => {
+  const f = await fixture(t), { prep } = f;
+  await prep.execute(await f.login(), 'computed', 'publish');
+  const c = await f.login(), key = { kind: 'prepared-dataset', id: 'computed', ownerId: c.userId };
+  const snapshot = await prep.stored(c, 'computed'); // generation G1, captured before the next refresh
+  await prep.execute(await f.login(), 'computed', 'refresh'); // publishes G2
+  const current = (await f.metadata.get(c, key)).body;
+  assert.notEqual(current.materialization.generation, snapshot.materialization.generation);
+  assert.equal(Number(current.storedReservationBytes ?? 0), 0);
+  // A refresh that started from the G1 snapshot now fails: its failure record
+  // must not overwrite G2, and its capacity reservation must not leak.
+  const load = prep.load.bind(prep), stored = prep.stored.bind(prep);
+  prep.load = async () => { throw Object.assign(new Error('Named source failure'), { code: 'PREP_SOURCE_NOT_FOUND' }); };
+  prep.stored = async () => snapshot;
+  await assert.rejects(prep.execute(await f.login(), 'computed', 'refresh'), { code: 'PREP_SOURCE_NOT_FOUND' });
+  prep.load = load; prep.stored = stored;
+  const after = (await f.metadata.get(c, key)).body;
+  assert.equal(after.materialization.generation, current.materialization.generation);
+  assert.equal(after.materialization.state, 'current');
+  assert.equal(Number(after.storedReservationBytes ?? 0), 0);
+});
 test('hosted stored datasets feed other computed pipelines; foreign owners cannot read or refresh', async t => {
   const f = await fixture(t); await f.prep.execute(await f.login(), 'computed', 'publish');
   await f.prep.save(await f.login(), 'nested', { name: 'Nested', pipeline: { version: 1, input: { dataset: 'computed' }, steps: [] }, expectedVersion: 0 });
