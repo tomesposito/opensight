@@ -60,7 +60,7 @@ export async function streamSourceMySql(read: SourceRead, connection: SourceConn
           if (consumerError !== undefined || cancelled) return;
           try {
             check();
-            if (++count > limits.maxRows || raw[plan.columns.length] === 1 || raw[plan.columns.length] === '1') sink.oversized();
+            if (++count > limits.maxRows + (limits.allowProbeRow ? 1 : 0) || raw[plan.columns.length] === 1 || raw[plan.columns.length] === '1') sink.oversized();
             const values = plan.columns.map((c, i) => normalizePrepScalar(c.type === 'BOOLEAN' && [0, 1, '0', '1'].includes(raw[i] as number | string) ? Number(raw[i]) === 1 : raw[i], c));
             if (values.reduce<number>((n, v) => n + String(v ?? '').length, 0) > limits.cellChars) sink.oversized();
             sink.row(values);

@@ -15,7 +15,14 @@ export interface PrepSink {
 export interface ExecutionControl { signal?: AbortSignal; memoryMb?: number; executionMs?: number; check?: () => void }
 export class ExecutionCancelledError extends Error { readonly code = 'EXECUTION_CANCELLED'; constructor() { super('EXECUTION_CANCELLED'); } }
 function check(control?: ExecutionControl): void { control?.check?.(); if (control?.signal?.aborted) throw new ExecutionCancelledError(); }
-export interface PrepReadLimits { maxRows: number; cellChars: number }
+/** Row-count contracts are separate on purpose. By default a read is a dataset
+ * read: the SQL requests `maxRows + 1` rows and the extra row is the overflow
+ * sentinel — its arrival means the dataset exceeds `maxRows` and the sink is
+ * oversized. A bounded-sample (diagnostics) read sets `allowProbeRow`: the
+ * `maxRows + 1` row is then a probe the caller uses to flag truncation, so it
+ * is forwarded to the sink and only a row beyond it is oversized. Byte guards
+ * (the SQL guard column and `cellChars`) apply to every row either way. */
+export interface PrepReadLimits { maxRows: number; cellChars: number; allowProbeRow?: boolean }
 export interface PrepMemoryTable { source: PrepSource; rowCount: number; value(row: number, column: number): PrepScalar }
 const types: Record<PrepType, string> = { INTEGER: 'BIGINT', DECIMAL: 'DOUBLE', STRING: 'VARCHAR', DATETIME: 'TIMESTAMP', BOOLEAN: 'BOOLEAN' };
 
