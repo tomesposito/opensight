@@ -22,7 +22,7 @@ Stored configuration contains only environment variable **names**:
 | --- | --- | --- |
 | `regionEnv` | Yes | AWS region |
 | `databaseEnv` | Yes | Athena database, matching the physical table's declared schema |
-| `workGroupEnv` | No | Athena workgroup; omitted from the SDK request when not configured |
+| `workGroupEnv` | Yes | Athena workgroup; must enforce a per-query scanned-byte cutoff (see below) |
 | `outputLocationEnv` | Yes | Query-result S3 output location |
 
 For example, a stored configuration can name `ATHENA_REGION`, `ATHENA_DATABASE`,
@@ -40,10 +40,29 @@ mismatches fail with `INVALID_CONNECTOR_CONFIG`. Missing or invalid environment
 values fail with `CONNECTOR_NOT_CONFIGURED`. Security, SQL planning and config
 checks all finish before client construction or I/O.
 
+## Scanned-byte cost bound (#302)
+
+Athena bills by bytes scanned, and a single aggregate can scan a very large
+dataset while returning one row — the returned-row/page/byte limits cannot bound
+that spend. Execution therefore fails closed unless the operator-selected
+workgroup enforces a per-query cutoff:
+
+1. Before `StartQueryExecution`, the executor calls `GetWorkGroup` for the
+   configured workgroup and requires `BytesScannedCutoffPerQuery` to be a
+   positive integer. A workgroup without an enforced cutoff fails with
+   `INVALID_CONNECTOR_CONFIG` at `$.config.workGroupEnv` and no query starts.
+2. Athena enforces the verified cutoff service-side (it cancels a query that
+   passes it). As a supplement, every poll — including the final `SUCCEEDED`
+   response — compares reported `Statistics.DataScannedInBytes` against the
+   cutoff; an execution past it is stopped best-effort and rejected with
+   `EXECUTION_ERROR` ("Athena query exceeded the workgroup scanned-byte limit")
+   instead of returning results. Missing statistics are not treated as a
+   breach; the service-side cutoff remains the enforcement.
+
 ## Execution and cancellation
 
 1. `StartQueryExecution` receives the generated Athena SQL, positional execution
-   parameters when present, database, optional workgroup and output location.
+   parameters when present, database, the verified workgroup and output location.
    Numbered internal binds become `?` in SQL occurrence order, including repeats;
    quoted SQL literals and identifiers remain intact. Values are stringified
    without rewriting strings or UTC datetime values. Null execution parameters
