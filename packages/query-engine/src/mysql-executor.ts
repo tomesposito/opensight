@@ -1,15 +1,17 @@
 import { executeAthena } from './athena-executor.js';
 import { executeRedshift } from './redshift-executor.js';
-import { createConnection, type Connection, type RowDataPacket } from 'mysql2/promise';
+import { createConnection, type Connection, type FieldPacket } from 'mysql2';
+import type { Readable } from 'node:stream';
 import { validateConnectorConfig, ConnectorError, connectorDefinition, type ConnectorConfig } from './connectors.js';
 import { planVisual } from './planner.js';
 import { executePostgres } from './postgres-executor.js';
 import { evaluateSqlPlan } from './evaluate.js';
 import { fail, QueryEngineError } from './validation.js';
-import type { PlanRequest, QueryResult, ResultValue } from './types.js';
+import type { PlanRequest, QueryResult, ResultRow, ResultValue } from './types.js';
 import { mysqlSessionSql, mysqlVariantSql, type MySqlVariant } from './mysql-session.js';
+import { resultBudget, type ResultBudgetOptions } from './result-budget.js';
 
-export interface MySqlExecuteOptions {
+export interface MySqlExecuteOptions extends ResultBudgetOptions {
   config: unknown;
   connectorId?: MySqlVariant;
   /** Trusted server environment injection; defaults to process.env. Never accept from HTTP. */
@@ -47,22 +49,58 @@ export async function executeMySql(request: PlanRequest, options: MySqlExecuteOp
   if (plan.tableSchema !== env.databaseEnv) throw new ConnectorError('INVALID_CONNECTOR_CONFIG', '$.config.databaseEnv', 'Planned database must match configured database');
   const insecure = options.allowInsecureLoopback === true;
   if (insecure && !['127.0.0.1', '::1'].includes(env.hostEnv!)) throw new ConnectorError('INVALID_CONNECTOR_CONFIG', '$.config.hostEnv', 'Unencrypted connections are restricted to loopback');
+  const intake = resultBudget(options, 'mysql');
   let client: Connection | undefined;
+  let stream: Readable | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    client = await createConnection({ host: env.hostEnv, port, database: env.databaseEnv, user: env.userEnv, password: env.passwordEnv,
+    client = createConnection({ host: env.hostEnv, port, database: env.databaseEnv, user: env.userEnv, password: env.passwordEnv,
       ...(insecure ? {} : { ssl: { rejectUnauthorized: true, ...(env.caEnv ? { ca: env.caEnv } : {}) } }),
       connectTimeout: 3000, timezone: 'Z', dateStrings: true, supportBigNumbers: true, bigNumberStrings: true, rowsAsArray: true,
       multipleStatements: false, enableKeepAlive: false,
     });
-    await client.query({ sql: mysqlSessionSql(variant), timeout: 10000 });
-    const [rows, fields] = await client.execute<RowDataPacket[]>({ sql: plan.sql, values: [...plan.parameters], timeout: 10000 });
-    const numericTypes = new Set([0, 1, 2, 3, 4, 5, 8, 9, 13, 246]);
-    const converted = rows.map(row => Object.fromEntries(fields.map((f, i) => [f.name, value(row[i] as unknown, numericTypes.has(f.type ?? -1))])));
+    let stopped = false;
+    const failure = () => new QueryEngineError('EXECUTION_ERROR', '$.mysql', 'MySQL connection or query failed');
+    const check = () => { if (stopped) throw failure(); };
+    const interrupted = new Promise<never>((_resolve, reject) => {
+      // Callback-free mysql2 commands can report fatal socket errors on the connection.
+      client!.on('error', error => { stopped = true; reject(error); });
+      // An executor-owned deadline also covers prepare/setup and is cleared on teardown;
+      // mysql2's per-query timer can otherwise outlive destroy().
+      timer = setTimeout(() => { stopped = true; reject(failure()); client!.destroy(); }, 10000);
+    });
+    const converted: ResultRow[] = [];
+    await Promise.race([interrupted, (async () => {
+      await client!.promise().connect(); check();
+      await client!.promise().query({ sql: mysqlSessionSql(variant) }); check();
+      await new Promise<void>((resolve, reject) => {
+        const numericTypes = new Set([0, 1, 2, 3, 4, 5, 8, 9, 13, 246]);
+        let fields: FieldPacket[] = [];
+        // The callback-free prepared query exposes mysql2's .stream() API without
+        // collecting _rows. Keep binary wire binding: text escaping is incompatible
+        // with our NO_BACKSLASH_ESCAPES session, especially for quotes/backslashes.
+        const query = client!.execute({ sql: plan.sql, values: [...plan.parameters] });
+        stream = query.stream({ highWaterMark: 1 });
+        const stop = (error: unknown) => {
+          if (stopped) return;
+          stopped = true; reject(error); client!.destroy(); stream!.destroy();
+        };
+        query.on('error', stop); // Remain subscribed after stream.destroy() removes its listener.
+        stream.on('error', stop).on('fields', (metadata: FieldPacket[]) => { fields = metadata; }).on('data', (raw: unknown[]) => {
+          if (stopped) return;
+          try {
+            intake(raw);
+            converted.push(Object.fromEntries(fields.map((f, i) => [f.name, value(raw[i], numericTypes.has(f.type ?? -1))])));
+          } catch (error) { stop(error); }
+        }).on('end', resolve);
+      });
+      check();
+    })()]);
     return { plan, rows: plan.postProcess ? evaluateSqlPlan(plan, converted) : converted, provenance: { source: 'live' } };
   } catch (error) {
     if (error instanceof QueryEngineError) throw error;
     throw new QueryEngineError('EXECUTION_ERROR', '$.mysql', 'MySQL connection or query failed');
-  } finally { client?.destroy(); }
+  } finally { clearTimeout(timer); client?.destroy(); stream?.destroy(); }
 }
 /** Trusted server-side entry point; stub connectors never open connections. */
 export async function executeConnector(id: string, config: unknown, request: PlanRequest, environment: Readonly<Record<string, string | undefined>> = process.env): Promise<QueryResult> {
