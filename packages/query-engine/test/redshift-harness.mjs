@@ -11,7 +11,7 @@ const rowPacket = row => packet('D', i16(row.length), ...row.map(v => v === null
 
 /** A PostgreSQL v3 wire harness for the Redshift connector, NOT a Redshift SQL engine.
  * The caller evaluates/records SQL. No cluster or external socket is involved. */
-export async function redshiftHarness(t, { evaluate = () => ({ fields: [], rows: [] }), password = 'synthetic-password', username = 'synthetic', database = 'synthetic_sales' } = {}) {
+export async function redshiftHarness(t, { evaluate = () => ({ fields: [], rows: [] }), password = 'synthetic-password', username = 'synthetic', database = 'synthetic_sales', holdOpen = false } = {}) {
   const state = { password, username, database, sessions: [], queries: [], bindings: [], authentications: [], startups: [], errors: [], sockets: new Set(), sslRequests: 0, mode: 'normal' };
   const server = createServer(socket => {
     state.sockets.add(socket); socket.on('close', () => state.sockets.delete(socket)); socket.on('error', () => {});
@@ -27,6 +27,7 @@ export async function redshiftHarness(t, { evaluate = () => ({ fields: [], rows:
     };
     const finish = data => {
       for (const row of data.rows) send(rowPacket(row));
+      if (holdOpen && !sql.startsWith('SET ')) return;
       send(packet('C', z(sql.startsWith('SET ') ? 'SET' : `SELECT ${data.rows.length}`)));
     };
     socket.on('data', chunk => {
@@ -56,7 +57,7 @@ export async function redshiftHarness(t, { evaluate = () => ({ fields: [], rows:
           } else if (type === 'Q') {
             sql = body.toString().slice(0, -1); values = []; failed = false;
             const data = execute();
-            if (data) { if (data.fields.length) send(fieldsPacket(data.fields)); finish(data); send(ready); }
+            if (data) { if (data.fields.length) send(fieldsPacket(data.fields)); finish(data); if (!holdOpen || sql.startsWith('SET ')) send(ready); }
             else if (failed) send(ready);
           } else if (type === 'P') {
             sql = body.toString('utf8', body.indexOf(0) + 1, body.indexOf(0, body.indexOf(0) + 1)); failed = false; result = undefined;
@@ -72,7 +73,7 @@ export async function redshiftHarness(t, { evaluate = () => ({ fields: [], rows:
           } else if (type === 'E') {
             if (result) finish(result);
           } else if (type === 'S') {
-            if (result || failed) send(ready);
+            if (result && !holdOpen || failed) send(ready);
           } else if (type !== 'H') throw new Error(`Unexpected frontend message ${type}`);
         }
       } catch (e) { state.errors.push(e); send(error('Harness failure')); send(ready); }
