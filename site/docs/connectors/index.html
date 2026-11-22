@@ -97,11 +97,14 @@ deployed server.</p>
 <p>S3 now supports <a href="https://github.com/tomesposito/opensight/blob/master/docs/connector-s3.md">hosted API ingestion and prefix browsing</a>.
 The current source-creation dialog still excludes AWS connectors; S3 provisioning
 is through the documented API, not a simulated connection in the gallery.</p>
-<p>RDS, Aurora and Redshift auto-discovery are implemented as a
+<p>RDS and Aurora auto-discovery are implemented as a
 <a href="https://github.com/tomesposito/opensight/blob/master/docs/connector-rds-discovery.md">library discovery service</a>: their cards report the
-need for an operator-configured discovery connection. Hosted provisioning and
-the gallery&#39;s one-click source creation from a discovery result are follow-on
-work, not a simulated flow in the gallery.</p>
+need for an operator-configured discovery connection. Redshift auto-discovery
+is a hosted stub: Redshift clusters are not visible through the RDS API, so it
+reports that it needs a hosted connector implementation instead of pretending
+to discover. Hosted provisioning and the gallery&#39;s one-click source creation
+from a discovery result are follow-on work, not a simulated flow in the
+gallery.</p>
     </article>
   </main>
 </div>
