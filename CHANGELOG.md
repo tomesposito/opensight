@@ -21,6 +21,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Security
 
+- Athena queries now require a scanned-byte cost bound before they start (#302): the connector's workgroup setting is required, and the executor verifies via `GetWorkGroup` that the operator-selected workgroup enforces a per-query `BytesScannedCutoffPerQuery`, failing closed with `INVALID_CONNECTOR_CONFIG` when it does not. While polling, reported `DataScannedInBytes` are checked against the verified cutoff; an execution that passes it is stopped and rejected instead of returning results. Athena configurations without a workgroup environment name no longer validate.
+
 - S3 operator grants are now scoped to the tenants allowed to use them (#300): each `OPENSIGHT_S3_SOURCES` entry binds its exact config to required `tenantIds` (plus optional `namespaceIds`/`userIds`), enforced at browse, at source creation, and on every later admission of a stored S3 source — knowing another tenant's allowlisted config no longer lets an author browse or ingest it with the operator's credentials. Pre-#300 bare-config entries are rejected at startup; operators must wrap each config in the grant shape and name its tenants.
 
 ### Changed
