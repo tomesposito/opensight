@@ -158,7 +158,8 @@ test('Hosted join diagnostics bounded sample returns 10,001 rows from a larger M
   const f = await sourceFixture(t, { endpoints: [{ id: 'reference', connectorId: 'mysql', host: '127.0.0.1', port: harness.port, database: 'opensight', tls: false }] });
   const context = await f.login(), data = new HostedData(f.sources, undefined, f.budgets);
   await data.createSource(context, 'big', { connectorId: 'mysql', endpointId: 'reference', schema: 'opensight', table: 'sales', columns: bigColumns, credentials: { username: 'synthetic', password }, policy });
-  const table = await data.boundedSample(context, await data.admit(context, 'big', 'prep'), new PrepJoinBudget());
+  const admission = await data.admit(context, 'big', 'prep');
+  const table = await data.work(context, false, [admission], async () => data.boundedSample(context, admission, new PrepJoinBudget()));
   assert.equal(table.rowCount, 10_001);
   assert.deepEqual(harness.errors, []);
 });
