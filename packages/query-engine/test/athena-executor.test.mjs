@@ -36,7 +36,7 @@ test('Athena library end-to-end uses real SDK commands, trusted config, position
   assert.deepEqual(result.rows, [{ region: 'East', revenue: 42.5 }]);
   assert.deepEqual(result.provenance, { source: 'live' }); assert.equal(result.plan.dialect, 'athena');
   assert.deepEqual(f.calls.map(c => c.constructor.name), ['StartQueryExecutionCommand', 'GetQueryExecutionCommand', 'GetQueryResultsCommand']);
-  assert.deepEqual(f.calls[0].input, { QueryString: result.plan.sql, ExecutionParameters: ['East'], QueryExecutionContext: { Database: 'public' }, WorkGroup: 'test-workgroup', ResultConfiguration: { OutputLocation: 's3://example-results/queries/' } });
+  assert.deepEqual(f.calls[0].input, { QueryString: result.plan.sql, ExecutionParameters: ["'East'"], QueryExecutionContext: { Database: 'public' }, WorkGroup: 'test-workgroup', ResultConfiguration: { OutputLocation: 's3://example-results/queries/' } });
   assert.deepEqual(f.calls[1].input, { QueryExecutionId: 'test-query' });
   assert.deepEqual(f.calls[2].input, { QueryExecutionId: 'test-query', MaxResults: 1000 });
   assert.equal(f.destroyed, 1);
@@ -50,7 +50,7 @@ test('Athena executeConnector dispatch reaches the SDK boundary without credenti
   assert.deepEqual(result.rows, [{ region: 'East', revenue: 42.5 }]); assert.equal(f.destroyed, 1);
 });
 
-test('Athena omits optional workgroup and empty parameters, and stringifies numeric/date binds', async () => {
+test('Athena omits optional workgroup and empty parameters, and encodes numeric/date binds as typed literals', async () => {
   const r = athenaRequest('total-revenue');
   r.analysis.Definition.FilterGroups = [];
   const f = fake(), minimal = { ...config }; delete minimal.workGroupEnv;
@@ -61,7 +61,33 @@ test('Athena omits optional workgroup and empty parameters, and stringifies nume
   r.parameterBindings = { Amount: [12.5], Day: ['2026-01-01T00:00:00Z'] };
   r.parameterFilters = [{ columnName: 'revenue', parameterName: 'Amount' }, { columnName: 'order_date', parameterName: 'Day' }];
   const f2 = fake(); await executeAthena(r, f2.options);
-  assert.deepEqual(f2.calls[0].input.ExecutionParameters, ['12.5', '2026-01-01T00:00:00Z']);
+  assert.deepEqual(f2.calls[0].input.ExecutionParameters, ['12.5', "'2026-01-01T00:00:00Z'"]);
+});
+
+test('Athena encodes string execution parameters as quoted literals, keeping numbers bare (#301)', async () => {
+  const r = athenaRequest('total-revenue');
+  r.analysis.Definition.FilterGroups = [];
+  r.parameterDeclarations = [
+    { name: 'Empty', type: 'string', multiple: false },
+    { name: 'Apostrophe', type: 'string', multiple: false },
+    { name: 'NumericText', type: 'string', multiple: false },
+    { name: 'Expression', type: 'string', multiple: false },
+    { name: 'Day', type: 'datetime', multiple: false },
+    { name: 'Amount', type: 'number', multiple: false },
+  ];
+  r.parameterBindings = { Empty: [''], Apostrophe: ["O'Brien"], NumericText: ['001'], Expression: ["East' OR 1=1 --"], Day: ['2026-01-01'], Amount: [42] };
+  r.parameterFilters = [
+    { columnName: 'region', parameterName: 'Empty' },
+    { columnName: 'category', parameterName: 'Apostrophe' },
+    { columnName: 'region', parameterName: 'NumericText' },
+    { columnName: 'category', parameterName: 'Expression' },
+    { columnName: 'order_date', parameterName: 'Day' },
+    { columnName: 'revenue', parameterName: 'Amount' },
+  ];
+  const f = fake(); await executeAthena(r, f.options);
+  // Parameters stay out of the QueryString: the SQL still carries bare ? placeholders.
+  assert.doesNotMatch(f.calls[0].input.QueryString, /O''Brien|OR 1=1/);
+  assert.deepEqual(f.calls[0].input.ExecutionParameters, ["''", "'O''Brien'", "'001'", "'East'' OR 1=1 --'", "'2026-01-01'", '42']);
 });
 
 test('Athena polling uses bounded exponential backoff, including requeued executions', async () => {
@@ -238,7 +264,7 @@ test('Athena RLS SQL precedes visual aggregation, binds injection text and retai
   assert.match(result.plan.sql, /^WITH "__opensight_security" AS \(SELECT \* FROM "public"\."sales" WHERE \("region" = \?\)\)/);
   assert.match(result.plan.sql, /FROM "__opensight_security" WHERE "region" = \?/);
   assert.doesNotMatch(result.plan.sql, /OR TRUE/);
-  assert.deepEqual(f.calls[0].input.ExecutionParameters, ["East' OR TRUE --", 'East']);
+  assert.deepEqual(f.calls[0].input.ExecutionParameters, ["'East'' OR TRUE --'", "'East'"]);
 });
 test('Athena null execution parameters fail closed before client construction', async () => {
   const f = fake(), r = athenaRequest(); r.analysis.Definition.FilterGroups = [];

@@ -17,6 +17,25 @@ export function athenaBindings(sql: string, parameters: readonly ParameterValue[
   return { sql: text, parameters: values };
 }
 
+/**
+ * Encode one plan parameter as the typed SQL literal Athena expects in an
+ * execution parameter. Athena substitutes execution parameters as SQL text,
+ * so a string must arrive already quoted (Athena documents that string
+ * parameters include the single quotes); an unquoted string would be read
+ * as an identifier/expression. Numbers stay bare. String-typed values keep
+ * their type even when they look numeric, and date/datetime values are
+ * string-typed ISO text, so they are quoted the same way. Apostrophes are
+ * escaped by quoteLiteral's doubling, so expression-shaped input stays a
+ * single inert literal.
+ */
+export function athenaExecutionParameter(value: ParameterValue): string {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) fail('INVALID_INPUT', '$.parameters', 'Athena numeric execution parameters must be finite');
+    return String(value);
+  }
+  return quoteLiteral(value);
+}
+
 /** Athena timestamp-without-zone columns follow the shared UTC fixture contract. */
 export const athenaDateCast = (value: string): string => `CAST(REPLACE(REPLACE(${value}, 'T', ' '), 'Z', '') AS TIMESTAMP)`;
 export const athenaTimestamp = (value: string): string => `(to_iso8601(CAST(${value} AS TIMESTAMP)) || 'Z')`;
