@@ -357,8 +357,13 @@ export class HostedPrep {
           return await this.data.work(context, true, graph.leaves, async () => {
             const output = new BlazeTable(this.data.limits(context)), consumed = await this.load(context, id, graph, output);
             await this.data.finish(context, graph.leaves, graph.revisions);
+            const expectedDependencies = [...this.inputs(graph).cached].filter(childId => graph.modes.get(childId)!.execution.mode === 'STORED').map(childId => {
+              const generation = consumed.get(childId);
+              if (!generation) throw new MetadataError('STORED_GENERATION_CHANGED', 409);
+              return { id: childId, version: graph.modes.get(childId)!.version, generation };
+            });
             value = await this.data.storedFiles.write(key, output, this.materializationStamp(id, stored.version, graph, consumed), capacity);
-            await this.data.sources.metadata.materialization(context, id, stored.version, { value, reserve: 0 }, graph.revisions);
+            await this.data.sources.metadata.materialization(context, id, stored.version, { value, reserve: 0, expectedDependencies }, graph.revisions);
             committed = true;
             await this.data.storedFiles.remove(key, stored.materialization);
             return { ...storedStatus(value), downloadsEnabled: this.downloadsEnabled, version: stored.version };

@@ -75,6 +75,76 @@ test('stored parents stamp only generations actually read and detect subsequent 
   assert.equal((await prep.get(c, 'nested')).execution.state, 'stale');
   assert.deepEqual((await prep.execute(c, 'nested', 'rows')).rows.map(row => row.amount), [10, 20, 30]);
 });
+for (const action of ['publish', 'refresh']) for (const point of ['read', 'load', 'publication']) {
+  test(`parent ${action} rejects a child refresh at ${point} and cleans up (#306)`, async t => {
+    const f = await nestedFixture(t), { c, prep, data, metadata } = f;
+    if (action === 'refresh') await prep.execute(c, 'nested', 'publish');
+    const before = (await metadata.get(c, storedKey(c, 'nested'))).body.materialization;
+    const first = (await metadata.get(c, storedKey(c, 'computed'))).body.materialization;
+    let replacement, candidate, rows;
+    const read = data.storedFiles.read.bind(data.storedFiles);
+    data.storedFiles.read = async (key, value, limits) => {
+      if (point === 'read' && !replacement && JSON.parse(key).at(-1) === 'computed') replacement = await replaceChild(f);
+      return read(key, value, limits);
+    };
+    const load = prep.load.bind(prep);
+    prep.load = async (...args) => {
+      const consumed = await load(...args);
+      if (args[1] === 'nested') {
+        rows = args[3].rows();
+        if (point === 'load' && !replacement) replacement = await replaceChild(f);
+      }
+      return consumed;
+    };
+    const materialization = metadata.materialization.bind(metadata);
+    metadata.materialization = async (context, id, version, update, expected) => {
+      if (id === 'nested' && update.value?.state === 'current') {
+        candidate = update.value;
+        if (point === 'publication' && !replacement) replacement = await replaceChild(f);
+      }
+      return materialization(context, id, version, update, expected);
+    };
+    await assert.rejects(prep.execute(c, 'nested', action), { code: 'STORED_GENERATION_CHANGED' });
+    assert.ok(replacement); assert.notEqual(replacement.generation, first.generation);
+    assert.deepEqual(rows.map(row => row.amount), [10, 20, 30]);
+    assert.deepEqual(JSON.parse(candidate.stamp)[2], [['computed', 2, first.generation]]);
+    const after = (await metadata.get(c, storedKey(c, 'nested'))).body;
+    assert.equal(Number(after.storedReservationBytes), 0);
+    if (before) {
+      assert.equal(after.materialization.generation, before.generation);
+      assert.equal(after.materialization.state, 'refresh-failed');
+      assert.equal(after.materialization.error.code, 'STORED_GENERATION_CHANGED');
+      assert.ok(after.materialization.failedAt);
+      assert.deepEqual((await prep.execute(c, 'nested', 'rows')).rows.map(row => row.amount), [10, 20, 30]);
+    } else assert.equal(after.materialization, undefined);
+    const key = JSON.stringify([c.tenantId, c.namespaceId, c.userId, 'prep', 'nested']);
+    await assert.rejects(read(key, candidate, data.limits(c)), { code: 'STORED_ARTIFACT_INVALID' });
+    // Retry consumes G2 and can publish; neither the reservation nor the
+    // per-dataset refresh exclusion leaked out of the rejected attempt.
+    assert.equal((await prep.execute(c, 'nested', action)).state, 'current');
+    const retried = (await metadata.get(c, storedKey(c, 'nested'))).body.materialization;
+    assert.deepEqual(JSON.parse(retried.stamp)[2], [['computed', 2, replacement.generation]]);
+    assert.deepEqual((await prep.execute(c, 'nested', 'rows')).rows.map(row => row.amount), [99]);
+    assert.equal((await prep.get(c, 'nested')).execution.state, 'current');
+  });
+}
+test('materialization checks dependency definitions and generations in its publication transaction (#306)', async t => {
+  const f = await nestedFixture(t), { c, prep, metadata } = f;
+  await prep.execute(c, 'nested', 'publish');
+  const parent = await metadata.get(c, storedKey(c, 'nested')), child = await metadata.get(c, storedKey(c, 'computed'));
+  const dependency = { id: 'computed', version: child.version, generation: child.body.materialization.generation };
+  for (const [change, code] of [
+    [{ generation: '00000000-0000-4000-8000-000000000000' }, 'STORED_GENERATION_CHANGED'],
+    [{ version: child.version + 1 }, 'STORED_DEFINITION_CHANGED'],
+    [{ id: 'missing' }, 'STORED_DEFINITION_CHANGED'],
+  ]) {
+    await assert.rejects(metadata.materialization(c, 'nested', parent.version, {
+      value: parent.body.materialization, reserve: 123, expectedDependencies: [{ ...dependency, ...change }],
+    }), { code });
+    assert.deepEqual((await metadata.get(c, storedKey(c, 'nested'))).body, parent.body);
+  }
+  await metadata.materialization(c, 'nested', parent.version, { value: parent.body.materialization, expectedDependencies: [dependency] });
+});
 test('hosted publish is durable, refresh errors retain rows, and source revisions label stale', async t => {
   const f = await fixture(t), { prep } = f;
   const first = await prep.execute(await f.login(), 'computed', 'publish');
