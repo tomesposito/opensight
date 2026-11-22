@@ -1,4 +1,4 @@
-import { AthenaClient, StartQueryExecutionCommand, GetQueryExecutionCommand, GetQueryResultsCommand, StopQueryExecutionCommand, type ColumnInfo } from '@aws-sdk/client-athena';
+import { AthenaClient, StartQueryExecutionCommand, GetQueryExecutionCommand, GetQueryResultsCommand, GetWorkGroupCommand, StopQueryExecutionCommand, type ColumnInfo } from '@aws-sdk/client-athena';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { validateConnectorConfig, ConnectorError } from './connectors.js';
 import { planVisual } from './planner.js';
@@ -29,6 +29,7 @@ function limit(value: number, maximum: number, path: string): number {
   return value;
 }
 const executionError = (message: string) => new QueryEngineError('EXECUTION_ERROR', '$.athena', message);
+const scanLimitError = () => executionError('Athena query exceeded the workgroup scanned-byte limit');
 /** Generated Athena SELECT only. Security, SQL and config validation precede client creation. */
 export async function executeAthena(request: PlanRequest, options: AthenaExecuteOptions): Promise<QueryResult> {
   const plan = planVisual(request, { dialect: 'athena' });
@@ -88,11 +89,21 @@ export async function executeAthena(request: PlanRequest, options: AthenaExecute
   try {
     check();
     client = (options.clientFactory ?? (configuration => new AthenaClient(configuration)))({ region: env.regionEnv! });
+    // Fail closed before any query starts: the operator-selected workgroup must enforce a
+    // per-query scanned-byte cutoff, otherwise one aggregate can scan without a spend bound.
+    const scanCutoff = await bounded(async signal => {
+      const group = await client!.send(new GetWorkGroupCommand({ Name: env.workGroupEnv! }), { abortSignal: signal });
+      const cutoff = group.WorkGroup?.Configuration?.BytesScannedCutoffPerQuery;
+      if (typeof cutoff !== 'number' || !Number.isSafeInteger(cutoff) || cutoff < 1) {
+        throw new ConnectorError('INVALID_CONNECTOR_CONFIG', '$.config.workGroupEnv', 'Athena workgroup must enforce a per-query scanned-byte cutoff');
+      }
+      return cutoff;
+    });
     await bounded(async signal => {
       const started = await client!.send(new StartQueryExecutionCommand({
         QueryString: plan.sql, ...(parameters.length ? { ExecutionParameters: parameters } : {}),
         QueryExecutionContext: { Database: env.databaseEnv! },
-        ...(env.workGroupEnv ? { WorkGroup: env.workGroupEnv } : {}),
+        WorkGroup: env.workGroupEnv!,
         ResultConfiguration: { OutputLocation: env.outputLocationEnv! },
       }), { abortSignal: signal });
       executionId = started.QueryExecutionId;
@@ -103,6 +114,11 @@ export async function executeAthena(request: PlanRequest, options: AthenaExecute
     let interval = 100;
     for (;;) {
       const response = await bounded(signal => client!.send(new GetQueryExecutionCommand({ QueryExecutionId: executionId }), { abortSignal: signal }));
+      // Supplement the workgroup cutoff: if reported scan statistics pass it, stop and fail
+      // rather than returning results. Missing statistics are not a breach — Athena enforces
+      // the verified cutoff service-side.
+      const scanned = response.QueryExecution?.Statistics?.DataScannedInBytes;
+      if (typeof scanned === 'number' && scanned > scanCutoff) { await stop(); throw scanLimitError(); }
       const state = response.QueryExecution?.Status?.State;
       if (state === 'SUCCEEDED') break;
       if (state === 'FAILED' || state === 'CANCELLED') throw executionError('Athena query failed or was cancelled');
@@ -150,6 +166,7 @@ export async function executeAthena(request: PlanRequest, options: AthenaExecute
       if (options.signal?.aborted || error instanceof ExecutionCancelledError) throw new ExecutionCancelledError();
       throw timeout();
     }
+    if (error instanceof ConnectorError) throw error;
     if (error instanceof QueryEngineError) throw error;
     throw executionError('Athena connection or query failed');
   } finally { try { client?.destroy(); } catch { /* Cleanup must not expose SDK error details. */ } }

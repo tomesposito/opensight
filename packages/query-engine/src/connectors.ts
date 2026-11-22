@@ -32,7 +32,7 @@ export const connectors: readonly ConnectorDefinition[] = [
   ...[['salesforce', 'Salesforce'], ['github', 'GitHub'], ['twitter', 'Twitter'], ['jira', 'Jira'], ['servicenow', 'ServiceNow']].map(([id, name]): ConnectorDefinition => ({ id: id!, name: name!, category: 'SaaS', schema: saas, implementation: 'hosted' })),
   { id: 'athena', name: 'Athena', category: 'AWS', implementation: 'query', dialect: 'athena', schema: {
     regionEnv: env('AWS region environment variable'), databaseEnv: env('Database environment variable'),
-    workGroupEnv: env('Workgroup environment variable', false), outputLocationEnv: env('Output location environment variable'),
+    workGroupEnv: env('Workgroup environment variable'), outputLocationEnv: env('Output location environment variable'),
   } },
   { id: 's3', name: 'S3', category: 'AWS', implementation: 'upload', dialect: 'duckdb', schema: {
     regionEnv: env('AWS region environment variable'), accessKeyIdEnv: env('Access key ID environment variable'),
