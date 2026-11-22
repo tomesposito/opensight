@@ -5,6 +5,7 @@ import { sourceFixture, upload } from './source-helpers.mjs';
 import { HostedData } from '../dist/hosted-data.js';
 import { HostedPrep } from '../dist/hosted-prep.js';
 import { StoredTableFiles } from '../dist/stored-tables.js';
+import { BlazeTable } from '../dist/blaze.js';
 const settings = { mode: 'STORED', intervalMinutes: null };
 async function fixture(t) {
   const f = await sourceFixture(t);
@@ -17,6 +18,42 @@ async function fixture(t) {
   await prep.configure(await f.login(), 'computed', { ...settings, expectedVersion: 1 });
   return { ...f, source, data, prep, setup, f };
 }
+const storedKey = (context, id) => ({ kind: 'prepared-dataset', id, ownerId: context.userId });
+async function nestedFixture(t) {
+  const f = await fixture(t), c = await f.login();
+  await f.prep.execute(c, 'computed', 'publish');
+  await f.prep.save(c, 'nested', { name: 'Nested', pipeline: { version: 1, input: { dataset: 'computed' }, steps: [] }, expectedVersion: 0 });
+  await f.prep.configure(c, 'nested', { ...settings, expectedVersion: 1 });
+  return { ...f, c };
+}
+// Complete a competing refresh without acquiring this request's compute slot:
+// write a real immutable artifact, atomically swap its pointer, retire G1.
+async function replaceChild(f) {
+  const { c, data, metadata } = f, previous = await metadata.get(c, storedKey(c, 'computed'));
+  const table = new BlazeTable(data.limits(c)); table.start(previous.body.materialization.columns); table.row(['new', 99, 'generation-two']);
+  const key = JSON.stringify([c.tenantId, c.namespaceId, c.userId, 'prep', 'computed']);
+  const value = await data.storedFiles.write(key, table, previous.body.materialization.stamp, data.limits(c).datasetBytes + 1024 * 1024);
+  await metadata.materialization(c, 'computed', previous.version, { value, reserve: 0 });
+  await data.storedFiles.remove(key, previous.body.materialization);
+  return value;
+}
+test('load captures the generation selected under the stored-child read lease (#306)', async t => {
+  const f = await nestedFixture(t), { c, prep, data } = f;
+  const first = (await f.metadata.get(c, storedKey(c, 'computed'))).body.materialization;
+  const read = data.storedFiles.read.bind(data.storedFiles);
+  let replacement, consumed;
+  data.storedFiles.read = async (key, value, limits) => {
+    if (!replacement && JSON.parse(key).at(-1) === 'computed') replacement = await replaceChild(f);
+    return read(key, value, limits);
+  };
+  const load = prep.load.bind(prep);
+  prep.load = async (...args) => { consumed = await load(...args); return consumed; };
+  const preview = await prep.preview(c, 'nested', {});
+  assert.ok(replacement); assert.notEqual(replacement.generation, first.generation);
+  assert.deepEqual([...consumed], [['computed', first.generation]]);
+  assert.deepEqual(preview.rows.map(row => row.amount), [10, 20, 30]);
+  assert.deepEqual((await prep.execute(c, 'computed', 'rows')).rows.map(row => row.amount), [99]);
+});
 test('hosted publish is durable, refresh errors retain rows, and source revisions label stale', async t => {
   const f = await fixture(t), { prep } = f;
   const first = await prep.execute(await f.login(), 'computed', 'publish');

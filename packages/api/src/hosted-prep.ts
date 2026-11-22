@@ -64,8 +64,14 @@ export class HostedPrep {
     if (validate) this.plan(graph, id); // Validate every stage, including branches outside the selected output.
     await this.data.finish(context, leaves, revisions); return graph;
   }
-  private readStored(context: TenantContext, id: string) {
-    return this.data.storedFiles.readCurrent(this.cacheKey(context, id), async () => (await this.stored(context, id)).materialization, this.data.limits(context));
+  private readStored(context: TenantContext, id: string, consumed?: Map<string, string>) {
+    return this.data.storedFiles.readCurrent(this.cacheKey(context, id), async () => {
+      const value = (await this.stored(context, id)).materialization;
+      // Capture the pointer selected under readCurrent's lease, not metadata
+      // observed after the read: a refresh can replace it while we execute.
+      if (value) consumed?.set(id, value.generation);
+      return value;
+    }, this.data.limits(context));
   }
   private async materializationStamp(context: TenantContext, id: string, version: number, graph: Graph): Promise<string> {
     const dependencies = [];
@@ -100,7 +106,7 @@ export class HostedPrep {
     return compilePrep(g.pipeline, this.sources(g), { datasets: g.datasets, datasetId: id, ...(through === undefined ? {} : { through }) });
   }
   private async load(context: TenantContext, id: string, g: Graph, output: BlazeTable, through?: string | null) {
-    const scope = this.data.scope(context);
+    const scope = this.data.scope(context), consumed = new Map<string, string>();
     const tables: WireTable[] = [], sources = this.sources(g), datasets = structuredClone(g.datasets), needed = new Set<string>(), visited = new Set<string>();
     const visit = async (p: PrepPipeline): Promise<void> => {
       for (const ref of references(p)) {
@@ -110,7 +116,7 @@ export class HostedPrep {
         const d = datasets.find(d => d.id === ref.dataset)!, mode = g.modes.get(ref.dataset)!;
         if (!g.reader && ['BLAZE', 'STORED'].includes(mode.execution.mode)) {
           const key = this.cacheKey(context, ref.dataset), stamp = JSON.stringify([mode.version, g.revisions]);
-          const table = mode.execution.mode === 'STORED' ? await this.readStored(context, ref.dataset) : await this.data.cache!.read(scope, key, stamp); scope.rows(table.rowCount);
+          const table = mode.execution.mode === 'STORED' ? await this.readStored(context, ref.dataset, consumed) : await this.data.cache!.read(scope, key, stamp); scope.rows(table.rowCount);
           d.materialized = { id: `cached_${tables.length}`, table: `cached_${tables.length}`, connectorId: 'file', columns: table.columns, security: 'unrestricted' };
           tables.push(await wireTable(scope, table, d.materialized));
         } else await visit(d.pipeline);
@@ -127,6 +133,7 @@ export class HostedPrep {
     const sink = this.data.sink(context, output); sink.start(result.columns);
     for (const [i, row] of result.rows.entries()) { if (i % 256 === 0) await yieldTurn(); sink.row(row); }
     await this.data.finish(context, g.leaves, g.revisions);
+    return consumed;
   }
   async save(context: TenantContext, id: string, input: unknown) {
     const raw = object(structuredClone(input), ['name', 'pipeline', 'expectedVersion']);
