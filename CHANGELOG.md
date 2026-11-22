@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Hosted Tables page no longer hides computed tables when input tables are unavailable (#307): hosted input-table paths now answer 404 `RESOURCE_NOT_FOUND` (the #285 contract), and the Tables page renders that as an input-tables unavailable notice alongside the computed tables instead of a page-level "Could not load tables" error. Authorization and other input-table errors still fail the page.
+
 - Computed table publication now records the stored-child generations actually read and rejects a concurrent child refresh before committing the parent (#306). A rejected refresh keeps the last good parent table with a named failure, removes the unpublished artifact, and releases its storage reservation; older rows can no longer be mislabeled current by stamping a newer child generation.
 
 - Computed table freshness status can no longer restore a deleted stored generation (#305): materialization status writes (stale marking and refresh-failure records) are now generation compare-and-swap — if a concurrent refresh has published a newer generation and removed the old file, the delayed status write is rejected with `STORED_GENERATION_CHANGED` and the newer pointer stands, instead of pointing metadata at a removed file and failing reads with `STORED_ARTIFACT_INVALID` until the next refresh.
