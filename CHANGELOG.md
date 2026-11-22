@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Computed table freshness status can no longer restore a deleted stored generation (#305): materialization status writes (stale marking and refresh-failure records) are now generation compare-and-swap — if a concurrent refresh has published a newer generation and removed the old file, the delayed status write is rejected with `STORED_GENERATION_CHANGED` and the newer pointer stands, instead of pointing metadata at a removed file and failing reads with `STORED_ARTIFACT_INVALID` until the next refresh.
+
 - Redshift auto-discovery no longer claims RDS discovery (#304): the discovery service only calls the RDS API, which cannot see Redshift clusters (they live behind Redshift's own `DescribeClusters` API), so the `redshift` registry entry is now an honest hosted stub, RDS responses are no longer classified into the manual Redshift connector, and the docs say so. RDS/Aurora discovery and the manual Redshift connector are unchanged.
 
 - Redshift and MySQL/MariaDB library queries now enforce row, per-cell and cumulative byte limits while streaming, before drivers buffer the full result (#303). Oversized results close the connection and fail explicitly instead of risking unbounded memory or returning partial aggregates; trusted callers can lower the hard caps.

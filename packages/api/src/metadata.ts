@@ -77,7 +77,7 @@ export class TenantMetadata {
   /** Owner materialization pointer/status update, serialized with quota and definition
    * edits. It does not change the recipe version or authorization revisions. */
   async materialization(context: TenantContext, id: string, version: number,
-    update: { value?: StoredMaterialization; reserve?: number }, expected?: Revisions): Promise<void> {
+    update: { value?: StoredMaterialization; reserve?: number; expectedGeneration?: string | null }, expected?: Revisions): Promise<void> {
     await this.checked(context, async (c, revisions, user) => {
       if (!hasCapability(user.role as Parameters<typeof hasCapability>[0], 'build')) throw new MetadataError('METADATA_WRITE_FORBIDDEN', 403);
       if (expected && JSON.stringify(revisions) !== JSON.stringify(expected)) throw new MetadataError('METADATA_REVISED', 403);
@@ -86,6 +86,13 @@ export class TenantMetadata {
       if (!row) missing();
       const current = resource(row);
       if (current.version !== version) throw new MetadataError('STORED_DEFINITION_CHANGED', 409);
+      // Generation compare-and-swap: a status-only write captured against an
+      // older generation must never replace a newer generation pointer — the
+      // older generation's file may already be removed (#305).
+      if (update.value && update.expectedGeneration !== undefined) {
+        const currentGeneration = current.body.materialization === undefined ? null : object(current.body.materialization).generation ?? null;
+        if (currentGeneration !== update.expectedGeneration) throw new MetadataError('STORED_GENERATION_CHANGED', 409);
+      }
       const body = { ...current.body };
       if (object(body.execution).mode !== 'STORED') throw new MetadataError('STORED_MODE_REQUIRED', 409);
       if (update.reserve !== undefined) {

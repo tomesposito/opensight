@@ -35,6 +35,69 @@ test('hosted publish is durable, refresh errors retain rows, and source revision
   const restarted = f.setup();
   assert.deepEqual((await restarted.prep.execute(await f.f.login(), 'computed', 'rows')).rows, old);
 });
+test('materialization value writes are generation compare-and-swap (#305)', async t => {
+  const f = await fixture(t); await f.prep.execute(await f.login(), 'computed', 'publish');
+  const c = await f.login(), key = { kind: 'prepared-dataset', id: 'computed', ownerId: c.userId };
+  const resource = await f.metadata.get(c, key), current = resource.body.materialization;
+  const stale = { ...current, state: 'stale' };
+  await assert.rejects(f.metadata.materialization(c, 'computed', resource.version, { value: stale, expectedGeneration: '00000000-0000-4000-8000-000000000000' }), { code: 'STORED_GENERATION_CHANGED' });
+  const after = await f.metadata.get(c, key);
+  assert.equal(after.body.materialization.generation, current.generation); assert.equal(after.body.materialization.state, 'current');
+  await f.metadata.materialization(c, 'computed', resource.version, { value: stale, expectedGeneration: current.generation });
+  const marked = await f.metadata.get(c, key);
+  assert.equal(marked.body.materialization.state, 'stale'); assert.equal(marked.body.materialization.generation, current.generation);
+});
+test('a delayed stale marking cannot restore a generation a refresh replaced (#305)', async t => {
+  const f = await fixture(t), { prep } = f;
+  await prep.execute(await f.login(), 'computed', 'publish');
+  const rows = (await prep.execute(await f.login(), 'computed', 'rows')).rows;
+  const c = await f.login(), key = { kind: 'prepared-dataset', id: 'computed', ownerId: c.userId };
+  const firstGeneration = (await f.metadata.get(c, key)).body.materialization.generation;
+  // Mutate the source so the published generation's stamp no longer matches:
+  // the next status request will try to mark that generation stale.
+  const source = await f.metadata.get(c, { kind: 'source', id: f.source.id, ownerId: c.userId });
+  await f.metadata.put(c, { kind: 'source', id: f.source.id, ownerId: c.userId }, source.body, source.version);
+  // Interleave: while the status request is paused before persisting its stale
+  // marking, a refresh publishes a new generation and removes the old file.
+  const metadata = f.metadata, original = metadata.materialization.bind(metadata);
+  let interleaved = false, refreshedGeneration;
+  metadata.materialization = async (context, id, version, update, expected) => {
+    if (!interleaved && update.value?.state === 'stale' && update.expectedGeneration) {
+      interleaved = true;
+      await prep.execute(await f.login(), 'computed', 'refresh');
+      refreshedGeneration = (await f.metadata.get(await f.login(), key)).body.materialization.generation;
+    }
+    return original(context, id, version, update, expected);
+  };
+  const status = await prep.get(await f.login(), 'computed');
+  metadata.materialization = original;
+  assert.equal(interleaved, true); assert.ok(refreshedGeneration); assert.notEqual(refreshedGeneration, firstGeneration);
+  assert.equal(status.execution.state, 'current');
+  const pointer = (await f.metadata.get(c, key)).body.materialization;
+  assert.equal(pointer.generation, refreshedGeneration); assert.equal(pointer.state, 'current');
+  assert.deepEqual((await prep.execute(await f.login(), 'computed', 'rows')).rows, rows);
+});
+test('a failed refresh against a superseded generation still releases its reservation (#305)', async t => {
+  const f = await fixture(t), { prep } = f;
+  await prep.execute(await f.login(), 'computed', 'publish');
+  const c = await f.login(), key = { kind: 'prepared-dataset', id: 'computed', ownerId: c.userId };
+  const snapshot = await prep.stored(c, 'computed'); // generation G1, captured before the next refresh
+  await prep.execute(await f.login(), 'computed', 'refresh'); // publishes G2
+  const current = (await f.metadata.get(c, key)).body;
+  assert.notEqual(current.materialization.generation, snapshot.materialization.generation);
+  assert.equal(Number(current.storedReservationBytes ?? 0), 0);
+  // A refresh that started from the G1 snapshot now fails: its failure record
+  // must not overwrite G2, and its capacity reservation must not leak.
+  const load = prep.load.bind(prep), stored = prep.stored.bind(prep);
+  prep.load = async () => { throw Object.assign(new Error('Named source failure'), { code: 'PREP_SOURCE_NOT_FOUND' }); };
+  prep.stored = async () => snapshot;
+  await assert.rejects(prep.execute(await f.login(), 'computed', 'refresh'), { code: 'PREP_SOURCE_NOT_FOUND' });
+  prep.load = load; prep.stored = stored;
+  const after = (await f.metadata.get(c, key)).body;
+  assert.equal(after.materialization.generation, current.materialization.generation);
+  assert.equal(after.materialization.state, 'current');
+  assert.equal(Number(after.storedReservationBytes ?? 0), 0);
+});
 test('hosted stored datasets feed other computed pipelines; foreign owners cannot read or refresh', async t => {
   const f = await fixture(t); await f.prep.execute(await f.login(), 'computed', 'publish');
   await f.prep.save(await f.login(), 'nested', { name: 'Nested', pipeline: { version: 1, input: { dataset: 'computed' }, steps: [] }, expectedVersion: 0 });
