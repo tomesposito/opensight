@@ -27,7 +27,13 @@ candidate's winning grid point, and the grid carries a step budget
 (`MAX_FORECAST_GRID_STEPS`, 5,000,000 fits × observations) — series too
 long for the full grid step down to deterministic coarser grid tiers,
 down to a single-point tier, instead of multiplying unbounded work
-across measures and small-multiples panels. Auto seasonality proposes the period
+across measures and small-multiples panels. The bound is asserted, not
+assumed (issue #298): a caller may pass a `ForecastWorkStats` object to
+`computeForecast` and read back the tier selected, the filter runs and
+steps performed, and the ring-buffer writes (exactly one per seasonal
+step), and the tests pin those counts at the budget thresholds — a
+regression to the unconditional full grid or the O(season-length)
+rotation fails on counts, not on output shape. Auto seasonality proposes the period
 from the grain (day → 7, month → 12, quarter → 4, year → none) and admits
 seasonal models only with at least two full cycles of history. When every
 actual is non-negative the interval's lower edge clamps at 0; imported

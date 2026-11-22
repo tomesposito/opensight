@@ -37,13 +37,15 @@ test('unknown connectors, forged prototypes and incompatible file options fail c
   for (const config of [{ format: 'json', delimiter: ',' }, { format: 'csv', sheet: 'Data' }, { format: 'tsv', delimiter: ',' }, Object.create({ format: 'csv' })]) assert.throws(() => validateConnectorConfig('file', config), { code: 'INVALID_CONNECTOR_CONFIG' });
 });
 
-test('Redshift manual is a database query connector; discovery is an AWS discovery connector', () => {
+test('Redshift manual is a database query connector; auto-discovery is an AWS hosted stub', () => {
   const manual = connectorDefinition('redshift-manual'), discovery = connectorDefinition('redshift');
   assert.equal(manual.implementation, 'query'); assert.equal(manual.category, 'Database');
   assert.equal(connectorDialect(manual.id), 'redshift');
   assert.deepEqual(manual.schema, connectorDefinition('mysql').schema);
-  assert.equal(discovery.implementation, 'discovery'); assert.equal(discovery.category, 'AWS');
-  assert.deepEqual(Object.keys(discovery.schema), ['regionEnv']);
+  // Redshift clusters are not visible through the RDS API, so auto-discovery
+  // stays a hosted stub until a Redshift DescribeClusters implementation exists (#304).
+  assert.equal(discovery.implementation, 'hosted'); assert.equal(discovery.category, 'AWS');
+  assert.deepEqual(Object.keys(discovery.schema), ['regionEnv', 'resourceEnv', 'credentialsEnv']);
   assert.throws(() => connectorDialect(discovery.id), { code: 'CONNECTOR_NOT_IMPLEMENTED' });
 });
 
@@ -53,7 +55,7 @@ test('Athena has a dedicated environment-name schema and query dialect; other AW
   assert.equal(connectorDialect('athena'), 'athena');
   assert.deepEqual(Object.keys(athena.schema), ['regionEnv', 'databaseEnv', 'workGroupEnv', 'outputLocationEnv']);
   for (const [key, field] of Object.entries(athena.schema)) {
-    assert.equal(field.kind, 'environment'); assert.equal(field.required, key !== 'workGroupEnv');
+    assert.equal(field.kind, 'environment'); assert.equal(field.required, true);
   }
   const config = { regionEnv: 'ATHENA_REGION', databaseEnv: 'ATHENA_DATABASE', outputLocationEnv: 'ATHENA_OUTPUT' };
   for (const key of ['credentialsEnv', 'resourceEnv', 'accessKeyId', 'secretAccessKey']) assert.throws(() => validateConnectorConfig('athena', { ...config, [key]: 'SECRET' }), { code: 'INVALID_CONNECTOR_CONFIG' });

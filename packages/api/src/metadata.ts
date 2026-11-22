@@ -77,7 +77,8 @@ export class TenantMetadata {
   /** Owner materialization pointer/status update, serialized with quota and definition
    * edits. It does not change the recipe version or authorization revisions. */
   async materialization(context: TenantContext, id: string, version: number,
-    update: { value?: StoredMaterialization; reserve?: number }, expected?: Revisions): Promise<void> {
+    update: { value?: StoredMaterialization; reserve?: number; expectedGeneration?: string | null;
+      expectedDependencies?: readonly { id: string; version: number; generation: string }[] }, expected?: Revisions): Promise<void> {
     await this.checked(context, async (c, revisions, user) => {
       if (!hasCapability(user.role as Parameters<typeof hasCapability>[0], 'build')) throw new MetadataError('METADATA_WRITE_FORBIDDEN', 403);
       if (expected && JSON.stringify(revisions) !== JSON.stringify(expected)) throw new MetadataError('METADATA_REVISED', 403);
@@ -86,6 +87,25 @@ export class TenantMetadata {
       if (!row) missing();
       const current = resource(row);
       if (current.version !== version) throw new MetadataError('STORED_DEFINITION_CHANGED', 409);
+      // Generation compare-and-swap: a status-only write captured against an
+      // older generation must never replace a newer generation pointer — the
+      // older generation's file may already be removed (#305).
+      if (update.value && update.expectedGeneration !== undefined) {
+        const currentGeneration = current.body.materialization === undefined ? null : object(current.body.materialization).generation ?? null;
+        if (currentGeneration !== update.expectedGeneration) throw new MetadataError('STORED_GENERATION_CHANGED', 409);
+      }
+      // The tenant transaction serializes these checks with child refreshes and
+      // definition edits. A check before artifact writing would leave a race
+      // before this parent pointer becomes visible (#306).
+      for (const dependency of update.expectedDependencies ?? []) {
+        const childKey = this.key(context, { kind: 'prepared-dataset', id: dependency.id, ownerId: context.userId });
+        const childRow = (await c.query(`SELECT * FROM h1_resources WHERE ${predicates}`, keyValues(context, childKey)))[0];
+        if (!childRow) throw new MetadataError('STORED_DEFINITION_CHANGED', 409);
+        const child = resource(childRow);
+        if (child.version !== dependency.version || object(child.body.execution).mode !== 'STORED') throw new MetadataError('STORED_DEFINITION_CHANGED', 409);
+        const generation = child.body.materialization === undefined ? null : object(child.body.materialization).generation ?? null;
+        if (generation !== dependency.generation) throw new MetadataError('STORED_GENERATION_CHANGED', 409);
+      }
       const body = { ...current.body };
       if (object(body.execution).mode !== 'STORED') throw new MetadataError('STORED_MODE_REQUIRED', 409);
       if (update.reserve !== undefined) {

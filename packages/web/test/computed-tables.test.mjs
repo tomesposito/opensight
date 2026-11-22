@@ -5,7 +5,7 @@ import { create } from 'react-test-renderer';
 import { DataLanding } from '../build/test/DataLanding.js';
 import { ComputedTable } from '../build/test/ComputedTable.js';
 import { AccessProvider } from '../build/test/access.js';
-import { createApiClient } from '../build/test/api-client.js';
+import { createApiClient, ApiError } from '../build/test/api-client.js';
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const status = { mode: 'STORED', intervalMinutes: null, state: 'current', lastRefreshedAt: '2026-11-17T00:00:00.000Z', rowCount: 240, bytes: 1024, nextRefreshAt: null, error: null };
 const dataset = (id, name) => ({ resourceType: 'dataset', dataSetId: id, name, importMode: 'DIRECT_QUERY', physicalTableMap: {}, opensightPrep: { version: 1, input: 'source', steps: [] } });
@@ -24,6 +24,40 @@ test('Tables renders both kinds, all computed states and opens stored rows throu
   const body = JSON.stringify(ui.toJSON()); for (const label of ['computed', 'input', 'current', 'stale', 'refresh failed', 'Forecast input']) assert.ok(body.includes(label), label);
   await act(async () => button(ui, 'Stale table').props.onClick());
   assert.deepEqual(reads, ['stale']); assert.match(JSON.stringify(ui.toJSON()), /Stored rows remain available/); assert.match(JSON.stringify(ui.toJSON()), /41/);
+});
+test('Tables keeps computed tables visible when the hosted API reports input tables unavailable (#307)', async t => {
+  // The input-table list goes through the real API client, fed the actual
+  // hosted route contract (404 RESOURCE_NOT_FOUND; older hosted builds used
+  // the generic 503 HOSTED_CAPABILITY_UNAVAILABLE) — not a mock that
+  // supplies input tables.
+  for (const [statusCode, errorCode] of [[404, 'RESOURCE_NOT_FOUND'], [503, 'HOSTED_CAPABILITY_UNAVAILABLE']]) {
+    const datasets = [dataset('current', 'Current table')];
+    const hosted = createApiClient('http://localhost', async url => {
+      if (String(url).endsWith('/api/input-tables')) return Response.json({ errorCode }, { status: statusCode });
+      throw new Error(`unexpected ${url}`);
+    });
+    const client = {
+      listPrepDatasets: async () => ({ datasets, persistence: 'file' }),
+      listPrepSources: async () => datasets.map(d => ({ id: d.dataSetId, ref: { dataset: d.dataSetId }, columns: [{ name: 'amount', type: 'INTEGER' }], available: true, execution: { ...status, state: d.dataSetId } })),
+      listInputTables: hosted.listInputTables,
+    };
+    const ui = await mount(t, landing({ client })); await act(async () => button(ui, 'Tables').props.onClick());
+    const body = JSON.stringify(ui.toJSON());
+    assert.ok(body.includes('Current table'), `${errorCode}: computed table stays visible`);
+    assert.ok(body.includes('Input tables are not available in this workspace'), `${errorCode}: unavailable notice`);
+    assert.doesNotMatch(body, /Could not load tables/, `${errorCode}: no page error`);
+  }
+});
+test('Tables still fails the page on an input-table authorization error (#307)', async t => {
+  const datasets = [dataset('current', 'Current table')];
+  const client = {
+    listPrepDatasets: async () => ({ datasets, persistence: 'file' }),
+    listPrepSources: async () => datasets.map(d => ({ id: d.dataSetId, ref: { dataset: d.dataSetId }, columns: [{ name: 'amount', type: 'INTEGER' }], available: true, execution: { ...status, state: d.dataSetId } })),
+    listInputTables: async () => { throw new ApiError('FORBIDDEN: Request failed', 403, 'FORBIDDEN'); },
+  };
+  const ui = await mount(t, landing({ client })); await act(async () => button(ui, 'Tables').props.onClick());
+  assert.match(JSON.stringify(ui.toJSON()), /Could not load tables/);
+  assert.ok(ui.root.findByProps({ role: 'alert' }));
 });
 test('Tables empty state has one creation action and no sample or staged table', async t => {
   let created = 0; const ui = await mount(t, landing({ onCreate: () => created++ }));

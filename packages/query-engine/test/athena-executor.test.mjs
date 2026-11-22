@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AthenaClient, StartQueryExecutionCommand, GetQueryExecutionCommand, GetQueryResultsCommand, StopQueryExecutionCommand } from '@aws-sdk/client-athena';
+import { AthenaClient, StartQueryExecutionCommand, GetQueryExecutionCommand, GetQueryResultsCommand, GetWorkGroupCommand, StopQueryExecutionCommand } from '@aws-sdk/client-athena';
 import { executeAthena, executeConnector } from '@opensight/query-engine';
 import { ExecutionCancelledError } from '../dist/prep-stream.js';
 import { request, calculation } from './helpers.mjs';
@@ -21,6 +21,7 @@ function fake(handlers = {}) {
     calls.push(command);
     const handler = handlers[command.constructor.name];
     if (handler) return handler(command.input, options, calls);
+    if (command instanceof GetWorkGroupCommand) return { WorkGroup: { Name: 'test-workgroup', State: 'ENABLED', Configuration: { BytesScannedCutoffPerQuery: 1_000_000_000 } } };
     if (command instanceof StartQueryExecutionCommand) return { QueryExecutionId: 'test-query' };
     if (command instanceof GetQueryExecutionCommand) return { QueryExecution: { Status: { State: 'SUCCEEDED' } } };
     if (command instanceof GetQueryResultsCommand) return page();
@@ -35,10 +36,11 @@ test('Athena library end-to-end uses real SDK commands, trusted config, position
   const f = fake(), result = await executeAthena(athenaRequest('revenue-by-region'), f.options);
   assert.deepEqual(result.rows, [{ region: 'East', revenue: 42.5 }]);
   assert.deepEqual(result.provenance, { source: 'live' }); assert.equal(result.plan.dialect, 'athena');
-  assert.deepEqual(f.calls.map(c => c.constructor.name), ['StartQueryExecutionCommand', 'GetQueryExecutionCommand', 'GetQueryResultsCommand']);
-  assert.deepEqual(f.calls[0].input, { QueryString: result.plan.sql, ExecutionParameters: ['East'], QueryExecutionContext: { Database: 'public' }, WorkGroup: 'test-workgroup', ResultConfiguration: { OutputLocation: 's3://example-results/queries/' } });
-  assert.deepEqual(f.calls[1].input, { QueryExecutionId: 'test-query' });
-  assert.deepEqual(f.calls[2].input, { QueryExecutionId: 'test-query', MaxResults: 1000 });
+  assert.deepEqual(f.calls.map(c => c.constructor.name), ['GetWorkGroupCommand', 'StartQueryExecutionCommand', 'GetQueryExecutionCommand', 'GetQueryResultsCommand']);
+  assert.deepEqual(f.calls[0].input, { WorkGroup: 'test-workgroup' });
+  assert.deepEqual(f.calls[1].input, { QueryString: result.plan.sql, ExecutionParameters: ["'East'"], QueryExecutionContext: { Database: 'public' }, WorkGroup: 'test-workgroup', ResultConfiguration: { OutputLocation: 's3://example-results/queries/' } });
+  assert.deepEqual(f.calls[2].input, { QueryExecutionId: 'test-query' });
+  assert.deepEqual(f.calls[3].input, { QueryExecutionId: 'test-query', MaxResults: 1000 });
   assert.equal(f.destroyed, 1);
 });
 
@@ -50,18 +52,71 @@ test('Athena executeConnector dispatch reaches the SDK boundary without credenti
   assert.deepEqual(result.rows, [{ region: 'East', revenue: 42.5 }]); assert.equal(f.destroyed, 1);
 });
 
-test('Athena omits optional workgroup and empty parameters, and stringifies numeric/date binds', async () => {
+test('Athena requires a workgroup and omits empty parameters, and encodes numeric/date binds as typed literals', async () => {
   const r = athenaRequest('total-revenue');
   r.analysis.Definition.FilterGroups = [];
   const f = fake(), minimal = { ...config }; delete minimal.workGroupEnv;
-  await executeAthena(r, { ...f.options, config: minimal });
-  assert.equal(Object.hasOwn(f.calls[0].input, 'WorkGroup'), false);
-  assert.equal(Object.hasOwn(f.calls[0].input, 'ExecutionParameters'), false);
+  await assert.rejects(executeAthena(r, { ...f.options, config: minimal }), { code: 'INVALID_CONNECTOR_CONFIG' });
+  assert.equal(f.created, 0);
+  const f1 = fake(); await executeAthena(r, f1.options);
+  const start = f1.calls.find(c => c instanceof StartQueryExecutionCommand);
+  assert.equal(start.input.WorkGroup, 'test-workgroup');
+  assert.equal(Object.hasOwn(start.input, 'ExecutionParameters'), false);
   r.parameterDeclarations = [{ name: 'Amount', type: 'number', multiple: false }, { name: 'Day', type: 'datetime', multiple: false }];
   r.parameterBindings = { Amount: [12.5], Day: ['2026-01-01T00:00:00Z'] };
   r.parameterFilters = [{ columnName: 'revenue', parameterName: 'Amount' }, { columnName: 'order_date', parameterName: 'Day' }];
   const f2 = fake(); await executeAthena(r, f2.options);
-  assert.deepEqual(f2.calls[0].input.ExecutionParameters, ['12.5', '2026-01-01T00:00:00Z']);
+  assert.deepEqual(f2.calls.find(c => c instanceof StartQueryExecutionCommand).input.ExecutionParameters, ['12.5', "'2026-01-01T00:00:00Z'"]);
+});
+
+test('Athena rejects a workgroup without an enforced scanned-byte cutoff before starting any query (#302)', async () => {
+  for (const configuration of [{}, { BytesScannedCutoffPerQuery: 0 }, { BytesScannedCutoffPerQuery: -5 }, { BytesScannedCutoffPerQuery: 1.5 }, { BytesScannedCutoffPerQuery: '1000' }]) {
+    const f = fake({ GetWorkGroupCommand: () => ({ WorkGroup: { Name: 'test-workgroup', State: 'ENABLED', Configuration: configuration } }) });
+    await assert.rejects(executeAthena(athenaRequest(), f.options), { code: 'INVALID_CONNECTOR_CONFIG', message: '$.config.workGroupEnv: Athena workgroup must enforce a per-query scanned-byte cutoff' });
+    assert.equal(f.calls.some(c => c instanceof StartQueryExecutionCommand), false);
+    assert.equal(f.destroyed, 1);
+  }
+  const missing = fake({ GetWorkGroupCommand: () => ({}) });
+  await assert.rejects(executeAthena(athenaRequest(), missing.options), { code: 'INVALID_CONNECTOR_CONFIG' });
+  assert.equal(missing.calls.some(c => c instanceof StartQueryExecutionCommand), false);
+});
+
+test('Athena stops and rejects when reported scan statistics exceed the workgroup cutoff (#302)', async () => {
+  const running = fake({ GetQueryExecutionCommand: () => ({ QueryExecution: { Status: { State: 'RUNNING' }, Statistics: { DataScannedInBytes: 1_000_000_001 } } }) });
+  await assert.rejects(executeAthena(athenaRequest(), running.options), { code: 'EXECUTION_ERROR', message: '$.athena: Athena query exceeded the workgroup scanned-byte limit' });
+  assert.equal(running.calls.filter(c => c instanceof StopQueryExecutionCommand).length, 1);
+  assert.equal(running.calls.some(c => c instanceof GetQueryResultsCommand), false);
+  const finished = fake({ GetQueryExecutionCommand: () => ({ QueryExecution: { Status: { State: 'SUCCEEDED' }, Statistics: { DataScannedInBytes: 2_000_000_000 } } }) });
+  await assert.rejects(executeAthena(athenaRequest(), finished.options), { code: 'EXECUTION_ERROR', message: '$.athena: Athena query exceeded the workgroup scanned-byte limit' });
+  assert.equal(finished.calls.some(c => c instanceof GetQueryResultsCommand), false);
+  const within = fake({ GetQueryExecutionCommand: () => ({ QueryExecution: { Status: { State: 'SUCCEEDED' }, Statistics: { DataScannedInBytes: 1_000_000_000 } } }) });
+  assert.deepEqual((await executeAthena(athenaRequest(), within.options)).rows, [{ region: 'East', revenue: 42.5 }]);
+});
+
+test('Athena encodes string execution parameters as quoted literals, keeping numbers bare (#301)', async () => {
+  const r = athenaRequest('total-revenue');
+  r.analysis.Definition.FilterGroups = [];
+  r.parameterDeclarations = [
+    { name: 'Empty', type: 'string', multiple: false },
+    { name: 'Apostrophe', type: 'string', multiple: false },
+    { name: 'NumericText', type: 'string', multiple: false },
+    { name: 'Expression', type: 'string', multiple: false },
+    { name: 'Day', type: 'datetime', multiple: false },
+    { name: 'Amount', type: 'number', multiple: false },
+  ];
+  r.parameterBindings = { Empty: [''], Apostrophe: ["O'Brien"], NumericText: ['001'], Expression: ["East' OR 1=1 --"], Day: ['2026-01-01'], Amount: [42] };
+  r.parameterFilters = [
+    { columnName: 'region', parameterName: 'Empty' },
+    { columnName: 'category', parameterName: 'Apostrophe' },
+    { columnName: 'region', parameterName: 'NumericText' },
+    { columnName: 'category', parameterName: 'Expression' },
+    { columnName: 'order_date', parameterName: 'Day' },
+    { columnName: 'revenue', parameterName: 'Amount' },
+  ];
+  const f = fake(); await executeAthena(r, f.options);
+  // Parameters stay out of the QueryString: the SQL still carries bare ? placeholders.
+  assert.doesNotMatch(f.calls[1].input.QueryString, /O''Brien|OR 1=1/);
+  assert.deepEqual(f.calls[1].input.ExecutionParameters, ["''", "'O''Brien'", "'001'", "'East'' OR 1=1 --'", "'2026-01-01'", '42']);
 });
 
 test('Athena polling uses bounded exponential backoff, including requeued executions', async () => {
@@ -188,7 +243,7 @@ test('Athena enforces row, page and byte bounds without silently truncating', as
 });
 test('Athena rejects a missing execution ID before polling', async () => {
   const f = fake({ StartQueryExecutionCommand: () => ({}) });
-  await assert.rejects(executeAthena(athenaRequest(), f.options), { code: 'EXECUTION_ERROR' }); assert.equal(f.calls.length, 1);
+  await assert.rejects(executeAthena(athenaRequest(), f.options), { code: 'EXECUTION_ERROR' }); assert.equal(f.calls.length, 2);
 });
 test('Athena config, missing environment and database mismatch fail before client construction', async () => {
   for (const [overrides, code] of [
@@ -238,7 +293,7 @@ test('Athena RLS SQL precedes visual aggregation, binds injection text and retai
   assert.match(result.plan.sql, /^WITH "__opensight_security" AS \(SELECT \* FROM "public"\."sales" WHERE \("region" = \?\)\)/);
   assert.match(result.plan.sql, /FROM "__opensight_security" WHERE "region" = \?/);
   assert.doesNotMatch(result.plan.sql, /OR TRUE/);
-  assert.deepEqual(f.calls[0].input.ExecutionParameters, ["East' OR TRUE --", 'East']);
+  assert.deepEqual(f.calls[1].input.ExecutionParameters, ["'East'' OR TRUE --'", "'East'"]);
 });
 test('Athena null execution parameters fail closed before client construction', async () => {
   const f = fake(), r = athenaRequest(); r.analysis.Definition.FilterGroups = [];

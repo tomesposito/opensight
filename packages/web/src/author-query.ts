@@ -42,6 +42,8 @@ export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly Ca
     // those wells, exactly as serializeVisual projects it) — before any query
     // is built. A malformed or mixed configuration fails closed with no query;
     // it never substitutes an ordinary query the compiler would reject (#267).
+    // Validate explicit binding shapes before well changes can replace them
+    // and conceal malformed or unsupported nested fields (#297).
     try {
       validateInsightConfiguration(visual.insightConfiguration);
       // A movers insight groups by (category, time): the time field lives in

@@ -11,6 +11,30 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ## [Unreleased]
 
+### Fixed
+
+- Hosted Tables page no longer hides computed tables when input tables are unavailable (#307): hosted input-table paths now answer 404 `RESOURCE_NOT_FOUND` (the #285 contract), and the Tables page renders that as an input-tables unavailable notice alongside the computed tables instead of a page-level "Could not load tables" error. Authorization and other input-table errors still fail the page.
+
+- Computed table publication now records the stored-child generations actually read and rejects a concurrent child refresh before committing the parent (#306). A rejected refresh keeps the last good parent table with a named failure, removes the unpublished artifact, and releases its storage reservation; older rows can no longer be mislabeled current by stamping a newer child generation.
+
+- Computed table freshness status can no longer restore a deleted stored generation (#305): materialization status writes (stale marking and refresh-failure records) are now generation compare-and-swap — if a concurrent refresh has published a newer generation and removed the old file, the delayed status write is rejected with `STORED_GENERATION_CHANGED` and the newer pointer stands, instead of pointing metadata at a removed file and failing reads with `STORED_ARTIFACT_INVALID` until the next refresh.
+
+- Redshift auto-discovery no longer claims RDS discovery (#304): the discovery service only calls the RDS API, which cannot see Redshift clusters (they live behind Redshift's own `DescribeClusters` API), so the `redshift` registry entry is now an honest hosted stub, RDS responses are no longer classified into the manual Redshift connector, and the docs say so. RDS/Aurora discovery and the manual Redshift connector are unchanged.
+
+- Redshift and MySQL/MariaDB library queries now enforce row, per-cell and cumulative byte limits while streaming, before drivers buffer the full result (#303). Oversized results close the connection and fail explicitly instead of risking unbounded memory or returning partial aggregates; trusted callers can lower the hard caps.
+
+- Athena execution parameters are now encoded as typed SQL literals (#301): string and datetime parameters are sent as quoted literals with apostrophes escaped, so string/date filters match instead of being read as expressions, while numeric parameters stay bare. Numeric-looking strings and expression-shaped input stay inert quoted literals, and the parameters remain separate from the query string.
+
+- Opening a deleted, missing or inaccessible notebook now shows an item-level "Notebook not found" error instead of the false server-wide "Notebooks are not available on this server" notice (#299): the Notebooks page reserves that notice for the hosted unsupported contract (`RESOURCE_NOT_FOUND`, #285) and for a failed notebook-list load, while a detail load's `NOTEBOOK_NOT_FOUND` is reported as the single notebook being gone.
+
+- Forecast work-bound regressions now assert the work itself (#298): `computeForecast` can report the grid tier selected, the filter runs and steps performed, and the seasonal ring-buffer writes via a `ForecastWorkStats` out-parameter, and the tests pin exact counts at the step-budget thresholds — a regression to the unconditional full grid (issue #262) or to the O(season-length) seasonal rotation now fails on counts instead of passing on output shape alone. No forecast results change.
+
+### Security
+
+- Athena queries now require a scanned-byte cost bound before they start (#302): the connector's workgroup setting is required, and the executor verifies via `GetWorkGroup` that the operator-selected workgroup enforces a per-query `BytesScannedCutoffPerQuery`, failing closed with `INVALID_CONNECTOR_CONFIG` when it does not. While polling, reported `DataScannedInBytes` are checked against the verified cutoff; an execution that passes it is stopped and rejected instead of returning results. Athena configurations without a workgroup environment name no longer validate.
+
+- S3 operator grants are now scoped to the tenants allowed to use them (#300): each `OPENSIGHT_S3_SOURCES` entry binds its exact config to required `tenantIds` (plus optional `namespaceIds`/`userIds`), enforced at browse, at source creation, and on every later admission of a stored S3 source — knowing another tenant's allowlisted config no longer lets an author browse or ingest it with the operator's credentials. Pre-#300 bare-config entries are rejected at startup; operators must wrap each config in the grant shape and name its tenants.
+
 ### Changed
 
 - Separate the verified application email sender from the sandbox recipient and budget-alert address (#117).
@@ -152,6 +176,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 ### Fixed
 
 - Enforce static frontend CSP through a CloudFront Function supported by the Free pricing plan, preserving API and embed policies (#110).
+
+- Insight visuals reject malformed or unsupported nested field bindings before changed author wells can replace them, preventing queries for invalid category, time, value, and comparison bindings while preserving valid well changes (#297).
 
 - Job deliveries now enforce both the 10-attempt sequence limit and the 30-attempt cumulative limit atomically in both runners, including recovery and operator retries. Migrated deliveries with 29 prior attempts can make only one more attempt, even after restart (#296).
 

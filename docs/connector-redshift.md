@@ -112,6 +112,24 @@ catalog discovery.
 
 ## Security, bounds and verification limits
 
+The library executor streams `pg` array-mode row events with raw-string type
+parsers, without a driver result array (#303). Its hard result caps are
+**100,000 rows**, **64 MiB cumulative raw values**, and **16 KiB per cell**.
+`RedshiftExecuteOptions.maxRows`, `maxBytes`, and `maxCellBytes` may only lower
+these caps; each must be a positive safe integer, otherwise `INVALID_INPUT`
+is raised before connecting. Strings count as UTF-8 bytes before conversion;
+NULL counts as zero bytes. The cell cap uses the same magnitude as the existing
+BLAZE 16,384-character row intake bound, conservatively in bytes per cell.
+These are value budgets, not a measurement or guarantee of JavaScript heap usage.
+
+Any breach immediately closes the dedicated connection and raises a sanitized
+`EXECUTION_ERROR`; no partial rows or aggregate are returned. Shared
+post-processing still selects source rows without a SQL `LIMIT` and runs only
+after the entire result has passed these budgets. Unsupported field types are
+still rejected for empty results. A separate 10-second streaming timer avoids
+`pg`'s built-in query timeout callback, which would re-enable row accumulation;
+session queries retain their own 10-second timeout.
+
 Hosted reads validate current RLS/CLS and immutable tenant predicates before
 socket access. The SQL guard checks each row's combined text length using
 `VARCHAR(65535)` and suppresses oversized payloads. A `maxRows + 1` sentinel,

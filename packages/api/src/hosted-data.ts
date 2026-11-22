@@ -139,7 +139,7 @@ export class HostedData {
   async finish(context: TenantContext, admissions: readonly Admission[], expected?: Revisions): Promise<void> {
     for (const a of admissions) await this.sources.metadata.assertRevisions(context, a.revisions);
     if (expected) await this.sources.metadata.assertRevisions(context, expected);
-    for (const a of admissions) this.sources.active(a.source);
+    for (const a of admissions) this.sources.active(a.source, context);
     await this.cache?.verify?.();
     await this.publicationChecks.get(context)?.();
   }
