@@ -1,4 +1,4 @@
-import { PrepJoinBudget, prepJoinDiagnostics, type PrepJoinDiagnostics } from './prep-join-diagnostics.js';
+import { PrepJoinBudget, PREP_JOIN_SAMPLE_LIMIT, type PrepJoinDiagnostics } from './prep-join-diagnostics.js';
 import { compilePrepJoinSample, type PrepJoinSamplePlan } from './prep.js';
 import type { DuckDBConnection } from '@duckdb/node-api';
 import { Client } from 'pg';
@@ -65,13 +65,31 @@ export async function previewPrepPostgres(raw: unknown, sources: readonly PrepSo
   }
 }
 
-/** Decode the compiler's side/probe records, then use the shared count semantics. */
+/** Decode the compiler's single aggregate row: the engine counted matches over
+ * the bounded samples with native join equality, so the counts need no key
+ * decoding here — only strict shape validation, failing closed on any drift. */
 export function prepJoinSampleResult(plan: PrepJoinSamplePlan, rawRows: readonly Record<string, unknown>[], budget = new PrepJoinBudget()): PrepJoinDiagnostics {
-  const rows = rawRows.map((row, i) => { if (i % 128 === 0) budget.check(); return Object.fromEntries(plan.columns.map(c => [c.name, normalizePrepScalar(row[c.name], c)])); });
-  if (rows.some(r => ![0, 1, 2, 3].includes(Number(r.__side)))) prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Invalid sample side');
-  const keys = plan.columns.slice(1).map(c => ({ left: c.name, right: c.name }));
-  return prepJoinDiagnostics(rows.filter(r => r.__side === 0), rows.filter(r => r.__side === 1), keys,
-    { leftTruncated: rows.some(r => r.__side === 2), rightTruncated: rows.some(r => r.__side === 3) }, () => budget.check());
+  budget.check();
+  if (rawRows.length !== 1) prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Invalid diagnostics result');
+  const raw = rawRows[0]!;
+  const decoded = Object.fromEntries(plan.columns.map(c => [c.name, normalizePrepScalar(raw[c.name], c)]));
+  const count = (name: string): number => {
+    const value = decoded[name];
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Invalid diagnostics count');
+    return value;
+  };
+  const flag = (name: string): boolean => {
+    const value = decoded[name];
+    if (typeof value !== 'boolean') prepFail('PREP_EXECUTION_FAILED', '$.joinDiagnostics', 'Invalid diagnostics truncation flag');
+    return value;
+  };
+  const maxLeftMultiplicity = count('maxLeftMultiplicity'), maxRightMultiplicity = count('maxRightMultiplicity');
+  budget.check();
+  return { basis: 'bounded-preview', sampleLimit: PREP_JOIN_SAMPLE_LIMIT, timedOut: false,
+    matchedRows: count('matchedRows'), unmatchedLeft: count('unmatchedLeft'), unmatchedRight: count('unmatchedRight'),
+    fanOut: maxLeftMultiplicity > 1 || maxRightMultiplicity > 1, maxLeftMultiplicity, maxRightMultiplicity,
+    leftRowsSampled: count('leftRowsSampled'), rightRowsSampled: count('rightRowsSampled'),
+    leftTruncated: flag('leftTruncated'), rightTruncated: flag('rightTruncated') };
 }
 export async function diagnosePrepJoinDuckDb(connection: DuckDBConnection, raw: unknown, sources: readonly PrepSource[], step: string,
   options: PrepPreviewOptions = {}, budget = new PrepJoinBudget()): Promise<PrepJoinDiagnostics> {

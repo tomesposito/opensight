@@ -45,7 +45,7 @@ test('Postgres join diagnostics share one deadline across connection, bounded qu
   setup(t); let clock = 0; const calls = [];
   t.mock.method(Client.prototype, 'query', async arg => {
     calls.push(arg); clock += 1000;
-    return { rows: typeof arg === 'string' ? [] : [{ __side: '0', key_0: '1' }, { __side: '1', key_0: '1' }, { __side: '1', key_0: '1' }] };
+    return { rows: typeof arg === 'string' ? [] : [{ matchedRows: '2', unmatchedLeft: '0', unmatchedRight: '0', maxLeftMultiplicity: '1', maxRightMultiplicity: '2', leftRowsSampled: '1', rightRowsSampled: '2', leftTruncated: 'f', rightTruncated: 'f' }] };
   });
   const result = await diagnosePrepJoinPostgres(joinPipeline, [source], config, 'join', {}, new PrepJoinBudget(() => clock));
   assert.equal(result.matchedRows, 2); assert.equal(result.maxRightMultiplicity, 2);
