@@ -228,3 +228,21 @@ for (const format of ['csv', 'xlsx']) test(`#308 HTTP disconnect during ${format
   assert.equal(scope.signal.aborted, true);
   assert.equal(getEventListeners(scope.signal, 'abort').length, 0, 'worker is reaped before the download rejects');
 });
+test('#308 the work deadline aborts a stalled transmission before releasing admission', async t => {
+  const { Writable } = await import('node:stream'), started = Promise.withResolvers();
+  const budgets = new TenantBudgets(budgetConfig, () => {});
+  const response = new Writable({ highWaterMark: 1, write() { started.resolve(); /* client never drains */ } });
+  response.writeHead = () => {};
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const pending = budgets.run(context, false, async () => {}, async () => {
+    const scope = budgets.current(context);
+    await sendTableDownload(response, await tableDownload(scope, 'table', table(), 'csv'));
+  });
+  const rejected = assert.rejects(pending, { code: 'EXECUTION_CANCELLED' });
+  await started.promise;
+  assert.equal(budgets.node().running, 1);
+  t.mock.timers.tick(budgetConfig.defaults.executionMs);
+  await rejected;
+  assert.equal(response.destroyed, true);
+  assert.deepEqual(budgets.node(), { running: 0, queued: 0 });
+});

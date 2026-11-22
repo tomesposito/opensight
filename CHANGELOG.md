@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Table downloads now admit encoding memory before allocating copies, stream CSV in bounded chunks, and isolate XLSX encoding in a cancellable worker (#308). Slow or disconnected clients keep their response memory and work reservations until transmission or cleanup finishes, so concurrent downloads cannot bypass admission.
+
 - Hosted Tables page no longer hides computed tables when input tables are unavailable (#307): hosted input-table paths now answer 404 `RESOURCE_NOT_FOUND` (the #285 contract), and the Tables page renders that as an input-tables unavailable notice alongside the computed tables instead of a page-level "Could not load tables" error. Authorization and other input-table errors still fail the page.
 
 - Computed table publication now records the stored-child generations actually read and rejects a concurrent child refresh before committing the parent (#306). A rejected refresh keeps the last good parent table with a named failure, removes the unpublished artifact, and releases its storage reservation; older rows can no longer be mislabeled current by stamping a newer child generation.
