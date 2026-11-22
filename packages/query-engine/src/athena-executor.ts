@@ -4,7 +4,7 @@ import { validateConnectorConfig, ConnectorError } from './connectors.js';
 import { planVisual } from './planner.js';
 import { evaluateSqlPlan } from './evaluate.js';
 import { ExecutionCancelledError } from './prep-stream.js';
-import { athenaResultValue, athenaType } from './athena-sql.js';
+import { athenaExecutionParameter, athenaResultValue, athenaType } from './athena-sql.js';
 import { fail, QueryEngineError } from './validation.js';
 import type { PlanRequest, QueryResult, ResultRow } from './types.js';
 
@@ -41,7 +41,7 @@ export async function executeAthena(request: PlanRequest, options: AthenaExecute
   if (plan.tableSchema !== env.databaseEnv) throw new ConnectorError('INVALID_CONNECTOR_CONFIG', '$.config.databaseEnv', 'Planned database must match configured database');
   const parameters = plan.parameters.map(value => {
     if (value === null) return fail('UNSUPPORTED_FEATURE', '$.parameters', 'Athena null execution parameters are not supported');
-    return String(value);
+    return athenaExecutionParameter(value);
   });
   const timeoutMs = limit(options.timeoutMs ?? 60_000, 2_147_483_647, '$.options.timeoutMs');
   const maxRows = limit(options.maxRows ?? 100_000, 100_000, '$.options.maxRows');
