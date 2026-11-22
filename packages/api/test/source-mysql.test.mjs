@@ -150,6 +150,17 @@ test('MySQL probe contract: diagnostics sample of 10,000 rows plus its probe row
   assert.deepEqual(harness.errors, []);
 });
 
+test('MySQL probe contract: a byte-oversized probe row still oversizes and never reaches the sink', async t => {
+  const cols = [{ name: 'region', type: 'STRING' }];
+  const harness = await mysqlHarness(t, { columns: cols, rows: [['east'], ['west'], ['x'.repeat(1001)]], password: 'synthetic-password' });
+  const read = { source: { id: 'input', connectorId: 'mysql', schema: 'opensight', table: 'sales', columns: cols, security: 'unrestricted' }, columns: ['region'],
+    security: { namespaceId: 'ns', userId: 'admin', users: [{ id: 'admin', namespaceId: 'ns' }], groups: [], policy: { namespaceId: 'ns', dataSetArn: 'input', rowLevel: false, rowRules: [] } } };
+  const sink = { rows: [], start() {}, row(values) { this.rows.push(values); }, oversized() { throw Object.assign(new Error('too large'), { code: 'TOO_LARGE' }); } };
+  await assert.rejects(streamSourceMySql(read, harness.connection, { maxRows: 2, cellChars: 1000, allowProbeRow: true }, sink), e => e.code === 'TOO_LARGE');
+  assert.equal(sink.rows.length, 2, 'the oversized probe row never reaches the sink');
+  assert.deepEqual(harness.errors, []);
+});
+
 test('Hosted join diagnostics bounded sample returns 10,001 rows from a larger MySQL source', async t => {
   const password = randomBytes(24).toString('hex');
   const bigColumns = [{ name: 'region', type: 'STRING' }, { name: 'amount', type: 'INTEGER' }];

@@ -48,7 +48,11 @@ test('Redshift probe contract: the maxRows+1 row is forwarded, anything beyond i
   await assert.rejects(streamSourceRedshift(read, four.connection, probeLimits, sink()), e => e.code === 'TOO_LARGE');
   const guarded = await redshiftHarness(t, { evaluate: () => ({ fields, rows: [row, row, [row[0], row[1], row[2], 't']] }) });
   await assert.rejects(streamSourceRedshift(read, guarded.connection, probeLimits, sink()), e => e.code === 'TOO_LARGE', 'byte guard still applies to the probe row');
-  assert.deepEqual(three.errors, []); assert.deepEqual(four.errors, []); assert.deepEqual(guarded.errors, []);
+  const longProbe = await redshiftHarness(t, { evaluate: () => ({ fields, rows: [row, row, ['x'.repeat(1001), row[1], row[2], 'f']] }) });
+  const longSink = sink();
+  await assert.rejects(streamSourceRedshift(read, longProbe.connection, probeLimits, longSink), e => e.code === 'TOO_LARGE', 'cellChars still applies to a guard-false probe row');
+  assert.equal(longSink.rows.length, 2, 'the oversized probe row never reaches the sink');
+  assert.deepEqual(three.errors, []); assert.deepEqual(four.errors, []); assert.deepEqual(guarded.errors, []); assert.deepEqual(longProbe.errors, []);
 });
 test('Redshift RLS, CLS, TLS and pre-aborted reads fail before sockets', async t => {
   const h = await redshiftHarness(t), abort = new AbortController(); abort.abort();
