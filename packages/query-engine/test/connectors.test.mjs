@@ -53,7 +53,7 @@ test('Athena has a dedicated environment-name schema and query dialect; other AW
   assert.equal(connectorDialect('athena'), 'athena');
   assert.deepEqual(Object.keys(athena.schema), ['regionEnv', 'databaseEnv', 'workGroupEnv', 'outputLocationEnv']);
   for (const [key, field] of Object.entries(athena.schema)) {
-    assert.equal(field.kind, 'environment'); assert.equal(field.required, key !== 'workGroupEnv');
+    assert.equal(field.kind, 'environment'); assert.equal(field.required, true);
   }
   const config = { regionEnv: 'ATHENA_REGION', databaseEnv: 'ATHENA_DATABASE', outputLocationEnv: 'ATHENA_OUTPUT' };
   for (const key of ['credentialsEnv', 'resourceEnv', 'accessKeyId', 'secretAccessKey']) assert.throws(() => validateConnectorConfig('athena', { ...config, [key]: 'SECRET' }), { code: 'INVALID_CONNECTOR_CONFIG' });

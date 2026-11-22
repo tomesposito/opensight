@@ -92,7 +92,7 @@ export async function executeAthena(request: PlanRequest, options: AthenaExecute
     // Fail closed before any query starts: the operator-selected workgroup must enforce a
     // per-query scanned-byte cutoff, otherwise one aggregate can scan without a spend bound.
     const scanCutoff = await bounded(async signal => {
-      const group = await client!.send(new GetWorkGroupCommand({ Name: env.workGroupEnv! }), { abortSignal: signal });
+      const group = await client!.send(new GetWorkGroupCommand({ WorkGroup: env.workGroupEnv! }), { abortSignal: signal });
       const cutoff = group.WorkGroup?.Configuration?.BytesScannedCutoffPerQuery;
       if (typeof cutoff !== 'number' || !Number.isSafeInteger(cutoff) || cutoff < 1) {
         throw new ConnectorError('INVALID_CONNECTOR_CONFIG', '$.config.workGroupEnv', 'Athena workgroup must enforce a per-query scanned-byte cutoff');
