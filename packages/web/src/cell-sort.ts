@@ -26,5 +26,5 @@ export function compareCells(a: Cell, b: Cell, direction: 'ASC' | 'DESC'): numbe
   } else {
     cmp = typeRank(a) - typeRank(b);
   }
-  return direction === 'DESC' ? -cmp : cmp;
+  return direction === 'DESC' && cmp !== 0 ? -cmp : cmp;
 }
