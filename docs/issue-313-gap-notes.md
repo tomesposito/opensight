@@ -3,6 +3,20 @@
 The fix follows the supplied issue brief. SOLUTION_DESIGN.md was not edited.
 All checkpoint commits stay on `work/issue-313-nonadditive-combination`.
 
+## Embed response budget regression
+
+The first full root run exposed `RESPONSE_TOO_LARGE` in the existing CSP/nonce
+test. Adding the expression parser to the embed compiler grew its HTML from
+1,550,575 bytes (a separate master-source build) to 1,562,715 bytes. The response
+fits the 2 MiB serialized envelope, but the early wire-byte check subtracted an
+additional 16 KiB header allowance and rejected it prematurely.
+
+The early capture now bounds wire bytes at three quarters of the envelope cap;
+the existing exact serialized-envelope check and 16 KiB header check still run
+before returning a response. The CSP/nonce regression also asserts the actual
+serialized size and rejection of an oversized payload. No response-envelope
+limit, dependency or browser target changed.
+
 ## Demo and screenshots
 
 Rebuilt `packages/web/dist/opensight-demo.html` using `npm run build:demo

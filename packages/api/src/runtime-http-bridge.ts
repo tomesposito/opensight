@@ -19,7 +19,10 @@ export async function dispatchRuntimeRequest(server: Server, input: RuntimeReque
   const response = new ServerResponse(request), chunks: Buffer[] = []; let bytes = 0;
   const capture = (chunk: Buffer, callback: (error?: Error | null) => void) => {
     bytes += chunk.length;
-    if (bytes > Math.floor(applicationEnvelopeBytes * 3 / 4) - 16384) { callback(new MetadataError('RESPONSE_TOO_LARGE', 413)); return; }
+    // Bound captured wire bytes before copying. The exact serialized envelope
+    // and the independent header limit are checked below; reserving the full
+    // header allowance here also rejects valid near-limit embed renderers.
+    if (bytes > Math.floor(applicationEnvelopeBytes * 3 / 4)) { callback(new MetadataError('RESPONSE_TOO_LARGE', 413)); return; }
     chunks.push(Buffer.from(chunk)); callback();
   };
   class MemorySocket extends Socket {
