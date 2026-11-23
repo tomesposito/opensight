@@ -46,7 +46,7 @@ const MIXED = [2, 10, '15', 'abc', '2', -1, 0, true, false, null, NaN];
 test('comparator is antisymmetric and transitive over mixed cells', () => {
   for (const direction of ['ASC', 'DESC']) {
     for (const a of MIXED) for (const b of MIXED) {
-      assert.equal(sign(compareCells(a, b, direction)), -sign(compareCells(b, a, direction)),
+      assert.equal(sign(compareCells(a, b, direction)), 0 - sign(compareCells(b, a, direction)),
         `antisymmetry ${String(a)} vs ${String(b)} ${direction}`);
       if (Object.is(a, b) || (Number.isNaN(a) && Number.isNaN(b))) {
         assert.equal(compareCells(a, b, direction), 0, `reflexivity ${String(a)} ${direction}`);
