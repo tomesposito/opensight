@@ -8,7 +8,7 @@ import { VisualCard, type RowGroupToggle } from './VisualCard.js';
 import { buildAuthorVisual } from './author-preview.js';
 import { buildAuthorQuery, loadAuthorRows } from './author-query.js';
 import type { AuthorRows, QueryClient } from './author-query.js';
-import type { AuthorVisual, CalculatedField } from './authoring.js';
+import { kpiTrendAggregationProblem, type AuthorVisual, type CalculatedField } from './authoring.js';
 import type { QueryRequest } from './api-client.js';
 import { clearVisualRows, storeVisualRows, storeVisualTable } from './visual-export.js';
 import { compileVisual } from './compiler.js';
@@ -16,7 +16,7 @@ import { compileVisual } from './compiler.js';
 export const PARAMETER_DEBOUNCE_MS = 250;
 
 export function LiveAuthorVisual({ visual, theme, client, calculations, parameters = [], interaction, interactive = false, onRowGroupToggle, onExecutedMetrics }: { theme?: AnalysisTheme; interaction?: VisualInteraction; interactive?: boolean; parameters?: readonly AuthorParameter[]; visual: AuthorVisual; client?: QueryClient; calculations: readonly CalculatedField[]; onRowGroupToggle?: RowGroupToggle; onExecutedMetrics?: (metrics: AuthorRows['metrics']) => void }) {
-  const fieldProblem = unresolvedFieldMessage(unresolvedVisualFieldDiagnostics(visual, calculations, client?.dataset, parameters));
+  const fieldProblem = unresolvedFieldMessage(unresolvedVisualFieldDiagnostics(visual, calculations, client?.dataset, parameters)) ?? kpiTrendAggregationProblem(visual, client?.dataset);
   const queryKey = JSON.stringify(buildAuthorQuery(visual, calculations, parameters, client?.dataset));
   const request: QueryRequest | null = useMemo(() => JSON.parse(queryKey) as QueryRequest | null, [queryKey]);
   const [state, setState] = useState<{ request: QueryRequest; client: QueryClient; result: AuthorRows }>();

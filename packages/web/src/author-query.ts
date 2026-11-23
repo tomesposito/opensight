@@ -3,7 +3,7 @@ import { normalizeInsight, rebindInsight, uniqueValuesOnly, topBottomMoversTimeC
 import { unresolvedVisualFieldDiagnostics } from './unresolved-fields.js';
 import { declaration, type AuthorParameter } from './parameters.js';
 import type { AuthorControl } from './controls.js';
-import { authorVisualProblem, kpiTargetFieldId, noDimensions, visualDimensions, dataFields, type AuthorDataset, type CalculatedField, type AuthorVisual } from './authoring.js';
+import { authorVisualProblem, kpiTargetFieldId, kpiTrendAggregationProblem, noDimensions, visualDimensions, dataFields, type AuthorDataset, type CalculatedField, type AuthorVisual } from './authoring.js';
 import { FACETED_KINDS } from './facet-layout.js';
 import type { createApiClient, QueryRequest, QueryResponse } from './api-client.js';
 import { ApiError } from './api-client.js';
@@ -31,7 +31,10 @@ function insightDimensionField(name: string, visual: AuthorVisual, calculations:
 
 export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly CalculatedField[] = [], parameters: readonly AuthorParameter[] = [], dataset?: AuthorDataset): QueryRequest | null {
   if (authorVisualProblem(visual) || unresolvedVisualFieldDiagnostics(visual, calculations, dataset, parameters).length) return null;
-  if (visual.kind === 'kpi' && visual.trendField && visual.targetField && (visual.targetAggregation ?? dataset?.metrics?.find(m => metricColumn(m.id) === visual.targetField)?.defaultAggregation ?? 'SUM') !== 'SUM') return null;
+  // A trended KPI whose primary or target binding aggregates as non-SUM can
+  // never render (the planner and compiler reject it); fail closed here with
+  // the shared eligibility check instead of executing the grouped query (#318).
+  if (kpiTrendAggregationProblem(visual, dataset)) return null;
   let dimensions = visualDimensions(visual);
   // A uniqueValues-only insight binds no measure; its grouped query is category-only.
   let uvOnly = false;
