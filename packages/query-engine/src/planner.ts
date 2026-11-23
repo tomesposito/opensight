@@ -515,6 +515,20 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
       aggregation: aggregationValue as Aggregation, path: fp };
   });
   if (!values.length) fail('INVALID_INPUT', `${wp}.Values`, 'at least one explicit measure is required');
+  // Issue #319: the web compiler (packages/web/src/compiler.ts) accepts only
+  // explicit SUM measure bindings, plus non-SUM aggregations on governed
+  // metric bindings (__metric_ columns). A native plan that executes for a
+  // definition the renderer rejects fails later at compile or export, so
+  // sort/limit admission validates the field wells against the same
+  // capability contract before the plan is built. Definitions without a
+  // sort/limit admission keep the planner's wider native allowances.
+  const assertRendererCompatibleMeasures = () => {
+    for (const m of measures) {
+      if (m.aggregation !== 'SUM' && !(m.columnName.startsWith('__metric_') && ['AVG', 'COUNT', 'MIN', 'MAX', 'DISTINCT_COUNT'].includes(m.aggregation))) {
+        fail('UNSUPPORTED_FEATURE', `${m.path}.AggregationFunction`, 'only explicit SUM result bindings are supported');
+      }
+    }
+  };
   if (categoryChart && config.SortConfiguration !== undefined) {
     const sp = `${cp}.SortConfiguration`, sort = object(config.SortConfiguration, sp);
     // Preserve the existing whole-block rejection path for unsupported category-chart sorts.
@@ -555,6 +569,15 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
       }
       // Both variants validate consumer ordering only; query fields and aggregations stay unchanged.
     }
+    if (sort.CategorySort !== undefined || sort.CategoryItemsLimit !== undefined) {
+      // Issue #319: admission is the execution gate — the wells themselves
+      // must be renderer-compatible (see assertRendererCompatibleMeasures),
+      // and the compiler's well-shape limits hold: exactly one category
+      // dimension for category charts, exactly one measure for pie.
+      assertRendererCompatibleMeasures();
+      if (dimensions.length !== 1) fail('UNSUPPORTED_FEATURE', wp, 'category charts support exactly one category dimension');
+      if (kind === 'PieChartVisual' && values.length !== 1) fail('UNSUPPORTED_FEATURE', `${wp}.Values`, 'pie supports exactly one measure');
+    }
   }
   if (kind === 'TableVisual' && config.SortConfiguration !== undefined) {
     const sp = `${cp}.SortConfiguration`, sort = object(config.SortConfiguration, sp);
@@ -575,6 +598,12 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
         if (!dimensions.some(d => d.fieldId === fieldId) && !measures.some(m => m.fieldId === fieldId)) fail('INVALID_INPUT', sp, 'row sort must reference a bound dimension or measure');
         if (entry.Direction !== undefined && entry.Direction !== 'ASC' && entry.Direction !== 'DESC') fail('INVALID_INPUT', sp, 'invalid row sort direction');
         // RowSort validates consumer ordering only; the complete query plan stays unchanged.
+        // Issue #319: like the category admissions, a RowSort admission is
+        // an execution gate — the wells must be renderer-compatible (SUM or
+        // governed metric bindings; at least one group-by dimension, as the
+        // compiler requires for tables).
+        assertRendererCompatibleMeasures();
+        if (!dimensions.length) fail('UNSUPPORTED_FEATURE', wp, 'table supports at least one group-by dimension');
       }
     }
   }
