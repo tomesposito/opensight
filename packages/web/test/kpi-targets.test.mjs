@@ -128,7 +128,7 @@ for (const source of ['bundle', 'api']) {
 }
 import { buildAuthorQuery } from '../build/test/author-query.js';
 import { publishedBindings } from '../build/test/published-dashboard.js';
-import { activeSheet, authorReducer, emptyDraft } from '../build/test/authoring.js';
+import { activeSheet, authorReducer, emptyDraft, kpiTrendAggregationProblem } from '../build/test/authoring.js';
 const selected = d => activeSheet(d).visuals.find(v => v.id === activeSheet(d).selectedId);
 const kpiDraft = () => authorReducer(emptyDraft(), { type: 'add', kind: 'kpi' });
 test('author target queries preserve trend grain and calculated dependencies; missing target fails closed', () => {
@@ -365,4 +365,24 @@ test('governed non-SUM target edits fail closed when adding either side of a tre
   const bad = structuredClone(target); selected(bad).trendField = 'region';
   assert.throws(() => parseDraft(JSON.stringify(bad)));
   assert.equal(buildAuthorQuery(selected(bad), [], [], dataset), null);
+});
+test('governed non-SUM primary edits fail closed when adding either side of a trend binding (#318)', () => {
+  const metric = { id: 'avgrev', version: 1, name: 'Avg revenue', expression: 'avg({revenue})', defaultAggregation: 'AVG', format: { style: 'number', decimalPlaces: 1 }, description: '', synonyms: [] };
+  const dataset = { id: 'prepared', name: 'Sales', columns: [{ name: 'region', type: 'STRING' }, { name: 'revenue', type: 'DECIMAL' }, { name: 'profit', type: 'DECIMAL' }], metrics: [metric] };
+  const d = { ...kpiDraft(), dataset }, trend = authorReducer(d, { type: 'assign', well: 'trend', field: 'region' });
+  assert.equal(selected(authorReducer(trend, { type: 'assign', field: '__metric_avgrev' })), selected(trend));
+  const primary = authorReducer(d, { type: 'assign', field: '__metric_avgrev' });
+  assert.deepEqual(selected(primary).measures, ['__metric_avgrev']);
+  assert.equal(selected(authorReducer(primary, { type: 'assign', well: 'trend', field: 'region' })), selected(primary));
+  const bad = structuredClone(primary); selected(bad).trendField = 'region';
+  assert.throws(() => parseDraft(JSON.stringify(bad)));
+  assert.equal(buildAuthorQuery(selected(bad), [], [], dataset), null);
+  assert.match(kpiTrendAggregationProblem(selected(bad), dataset), /KPI_TREND_AGGREGATION: A trended KPI requires a SUM primary measure; __metric_avgrev aggregates as AVG/);
+  // A SUM primary with a trend still builds its grouped query, and a
+  // non-trended non-SUM primary is unaffected.
+  const good = authorReducer(trend, { type: 'assign', field: 'revenue' });
+  assert.equal(kpiTrendAggregationProblem(selected(good), dataset), undefined);
+  assert.ok(buildAuthorQuery(selected(good), [], [], dataset));
+  assert.equal(kpiTrendAggregationProblem(selected(primary), dataset), undefined);
+  assert.ok(buildAuthorQuery(selected(primary), [], [], dataset));
 });
