@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Insight anomaly computations now share work and respect a documented budget (#317): the chronological preparation is decoded and sorted once per narrative and the median/MAD statistics are computed once per distinct measure instead of once per computation, and a series over 100,000 points or a total estimated work above 8,000,000 units fails closed with `INSIGHT_ANOMALY_WORK_EXCEEDED` before any anomaly sorting, rather than repeating full-series sorts up to the 100-computation limit.
+
 - Shared cell sorting is now a consistent total order for mixed-type columns (#316): numbers sort before strings and strings before booleans, each in their established within-type order, with null still last in either direction. The previous numeric-pair/string-otherwise rule was intransitive (2 < 10, 10 < "15", "15" < 2), so category and facet limits could keep different members depending on row order.
 
 - KPI trend groups now detect duplicates on the canonical decoded period (#315): equivalent date labels (`2025-01` vs `2025-01-01T00:00:00Z`) and distinct timestamps inside one declared period are rejected as duplicate trend groups instead of silently counting as separate observations in the total, sparkline and comparison. Every date label is decoded through the shared grain-aware decoder, matching the Insight fix in #259/#265.

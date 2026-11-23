@@ -84,7 +84,19 @@ candidates must also satisfy
 adds no filter. When the median is zero, this percentage test is skipped because
 it cannot be scaled; the robust-deviation and direction tests still apply.
 
-The sentence starts `Statistical anomaly detection for <measure> by <time>:`.
+Anomaly work is budgeted and shared (issue #317). Within one narrative the
+chronological preparation is decoded and sorted once for every dated
+computation, and the median/MAD statistics are computed once per distinct
+measure and reused by every anomaly computation bound to it; only the
+direction/sensitivity filter scan runs per computation. The budget is
+validated before any anomaly sorting, using the row count as the
+point-count upper bound: a series over 100,000 points, or a total estimated
+work above 8,000,000 units (per distinct measure, points × ceil(log2(points))
+for the two median sorts plus points per anomaly computation for its scan),
+fails closed with `INSIGHT_ANOMALY_WORK_EXCEEDED`. Observations are never
+silently truncated to fit the budget.
+
+The sentence starts `Statistical anomaly detection for <measure> by <time>`:
 Candidates appear chronologically as `<period> (<value>, unusually high/low)`,
 with at most five listed and `and N more` when needed. No candidates produces
 `no anomalies detected`. Values use the common number formatter and configured
@@ -219,7 +231,7 @@ Native interactions and additional options also fail closed.
 Named diagnostics include `INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED`,
 `INSIGHT_TIME_REQUIRED`, `INSIGHT_CATEGORY_REQUIRED`, `INSIGHT_CATEGORY_INVALID`, `INSIGHT_VALUES_REQUIRED`,
 `INSIGHT_FIELD_UNBOUND`, `INSIGHT_PERIOD_UNSUPPORTED`, `INSIGHT_VALUE_INVALID`,
-`INSIGHT_COMPUTATION_INVALID`, `INSIGHT_CONFIGURATION_INVALID` and `INSIGHT_CONFIGURATION_UNSUPPORTED`.
+`INSIGHT_COMPUTATION_INVALID`, `INSIGHT_CONFIGURATION_INVALID`, `INSIGHT_CONFIGURATION_UNSUPPORTED` and `INSIGHT_ANOMALY_WORK_EXCEEDED`.
 Unknown parser variants raise `INSIGHT_COMPUTATION_UNKNOWN`; known but
 unimplemented compiler variants raise `INSIGHT_COMPUTATION_UNSUPPORTED`.
 
