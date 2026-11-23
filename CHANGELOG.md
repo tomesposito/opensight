@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- KPI trend groups now detect duplicates on the canonical decoded period (#315): equivalent date labels (`2025-01` vs `2025-01-01T00:00:00Z`) and distinct timestamps inside one declared period are rejected as duplicate trend groups instead of silently counting as separate observations in the total, sparkline and comparison. Every date label is decoded through the shared grain-aware decoder, matching the Insight fix in #259/#265.
+
 - Author CSV and Excel exports now download the visual's compiled data-view table instead of the raw query rows (#314): visual sorts, category/facet limits (including the “Other” bucket) and table/pivot presentation ordering reach the download, matching what the visual shows and what the hosted dashboard CSV already exported.
 
 - KPI trend totals, target totals and category/small-multiple “Other” buckets now combine governed measures only when their aggregation semantics are proven (#313). SUM/COUNT add and MIN/MAX take extrema; ratios, weighted averages, AVG, DISTINCT_COUNT and missing metric definitions fail with `NONADDITIVE_MEASURE_COMBINATION` when groups must be combined. Single-group values remain usable.
