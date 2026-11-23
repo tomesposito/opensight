@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { withoutBindingAggregation } from './fixtures/compiler-baseline.mjs';
 import { readFileSync } from 'node:fs';
 import { act, createElement, useReducer } from 'react';
 import { create } from 'react-test-renderer';
@@ -135,9 +136,9 @@ test('totals group numeric, string and null keys independently regardless of sor
 // Captured from ddb9ea7689d32281384e75b2ee438d66d143b3d1 before compiler edits.
 // Hash all compiled output, including function source, following the facet-sort precedent.
 const baseline = JSON.parse(readFileSync(new URL('./fixtures/table-row-sort-baseline.json', import.meta.url), 'utf8'));
-for (const [name, value] of Object.entries(baselineInputs())) test(`unset rowSort preserves base output bytes: ${name}`, () => {
+for (const [name, value] of Object.entries(baselineInputs())) test(`unset rowSort preserves base output bytes apart from binding metadata: ${name}`, () => {
   const compiled = compileVisual(value);
-  const bytes = JSON.stringify(compiled, (_, v) => typeof v === 'function' ? v.toString() : v);
+  const bytes = JSON.stringify(withoutBindingAggregation(compiled), (_, v) => typeof v === 'function' ? v.toString() : v);
   assert.equal(createHash('sha256').update(bytes).digest('hex'), baseline.hashes[name]);
   config(value).sortConfiguration = { rowSort: [] };
   assert.deepEqual(compileVisual(value), compiled);

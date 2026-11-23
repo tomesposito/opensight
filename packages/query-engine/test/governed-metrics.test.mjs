@@ -1,11 +1,33 @@
-import { evaluatePlan } from '@opensight/query-engine/browser';
+import { evaluatePlan, metricCombination as browserMetricCombination } from '@opensight/query-engine/browser';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PGlite } from '@electric-sql/pglite';
-import { resolveMetricQuery, resolveMetricDefinition, metricColumn, interactiveRequest, executeLocal, planVisual } from '@opensight/query-engine';
+import { resolveMetricQuery, resolveMetricDefinition, metricColumn, metricCombination, interactiveRequest, executeLocal, planVisual } from '@opensight/query-engine';
 import { request, fixtureRoot, read } from './helpers.mjs';
 const metric = { id: 'net', version: 2, name: 'Net revenue', expression: '{revenue} - {profit}', defaultAggregation: 'AVG', format: { style: 'number', decimalPlaces: 2 }, description: '', synonyms: [] };
 const query = { dimensions: [{ fieldId: 'region', columnName: 'region' }], measures: [{ fieldId: 'net', columnName: metricColumn('net'), aggregation: 'SUM' }], filters: [] };
+
+test('metric combination proves only supported coarser-grain operations (#313)', () => {
+  assert.equal(browserMetricCombination, metricCombination);
+  for (const [defaultAggregation, expected] of [['SUM', 'SUM'], ['COUNT', 'SUM'], ['AVG', 'NONE'], ['MIN', 'MIN'], ['MAX', 'MAX'], ['DISTINCT_COUNT', 'NONE']]) {
+    for (const expression of ['{revenue}', 'sumOver({revenue}, [], PRE_AGG)', 'sumOver({revenue}, [], PRE_FILTER)']) {
+      assert.equal(metricCombination({ ...metric, expression, defaultAggregation }), expected, `${expression}, ${defaultAggregation}`);
+    }
+  }
+  for (const [expression, expected] of [
+    ['sum({revenue})', 'SUM'], ['count({revenue})', 'SUM'],
+    ['min({revenue})', 'MIN'], ['max({revenue})', 'MAX'],
+    ['sum({profit})/sum({revenue})', 'NONE'],
+    ['sum({profit} * {revenue}) / sum({revenue})', 'NONE'],
+    ['avg({revenue})', 'NONE'], ['distinct_count({category})', 'NONE'],
+    ['-sum({revenue})', 'NONE'], ['coalesce(sum({revenue}), 0)', 'NONE'],
+    ['sum(sum({revenue}))', 'NONE'], ['sum(sumOver({revenue}, [], PRE_AGG))', 'NONE'],
+    ['sumOver(sum({revenue}), [], POST_AGG_FILTER)', 'NONE'], ['sum(', 'NONE'],
+  ]) {
+    assert.equal(metricCombination({ ...metric, expression, defaultAggregation: 'SUM' }), expected, expression);
+  }
+  assert.equal(metricCombination({ ...metric, expression: 'sum({revenue})', defaultAggregation: 'AVG' }), 'SUM');
+});
 test('governed measures use the same DuckDB, PostgreSQL and client calculation path', async t => {
   const pg = new PGlite(); t.after(() => pg.close());
   const csv = read('sales.csv').trim().split('\n'), columns = csv.shift().split(',');

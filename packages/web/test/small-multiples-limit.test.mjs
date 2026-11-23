@@ -35,6 +35,29 @@ const input = (kind = 'pie', limit, data = rows) => {
   } };
 };
 const config = value => Object.values(value.definition)[0].chartConfiguration;
+test('facet Other requires proven combination for each bucket and measure (#313)', () => {
+  const value = input('bar', { itemsLimit: 1 }, [
+    { category: 'A', region: 'West', revenue: 100 }, { category: 'A', region: 'East', revenue: 10 }, { category: 'A', region: 'North', revenue: 30 },
+  ]);
+  const measure = config(value).fieldWells.barChartAggregatedFieldWells.values[0].numericalMeasureField;
+  measure.column.columnName = '__metric_test';
+  value.bindings = { revenue: 'revenue' };
+  for (const [aggregation, expression, expected] of [['AVG', '{revenue}'], ['DISTINCT_COUNT', '{category}'], ['SUM', 'sum({profit})/sum({revenue})'], ['MIN', '{revenue}', 10], ['MAX', '{revenue}', 30], ['COUNT', '{revenue}', 40]]) {
+    measure.aggregationFunction.simpleNumericalAggregation = aggregation;
+    value.metrics = [{ id: 'test', version: 1, name: 'Test', expression, defaultAggregation: aggregation, format: { style: 'number', decimalPlaces: 2 }, description: '', synonyms: [] }];
+    if (expected === undefined) assert.throws(() => compileVisual(value), /NONADDITIVE_MEASURE_COMBINATION/);
+    else assert.deepEqual(compileVisual(value).table.rows, [['A', 'West', 100], ['A', 'Other', expected]]);
+  }
+  delete value.metrics;
+  assert.throws(() => compileVisual(value), /NONADDITIVE_MEASURE_COMBINATION/);
+  config(value).sortConfiguration.smallMultiplesLimitConfiguration = { itemsLimit: 3 };
+  assert.equal(compileVisual(value).table.rows.length, 3);
+  config(value).sortConfiguration.smallMultiplesLimitConfiguration = { itemsLimit: 1, otherCategories: 'EXCLUDE' };
+  assert.deepEqual(compileVisual(value).table.rows, [['A', 'West', 100]]);
+  config(value).sortConfiguration.smallMultiplesLimitConfiguration = { itemsLimit: 1 };
+  value.rows[2].category = 'B';
+  assert.deepEqual(compileVisual(value).table.rows, [['A', 'West', 100], ['A', 'Other', 10], ['B', 'Other', 30]]);
+});
 const selected = draft => activeSheet(draft).visuals.find(v => v.id === activeSheet(draft).selectedId);
 const draftWithFacet = (kind = 'pie') => authorReducer(authorReducer(emptyDraft(), { type: 'add', kind }), { type: 'assign', field: kind === 'pie' ? 'region' : 'category', well: 'smallMultiples' });
 const invalidLimits = [null, [], 'limit', 5, {}, { count: 1 }, { includeOther: true },
@@ -183,7 +206,7 @@ test('merge honors result bindings, null sums, tooltip extras and finite totals'
   assert.doesNotMatch(c.option.tooltip.formatter({ seriesIndex: 1, dataIndex: 0 }), /extra: [789]/);
   value.rows[1].m = Number.MAX_VALUE;
   value.rows[2].m = Number.MAX_VALUE;
-  assert.throws(() => compileVisual(value), /Other totals must be finite/);
+  assert.throws(() => compileVisual(value), /total must be finite/);
 });
 
 test('source duplicates cannot be concealed by INCLUDE or EXCLUDE', () => {

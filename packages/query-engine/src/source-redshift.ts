@@ -48,7 +48,7 @@ export async function streamSourceRedshift(read: SourceRead, connection: SourceC
           try {
             check(); validateFields(result?.fields ?? []);
             const guard = raw[plan.columns.length];
-            if (++count > limits.maxRows || guard === 't') sink.oversized();
+            if (++count > limits.maxRows + (limits.allowProbeRow ? 1 : 0) || guard === 't') sink.oversized();
             if (guard !== 'f') prepFail('PREP_EXECUTION_FAILED', '$.source', 'Unexpected Redshift row guard');
             const values = plan.columns.map((c, i) => normalizePrepScalar(raw[i], c));
             if (values.reduce<number>((n, v) => n + String(v ?? '').length, 0) > limits.cellChars) sink.oversized();

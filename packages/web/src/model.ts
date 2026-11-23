@@ -20,6 +20,7 @@ export interface Field {
   id: string;
   column: string;
   dataSet: string;
+  aggregation?: 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX' | 'DISTINCT_COUNT';
   dateGranularity?: 'DAY' | 'MONTH' | 'QUARTER' | 'YEAR';
 }
 export interface VisualModel {
@@ -122,6 +123,7 @@ export interface MultiplesOptions {
 }
 export interface FixtureVisual {
   theme?: AnalysisTheme;
+  metrics?: readonly import('@opensight/query-engine/browser').PublishedMetric[];
   source: 'bundle' | 'api';
   definition: BundleVisual | Record<string, VisualBody>;
   rows: Row[] | null;

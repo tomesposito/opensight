@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { withoutBindingAggregation } from './fixtures/compiler-baseline.mjs';
 import { readFileSync } from 'node:fs';
 import { act, createElement, useReducer } from 'react';
 import { create } from 'react-test-renderer';
@@ -115,10 +116,13 @@ for (const direction of ['ASC', 'DESC']) test(`KPI comparison, target totals and
   c.kpiOptions.comparison.comparisonMethod = 'PERCENT_DIFFERENCE';
   assert.equal(compileVisual(value).option.graphic[0].style.text, direction === 'ASC' ? '↑ 100%' : '↓ -50%');
 });
-test('84 complete field-sort/no-sort outputs remain byte-identical to base 124b6f76', () => {
+test('84 field-sort/no-sort outputs match base 124b6f76 apart from preserved aggregation metadata (#313)', () => {
   const { hashes } = JSON.parse(readFileSync(new URL('./fixtures/kpi-trend-aggregation-sort-baseline.json', import.meta.url), 'utf8'));
   const cases = baselineInputs(); assert.equal(Object.keys(cases).length, 84); assert.deepEqual(Object.keys(hashes), Object.keys(cases));
-  for (const [name, value] of Object.entries(cases)) assert.equal(createHash('sha256').update(JSON.stringify(compileVisual(value))).digest('hex'), hashes[name], name);
+  for (const [name, value] of Object.entries(cases)) {
+    const compiled = withoutBindingAggregation(compileVisual(value));
+    assert.equal(createHash('sha256').update(JSON.stringify(compiled)).digest('hex'), hashes[name], name);
+  }
 });
 const invalidDraftSorts = [null, [], {}, { ...draftSort(), extra: true },
   ...['fieldId', 'direction', 'measureFieldId', 'aggregation'].flatMap(key => [null, '', ' ', 5].map(value => ({ ...draftSort(), [key]: value }))),

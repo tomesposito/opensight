@@ -83,17 +83,20 @@ for (const chart of charts) for (const dialect of dialects) {
     }
   }
 
-  test(`CategorySort preserves calculations, multiple Values, measure aggregations and parameters: ${chart.name}, ${dialect}`, () => {
+  test(`CategorySort preserves calculations, multiple Values and parameters: ${chart.name}, ${dialect}`, () => {
     const r = categoryRequest(chart);
     r.analysis.Definition.FilterGroups = request().analysis.Definition.FilterGroups;
-    wells(r).Values.push(measure('discounted_revenue', 'AVG', 'secondary-id'));
+    // Pie renders exactly one measure (issue #319), so the multiple-Values
+    // shape applies to the other category charts only.
+    const multi = chart.name !== 'pie';
+    if (multi) wells(r).Values.push(measure('discounted_revenue', 'SUM', 'secondary-id'));
     const baseline = planVisual(r, { dialect });
     assert.deepEqual(baseline.parameters, ['East']);
-    assert.equal(baseline.calculations.length, 1);
+    assert.equal(baseline.calculations.length, multi ? 1 : 0);
     for (const aggregation of aggregations) {
-      setSort(r, 'AggregationSort', aggregation, 'DESC', 'discounted_revenue');
+      setSort(r, 'AggregationSort', aggregation, 'DESC', multi ? 'discounted_revenue' : 'revenue');
       const actual = assertInvariant(r, dialect, baseline);
-      assert.deepEqual(actual.measures.map(m => m.aggregation), ['SUM', 'AVG']);
+      assert.deepEqual(actual.measures.map(m => m.aggregation), multi ? ['SUM', 'SUM'] : ['SUM']);
     }
   });
 
@@ -104,6 +107,35 @@ for (const chart of charts) for (const dialect of dialects) {
     assertInvariant(r, dialect, baseline);
   });
 }
+
+// Issue #320: the category editor's 'By field' selector offers bound measures
+// (PropertiesSections Group/Color sortFields = dimension + measures) and
+// serializes the pick as a FieldSort on the measure's field ID; the web
+// compiler admits any bound field. Native FieldSort admission matches: a bar
+// grouped by region, sorted 'By field -> revenue -> DESC', must plan.
+for (const chart of charts) for (const dialect of dialects) {
+  for (const direction of ['ASC', 'DESC', 'omitted']) {
+    test(`CategorySort FieldSort admits a bound measure ID (issue #320): ${chart.name}, ${dialect}, ${direction}`, () => {
+      for (const dated of [false, true]) {
+        const r = categoryRequest(chart, dated);
+        const baseline = planVisual(r, { dialect });
+        const sort = setSort(r, 'FieldSort', undefined, direction);
+        sort.FieldId = 'primary-id';
+        assertInvariant(r, dialect, baseline);
+      }
+    });
+  }
+}
+
+test('CategorySort FieldSort on a second bound dimension still fails the single-dimension admission (issue #320)', () => {
+  for (const dialect of dialects) {
+    const r = categoryRequest(charts[0]);
+    wells(r).Category.push(dimension('category', 'second-id'));
+    const sort = setSort(r, 'FieldSort');
+    sort.FieldId = 'second-id';
+    assert.throws(() => planVisual(r, { dialect }), { name: 'QueryEngineError', code: 'UNSUPPORTED_FEATURE' });
+  }
+});
 
 for (const variant of ['FieldSort', 'AggregationSort']) {
   const vp = `.CategorySort[0].${variant}`;
@@ -126,16 +158,21 @@ for (const variant of ['FieldSort', 'AggregationSort']) {
     ['unknown variant key', (r, s) => { s.Unexpected = true; }, 'UNSUPPORTED_FEATURE', `${vp}.Unexpected`],
     ['missing field ID', (r, s) => { delete s.FieldId; }, 'INVALID_INPUT', `${vp}.FieldId`],
     ...[null, 42, '', '\0'].map(value => [`malformed field ID ${JSON.stringify(value)}`, (r, s) => { s.FieldId = value; }, 'INVALID_INPUT', `${vp}.FieldId`]),
-    ...['primary-id', 'region', 'missing'].map(value => [`unbound category ID ${value}`, (r, s) => { s.FieldId = value; }, 'INVALID_INPUT', '']),
+    ...['region', 'missing'].map(value => [`unbound category ID ${value}`, (r, s) => { s.FieldId = value; }, 'INVALID_INPUT', '']),
     ['no category dimension', r => { wells(r).Category = []; }, 'INVALID_INPUT', ''],
-    ['second category dimension ID', (r, s) => { wells(r).Category.push(dimension('category', 'second-id')); s.FieldId = 'second-id'; }, 'INVALID_INPUT', ''],
     ...['DOWN', 'asc', null, 1, false, {}].map(value => [`invalid direction ${JSON.stringify(value)}`, (r, s) => { s.Direction = value; }, 'INVALID_INPUT', '']),
   ];
   if (variant === 'FieldSort') invalidCases.push(
     ['aggregation column in FieldSort', (r, s) => { s.Column = { DataSetIdentifier: 'sales_data', ColumnName: 'revenue' }; }, 'UNSUPPORTED_FEATURE', `${vp}.Column`],
     ['aggregation function in FieldSort', (r, s) => { s.AggregationFunction = {}; }, 'UNSUPPORTED_FEATURE', `${vp}.AggregationFunction`],
   );
-  else {
+  else invalidCases.push(
+    // AggregationSort keeps the category-dimension requirement (issue #320):
+    // a bound measure ID or a second dimension ID is not a category ID.
+    ['measure ID as category ID', (r, s) => { s.FieldId = 'primary-id'; }, 'INVALID_INPUT', ''],
+    ['second category dimension ID', (r, s) => { wells(r).Category.push(dimension('category', 'second-id')); s.FieldId = 'second-id'; }, 'INVALID_INPUT', ''],
+  );
+  if (variant === 'AggregationSort') {
     const cp = `${vp}.Column`, fp = `${vp}.AggregationFunction`, np = `${fp}.NumericalAggregationFunction`;
     invalidCases.push(
       ['dimension column', (r, s) => { s.Column.ColumnName = 'region'; }, 'INVALID_INPUT', cp],
@@ -239,6 +276,46 @@ for (const kind of ['ComboChartVisual', 'PivotTableVisual', 'ScatterPlotVisual',
     }
   });
 }
+
+test('CategorySort admission rejects renderer-incompatible field wells (issue #319)', () => {
+  for (const chart of charts) {
+    // An ordinary AVG measure cannot render: the compiler accepts only SUM
+    // bindings or governed metric bindings. Without a sort admission the
+    // planner's wider native allowance still plans the same definition.
+    const r = categoryRequest(chart);
+    wells(r).Values.push(measure('discounted_revenue', 'AVG', 'secondary-id'));
+    assert.doesNotThrow(() => planVisual(r));
+    setSort(r);
+    assert.throws(() => planVisual(r), (error) => {
+      assert.equal(error.name, 'QueryEngineError');
+      assert.equal(error.code, 'UNSUPPORTED_FEATURE');
+      assert.ok(error.path.endsWith('.Values[1].NumericalMeasureField.AggregationFunction'), error.path);
+      return true;
+    });
+  }
+  // A second category dimension cannot render on a category chart.
+  const twoDims = categoryRequest(charts[0]);
+  wells(twoDims).Category.push(dimension('category', 'second-id'));
+  setSort(twoDims);
+  assert.throws(() => planVisual(twoDims), { name: 'QueryEngineError', code: 'UNSUPPORTED_FEATURE' });
+  // Pie cannot render a second measure, even when both bindings are SUM.
+  const pie = categoryRequest(charts[3]);
+  wells(pie).Values.push(measure('profit', 'SUM', 'secondary-id'));
+  setSort(pie);
+  assert.throws(() => planVisual(pie), (error) => {
+    assert.equal(error.name, 'QueryEngineError');
+    assert.equal(error.code, 'UNSUPPORTED_FEATURE');
+    assert.ok(error.path.endsWith('.Values'), error.path);
+    return true;
+  });
+  // Governed metric bindings keep their non-SUM aggregations under admission.
+  const governed = categoryRequest(charts[0]);
+  governed.analysis.Definition.CalculatedFields.push({ Name: '__metric_margin', DataSetIdentifier: 'sales_data', Expression: '{revenue} * 0.9' });
+  wells(governed).Values.push(measure('__metric_margin', 'AVG', 'metric-id'));
+  const baseline = planVisual(governed);
+  setSort(governed);
+  assert.deepEqual(planVisual(governed), baseline);
+});
 
 for (const chart of charts) test(`aggregation sort cannot bypass column security: ${chart.name}`, () => {
   for (const dialect of dialects) for (const indirect of [false, true]) {

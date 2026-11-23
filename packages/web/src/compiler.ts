@@ -1,6 +1,6 @@
 import { validOProvenance } from './o-provenance.js';
 import { formatMetric } from './governed-metrics.js';
-import { parseKpiOptions, formatNumber, groupedPeriodDate, shiftDate, resultDate } from '@opensight/query-engine/browser';
+import { parseKpiOptions, formatNumber, groupedPeriodDate, shiftDate, resultDate, metricCombination, metricId, type PublishedMetric } from '@opensight/query-engine/browser';
 import { computeForecast, forecastConfigValid, MIN_FORECAST_POINTS, prepareChronological, type ForecastConfig } from './forecast.js';
 import { convertDefinition } from './definition-converter.js';
 import { InsightError, projectInsightBody, normalizeInsight, uniqueValuesOnly, topBottomMoversOnly } from './insight-configuration.js';
@@ -16,6 +16,7 @@ import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visua
 import { compileExtra } from './extra-charts.js';
 import { applyCategoryLimit, CATEGORY_LIMIT_KINDS } from './category-limit.js';
 import { kpiComparison, kpiTotal, orderKpiTrend } from './kpi-trend.js';
+import { combineGroupedValues, type MeasureCombination } from './measure-combination.js';
 import { compareCells } from './cell-sort.js';
 import { applyDisplayOptions, legendTextStyle } from './display-options.js';
 import { FACETED_KINDS, applyFacetLimit, facetLayout, facetPanelGrids, facetTitles, groupRowsByFacet, type FacetGroup } from './facet-layout.js';
@@ -23,7 +24,7 @@ import { FACETED_KINDS, applyFacetLimit, facetLayout, facetPanelGrids, facetTitl
 export const DATA_REQUIRED_LABEL = 'Needs data';
 
 type ObjectValue = Record<string, unknown>;
-type Input = Pick<FixtureVisual, 'source' | 'rows' | 'bindings' | 'path' | 'theme'> & { definition: unknown };
+type Input = Pick<FixtureVisual, 'source' | 'rows' | 'bindings' | 'path' | 'theme'> & { definition: unknown; metrics?: readonly PublishedMetric[] };
 export interface CompiledVisual {
   model: VisualModel;
   narrative?: InsightNarrative;
@@ -316,6 +317,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     const [name, content] = pair[0]!;
     const f = object(content, `${fp}.${name}`);
     keys(f, [key('fieldId', 'FieldId'), key('column', 'Column'), ...(measure ? [key('aggregationFunction', 'AggregationFunction')] : name === key('dateDimensionField', 'DateDimensionField') ? [key('dateGranularity', 'DateGranularity')] : [])], fp);
+    let aggregation: Field['aggregation'];
     if (measure) {
       const aggKey = key('aggregationFunction', 'AggregationFunction');
       const agg = object(f[aggKey], `${fp}.${aggKey}`);
@@ -323,6 +325,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
       keys(agg, [sumKey], fp);
       if (kind === 'kpi' && list(wells[key('trendGroups', 'TrendGroups')], fp).length && agg[sumKey] !== 'SUM') fail(`${fp}.${aggKey}`, 'trended KPI requires an explicit SUM result binding');
       if (agg[sumKey] !== 'SUM' && !(String(object(f[key('column', 'Column')], fp)[key('columnName', 'ColumnName')]).startsWith('__metric_') && ['AVG', 'COUNT', 'MIN', 'MAX', 'DISTINCT_COUNT'].includes(String(agg[sumKey])))) fail(`${fp}.${aggKey}`, 'only explicit SUM result bindings are supported');
+      aggregation = agg[sumKey] as Field['aggregation'];
     }
     if (name === key('dateDimensionField', 'DateDimensionField')) enumValue(f[key('dateGranularity', 'DateGranularity')], ['DAY', 'MONTH', 'QUARTER', 'YEAR'], 'DAY', `${fp}.${key('dateGranularity', 'DateGranularity')}`);
     const column = object(f[key('column', 'Column')], `${fp}.${key('column', 'Column')}`);
@@ -331,6 +334,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
       id: text(f[key('fieldId', 'FieldId')], fp),
       column: text(column[key('columnName', 'ColumnName')], fp),
       dataSet: text(column[key('dataSetIdentifier', 'DataSetIdentifier')], fp),
+      ...(aggregation ? { aggregation } : {}),
       ...(name === key('dateDimensionField', 'DateDimensionField') ? { dateGranularity: (f[key('dateGranularity', 'DateGranularity')] ?? 'DAY') as Field['dateGranularity'] } : {}),
     };
   };
@@ -744,11 +748,26 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   };
 }
 
+function measureCombination(field: Field, metrics: readonly PublishedMetric[] = []): MeasureCombination {
+  const id = metricId(field.column);
+  if (id !== undefined) {
+    const metric = metrics.find(metric => metric.id === id);
+    return metric ? metricCombination(metric) : 'NONE';
+  }
+  switch (field.aggregation) {
+    case undefined: case 'SUM': case 'COUNT': return 'SUM';
+    case 'MIN': return 'MIN';
+    case 'MAX': return 'MAX';
+    default: return 'NONE';
+  }
+}
+
 /** Pure renderer: rows must already be authorized, filtered and aggregated. No query execution. */
 export function compileVisual(input: Input): CompiledVisual {
   if (input.theme !== undefined && !themeValid(input.theme)) fail(input.path, 'invalid analysis theme');
   const theme = input.theme ?? LIGHT_THEME;
   const model = normalizeVisual(input.source, input.definition, input.path);
+  const combination = (field: Field) => measureCombination(field, input.metrics);
   let kpiTarget: CompiledVisual['kpiTarget'];
   let kpiTrendArrow: CompiledVisual['kpiTrendArrow'];
   const fields = [...model.dimensions, ...(model.trendDimension ? [model.trendDimension] : []), ...(model.breakdown ? [model.breakdown] : []), ...(model.facet ? [model.facet] : []), ...model.measures, ...(model.targetMeasure ? [model.targetMeasure] : [])];
@@ -846,28 +865,23 @@ export function compileVisual(input: Input): CompiledVisual {
     const facet = model.facet;
     const groups = groupRowsByFacet(rows, facet, cell, model.facetSort);
     facetGroups = applyFacetLimit(groups, model.facetLimit, rest => {
-      const merged = new Map<string, Record<string, Cell>>();
+      const buckets = new Map<string, Row[]>();
       for (const row of rest) {
         const key = JSON.stringify(model.dimensions.map(field => cell(row, field)));
-        let other = merged.get(key);
-        if (!other) {
-          other = { ...row, [extraColumn(facet)]: 'Other' };
-          for (const measure of model.measures) other[extraColumn(measure)] = null;
-          // As with slice limits, extra tooltip values cannot be inferred from
-          // already aggregated rows. Never inherit one source facet's value.
-          for (const extra of extraFields) other[extraColumn(extra)] = null;
-          merged.set(key, other);
-        }
-        for (const measure of model.measures) {
-          const value = number(row, measure);
-          if (value !== null) {
-            const total = (number(other, measure) ?? 0) + value;
-            if (!Number.isFinite(total)) fail(input.path, 'small multiples Other totals must be finite');
-            other[extraColumn(measure)] = total;
-          }
-        }
+        const bucket = buckets.get(key) ?? [];
+        bucket.push(row);
+        buckets.set(key, bucket);
       }
-      return [...merged.values()];
+      return [...buckets.values()].map(bucket => {
+        const other: Record<string, Cell> = { ...bucket[0]!, [extraColumn(facet)]: 'Other' };
+        for (const measure of model.measures) {
+          const values = bucket.map(row => number(row, measure));
+          other[extraColumn(measure)] = values.length === 1 ? values[0]! : combineGroupedValues(values, combination(measure), message => fail(input.path, message));
+        }
+        // Adornments cannot be inferred from already aggregated rows.
+        for (const extra of extraFields) other[extraColumn(extra)] = null;
+        return other;
+      });
     });
     if (model.facetSort || facetGroups !== groups) {
       rows.length = 0;
@@ -883,7 +897,7 @@ export function compileVisual(input: Input): CompiledVisual {
       const result = applyCategoryLimit(group.rows, model.sliceLimit, {
         category: model.dimensions[0],
         remainingDimensions: [...model.dimensions.slice(1), ...(model.facet ? [model.facet] : [])],
-        measures: model.measures, extraFields, cell, number, column: extraColumn,
+        measures: model.measures, extraFields, cell, number, column: extraColumn, combination, fail: message => fail(input.path, message),
       });
       limited.push(...result);
       group.rows = result;
@@ -1024,11 +1038,11 @@ export function compileVisual(input: Input): CompiledVisual {
     if (!model.trendDimension && rows.length > 1) fail(input.path, 'KPI expects exactly one aggregate row, not a client-side sum');
     const row = rows[0];
     const values = rows.map(row => number(row, model.measures[0]!));
-    const value = model.trendDimension ? kpiTotal(values, message => fail(input.path, message)) : row ? number(row, model.measures[0]!) : null;
+    const value = model.trendDimension ? kpiTotal(values, combination(model.measures[0]!), message => fail(input.path, message)) : row ? number(row, model.measures[0]!) : null;
     if (value !== null && !Number.isFinite(value)) fail(input.path, 'KPI total must be finite');
     if (model.targetMeasure) {
       const targets = rows.map(row => number(row, model.targetMeasure!));
-      const target = model.trendDimension ? kpiTotal(targets, message => fail(input.path, `target: ${message}`)) : targets[0] ?? null;
+      const target = model.trendDimension ? kpiTotal(targets, combination(model.targetMeasure), message => fail(input.path, `target: ${message}`)) : targets[0] ?? null;
       kpiTarget = { value: target, label: target === null ? 'No value' : formatMetric(target, model.formatting?.metricFormats?.[model.measures[0]!.column]) ?? displayCell(target) };
       if (model.kpiOptions?.progressBar?.visibility === 'VISIBLE') {
         const ratio = value !== null && target !== null && target > 0 ? value / target : null;

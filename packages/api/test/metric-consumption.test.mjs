@@ -3,11 +3,29 @@ import assert from 'node:assert/strict';
 import { resolveMetricDefinition } from '@opensight/query-engine';
 import { AssetCatalog, assetKey } from '../dist/asset-model.js';
 import { lookupMetrics, metricDefinition } from '../dist/metric-consumption.js';
+import { DashboardSnapshots } from '../dist/reports.js';
+import { dashboardExport } from '../dist/dashboard-export.js';
 
 const scope = { tenantId: 'tenant', namespaceId: 'workspace', userId: 'author' };
 const dataset = { kind: 'dataset', id: 'sales' };
 const metric = { id: 'total', version: 2, name: 'Total', expression: '{amount}', defaultAggregation: 'SUM', format: { style: 'number', decimalPlaces: 2 }, description: '', synonyms: [] };
 const wire = (...ids) => ({ Sheets: ids.map(DataSetIdentifier => ({ Column: { DataSetIdentifier, ColumnName: '__metric_total' } })) });
+
+test('reports and dashboard exports forward resolved metrics for grouped totals (#313)', async () => {
+  const definition = { Sheets: [{ SheetId: 'sheet', Visuals: [{ KPIVisual: { VisualId: 'total', ChartConfiguration: { FieldWells: {
+    Values: [{ NumericalMeasureField: { FieldId: 'value', Column: { DataSetIdentifier: 'sales', ColumnName: '__metric_total' }, AggregationFunction: { SimpleNumericalAggregation: 'SUM' } } }],
+    TrendGroups: [{ CategoricalDimensionField: { FieldId: 'period', Column: { DataSetIdentifier: 'sales', ColumnName: 'period' } } }],
+  } } } }] }] };
+  const result = { rows: [{ period: 'A', value: 10 }, { period: 'B', value: 30 }], bindings: { period: 'period', value: 'value' },
+    metrics: [{ ...metric, expression: 'sum({amount})' }], plan: { dimensions: [{ fieldId: 'period', outputName: 'period' }], measures: [{ fieldId: 'value', outputName: 'value' }] } };
+  const snapshots = new DashboardSnapshots({ get: () => ({ Definition: definition }) }, { executeVisual: async () => result });
+  assert.equal((await snapshots.capture('dashboard')).visuals[0].option.graphic[0].style.text, '40');
+  const backend = { query: async () => result }, record = { id: 'dashboard', versions: [{ version: 1, name: 'Test', wireDefinition: definition }] };
+  assert.match((await dashboardExport(backend, record, 1, 'csv', {})).bytes.toString(), /sheet,total/);
+  result.metrics = [{ ...metric, expression: 'sum({profit}) / sum({amount})' }];
+  await assert.rejects(snapshots.capture('dashboard'), /NONADDITIVE_MEASURE_COMBINATION/);
+  await assert.rejects(dashboardExport(backend, record, 1, 'csv', {}), /NONADDITIVE_MEASURE_COMBINATION/);
+});
 
 test('metric definition dedupes targeted lookups per full dataset key and preserves each binding result', async () => {
   const calls = [], resolution = { metrics: [metric], unsafeJoin: false };

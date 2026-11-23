@@ -11,6 +11,7 @@ import { HostedAuth } from '../dist/hosted-auth.js';
 import { hostedConfig } from '../dist/hosted-config.js';
 import { drainHostedServer } from '../dist/hosted-server.js';
 import { dispatchRuntimeRequest } from '../dist/runtime-http-bridge.js';
+import { applicationEnvelopeBytes } from '../dist/runtime-ingress.js';
 import { HostedData } from '../dist/hosted-data.js';
 import { HostedDataRoutes } from '../dist/hosted-data-routes.js';
 import { HostedSources } from '../dist/hosted-sources.js';
@@ -76,8 +77,11 @@ test('SR1 in-memory HTTP response retains embed CSP/nonces and no-store across s
     assert.match(result.headers['content-type'], /text\/html/); assert.match(result.headers['content-security-policy'], /frame-ancestors https:\/\/parent.example/);
     const nonce = /nonce-([^']+)/.exec(result.headers['content-security-policy'])[1];
     assert.ok(Buffer.from(result.body, 'base64').toString().includes(`nonce="${nonce}"`));
+    assert.ok(Buffer.byteLength(JSON.stringify(result)) <= applicationEnvelopeBytes, 'embed response must fit the unchanged serialized envelope limit (#313)');
   }
   assert.notEqual(first.headers['content-security-policy'], second.headers['content-security-policy']);
+  t.mock.method(EmbedSessions.prototype, 'shell', async () => ({ allowedDomains: ['https://parent.example'], padding: 'x'.repeat(applicationEnvelopeBytes) }));
+  await assert.rejects(dispatchRuntimeRequest(server, request, new AbortController().signal), { code: 'RESPONSE_TOO_LARGE' });
 });
 
 test('SR1 built-in Lambda auth receives canonical peer without starting timers or reactivating keys', async t => {

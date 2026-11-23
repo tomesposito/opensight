@@ -40,6 +40,7 @@ export function buildAuthorPreview(visual: AuthorVisual): FixtureVisual {
 export function buildAuthorVisual(visual: AuthorVisual, calculations: readonly CalculatedField[] = [], dataset?: AuthorDataset): FixtureVisual {
   return {
     source: 'bundle', definition: serializeVisual(visual, false, calculations, dataset), rows: null,
+    ...(dataset?.metrics ? { metrics: dataset.metrics } : {}),
     // Thread interaction actions so view-mode surfaces can offer them; absent stays absent.
     ...(visual.filterActions?.length ? { filterActions: [...visual.filterActions] } : {}),
     ...(visual.urlActions?.length ? { urlActions: [...visual.urlActions] } : {}),

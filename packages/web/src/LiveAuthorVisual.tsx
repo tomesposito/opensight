@@ -8,14 +8,15 @@ import { VisualCard, type RowGroupToggle } from './VisualCard.js';
 import { buildAuthorVisual } from './author-preview.js';
 import { buildAuthorQuery, loadAuthorRows } from './author-query.js';
 import type { AuthorRows, QueryClient } from './author-query.js';
-import type { AuthorVisual, CalculatedField } from './authoring.js';
+import { kpiTrendAggregationProblem, type AuthorVisual, type CalculatedField } from './authoring.js';
 import type { QueryRequest } from './api-client.js';
-import { clearVisualRows, storeVisualRows } from './visual-export.js';
+import { clearVisualRows, storeVisualRows, storeVisualTable } from './visual-export.js';
+import { compileVisual } from './compiler.js';
 
 export const PARAMETER_DEBOUNCE_MS = 250;
 
 export function LiveAuthorVisual({ visual, theme, client, calculations, parameters = [], interaction, interactive = false, onRowGroupToggle, onExecutedMetrics }: { theme?: AnalysisTheme; interaction?: VisualInteraction; interactive?: boolean; parameters?: readonly AuthorParameter[]; visual: AuthorVisual; client?: QueryClient; calculations: readonly CalculatedField[]; onRowGroupToggle?: RowGroupToggle; onExecutedMetrics?: (metrics: AuthorRows['metrics']) => void }) {
-  const fieldProblem = unresolvedFieldMessage(unresolvedVisualFieldDiagnostics(visual, calculations, client?.dataset, parameters));
+  const fieldProblem = unresolvedFieldMessage(unresolvedVisualFieldDiagnostics(visual, calculations, client?.dataset, parameters)) ?? kpiTrendAggregationProblem(visual, client?.dataset);
   const queryKey = JSON.stringify(buildAuthorQuery(visual, calculations, parameters, client?.dataset));
   const request: QueryRequest | null = useMemo(() => JSON.parse(queryKey) as QueryRequest | null, [queryKey]);
   const [state, setState] = useState<{ request: QueryRequest; client: QueryClient; result: AuthorRows }>();
@@ -42,7 +43,24 @@ export function LiveAuthorVisual({ visual, theme, client, calculations, paramete
     lastExecutedMetrics.current = { seen: true, metrics }; callback(metrics);
   }, [current]);
   const preview = useMemo(() => ({ ...buildAuthorVisual(visual, calculations, client?.dataset && current && 'metrics' in current && current.metrics ? { ...client.dataset, metrics: current.metrics } : client?.dataset), theme, rows: current?.rows ?? null }), [visual, current, calculations, theme, client?.dataset]);
-  useEffect(() => { storeVisualRows(visual.id, preview.rows); return () => { clearVisualRows(visual.id); }; }, [visual.id, preview.rows]);
+  // Exports must match what the visual shows (issue #314): store the compiled
+  // data-view table — sorts, category/facet limits and table/pivot ordering
+  // applied — not the raw query rows. If the preview cannot compile (the card
+  // shows the error), fall back to the raw rows so export is never worse than
+  // it was before the compiled table existed.
+  useEffect(() => {
+    if (preview.rows === null) storeVisualRows(visual.id, null);
+    else {
+      let stored = false;
+      try {
+        const compiled = compileVisual(preview);
+        storeVisualTable(visual.id, { columns: compiled.table.columns, rows: compiled.table.rows });
+        stored = true;
+      } catch { /* fall back to raw rows below */ }
+      if (!stored) storeVisualRows(visual.id, preview.rows);
+    }
+    return () => { clearVisualRows(visual.id); };
+  }, [visual.id, preview]);
   // Clear previous results immediately when assignments change, even before the effect runs.
   return <VisualCard interaction={interaction} onRowGroupToggle={onRowGroupToggle} visual={preview} loading={!!request && !current} dataMessage={fieldProblem ?? current?.message} provenance={current?.provenance} />;
 }

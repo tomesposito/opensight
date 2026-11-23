@@ -189,6 +189,24 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const data = invocation?.data ?? new HostedDataRoutes(new HostedData(new HostedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env), Date.now, undefined, hostedS3Settings(options.env)), undefined, budgets, undefined, undefined, analytics), jobs);
   data.prep.downloadsEnabled = workspaceDownloads(options.env ?? process.env);
   if (!invocation) data.data.storedFiles = new StoredTableFiles((options.env ?? process.env).OPENSIGHT_STORED_TABLES_PATH);
+  if (!invocation && data.data.storedFiles.durable) {
+    // Startup reconciliation (#309): generations orphaned by a crash around a
+    // hosted publish or delete have no publish/delete left to recover them,
+    // so sweep once here against every referenced materialization pointer.
+    try {
+      const rows = await options.tenantDatabase.transaction(c => c.query("SELECT tenant_id, namespace_id, owner_id, resource_id, body FROM h1_resources WHERE kind = 'prepared-dataset'"));
+      const keep = new Map<string, string[]>();
+      for (const row of rows) {
+        try {
+          const generation = (JSON.parse(String(row.body)) as { materialization?: { generation?: unknown } }).materialization?.generation;
+          if (typeof generation === 'string') keep.set(JSON.stringify([String(row.tenant_id), String(row.namespace_id), String(row.owner_id), 'prep', String(row.resource_id)]), [generation]);
+        } catch { /* an unreadable body references nothing recoverable here */ }
+      }
+      await data.data.storedFiles.sweep(keep);
+    } catch (error) {
+      if (!/no such table|does not exist/i.test(error instanceof Error ? error.message : '')) throw error;
+    }
+  }
   const ai = invocation?.ai ?? new HostedAI(data, config.encryptionKey.toString('base64'), options.env ?? process.env, usage?.aiMeter(), options.ai, new HostedAIReceipts(options.membershipDatabase));
   const embedContent = invocation?.embedContent ?? new EmbedContent(new HostedData(new EmbedSources(metadata, config.encryptionKey.toString('base64'), sourceEndpoints(options.env), Date.now, undefined, hostedS3Settings(options.env)), undefined, budgets, undefined, undefined, analytics));
   const mail = invocation?.mail ?? options.mailTransport ?? smtpFromEnvironment(options.env);

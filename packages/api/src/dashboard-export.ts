@@ -16,7 +16,7 @@ export async function dashboardExport(backend: DashboardBackend, record: Dashboa
     const result = await backend.query(v, definition, visual.id);
     resultBytes += Buffer.byteLength(JSON.stringify(result));
     if (resultBytes > 16 * 1024 * 1024) throw new MetadataError('DASHBOARD_EXPORT_TOO_LARGE', 413);
-    const output = compileVisual({ source: 'api', definition: visual.definition, path: visual.path, rows: result.rows, bindings: result.bindings });
+    const output = compileVisual({ source: 'api', definition: visual.definition, path: visual.path, rows: result.rows, bindings: result.bindings, metrics: result.metrics });
     compiled.push(output);
     // One rectangular CSV covers heterogeneous visual tables without inventing column unions.
     for (const [row, cells] of output.table.rows.entries()) for (const [column, value] of cells.entries()) csv.push({ sheetId: visual.sheetId, visualId: visual.id, row: row + 1, column: output.table.columns[column] ?? String(column + 1), value: value == null ? null : typeof value === 'number' ? value : String(value) });

@@ -1,5 +1,6 @@
 import { compilePrepJoinSample, diagnosePrepJoinPostgres, PrepJoinBudget, PREP_JOIN_SAMPLE_LIMIT } from '@opensight/query-engine';
 import { tableDownload, tableDownloadFormat, sendTableDownload } from './table-download.js';
+import { LocalTableDownloads } from './local-table-download.js';
 import type { HostedUsage } from './hosted-usage.js';
 import { StoredTableFiles, storedMaterialization, storedFailure, storedStatus, storedCapacity, checkStoredQuota, type StoredMaterialization } from './stored-tables.js';
 import { metricQuery, metricDefinition, type MetricLookup } from './metric-consumption.js';
@@ -68,8 +69,15 @@ export class PrepRoutes {
   private async publishStored(identity: Identity, id: string): Promise<void> {
     await this.files.exclusive(identity.namespaceId, async () => {
       const entry = this.find(identity, id), capacity = storedCapacity(this.blaze.limits);
-      const used = this.store.read().datasets.filter(e => e.namespaceId === identity.namespaceId)
-        .reduce((n, e) => n + (this.key(e, e.resource.dataSetId) === this.key(identity, id) ? 0 : e.materialization?.bytes ?? 0), 0);
+      // Recover generations orphaned around an earlier metadata swap before
+      // admitting new bytes (#309).
+      await this.files.reconcileKey(this.key(identity, id), entry.materialization ? [entry.materialization.generation] : []);
+      // The current generation stays on disk while its replacement is written,
+      // so this dataset's own bytes count toward used storage too (#309), as
+      // do generations whose deletion is deferred behind a read lease.
+      const namespace = this.store.read().datasets.filter(e => e.namespaceId === identity.namespaceId);
+      let used = namespace.reduce((n, e) => n + (e.materialization?.bytes ?? 0), 0);
+      for (const e of namespace) used += await this.files.pendingBytes(this.key(e, e.resource.dataSetId));
       checkStoredQuota(this.storageLimit(identity), used, capacity);
       const table = new BlazeTable(this.blaze.limits);
       await this.materialize(identity, id, table);
@@ -93,6 +101,7 @@ export class PrepRoutes {
    * requested sources, with at most limit rows, including the truncation probe. */
   inputTableSamples?: (identity: Identity, sourceIds: readonly string[], limit: number) => PrepMemoryTable[];
   private readonly blaze = new BlazeStore();
+  private readonly downloads = new LocalTableDownloads(this.blaze.limits);
   private readonly configured = new Map<string, string>();
   private requirement(identity: Identity, id: string, state = this.store.read()): string | null {
     return materializationReason(id, state.datasets.filter(e => this.owned(identity, e)).map(e => ({ id: e.resource.dataSetId, pipeline: e.resource.opensightPrep!, mode: e.execution?.mode ?? 'DIRECT_QUERY' })));
@@ -204,8 +213,11 @@ export class PrepRoutes {
       const body = prepObject(await readBody(request), ['format'], '$'), format = tableDownloadFormat(body.format);
       if (!this.downloadsEnabled) throw new MetadataError('DOWNLOADS_DISABLED', 403);
       if (existing.execution?.mode !== 'STORED') throw new MetadataError('STORED_MODE_REQUIRED', 409);
-      const table = await this.files.read(key, existing.materialization, this.blaze.limits);
-      await sendTableDownload(response, tableDownload(id, table, format), this.downloadUsage ? { usage: this.downloadUsage, scope: { tenantId: identity.namespaceId, namespaceId: identity.namespaceId } } : undefined); return;
+      await this.downloads.run(identity, request, response, async scope => {
+        const table = await this.files.read(key, existing.materialization, this.blaze.limits);
+        const result = await tableDownload(scope, id, table, format);
+        await sendTableDownload(response, result, this.downloadUsage ? { usage: this.downloadUsage, scope: { tenantId: identity.namespaceId, namespaceId: identity.namespaceId } } : undefined);
+      }); return;
     }
     if (action === 'execution') {
       method(request, response, ['GET', 'PUT']);
@@ -281,6 +293,13 @@ export class PrepRoutes {
       if (seen.has(key)) prepFail('INVALID_PREP_PIPELINE', '$.source', 'Duplicate source binding'); seen.add(key);
     }
     const routes = new PrepRoutes(await AutomationStore.load<State>({ version: 1, datasets: [] }, path, validatePrepState), connectors, structuredClone(bindings), !!path, new StoredTableFiles(path ? `${path}.tables` : undefined));
+    if (path) {
+      // Startup reconciliation (#309): the loaded metadata is the durable
+      // truth; any stored generation it does not reference is crash debris.
+      const keep = new Map<string, string[]>();
+      for (const e of routes.store.read().datasets) if (e.materialization) keep.set(routes.key(e, e.resource.dataSetId), [e.materialization.generation]);
+      await routes.files.sweep(keep);
+    }
     const current = routes.store.read();
     if (current.datasets.some(e => (!e.execution || e.execution.mode === 'DIRECT_QUERY') && routes.requirement(e, e.resource.dataSetId, current))) await routes.store.change(draft => routes.enforceModes(draft));
     routes.syncModes();

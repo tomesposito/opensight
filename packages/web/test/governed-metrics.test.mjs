@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { buildAuthorVisual } from '../build/test/author-preview.js';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -9,6 +10,18 @@ import { formatMetric } from '../build/test/governed-metrics.js';
 import { compileVisual } from '../build/test/compiler.js';
 const metric = { id: 'margin', version: 2, name: 'Margin', expression: 'sum({profit}) / sum({revenue})', defaultAggregation: 'AVG', format: { style: 'percent', decimalPlaces: 1 }, description: '', synonyms: ['profit rate'] };
 const dataset = { id: 'prepared', name: 'Sales', columns: [{ name: 'revenue', type: 'DECIMAL' }, { name: 'profit', type: 'DECIMAL' }], metrics: [metric] };
+test('author previews pass available metric definitions to grouped KPI compilation (#313)', () => {
+  const currentDataset = { ...dataset, columns: [...dataset.columns, { name: 'region', type: 'STRING' }], metrics: [{ ...metric, defaultAggregation: 'SUM', expression: 'sum({revenue})' }] };
+  let draft = authorReducer({ ...emptyDraft(), dataset: currentDataset }, { type: 'assign-with-no-selection', field: '__metric_margin', well: 'values' });
+  draft = authorReducer(draft, { type: 'kind', kind: 'kpi' });
+  const visual = { ...draft.sheets[0].visuals[0], trendField: 'region' };
+  const preview = buildAuthorVisual(visual, [], currentDataset);
+  preview.rows = [{ region: 'East', __metric_margin: 10 }, { region: 'West', __metric_margin: 30 }];
+  assert.deepEqual(compileVisual(preview).option.series[0].data, [10, 30]);
+  assert.equal(compileVisual(preview).option.graphic[0].style.text, '4,000.0%');
+  const ratio = buildAuthorVisual(visual, [], { ...currentDataset, metrics: [{ ...metric, defaultAggregation: 'SUM' }] });
+  assert.throws(() => compileVisual({ ...ratio, rows: preview.rows }), /NONADDITIVE_MEASURE_COMBINATION/);
+});
 test('metric wells show current names and aggregation while assignments keep stable IDs', () => {
   let draft = authorReducer({ ...emptyDraft(), dataset }, { type: 'assign-with-no-selection', field: '__metric_margin', well: 'values' });
   draft = authorReducer(draft, { type: 'assign', field: 'revenue', well: 'values' });

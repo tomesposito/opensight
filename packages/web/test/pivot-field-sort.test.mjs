@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { withoutBindingAggregation } from './fixtures/compiler-baseline.mjs';
 import { readFileSync } from 'node:fs';
 import { act, createElement, useReducer } from 'react';
 import { create } from 'react-test-renderer';
@@ -89,7 +90,8 @@ for (const direction of ['ASC', 'DESC']) for (const axis of ['rows', 'columns'])
       [[10, null, 2, 30], [2, 10, 30, null], [30, 10, 2, null]],
       [['Z', null, 'A', 'M'], ['A', 'M', 'Z', null], ['Z', 'M', 'A', null]],
       [[true, null, false], [false, true, null], [true, false, null]],
-      [['2', 2, null, '10'], ['10', '2', 2, null], ['2', 2, '10', null]],
+      // Mixed types follow the #316 total order: numbers, then strings, then booleans.
+      [['2', 2, null, '10'], [2, '10', '2', null], ['2', '10', 2, null]],
     ]) {
       const value = input({ data: cells.map((cell, i) => ({ ...rows[0], region: cell, revenue: i + 1 })) });
       const field = wells(value).rows[0];
@@ -147,9 +149,9 @@ test('sorting uses native field IDs and result aliases without requiring column-
 
 // Full-output hashes captured from 809591f0 before compiler edits, including function source.
 const baseline = JSON.parse(readFileSync(new URL('./fixtures/pivot-field-sort-baseline.json', import.meta.url), 'utf8'));
-for (const [name, value] of Object.entries(baselineInputs())) test(`no field sort preserves baseline bytes: ${name}`, () => {
+for (const [name, value] of Object.entries(baselineInputs())) test(`no field sort preserves baseline bytes apart from binding metadata: ${name}`, () => {
   const compiled = compileVisual(value);
-  const bytes = JSON.stringify(compiled, (_, v) => typeof v === 'function' ? v.toString() : v);
+  const bytes = JSON.stringify(withoutBindingAggregation(compiled), (_, v) => typeof v === 'function' ? v.toString() : v);
   assert.equal(createHash('sha256').update(bytes).digest('hex'), baseline.hashes[name]);
   assert.deepEqual(compileVisual(sorted(value, [])), compiled);
 });

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { withoutBindingAggregation } from './fixtures/compiler-baseline.mjs';
 import { readFileSync } from 'node:fs';
 import { act, createElement, useReducer } from 'react';
 import { create } from 'react-test-renderer';
@@ -128,8 +129,9 @@ test('sort honors result bindings, typed mixed values and stable ties', () => {
   assert.deepEqual(titles(compileVisual(value)), ['East', 'West']);
   const cells = [2, '2', null, true, false, '10'];
   const groups = direction => groupRowsByFacet(cells.map(value => ({ value })), { id: 'facet' }, row => row.value, { fieldId: 'facet', direction }).map(g => g.value);
-  assert.deepEqual(groups('ASC'), ['10', 2, '2', false, true, null]);
-  assert.deepEqual(groups('DESC'), [true, false, 2, '2', '10', null]);
+  // Mixed types follow the #316 total order: numbers, then strings, then booleans.
+  assert.deepEqual(groups('ASC'), [2, '10', '2', false, true, null]);
+  assert.deepEqual(groups('DESC'), [true, false, '2', '10', 2, null]);
   assert.deepEqual(groupRowsByFacet(cells.map(value => ({ value })), { id: 'facet' }, row => row.value).map(g => g.value), cells);
 });
 
@@ -158,13 +160,13 @@ test('a retained literal Other stays distinct from the final merged Other panel'
 // Captured before implementation from 203d0faa: full compiled output, including
 // function source. This proves the unset path is byte-identical to the prior slice.
 const baseline = JSON.parse(readFileSync(new URL('./fixtures/small-multiples-sort-baseline.json', import.meta.url), 'utf8'));
-for (const kind of FACETED_KINDS) test(`${kind}: unset facetSort preserves pre-slice output bytes`, () => {
+for (const kind of FACETED_KINDS) test(`${kind}: unset facetSort preserves pre-slice output bytes apart from binding metadata`, () => {
   for (const [label, limit] of [['unset', undefined], ['include', { itemsLimit: 2 }], ['exclude', { itemsLimit: 2, otherCategories: 'EXCLUDE' }]]) {
     for (const categorySorted of [false, true]) {
       const value = input(kind, limit);
       if (categorySorted) config(value).sortConfiguration = { ...config(value).sortConfiguration, categorySort: sortBy('revenue', 'DESC') };
       const compiled = compileVisual(value);
-      const bytes = JSON.stringify(compiled, (_, v) => typeof v === 'function' ? v.toString() : v);
+      const bytes = JSON.stringify(withoutBindingAggregation(compiled), (_, v) => typeof v === 'function' ? v.toString() : v);
       assert.equal(createHash('sha256').update(bytes).digest('hex'), baseline[`${kind}/${label}/${categorySorted ? 'category-sort' : 'source-order'}`]);
       config(value).sortConfiguration = { ...config(value).sortConfiguration, smallMultiplesSort: [] };
       assert.deepEqual(compileVisual(value), compiled);

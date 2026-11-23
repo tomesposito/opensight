@@ -221,7 +221,16 @@ export class HostedPrep {
   async remove(context: TenantContext, id: string, expectedVersion: number) {
     const stored = await this.stored(context, id);
     await this.data.sources.metadata.remove(context, this.key(context, id), expectedVersion);
-    await this.data.storedFiles.remove(this.cacheKey(context, id), stored.materialization); await this.data.cache?.invalidate(this.cacheKey(context, id));
+    await this.data.storedFiles.remove(this.cacheKey(context, id), stored.materialization);
+    if (this.data.storedFiles.durable) {
+      // Recover any sibling generation orphaned around an earlier swap
+      // (#309). If the dataset was concurrently recreated, keep its live
+      // generation; deployments without a stored-files directory skip this.
+      let keep: string[] = [];
+      try { const again = await this.stored(context, id); if (again.materialization) keep = [again.materialization.generation]; } catch { /* deleted: nothing is referenced */ }
+      await this.data.storedFiles.reconcileKey(this.cacheKey(context, id), keep);
+    }
+    await this.data.cache?.invalidate(this.cacheKey(context, id));
   }
   async joinDiagnostics(context: TenantContext, id: string, input: unknown) {
     const raw = object(structuredClone(input), ['pipeline', 'through']);
@@ -325,19 +334,20 @@ export class HostedPrep {
       throw error;
     }
   }
-  async download(context: TenantContext, id: string, input: unknown): Promise<TableDownload> {
+  async download(context: TenantContext, id: string, input: unknown, transmit: (download: TableDownload) => Promise<void>): Promise<void> {
     const raw = object(input, ['format']), format = tableDownloadFormat(raw.format);
     if (!this.downloadsEnabled) throw new MetadataError('DOWNLOADS_DISABLED', 403);
     const stored = await this.stored(context, id);
     if (stored.execution.mode !== 'STORED') throw new MetadataError('STORED_MODE_REQUIRED', 409);
     const graph = await this.graph(context, id, stored.resource.opensightPrep!, undefined, false);
-    let result: TableDownload | undefined;
     await this.data.work(context, false, graph.leaves, async () => {
-      const table = await this.readStored(context, id); this.data.scope(context).rows(table.rowCount);
-      result = tableDownload(id, table, format); this.data.scope(context).memory(table.bytes + result.bytes.length);
-      await this.data.finish(context, graph.leaves, graph.revisions); return { bytes: result.bytes.length };
+      const table = await this.readStored(context, id), scope = this.data.scope(context); scope.rows(table.rowCount);
+      const result = await tableDownload(scope, id, table, format);
+      await this.data.finish(context, graph.leaves, graph.revisions); scope.check();
+      // Transmission owns the work reservation, including retained input/output
+      // and worker capacity, until finish or disconnect cleanup has completed.
+      await transmit(result); return { bytes: result.byteLength };
     }, graph.revisions);
-    return result!;
   }
   async execute(context: TenantContext, id: string, path: 'rows' | 'query' | 'refresh' | 'publish', input: unknown = {}, visual?: { analysis: unknown; visualId: string; dataSetArn: string }) {
     const stored = await this.stored(context, id), graph = await this.graph(context, id, stored.resource.opensightPrep!), key = this.cacheKey(context, id);
@@ -351,6 +361,15 @@ export class HostedPrep {
     if (stored.execution.mode === 'STORED' && (path === 'refresh' || path === 'publish')) {
       return this.data.storedFiles.exclusive(key, async () => {
         const capacity = storedCapacity(this.data.limits(context));
+        // Recover generations orphaned around an earlier metadata swap
+        // (crash before commit leaves the new file; crash after commit
+        // leaves the old one) before admitting new bytes (#309). The keep
+        // pointer is re-read inside this per-key lock: the `stored` value
+        // captured before the lock may predate a concurrent publish, and
+        // reconciling against it would delete the generation that publish
+        // just committed (#309 review).
+        const fresh = await this.stored(context, id);
+        await this.data.storedFiles.reconcileKey(key, fresh.materialization ? [fresh.materialization.generation] : []);
         await this.data.sources.metadata.materialization(context, id, stored.version, { reserve: capacity }, graph.revisions);
         let value: import('./stored-tables.js').StoredMaterialization | undefined, committed = false;
         try {
@@ -365,7 +384,14 @@ export class HostedPrep {
             value = await this.data.storedFiles.write(key, output, this.materializationStamp(id, stored.version, graph, consumed), capacity);
             await this.data.sources.metadata.materialization(context, id, stored.version, { value, reserve: 0, expectedDependencies }, graph.revisions);
             committed = true;
-            await this.data.storedFiles.remove(key, stored.materialization);
+            const unlinked = await this.data.storedFiles.remove(key, stored.materialization);
+            if (!unlinked && stored.materialization) {
+              // The previous generation is leased and stays on disk: keep its
+              // bytes charged as the reservation until a later publish's
+              // reconciliation settles it, instead of dropping them from
+              // storage accounting at commit (#309 review).
+              try { await this.data.sources.metadata.materialization(context, id, stored.version, { reserve: stored.materialization.bytes }, graph.revisions); } catch { /* accounting only; the publish itself committed */ }
+            }
             return { ...storedStatus(value), downloadsEnabled: this.downloadsEnabled, version: stored.version };
           }, graph.revisions);
         } catch (error) {

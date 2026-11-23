@@ -15,6 +15,21 @@ export const UNIQUE_VALUES_MAX_CATEGORIES = 20;
 export const UNIQUE_VALUES_MAX_LABEL_CHARS = 100;
 /** The named categories plus their separators occupy at most this many characters in total. */
 export const UNIQUE_VALUES_MAX_TEXT_CHARS = 1000;
+/**
+ * Anomaly work budget (issue #317). Anomaly statistics are shared per measure
+ * (one chronological preparation, one median and one MAD per distinct measure,
+ * however many anomaly computations bind it), so the remaining work is bounded
+ * and validated BEFORE any anomaly sorting: a series longer than
+ * ANOMALY_MAX_SERIES_POINTS rows, or a total estimated work above
+ * ANOMALY_MAX_WORK_UNITS, fails closed with INSIGHT_ANOMALY_WORK_EXCEEDED
+ * instead of silently truncating observations. Work units estimate, per
+ * distinct anomaly measure, points × ceil(log2(points)) for the two median
+ * sorts plus points per anomaly computation on that measure for its filter
+ * scan; the pre-check uses the row count as the point-count upper bound, so
+ * it runs before the chronological preparation sorts anything.
+ */
+export const ANOMALY_MAX_SERIES_POINTS = 100_000;
+export const ANOMALY_MAX_WORK_UNITS = 8_000_000;
 export interface InsightRow { category: Cell; time?: Cell; values: (number | null)[] }
 export interface InsightInput { category?: Field; time?: Field; measures: Field[]; computations?: unknown; formatting?: VisualFormatting }
 
@@ -49,13 +64,52 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
     // Movers rows are grouped by (category, period): categories repeat across periods, pairs must not.
     if (new Set(rows.map(r => JSON.stringify([r.category, r.time]))).size !== rows.length) insightFail('INSIGHT_VALUE_INVALID', 'expected unique aggregated category/period rows');
   } else if (new Set(rows.map(r => JSON.stringify(r.category))).size !== rows.length) insightFail(duplicateCode, 'expected unique aggregated categories');
+  // Chronological preparation is computed once per narrative and shared by
+  // every dated computation (issue #317): previously each anomaly, forecast
+  // or period computation re-decoded and re-sorted the entire series.
+  let datedCache: { row: InsightRow; date: Date }[] | undefined;
   const datedRows = () => {
+    if (datedCache) return datedCache;
     // Shared chronological preparation with the chart forecast surfaces
     // (issue #259): sort by decoded period, reject decoded duplicates.
     const prepared = prepareChronological(rows, row => groupedPeriodDate(row.category, input.category!.dateGranularity!));
     if (!prepared.ok && prepared.reason === 'invalid') return insightFail('INSIGHT_TIME_REQUIRED', 'invalid date/time category for the bound grain');
     if (!prepared.ok) return insightFail(duplicateCode, 'duplicate date/time periods');
-    return prepared.entries.map(({ item, date }) => ({ row: item, date }));
+    return datedCache = prepared.entries.map(({ item, date }) => ({ row: item, date }));
+  };
+  // Anomaly statistics shared per measure (issue #317): the dated non-null
+  // points, the median center and the MAD spread are computed once per
+  // distinct measure and reused by every anomaly computation bound to it;
+  // only the direction/sensitivity filter scan stays per computation.
+  interface AnomalySeries { dated: { row: InsightRow; date: Date }[]; points: { date: Date; n: number; deviation: number }[]; center: number; spread: number }
+  const anomalySeriesCache = new Map<number, AnomalySeries>();
+  let anomalyBudgetChecked = false;
+  const checkAnomalyBudget = () => {
+    if (anomalyBudgetChecked) return;
+    anomalyBudgetChecked = true;
+    const perMeasure = new Map<number, number>();
+    for (const request of requests) if (request.kind === 'anomaly') perMeasure.set(request.measure, (perMeasure.get(request.measure) ?? 0) + 1);
+    if (!perMeasure.size) return;
+    const points = rows.length;
+    if (points > ANOMALY_MAX_SERIES_POINTS) insightFail('INSIGHT_ANOMALY_WORK_EXCEEDED', `anomaly series of ${points} points exceeds the ${ANOMALY_MAX_SERIES_POINTS}-point budget`);
+    const sortUnits = points * Math.ceil(Math.log2(points + 1));
+    let work = 0;
+    for (const computations of perMeasure.values()) work += sortUnits + computations * points;
+    if (work > ANOMALY_MAX_WORK_UNITS) insightFail('INSIGHT_ANOMALY_WORK_EXCEEDED', `anomaly work estimate of ${work} units exceeds the ${ANOMALY_MAX_WORK_UNITS}-unit budget`);
+  };
+  const anomalySeries = (measure: number): AnomalySeries => {
+    const cached = anomalySeriesCache.get(measure);
+    if (cached) return cached;
+    const dated = datedRows().filter(({ row }) => row.values[measure] !== null);
+    // Statistics are computed only at or above the five-point minimum, as
+    // before: shorter series take the unavailable sentence and never sort.
+    if (dated.length < 5) { const series: AnomalySeries = { dated, points: [], center: 0, spread: 0 }; anomalySeriesCache.set(measure, series); return series; }
+    const center = median(dated.map(({ row }) => row.values[measure]! as number));
+    const points = dated.map(({ row, date }) => ({ date, n: row.values[measure]! as number,
+      deviation: finiteAnomalyValue(row.values[measure]! - center) }));
+    const series: AnomalySeries = { dated, points, center, spread: median(points.map(point => Math.abs(point.deviation))) };
+    anomalySeriesCache.set(measure, series);
+    return series;
   };
   const sum = (index: number, groups = rows): number | null => {
     try { return aggregateValue('sum', groups.map(r => r.values[index]!)) as number | null; }
@@ -193,16 +247,17 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
       }
       if (excluded) parts.push(text(` ${excluded} categor${excluded === 1 ? 'y' : 'ies'} excluded (no value in both periods${request.sortOrder === 'PERCENT_DIFFERENCE' ? ' or no computable percent change' : ''}).`));
     } else if (request.kind === 'anomaly') {
+      // Validate the documented work budget before any anomaly sorting
+      // (issue #317); the pre-check uses the row count, so it precedes the
+      // chronological preparation as well.
+      checkAnomalyBudget();
       // Decode every period before excluding nulls, so duplicate or invalid
-      // periods cannot disappear behind a missing measure.
-      const dated = datedRows().filter(({ row }) => row.values[request.measure] !== null);
+      // periods cannot disappear behind a missing measure. The preparation
+      // and the median/MAD statistics are shared per measure (issue #317).
+      const { dated, points, center, spread } = anomalySeries(request.measure);
       const heading = `Statistical anomaly detection for ${name} by ${fieldName(input.category!, input.formatting)}: `;
       if (dated.length < 5) parts = [text(`${heading}unavailable (not enough data points to detect anomalies; at least 5 non-null points required).`)];
       else {
-        const center = median(dated.map(({ row }) => row.values[request.measure]! as number));
-        const points = dated.map(({ row, date }) => ({ date, n: row.values[request.measure]! as number,
-          deviation: finiteAnomalyValue(row.values[request.measure]! - center) }));
-        const spread = median(points.map(point => Math.abs(point.deviation)));
         const { direction, minSensitivityPercentage } = request.anomalyDetection;
         // A zero median cannot scale a percentage; skip only that extra filter.
         const minimum = center === 0 || minSensitivityPercentage === undefined ? 0

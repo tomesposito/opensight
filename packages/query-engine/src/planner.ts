@@ -251,7 +251,9 @@ function insightMeasure(raw: unknown, path: string, binder: ExpressionBinder): I
  * period-to-date, period-over-period, growth-rate and anomaly need a
  * date dimension, metric comparison binds two required, distinct SUM
  * measures (from and target) against a generic date-or-category
- * dimension, and a uniqueValues-only insight
+ * dimension, the whole collection derives at most two distinct measures
+ * (the narrative compiler's cardinality rule, enforced here before
+ * querying — issue #321), and a uniqueValues-only insight
  * carries a plan-only COUNT measure (the author-query treatment) that the
  * narrative compiler discards. Everything unvalidated fails closed.
  */
@@ -419,6 +421,13 @@ function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: re
     }
   }
   const measures = [...measuresById.values()];
+  // The web narrative compiler (normalizeInsight) accepts at most two
+  // distinct measures for the whole collection — one, or two for comparison —
+  // so a collection deriving three or more must fail here, before querying,
+  // instead of planning successfully and being rejected by its consumer
+  // (issue #321). Per-computation checks cannot see this: the bound is on
+  // the distinct measures across every computation combined.
+  if (measures.length > 2) fail('INVALID_INPUT', cp, 'insight computations must derive at most two distinct measures (one, or two for comparison)');
   if (!measures.length) {
     if (!kinds.every(k => k === 'UniqueValues')) fail('INVALID_INPUT', cp, 'at least one value binding is required unless every computation is uniqueValues');
     // A uniqueValues-only insight binds no measure; carry a COUNT like the
@@ -515,6 +524,20 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
       aggregation: aggregationValue as Aggregation, path: fp };
   });
   if (!values.length) fail('INVALID_INPUT', `${wp}.Values`, 'at least one explicit measure is required');
+  // Issue #319: the web compiler (packages/web/src/compiler.ts) accepts only
+  // explicit SUM measure bindings, plus non-SUM aggregations on governed
+  // metric bindings (__metric_ columns). A native plan that executes for a
+  // definition the renderer rejects fails later at compile or export, so
+  // sort/limit admission validates the field wells against the same
+  // capability contract before the plan is built. Definitions without a
+  // sort/limit admission keep the planner's wider native allowances.
+  const assertRendererCompatibleMeasures = () => {
+    for (const m of measures) {
+      if (m.aggregation !== 'SUM' && !(m.columnName.startsWith('__metric_') && ['AVG', 'COUNT', 'MIN', 'MAX', 'DISTINCT_COUNT'].includes(m.aggregation))) {
+        fail('UNSUPPORTED_FEATURE', `${m.path}.AggregationFunction`, 'only explicit SUM result bindings are supported');
+      }
+    }
+  };
   if (categoryChart && config.SortConfiguration !== undefined) {
     const sp = `${cp}.SortConfiguration`, sort = object(config.SortConfiguration, sp);
     // Preserve the existing whole-block rejection path for unsupported category-chart sorts.
@@ -541,7 +564,15 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
       const vp = `${sp}.CategorySort[0].${variant}`, entry = object(wrapper[variant], vp);
       keys(entry, aggregationSort ? ['FieldId', 'Direction', 'Column', 'AggregationFunction'] : ['FieldId', 'Direction'], vp);
       const fieldId = string(entry.FieldId, `${vp}.FieldId`);
-      if (!dimensions.length || fieldId !== dimensions[0]!.fieldId) fail('INVALID_INPUT', sp, 'category sort must reference the bound category dimension');
+      if (aggregationSort) {
+        if (!dimensions.length || fieldId !== dimensions[0]!.fieldId) fail('INVALID_INPUT', sp, 'category sort must reference the bound category dimension');
+      } else if (!dimensions.some(d => d.fieldId === fieldId) && !measures.some(m => m.fieldId === fieldId)) {
+        // Issue #320: the category editor's 'By field' selector offers bound
+        // measures alongside the category dimension, and the web compiler
+        // admits any bound field — native FieldSort admission matches it.
+        // AggregationSort above keeps the category-dimension requirement.
+        fail('INVALID_INPUT', sp, 'category sort must reference a bound dimension or measure');
+      }
       if (entry.Direction !== undefined && entry.Direction !== 'ASC' && entry.Direction !== 'DESC') fail('INVALID_INPUT', sp, 'invalid category sort direction');
       if (aggregationSort) {
         const name = column(entry.Column, `${vp}.Column`, binder);
@@ -554,6 +585,15 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
         if (!['SUM', 'AVERAGE', 'MIN', 'MAX', 'COUNT', 'DISTINCT_COUNT'].includes(value)) fail('UNSUPPORTED_FEATURE', `${np}.SimpleNumericalAggregation`, 'expected SUM, AVERAGE, MIN, MAX, COUNT or DISTINCT_COUNT');
       }
       // Both variants validate consumer ordering only; query fields and aggregations stay unchanged.
+    }
+    if (sort.CategorySort !== undefined || sort.CategoryItemsLimit !== undefined) {
+      // Issue #319: admission is the execution gate — the wells themselves
+      // must be renderer-compatible (see assertRendererCompatibleMeasures),
+      // and the compiler's well-shape limits hold: exactly one category
+      // dimension for category charts, exactly one measure for pie.
+      assertRendererCompatibleMeasures();
+      if (dimensions.length !== 1) fail('UNSUPPORTED_FEATURE', wp, 'category charts support exactly one category dimension');
+      if (kind === 'PieChartVisual' && values.length !== 1) fail('UNSUPPORTED_FEATURE', `${wp}.Values`, 'pie supports exactly one measure');
     }
   }
   if (kind === 'TableVisual' && config.SortConfiguration !== undefined) {
@@ -575,6 +615,10 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
         if (!dimensions.some(d => d.fieldId === fieldId) && !measures.some(m => m.fieldId === fieldId)) fail('INVALID_INPUT', sp, 'row sort must reference a bound dimension or measure');
         if (entry.Direction !== undefined && entry.Direction !== 'ASC' && entry.Direction !== 'DESC') fail('INVALID_INPUT', sp, 'invalid row sort direction');
         // RowSort validates consumer ordering only; the complete query plan stays unchanged.
+        // Issue #319: like the category admissions, a RowSort admission is
+        // an execution gate — the measure wells must be renderer-compatible
+        // (SUM or governed metric bindings).
+        assertRendererCompatibleMeasures();
       }
     }
   }

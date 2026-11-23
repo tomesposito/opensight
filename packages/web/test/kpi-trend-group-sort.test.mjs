@@ -76,6 +76,21 @@ test('trend order is typed, stable, null-last and defaults ascending', () => {
   assert.throws(() => order(['bad'], 'ASC', 'MONTH'), /invalid date/);
   assert.throws(() => order(['a', 'a']), /duplicate trend groups/);
 });
+test('trend duplicates are detected on the canonical decoded period (#315)', () => {
+  // Equivalent labels for one period: short label vs full timestamp.
+  assert.throws(() => order(['2025-01', '2025-01-01T00:00:00Z'], 'ASC', 'MONTH'), /duplicate trend groups/);
+  assert.throws(() => order(['2025', '2025-01-01'], 'ASC', 'YEAR'), /duplicate trend groups/);
+  assert.throws(() => order(['2025-Q1', '2025-02-15'], 'ASC', 'QUARTER'), /duplicate trend groups/);
+  assert.throws(() => order(['2025-01-01', '2025-01-01T12:30:00Z'], 'ASC', 'DAY'), /duplicate trend groups/);
+  // Distinct timestamps inside one declared period are one group, not two.
+  assert.throws(() => order(['2025-01-05T08:00:00Z', '2025-01-20T23:59:59Z'], 'ASC', 'MONTH'), /duplicate trend groups/);
+  assert.throws(() => order(['2025-01-05', '2025-01-20'], 'ASC', 'MONTH'), /duplicate trend groups/);
+  // Distinct periods still order by their decoded period, whatever the label shape.
+  assert.deepEqual(order(['2025-02-01T00:00:00Z', '2025-01'], 'ASC', 'MONTH'), ['2025-01', '2025-02-01T00:00:00Z']);
+  assert.deepEqual(order(['2025-02-10T12:00:00Z', '2025-01-20'], 'DESC', 'MONTH'), ['2025-02-10T12:00:00Z', '2025-01-20']);
+  // A timestamp whose UTC date falls outside its labelled period is invalid, not a silent second key.
+  assert.throws(() => order(['2025-01-01T00:00:00+05:00'], 'ASC', 'MONTH'), /invalid date/);
+});
 test('KPI query groups by the date or category trend well', () => {
   const v = selected(authorReducer(emptyDraft(), { type: 'add', kind: 'kpi' }));
   assert.deepEqual(buildAuthorQuery(v).dimensions, []);
@@ -109,6 +124,15 @@ test('single/empty/unavailable and all-null KPI groups never invent zeros or a s
   assert.throws(() => compileVisual(v), /duplicate trend groups/);
   v.rows = [{ period: 'A', revenue: 1 }, { period: 'B', revenue: 2 }]; delete config(v).fieldWells.trendGroups;
   assert.throws(() => compileVisual(v), /exactly one aggregate row/);
+});
+test('trended KPI rejects rows that decode to the same period, even with null measures (#315)', () => {
+  const v = input(); config(v).fieldWells.trendGroups = [dimension('period', true)];
+  v.rows = [{ period: '2025-01', revenue: 1 }, { period: '2025-01-01T00:00:00Z', revenue: null }];
+  assert.throws(() => compileVisual(v), /duplicate trend groups/);
+  v.rows = [{ period: '2025-01-05T08:00:00Z', revenue: null }, { period: '2025-01-20', revenue: null }];
+  assert.throws(() => compileVisual(v), /duplicate trend groups/);
+  v.rows = [{ period: '2025-01', revenue: 1 }, { period: '2025-02-01T00:00:00Z', revenue: 2 }];
+  assert.doesNotThrow(() => compileVisual(v));
 });
 test('trended KPI refuses non-SUM governed metric bindings', () => {
   for (const source of ['bundle', 'api']) for (const agg of ['AVG', 'MIN', 'MAX', 'COUNT', 'DISTINCT_COUNT']) {

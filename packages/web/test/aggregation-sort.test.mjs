@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { withoutBindingAggregation } from './fixtures/compiler-baseline.mjs';
 import { readFileSync } from 'node:fs';
 import { act, createElement, useReducer } from 'react';
 import { create } from 'react-test-renderer';
@@ -127,8 +128,8 @@ test('tooltips, conditional formatting and view data retain the same ordered row
   assert.match(tip,/East/); assert.match(tip,/20/); assert.doesNotMatch(tip,/West/);
 });
 const baseline = JSON.parse(readFileSync(new URL('./fixtures/aggregation-sort-baseline.json', import.meta.url),'utf8'));
-for (const [name, value] of Object.entries(baselineInputs())) test(`no aggregation sort matches master bytes: ${name}`, () => {
-  assert.equal(createHash('sha256').update(JSON.stringify(compileVisual(value),(_,v)=>typeof v==='function'?v.toString():v)).digest('hex'), baseline.hashes[name]);
+for (const [name, value] of Object.entries(baselineInputs())) test(`no aggregation sort matches master bytes apart from binding metadata: ${name}`, () => {
+  assert.equal(createHash('sha256').update(JSON.stringify(withoutBindingAggregation(compileVisual(value)),(_,v)=>typeof v==='function'?v.toString():v)).digest('hex'), baseline.hashes[name]);
 });
 
 const sortedDraft = (kind = 'bar') => authorReducer(draft(kind),{type:'aggregation-sort',sort:draftSort()});

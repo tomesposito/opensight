@@ -90,7 +90,7 @@ function PublishedVisual({ visual, value, controls, client }: { visual: FixtureV
     if (body) body.OpenSightFormatting = metricFormatting(body.OpenSightFormatting as import('./formatting.js').VisualFormatting | undefined, current.metrics);
     return wire as FixtureVisual['definition'];
   }, [visual.definition, current?.metrics]);
-  return <VisualCard visual={{ ...visual, definition, bindings, rows: current?.rows ?? null }} loading={!current} dataMessage={current?.error} provenance={current?.provenance} />;
+  return <VisualCard visual={{ ...visual, definition, bindings, metrics: current?.metrics, rows: current?.rows ?? null }} loading={!current} dataMessage={current?.error} provenance={current?.provenance} />;
 }
 
 function DashboardAccess({ id, client }: { id: string; client: ReaderClient }) {

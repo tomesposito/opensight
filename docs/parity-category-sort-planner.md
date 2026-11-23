@@ -48,9 +48,12 @@ No additional configuration or environment variables are required.
   mixed/absent variants fail.
 - `FieldSort` admits only `FieldId` and `Direction`. `AggregationSort` also
   admits `Column` and `AggregationFunction`. `FieldId` must be a nonempty
-  string identifying the first bound category dimension. A measure ID, a
-  different dimension ID, or the column name substituted for a distinct field
-  ID fails. Existing field-well cardinality rules are unchanged.
+  string identifying a bound field: for `FieldSort`, the category dimension
+  or any bound measure (matching the category editor's 'By field' selector
+  and the web compiler — issue #320); for `AggregationSort`, the first bound
+  category dimension only. An unbound ID, or the column name substituted for
+  a distinct field ID, fails. Existing field-well cardinality rules are
+  unchanged.
 - `Direction` is `ASC` or `DESC`. Omission is admitted with the consumer's
   default of `ASC`; null and other values fail.
 - `Column` admits only `DataSetIdentifier` and `ColumnName`. The existing
@@ -109,3 +112,11 @@ where the web compiler already supports their sorting. See
 the same validation-only, plan-invariant contract — see
 [parity-category-limit-planner.md](parity-category-limit-planner.md). The
 other keys named above remain rejected.
+
+## Follow-up (issue #320)
+
+`FieldSort` admission was widened to match the web compiler and the category
+editor: a FieldSort may now reference any bound field — the category
+dimension or a bound measure — instead of only the first category dimension.
+`AggregationSort` keeps the first-category-dimension requirement for its
+`FieldId`. The validation-only, plan-invariant contract is unchanged.
