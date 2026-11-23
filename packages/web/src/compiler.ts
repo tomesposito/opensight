@@ -16,7 +16,7 @@ import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visua
 import { compileExtra } from './extra-charts.js';
 import { applyCategoryLimit, CATEGORY_LIMIT_KINDS } from './category-limit.js';
 import { kpiComparison, kpiTotal, orderKpiTrend } from './kpi-trend.js';
-import { type MeasureCombination } from './measure-combination.js';
+import { combineGroupedValues, type MeasureCombination } from './measure-combination.js';
 import { compareCells } from './cell-sort.js';
 import { applyDisplayOptions, legendTextStyle } from './display-options.js';
 import { FACETED_KINDS, applyFacetLimit, facetLayout, facetPanelGrids, facetTitles, groupRowsByFacet, type FacetGroup } from './facet-layout.js';
@@ -865,28 +865,23 @@ export function compileVisual(input: Input): CompiledVisual {
     const facet = model.facet;
     const groups = groupRowsByFacet(rows, facet, cell, model.facetSort);
     facetGroups = applyFacetLimit(groups, model.facetLimit, rest => {
-      const merged = new Map<string, Record<string, Cell>>();
+      const buckets = new Map<string, Row[]>();
       for (const row of rest) {
         const key = JSON.stringify(model.dimensions.map(field => cell(row, field)));
-        let other = merged.get(key);
-        if (!other) {
-          other = { ...row, [extraColumn(facet)]: 'Other' };
-          for (const measure of model.measures) other[extraColumn(measure)] = null;
-          // As with slice limits, extra tooltip values cannot be inferred from
-          // already aggregated rows. Never inherit one source facet's value.
-          for (const extra of extraFields) other[extraColumn(extra)] = null;
-          merged.set(key, other);
-        }
-        for (const measure of model.measures) {
-          const value = number(row, measure);
-          if (value !== null) {
-            const total = (number(other, measure) ?? 0) + value;
-            if (!Number.isFinite(total)) fail(input.path, 'small multiples Other totals must be finite');
-            other[extraColumn(measure)] = total;
-          }
-        }
+        const bucket = buckets.get(key) ?? [];
+        bucket.push(row);
+        buckets.set(key, bucket);
       }
-      return [...merged.values()];
+      return [...buckets.values()].map(bucket => {
+        const other: Record<string, Cell> = { ...bucket[0]!, [extraColumn(facet)]: 'Other' };
+        for (const measure of model.measures) {
+          const values = bucket.map(row => number(row, measure));
+          other[extraColumn(measure)] = values.length === 1 ? values[0]! : combineGroupedValues(values, combination(measure), message => fail(input.path, message));
+        }
+        // Adornments cannot be inferred from already aggregated rows.
+        for (const extra of extraFields) other[extraColumn(extra)] = null;
+        return other;
+      });
     });
     if (model.facetSort || facetGroups !== groups) {
       rows.length = 0;
@@ -902,7 +897,7 @@ export function compileVisual(input: Input): CompiledVisual {
       const result = applyCategoryLimit(group.rows, model.sliceLimit, {
         category: model.dimensions[0],
         remainingDimensions: [...model.dimensions.slice(1), ...(model.facet ? [model.facet] : [])],
-        measures: model.measures, extraFields, cell, number, column: extraColumn,
+        measures: model.measures, extraFields, cell, number, column: extraColumn, combination, fail: message => fail(input.path, message),
       });
       limited.push(...result);
       group.rows = result;

@@ -1,5 +1,6 @@
 import type { Cell, Field, Row, VisualModel } from './model.js';
 import type { VisualKind } from './visual-catalog.js';
+import { combineGroupedValues, type MeasureCombination } from './measure-combination.js';
 
 export const CATEGORY_LIMIT_KINDS: readonly VisualKind[] = ['pie', 'bar', 'bar100', 'line', 'area', 'combo'];
 
@@ -11,6 +12,8 @@ interface CategoryLimitFields {
   cell: (row: Row, field: Field) => Cell;
   number: (row: Row, field: Field) => number | null;
   column: (field: Field) => string;
+  combination: (field: Field) => MeasureCombination;
+  fail: (message: string) => never;
 }
 
 /** Limit distinct categories within one facet, in first-appearance display
@@ -18,7 +21,7 @@ interface CategoryLimitFields {
  * remaining dimensions. Unset/non-binding limits preserve the input rows. */
 export function applyCategoryLimit(rows: Row[], limit: VisualModel['sliceLimit'], fields: CategoryLimitFields): Row[] {
   if (!limit) return rows;
-  const { category, remainingDimensions, measures, extraFields, cell, number, column } = fields;
+  const { category, remainingDimensions, measures, extraFields, cell, number, column, combination, fail } = fields;
   const categories = new Set(rows.map(row => cell(row, category)));
   if (categories.size <= limit.count) return rows;
   const retained = new Set([...categories].slice(0, limit.count));
@@ -43,8 +46,8 @@ export function applyCategoryLimit(rows: Row[], limit: VisualModel['sliceLimit']
     const other: Record<string, Cell> = { ...kept.find(row => key(row) === k) ?? bucket[0]! };
     other[column(category)] = 'Other';
     for (const measure of measures) {
-      const values = bucket.map(row => number(row, measure)).filter((value): value is number => value !== null);
-      other[column(measure)] = values.length ? values.reduce((a, b) => a + b, 0) : null;
+      const values = bucket.map(row => number(row, measure));
+      other[column(measure)] = values.length === 1 ? values[0]! : combineGroupedValues(values, combination(measure), fail);
     }
     // Adornments cannot be inferred from already aggregated rows.
     for (const extra of extraFields) other[column(extra)] = null;
