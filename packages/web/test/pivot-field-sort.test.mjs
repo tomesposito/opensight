@@ -90,7 +90,8 @@ for (const direction of ['ASC', 'DESC']) for (const axis of ['rows', 'columns'])
       [[10, null, 2, 30], [2, 10, 30, null], [30, 10, 2, null]],
       [['Z', null, 'A', 'M'], ['A', 'M', 'Z', null], ['Z', 'M', 'A', null]],
       [[true, null, false], [false, true, null], [true, false, null]],
-      [['2', 2, null, '10'], ['10', '2', 2, null], ['2', 2, '10', null]],
+      // Mixed types follow the #316 total order: numbers, then strings, then booleans.
+      [['2', 2, null, '10'], [2, '10', '2', null], ['2', '10', 2, null]],
     ]) {
       const value = input({ data: cells.map((cell, i) => ({ ...rows[0], region: cell, revenue: i + 1 })) });
       const field = wells(value).rows[0];
