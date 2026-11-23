@@ -112,3 +112,41 @@ test('invalid resource IDs cannot inject route segments or query parameters', as
   for (const id of ['', '../x', 'x/y', 'x?version=1', '%2f', 'x'.repeat(513)]) await assert.rejects(client.getAnalysisDefinition(id), /Resource ID/);
   assert.equal(called, false);
 });
+
+const queueWait = () => Response.json({ errorCode: 'QUEUE_WAIT_EXCEEDED', Message: 'Query wait exceeded' }, { status: 429 });
+const queryRequest = { dimensions: [{ fieldId: 'region' }], measures: [{ fieldId: 'revenue' }], filters: [] };
+const queryResult = { columns: [{ name: 'region', type: 'string' }, { name: 'revenue', type: 'number' }], rows: [{ region: 'east', revenue: 40 }] };
+
+test('queries retry a queue-wait rejection and deliver the drained result (#325)', async () => {
+  let calls = 0;
+  const client = createApiClient('/', async () => (++calls === 1 ? queueWait() : response(queryResult)));
+  const result = await client.queryDataset('sales', queryRequest);
+  assert.equal(calls, 2);
+  assert.deepEqual(result.rows, [{ region: 'east', revenue: 40 }]);
+});
+
+test('queries stop retrying queue-wait rejections after two retries (#325)', async () => {
+  let calls = 0;
+  const client = createApiClient('/', async () => { calls++; return queueWait(); });
+  await assert.rejects(client.queryDataset('sales', queryRequest),
+    error => error instanceof ApiError && error.status === 429 && error.errorCode === 'QUEUE_WAIT_EXCEEDED' && /^QUEUE_WAIT_EXCEEDED: Query failed \(HTTP 429\)/.test(error.message));
+  assert.equal(calls, 3);
+});
+
+test('queries never retry non-queue 429 rejections (#325)', async () => {
+  let calls = 0;
+  const client = createApiClient('/', async () => { calls++; return Response.json({ errorCode: 'TENANT_BUDGET_EXCEEDED', Message: 'Budget exceeded' }, { status: 429 }); });
+  await assert.rejects(client.queryDataset('sales', queryRequest),
+    error => error instanceof ApiError && error.status === 429 && error.errorCode === 'TENANT_BUDGET_EXCEEDED');
+  assert.equal(calls, 1);
+});
+
+test('an abort during the queue-wait backoff rejects without another query (#325)', async () => {
+  let calls = 0;
+  const controller = new AbortController();
+  const client = createApiClient('/', async () => { calls++; return queueWait(); });
+  const pending = client.queryDataset('sales', queryRequest, controller.signal);
+  setTimeout(() => controller.abort(), 50);
+  await assert.rejects(pending, error => error === controller.signal.reason);
+  assert.equal(calls, 1);
+});

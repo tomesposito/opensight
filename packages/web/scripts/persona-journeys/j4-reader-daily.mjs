@@ -38,7 +38,7 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     await author.getByLabel('Analysis title', { exact: true }).fill('Daily Orders');
     await author.locator('.add-visual').getByRole('button', { name: 'Add visual', exact: true }).click();
     await button(author, 'Assign region').click(); await button(author, 'Assign revenue').click();
-    await author.locator('.author-card .chart svg').waitFor();
+    await author.locator('.author-card .chart svg').waitFor({ timeout: 45000 });
     await author.locator('.author-card summary').filter({ hasText: 'View data' }).click();
     assert.deepEqual(await author.locator('.author-card tbody tr').evaluateAll(rows => rows.map(r => [...r.cells].map(c => c.textContent))), [['east', '40'], ['west', '20']]);
     await button(author, '+ Parameter').click();

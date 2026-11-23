@@ -108,6 +108,19 @@ export class QueryError extends ApiError {
   }
 }
 
+// QUEUE_WAIT_EXCEEDED is the server's transient queue-pressure rejection: the
+// query was never admitted, so re-asking after a short wait is safe and is how
+// the server's own delivery workers treat the same code. The wait honors the
+// caller's AbortSignal so a superseded visual never retries in the background.
+function queueRetryDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(signal.reason); return; }
+    const timer = setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve(); }, ms);
+    const onAbort = () => { clearTimeout(timer); reject(signal!.reason); };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 export interface AvailabilityEvent { kind: 'authentication-required' | 'connection-required'; errorCode?: string }
 export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch = globalThis.fetch, options: { onDemand?: boolean } = {}) {
   const base = (baseUrl.trim() || DEFAULT_API_URL).replace(/\/+$/, '');
@@ -474,19 +487,32 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   }
   async function runQuery(route: string, query: QueryRequest | undefined, signal?: AbortSignal, payload: unknown = query): Promise<QueryResponse> {
     const sessionGeneration = generation;
-    const response = await authenticatedFetch(`${base}${route}`, {
-      method: 'POST', signal, headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: controlBody(payload),
-    });
-    let raw: unknown;
-    try { raw = await response.json(); }
-    catch { throw new ApiError(`Query returned invalid JSON (HTTP ${response.status}).`, response.status); }
+    const attemptQuery = async () => {
+      const response = await authenticatedFetch(`${base}${route}`, {
+        method: 'POST', signal, headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: controlBody(payload),
+      });
+      let raw: unknown;
+      try { raw = await response.json(); }
+      catch { throw new ApiError(`Query returned invalid JSON (HTTP ${response.status}).`, response.status); }
+      return { response, raw };
+    };
+    let { response, raw } = await attemptQuery();
+    // A dashboard's visuals query concurrently while the tenant budget admits
+    // them one at a time; a tile whose queue wait expires must recover when
+    // the queue drains instead of dying as a permanent error. Only the
+    // queue-wait code retries — budget and admission refusals stay final.
+    for (let retry = 0; retry < 2 && !response.ok && response.status === 429 && !signal?.aborted; retry++) {
+      if (!raw || typeof raw !== 'object' || (raw as Record<string, unknown>).errorCode !== 'QUEUE_WAIT_EXCEEDED') break;
+      await queueRetryDelay(retry === 0 ? 500 : 1500, signal);
+      ({ response, raw } = await attemptQuery());
+    }
     if (response.ok) raw = await resolveResult(raw, sessionGeneration, signal);
     currentSession(sessionGeneration, signal);
     const body = object(raw, 'Query response');
     if (response.status === 422 && typeof body.errorCode === 'string' && typeof body.message === 'string' && typeof body.path === 'string') {
       throw new QueryError(body.message, body.errorCode, body.path);
     }
-    if (!response.ok) throw new ApiError(`${typeof body.errorCode === 'string' ? body.errorCode + ': ' : ''}Query failed (HTTP ${response.status})${typeof body.Message === 'string' ? `: ${body.Message}` : '.'}`, response.status);
+    if (!response.ok) throw new ApiError(`${typeof body.errorCode === 'string' ? body.errorCode + ': ' : ''}Query failed (HTTP ${response.status})${typeof body.Message === 'string' ? `: ${body.Message}` : '.'}`, response.status, typeof body.errorCode === 'string' ? body.errorCode : undefined);
     if (!Array.isArray(body.columns) || !Array.isArray(body.rows)) throw new ApiError('Invalid query result: expected columns and rows.');
     const columns: QueryResponse['columns'] = body.columns.map((raw, i) => {
       const column = object(raw, `columns[${i}]`);
