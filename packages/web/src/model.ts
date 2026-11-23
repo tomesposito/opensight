@@ -20,6 +20,7 @@ export interface Field {
   id: string;
   column: string;
   dataSet: string;
+  aggregation?: 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX' | 'DISTINCT_COUNT';
   dateGranularity?: 'DAY' | 'MONTH' | 'QUARTER' | 'YEAR';
 }
 export interface VisualModel {

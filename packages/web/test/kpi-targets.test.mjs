@@ -16,7 +16,8 @@ const normalize = v => normalizeVisual(v.source, v.definition, v.path);
 for (const source of ['bundle', 'api']) {
   test(`${source}: one KPI target uses the measure parser and joins result bindings`, () => {
     const v = dialect(input(), source);
-    assert.deepEqual(normalize(v).targetMeasure, { id: 'target', column: 'budget', dataSet: 'data' });
+    assert.deepEqual(normalize(v).targetMeasure, { id: 'target', column: 'budget', dataSet: 'data', aggregation: 'SUM' });
+    assert.equal(normalize(v).measures[0].aggregation, 'SUM');
     assert.deepEqual(compileVisual({ ...v, bindings: { target: 'goal' }, rows: [{ revenue: 10, goal: 20 }] }).table.rows, [[10, 20]]);
     assert.throws(() => compileVisual({ ...v, rows: [{ revenue: 10 }] }), /missing result column budget/);
     for (const budget of ['20', true, Infinity, NaN]) assert.throws(() => compileVisual({ ...v, rows: [{ revenue: 10, budget }] }), CompileError);

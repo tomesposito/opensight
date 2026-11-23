@@ -316,6 +316,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     const [name, content] = pair[0]!;
     const f = object(content, `${fp}.${name}`);
     keys(f, [key('fieldId', 'FieldId'), key('column', 'Column'), ...(measure ? [key('aggregationFunction', 'AggregationFunction')] : name === key('dateDimensionField', 'DateDimensionField') ? [key('dateGranularity', 'DateGranularity')] : [])], fp);
+    let aggregation: Field['aggregation'];
     if (measure) {
       const aggKey = key('aggregationFunction', 'AggregationFunction');
       const agg = object(f[aggKey], `${fp}.${aggKey}`);
@@ -323,6 +324,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
       keys(agg, [sumKey], fp);
       if (kind === 'kpi' && list(wells[key('trendGroups', 'TrendGroups')], fp).length && agg[sumKey] !== 'SUM') fail(`${fp}.${aggKey}`, 'trended KPI requires an explicit SUM result binding');
       if (agg[sumKey] !== 'SUM' && !(String(object(f[key('column', 'Column')], fp)[key('columnName', 'ColumnName')]).startsWith('__metric_') && ['AVG', 'COUNT', 'MIN', 'MAX', 'DISTINCT_COUNT'].includes(String(agg[sumKey])))) fail(`${fp}.${aggKey}`, 'only explicit SUM result bindings are supported');
+      aggregation = agg[sumKey] as Field['aggregation'];
     }
     if (name === key('dateDimensionField', 'DateDimensionField')) enumValue(f[key('dateGranularity', 'DateGranularity')], ['DAY', 'MONTH', 'QUARTER', 'YEAR'], 'DAY', `${fp}.${key('dateGranularity', 'DateGranularity')}`);
     const column = object(f[key('column', 'Column')], `${fp}.${key('column', 'Column')}`);
@@ -331,6 +333,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
       id: text(f[key('fieldId', 'FieldId')], fp),
       column: text(column[key('columnName', 'ColumnName')], fp),
       dataSet: text(column[key('dataSetIdentifier', 'DataSetIdentifier')], fp),
+      ...(aggregation ? { aggregation } : {}),
       ...(name === key('dateDimensionField', 'DateDimensionField') ? { dateGranularity: (f[key('dateGranularity', 'DateGranularity')] ?? 'DAY') as Field['dateGranularity'] } : {}),
     };
   };
