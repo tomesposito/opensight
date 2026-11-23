@@ -196,6 +196,24 @@ export const capabilityNote = (kind: VisualKind): string => extraKind(kind) ? EX
 export const tabular = (kind: VisualKind): boolean => kind === 'table' || kind === 'pivot';
 /** A target may use the same source column as the value, but its field ID is distinct. */
 export const kpiTargetFieldId = (visual: AuthorVisual): string | undefined => visual.targetField && (visual.measures.includes(visual.targetField) ? `target:${visual.targetField}` : visual.targetField);
+/** Effective aggregation of one author measure binding: a governed metric
+ *  contributes its declared default aggregation; any other field is SUM. */
+export const authorMeasureAggregation = (name: string, dataset?: AuthorDataset): string =>
+  dataset?.metrics?.find(m => metricColumn(m.id) === name)?.defaultAggregation ?? 'SUM';
+/** A trended KPI groups its measures by period, so the primary measure and
+ *  the target must both aggregate as SUM — the restriction the native planner
+ *  and the compiler already enforce. One shared eligibility check for
+ *  assignment, draft validation and query construction (#318): returns a
+ *  specific diagnostic, or undefined when the bindings are eligible. */
+export function kpiTrendAggregationProblem(visual: AuthorVisual, dataset?: AuthorDataset): string | undefined {
+  if (visual.kind !== 'kpi' || !visual.trendField) return undefined;
+  const primary = visual.measures[0];
+  if (primary !== undefined && authorMeasureAggregation(primary, dataset) !== 'SUM')
+    return `KPI_TREND_AGGREGATION: A trended KPI requires a SUM primary measure; ${primary} aggregates as ${authorMeasureAggregation(primary, dataset)}. Remove the trend group or choose a SUM measure.`;
+  if (visual.targetField && (visual.targetAggregation ?? authorMeasureAggregation(visual.targetField, dataset)) !== 'SUM')
+    return `KPI_TREND_AGGREGATION: A trended KPI requires a SUM target; ${visual.targetField} aggregates as ${visual.targetAggregation ?? authorMeasureAggregation(visual.targetField, dataset)}. Remove the trend group or choose a SUM target.`;
+  return undefined;
+}
 export const visualDimensions = (visual: AuthorVisual): string[] => visual.kind === 'kpi' && visual.trendField ? [visual.trendField] : noDimensions(visual.kind) ? [] : grouped(visual.kind)
   ? [...visual.rows, ...visual.columns] : visual.dimension === null ? [] : [visual.dimension];
 const originalIds = (draft: AuthorDraft, visual: boolean): string[] => (draft.bundle?.original.members ?? []).flatMap(({ resource }) => resource.resourceType === 'analysis' || resource.resourceType === 'dashboard' ? (resource.definition.sheets ?? []).flatMap(s => visual ? (s.visuals ?? []).map(v => Object.values(v)[0]!.visualId) : [s.sheetId]) : []);
