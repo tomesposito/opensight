@@ -108,6 +108,35 @@ for (const chart of charts) for (const dialect of dialects) {
   });
 }
 
+// Issue #320: the category editor's 'By field' selector offers bound measures
+// (PropertiesSections Group/Color sortFields = dimension + measures) and
+// serializes the pick as a FieldSort on the measure's field ID; the web
+// compiler admits any bound field. Native FieldSort admission matches: a bar
+// grouped by region, sorted 'By field -> revenue -> DESC', must plan.
+for (const chart of charts) for (const dialect of dialects) {
+  for (const direction of ['ASC', 'DESC', 'omitted']) {
+    test(`CategorySort FieldSort admits a bound measure ID (issue #320): ${chart.name}, ${dialect}, ${direction}`, () => {
+      for (const dated of [false, true]) {
+        const r = categoryRequest(chart, dated);
+        const baseline = planVisual(r, { dialect });
+        const sort = setSort(r, 'FieldSort', undefined, direction);
+        sort.FieldId = 'primary-id';
+        assertInvariant(r, dialect, baseline);
+      }
+    });
+  }
+}
+
+test('CategorySort FieldSort on a second bound dimension still fails the single-dimension admission (issue #320)', () => {
+  for (const dialect of dialects) {
+    const r = categoryRequest(charts[0]);
+    wells(r).Category.push(dimension('category', 'second-id'));
+    const sort = setSort(r, 'FieldSort');
+    sort.FieldId = 'second-id';
+    assert.throws(() => planVisual(r, { dialect }), { name: 'QueryEngineError', code: 'UNSUPPORTED_FEATURE' });
+  }
+});
+
 for (const variant of ['FieldSort', 'AggregationSort']) {
   const vp = `.CategorySort[0].${variant}`;
   const invalidCases = [
@@ -129,16 +158,21 @@ for (const variant of ['FieldSort', 'AggregationSort']) {
     ['unknown variant key', (r, s) => { s.Unexpected = true; }, 'UNSUPPORTED_FEATURE', `${vp}.Unexpected`],
     ['missing field ID', (r, s) => { delete s.FieldId; }, 'INVALID_INPUT', `${vp}.FieldId`],
     ...[null, 42, '', '\0'].map(value => [`malformed field ID ${JSON.stringify(value)}`, (r, s) => { s.FieldId = value; }, 'INVALID_INPUT', `${vp}.FieldId`]),
-    ...['primary-id', 'region', 'missing'].map(value => [`unbound category ID ${value}`, (r, s) => { s.FieldId = value; }, 'INVALID_INPUT', '']),
+    ...['region', 'missing'].map(value => [`unbound category ID ${value}`, (r, s) => { s.FieldId = value; }, 'INVALID_INPUT', '']),
     ['no category dimension', r => { wells(r).Category = []; }, 'INVALID_INPUT', ''],
-    ['second category dimension ID', (r, s) => { wells(r).Category.push(dimension('category', 'second-id')); s.FieldId = 'second-id'; }, 'INVALID_INPUT', ''],
     ...['DOWN', 'asc', null, 1, false, {}].map(value => [`invalid direction ${JSON.stringify(value)}`, (r, s) => { s.Direction = value; }, 'INVALID_INPUT', '']),
   ];
   if (variant === 'FieldSort') invalidCases.push(
     ['aggregation column in FieldSort', (r, s) => { s.Column = { DataSetIdentifier: 'sales_data', ColumnName: 'revenue' }; }, 'UNSUPPORTED_FEATURE', `${vp}.Column`],
     ['aggregation function in FieldSort', (r, s) => { s.AggregationFunction = {}; }, 'UNSUPPORTED_FEATURE', `${vp}.AggregationFunction`],
   );
-  else {
+  else invalidCases.push(
+    // AggregationSort keeps the category-dimension requirement (issue #320):
+    // a bound measure ID or a second dimension ID is not a category ID.
+    ['measure ID as category ID', (r, s) => { s.FieldId = 'primary-id'; }, 'INVALID_INPUT', ''],
+    ['second category dimension ID', (r, s) => { wells(r).Category.push(dimension('category', 'second-id')); s.FieldId = 'second-id'; }, 'INVALID_INPUT', ''],
+  );
+  if (variant === 'AggregationSort') {
     const cp = `${vp}.Column`, fp = `${vp}.AggregationFunction`, np = `${fp}.NumericalAggregationFunction`;
     invalidCases.push(
       ['dimension column', (r, s) => { s.Column.ColumnName = 'region'; }, 'INVALID_INPUT', cp],

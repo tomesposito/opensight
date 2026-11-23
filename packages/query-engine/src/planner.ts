@@ -555,7 +555,15 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
       const vp = `${sp}.CategorySort[0].${variant}`, entry = object(wrapper[variant], vp);
       keys(entry, aggregationSort ? ['FieldId', 'Direction', 'Column', 'AggregationFunction'] : ['FieldId', 'Direction'], vp);
       const fieldId = string(entry.FieldId, `${vp}.FieldId`);
-      if (!dimensions.length || fieldId !== dimensions[0]!.fieldId) fail('INVALID_INPUT', sp, 'category sort must reference the bound category dimension');
+      if (aggregationSort) {
+        if (!dimensions.length || fieldId !== dimensions[0]!.fieldId) fail('INVALID_INPUT', sp, 'category sort must reference the bound category dimension');
+      } else if (!dimensions.some(d => d.fieldId === fieldId) && !measures.some(m => m.fieldId === fieldId)) {
+        // Issue #320: the category editor's 'By field' selector offers bound
+        // measures alongside the category dimension, and the web compiler
+        // admits any bound field — native FieldSort admission matches it.
+        // AggregationSort above keeps the category-dimension requirement.
+        fail('INVALID_INPUT', sp, 'category sort must reference a bound dimension or measure');
+      }
       if (entry.Direction !== undefined && entry.Direction !== 'ASC' && entry.Direction !== 'DESC') fail('INVALID_INPUT', sp, 'invalid category sort direction');
       if (aggregationSort) {
         const name = column(entry.Column, `${vp}.Column`, binder);
