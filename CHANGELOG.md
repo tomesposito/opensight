@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Native planning now validates renderer-compatible field wells before admitting a CategorySort, CategoryItemsLimit or table RowSort (#319): a visual whose measures are not explicit SUM bindings (or governed metric bindings) — or a pie with more than one measure, or a category chart with more than one category dimension — fails at planning time with a named error instead of executing a query whose result the web compiler would reject at render or export. Definitions without a sort/limit admission keep the planner's wider native allowances, and planner-admitted definitions are covered by planner↔compiler agreement tests.
+
 - Trended KPIs now reject a non-SUM primary measure before any author query executes (#318): one shared eligibility check covers the primary and target bindings at field assignment, draft validation and query construction, and the visual card names the specific `KPI_TREND_AGGREGATION` diagnostic instead of running a grouped query the compiler would reject. Previously only the target was guarded, so a governed AVG primary with a trend group wasted the query and left an unrenderable author state.
 
 - Insight anomaly computations now share work and respect a documented budget (#317): the chronological preparation is decoded and sorted once per narrative and the median/MAD statistics are computed once per distinct measure instead of once per computation, and a series over 100,000 points or a total estimated work above 8,000,000 units fails closed with `INSIGHT_ANOMALY_WORK_EXCEEDED` before any anomaly sorting, rather than repeating full-series sorts up to the 100-computation limit.
