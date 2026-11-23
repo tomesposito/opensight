@@ -17,6 +17,14 @@ before returning a response. The CSP/nonce regression also asserts the actual
 serialized size and rejection of an oversized payload. No response-envelope
 limit, dependency or browser target changed.
 
+## Historical output oracles
+
+The new normalized binding metadata changes full-model hashes. Existing KPI,
+category, facet, pivot and table baseline comparisons use a shared test helper
+that asserts SUM metadata and omits only that field from the legacy comparison.
+All stored expected hashes remain unchanged. The focused sort/baseline suites
+pass 349 tests, with no failures or skips.
+
 ## Demo and screenshots
 
 Rebuilt `packages/web/dist/opensight-demo.html` using `npm run build:demo

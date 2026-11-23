@@ -35,6 +35,6 @@ No source-data recomputation, dependency or configuration was added.
 
 Regression suites cover both compiler dialects, independent value/target modes,
 ratios and weighted averages, counts, extrema, nulls, overflow, missing definitions,
-literal Other collisions and buckets that do not combine. The prior 84-case KPI
-output oracle remains intact; its comparison explicitly checks then excludes only
-the newly preserved aggregation metadata.
+literal Other collisions and buckets that do not combine. Existing KPI, category,
+facet, table and pivot output oracles remain intact; their comparisons explicitly
+check then exclude only the newly preserved aggregation metadata.

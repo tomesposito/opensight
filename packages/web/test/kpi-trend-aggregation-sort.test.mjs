@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { withoutBindingAggregation } from './fixtures/compiler-baseline.mjs';
 import { readFileSync } from 'node:fs';
 import { act, createElement, useReducer } from 'react';
 import { create } from 'react-test-renderer';
@@ -119,13 +120,7 @@ test('84 field-sort/no-sort outputs match base 124b6f76 apart from preserved agg
   const { hashes } = JSON.parse(readFileSync(new URL('./fixtures/kpi-trend-aggregation-sort-baseline.json', import.meta.url), 'utf8'));
   const cases = baselineInputs(); assert.equal(Object.keys(cases).length, 84); assert.deepEqual(Object.keys(hashes), Object.keys(cases));
   for (const [name, value] of Object.entries(cases)) {
-    const compiled = compileVisual(value);
-    // Keep the original oracle: only the newly preserved binding metadata is
-    // excluded, after checking it. Every rendered value/option stays covered.
-    for (const field of [...compiled.model.measures, ...(compiled.model.targetMeasure ? [compiled.model.targetMeasure] : [])]) {
-      assert.equal(field.aggregation, 'SUM');
-      delete field.aggregation;
-    }
+    const compiled = withoutBindingAggregation(compileVisual(value));
     assert.equal(createHash('sha256').update(JSON.stringify(compiled)).digest('hex'), hashes[name], name);
   }
 });
