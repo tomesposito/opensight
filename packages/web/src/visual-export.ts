@@ -1,18 +1,52 @@
-import type { Row } from './model.js';
+import type { Cell, Row } from './model.js';
 
-/** Latest rendered rows per visual id, populated by LiveAuthorVisual. Menu actions read from here. */
-const rowsByVisualId = new Map<string, Row[] | null>();
+/**
+ * The exportable form of a visual: the compiled data-view table (columns in
+ * display order, rows already sorted and limited by the compiler), NOT the
+ * raw query rows. Author CSV/Excel downloads emit exactly this table, so a
+ * download matches what the visual shows — descending measure order, the
+ * category limit's "Other" bucket, table/pivot presentation ordering —
+ * the same table the hosted dashboard CSV consumes as `output.table`
+ * (issue #314).
+ */
+export interface ExportTable {
+  columns: string[];
+  rows: Cell[][];
+}
 
+/** Latest compiled data-view table per visual id, populated by LiveAuthorVisual. Menu actions read from here. */
+const tablesByVisualId = new Map<string, ExportTable | null>();
+
+export function storeVisualTable(visualId: string, table: ExportTable | null): void {
+  tablesByVisualId.set(visualId, table);
+}
+
+export function getVisualTable(visualId: string): ExportTable | null | undefined {
+  return tablesByVisualId.get(visualId);
+}
+
+export function rowsToTable(rows: Row[]): ExportTable {
+  if (!rows.length) return { columns: [], rows: [] };
+  const columns = Object.keys(rows[0]!);
+  return { columns, rows: rows.map(row => columns.map(column => (row[column] ?? null) as Cell)) };
+}
+
+export function tableToRows(table: ExportTable): Row[] {
+  return table.rows.map(cells => Object.fromEntries(table.columns.map((column, index) => [column, cells[index] ?? null])));
+}
+
+/** Raw-row adapter kept for callers that only have query rows; new code stores the compiled table via storeVisualTable. */
 export function storeVisualRows(visualId: string, rows: Row[] | null): void {
-  rowsByVisualId.set(visualId, rows);
+  tablesByVisualId.set(visualId, rows === null ? null : rowsToTable(rows));
 }
 
 export function getVisualRows(visualId: string): Row[] | null | undefined {
-  return rowsByVisualId.get(visualId);
+  const table = tablesByVisualId.get(visualId);
+  return table === undefined || table === null ? table : tableToRows(table);
 }
 
 export function clearVisualRows(visualId: string): void {
-  rowsByVisualId.delete(visualId);
+  tablesByVisualId.delete(visualId);
 }
 
 /**
@@ -34,7 +68,8 @@ export const csvCell = (value: unknown): string => {
 };
 
 /**
- * Converts rendered rows to a spreadsheet-safe CSV (CRLF line endings).
+ * Converts the compiled data-view table to a spreadsheet-safe CSV (CRLF
+ * line endings).
  *
  * Every string header and cell is passed through the CSV-injection guard
  * above; actual numbers and booleans are emitted verbatim. The export is
@@ -43,12 +78,15 @@ export const csvCell = (value: unknown): string => {
  * directly in spreadsheet applications. Data containing formula-like
  * strings therefore always arrives as text.
  */
-export function rowsToCsv(rows: Row[]): string {
-  if (!rows.length) return '';
-  const headers = Object.keys(rows[0]!);
-  const lines = [headers.map(csvCell).join(',')];
-  for (const row of rows) lines.push(headers.map(h => csvCell(row[h])).join(','));
+export function tableToCsv(table: ExportTable): string {
+  if (!table.rows.length) return '';
+  const lines = [table.columns.map(csvCell).join(',')];
+  for (const cells of table.rows) lines.push(table.columns.map((_, index) => csvCell(cells[index])).join(','));
   return lines.join('\r\n') + '\r\n';
+}
+
+export function rowsToCsv(rows: Row[]): string {
+  return tableToCsv(rowsToTable(rows));
 }
 
 const xmlEscape = (text: string): string => text
@@ -87,22 +125,25 @@ export function sanitizeSheetName(name: string): string {
   return cleaned || 'Sheet1';
 }
 
-export function rowsToSpreadsheetMl(rows: Row[], sheetName: string): string {
-  const headers = rows.length ? Object.keys(rows[0]!) : [];
+export function tableToSpreadsheetMl(table: ExportTable, sheetName: string): string {
   const cell = (value: unknown, type: string): string => {
     const text = value === null || value === undefined ? '' : String(value);
     return `<Cell><Data ss:Type="${type}">${xmlEscape(stripInvalidXmlChars(text))}</Data></Cell>`;
   };
   const safeSheetName = sanitizeSheetName(sheetName);
-  const headerRow = `<Row>${headers.map(h => cell(h, 'String')).join('')}</Row>`;
-  const dataRows = rows.map(row => `<Row>${headers.map(h => {
-    const value = row[h];
+  const headerRow = `<Row>${table.columns.map(h => cell(h, 'String')).join('')}</Row>`;
+  const dataRows = table.rows.map(cells => `<Row>${table.columns.map((_, index) => {
+    const value = cells[index];
     const type = typeof value === 'number' ? 'Number' : 'String';
     return cell(value, type);
   }).join('')}</Row>`).join('');
   return `<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>` +
     `<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">` +
     `<Worksheet ss:Name="${xmlEscape(safeSheetName)}"><Table>${headerRow}${dataRows}</Table></Worksheet></Workbook>`;
+}
+
+export function rowsToSpreadsheetMl(rows: Row[], sheetName: string): string {
+  return tableToSpreadsheetMl(rowsToTable(rows), sheetName);
 }
 
 export function downloadFile(filename: string, content: string, mimeType: string): void {
@@ -118,19 +159,19 @@ export function downloadFile(filename: string, content: string, mimeType: string
 }
 
 export function exportVisualCsv(visualId: string, title: string): string | undefined {
-  const rows = getVisualRows(visualId);
-  if (rows === undefined) return 'No data has loaded for this visual yet.';
-  if (rows === null || !rows.length) return 'This visual has no rows to export.';
+  const table = getVisualTable(visualId);
+  if (table === undefined) return 'No data has loaded for this visual yet.';
+  if (table === null || !table.rows.length) return 'This visual has no rows to export.';
   const safe = (title.trim() || visualId).replace(/[^a-z0-9-_]+/gi, '-').slice(0, 64);
-  downloadFile(`${safe}.csv`, rowsToCsv(rows), 'text/csv');
+  downloadFile(`${safe}.csv`, tableToCsv(table), 'text/csv');
   return undefined;
 }
 
 export function exportVisualExcel(visualId: string, title: string): string | undefined {
-  const rows = getVisualRows(visualId);
-  if (rows === undefined) return 'No data has loaded for this visual yet.';
-  if (rows === null || !rows.length) return 'This visual has no rows to export.';
+  const table = getVisualTable(visualId);
+  if (table === undefined) return 'No data has loaded for this visual yet.';
+  if (table === null || !table.rows.length) return 'This visual has no rows to export.';
   const safe = (title.trim() || visualId).replace(/[^a-z0-9-_]+/gi, '-').slice(0, 64);
-  downloadFile(`${safe}.xls`, rowsToSpreadsheetMl(rows, title.trim() || visualId), 'application/vnd.ms-excel');
+  downloadFile(`${safe}.xls`, tableToSpreadsheetMl(table, title.trim() || visualId), 'application/vnd.ms-excel');
   return undefined;
 }

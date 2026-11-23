@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Author CSV and Excel exports now download the visual's compiled data-view table instead of the raw query rows (#314): visual sorts, category/facet limits (including the “Other” bucket) and table/pivot presentation ordering reach the download, matching what the visual shows and what the hosted dashboard CSV already exported.
+
 - KPI trend totals, target totals and category/small-multiple “Other” buckets now combine governed measures only when their aggregation semantics are proven (#313). SUM/COUNT add and MIN/MAX take extrema; ratios, weighted averages, AVG, DISTINCT_COUNT and missing metric definitions fail with `NONADDITIVE_MEASURE_COMBINATION` when groups must be combined. Single-group values remain usable.
 
 - Prep join diagnostics now count matches with native join-key equality (#311): the counts are computed by the engine over the bounded samples with a real grouped join on the raw key values, instead of formatting keys to milliseconds and comparing them as JavaScript numbers/strings. Timestamps differing below a millisecond, decimals differing beyond float precision, and mixed native types (REAL vs DOUBLE, DATE vs TIMESTAMP) now count exactly as an actual join counts them, in both dialects.
