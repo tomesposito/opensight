@@ -1066,6 +1066,8 @@ export function authorReducer(draft: AuthorDraft, action: AuthorAction): AuthorD
           return next;
         }
         if (action.well === 'trend' && visual.targetField && (visual.targetAggregation ?? dataFields(draft.calculatedFields, draft.dataset).find(f => f.name === visual.targetField)?.metric?.defaultAggregation ?? 'SUM') !== 'SUM') return visual;
+        if (action.well === 'trend' && visual.measures[0] !== undefined && (dataFields(draft.calculatedFields, draft.dataset).find(f => f.name === visual.measures[0])?.metric?.defaultAggregation ?? 'SUM') !== 'SUM') return visual;
+        if (field.role === 'measure' && visual.kind === 'kpi' && visual.trendField && field.metric && field.metric.defaultAggregation !== 'SUM') return visual;
         if (action.well === 'trend') return visual.kind === 'kpi' && field.role === 'dimension' && ['STRING', 'DATETIME'].includes(field.type) ? { ...visual, trendField: field.name } : visual;
         if (action.well === 'smallMultiples') return field.role === 'dimension' && hasSmallMultiplesWell(visual.kind) ? { ...visual, smallMultiples: [field.name] } : visual;
         if (action.well === 'breakdown') return field.role === 'dimension' && hasBreakdownWell(visual.kind) ? { ...visual, breakdowns: [field.name] } : visual;
@@ -1429,6 +1431,10 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       if (v.targetAggregation !== undefined && (v.kind !== 'kpi' || typeof v.targetField !== 'string' || !['SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'DISTINCT_COUNT'].includes(String(v.targetAggregation)) || v.targetAggregation !== 'SUM' && (!v.targetField.startsWith('__metric_') || v.trendField !== undefined))) return fail();
       if (v.targetField && v.trendField && (v.targetAggregation ?? fields.find(f => f.name === v.targetField)?.metric?.defaultAggregation ?? 'SUM') !== 'SUM') return fail();
+      // The primary measure is held to the same trended-KPI SUM rule as the
+      // target (#318). Imported visuals are exempt: import retains them
+      // verbatim with its own diagnostics and the compiler stays their gate.
+      if (!imported && v.kind === 'kpi' && v.trendField && typeof (v.measures as string[])[0] === 'string' && (fields.find(f => f.name === (v.measures as string[])[0])?.metric?.defaultAggregation ?? 'SUM') !== 'SUM') return fail();
       if (v.targetField !== undefined && (v.kind !== 'kpi' || !fieldNames([v.targetField], 'measure'))) return fail();
       if (v.trendField !== undefined && (v.kind !== 'kpi' || !fieldNames([v.trendField], 'dimension') || !imported && !unresolvedAllowed && !['STRING', 'DATETIME'].includes(fields.find(f => f.name === v.trendField)?.type ?? ''))) return fail();
       if (v.kpiTrendSort !== undefined && (!kpiTrendSortValid(v.kpiTrendSort) || v.kind !== 'kpi' || !v.trendField || v.kpiTrendSort.fieldId !== v.trendField || v.kpiTrendSort.measureFieldId !== undefined && !(v.measures as string[]).includes(v.kpiTrendSort.measureFieldId))) return fail();
