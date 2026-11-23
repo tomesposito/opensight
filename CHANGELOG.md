@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- KPI trend totals, target totals and category/small-multiple “Other” buckets now combine governed measures only when their aggregation semantics are proven (#313). SUM/COUNT add and MIN/MAX take extrema; ratios, weighted averages, AVG, DISTINCT_COUNT and missing metric definitions fail with `NONADDITIVE_MEASURE_COMBINATION` when groups must be combined. Single-group values remain usable.
+
 - Prep join diagnostics now count matches with native join-key equality (#311): the counts are computed by the engine over the bounded samples with a real grouped join on the raw key values, instead of formatting keys to milliseconds and comparing them as JavaScript numbers/strings. Timestamps differing below a millisecond, decimals differing beyond float precision, and mixed native types (REAL vs DOUBLE, DATE vs TIMESTAMP) now count exactly as an actual join counts them, in both dialects.
 
 - Prep join diagnostics no longer fail on MySQL/MariaDB and Redshift sources larger than the 10,000-row sample (#310): the sample/probe row contract is now explicit in the read limits — diagnostics reads forward the probe row (row 10,001) to the sink so truncation is reported instead of erroring, while ordinary dataset reads keep treating that row as the overflow sentinel and byte guards still apply to every row including the probe.
