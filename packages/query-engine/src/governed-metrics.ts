@@ -20,6 +20,31 @@ export function metricExpression(metric: PublishedMetric): string {
   const level = parseExpression(metric.expression, '$.metric.expression', { validationOnly: true }).level;
   return ['aggregate', 'table'].includes(level) ? metric.expression : `${metric.defaultAggregation.toLowerCase()}(${metric.expression})`;
 }
+/** Proven operation for combining already-grouped results at a coarser grain. */
+export function metricCombination(metric: PublishedMetric): 'SUM' | 'MIN' | 'MAX' | 'NONE' {
+  try {
+    const expression = parseExpression(metric.expression, '$.metric.expression', { validationOnly: true });
+    if (expression.level === 'aggregate' || expression.level === 'table') {
+      // A wrapper, nested aggregate or window calculation needs source data to
+      // establish its coarser-grain value, regardless of the binding's enum.
+      if (expression.kind !== 'call' || !expression.args.every(arg => arg.level === 'row')) return 'NONE';
+      switch (expression.name) {
+        case 'sum': case 'count': return 'SUM';
+        case 'min': return 'MIN';
+        case 'max': return 'MAX';
+        default: return 'NONE';
+      }
+    }
+    switch (metric.defaultAggregation) {
+      case 'SUM': case 'COUNT': return 'SUM';
+      case 'MIN': return 'MIN';
+      case 'MAX': return 'MAX';
+      default: return 'NONE';
+    }
+  } catch {
+    return 'NONE';
+  }
+}
 function selectMetrics(names: readonly string[], resolution: MetricResolution): PublishedMetric[] {
   const ids = [...new Set(names.flatMap(n => metricId(n) === undefined ? [] : [metricId(n)!]))];
   if (ids.length && resolution.unsafeJoin) fail('METRIC_UNSAFE_FANOUT', '$.metrics', 'Governed metrics require a dataset without unproven join fan-out.');

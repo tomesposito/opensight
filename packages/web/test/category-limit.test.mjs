@@ -41,6 +41,52 @@ const wells = value => Object.values(config(value).fieldWells)[0];
 const selected = draft => activeSheet(draft).visuals.find(v => v.id === activeSheet(draft).selectedId);
 const draftOf = kind => authorReducer(emptyDraft(), { type: 'add', kind });
 
+const governed = (aggregation, expression = '{revenue}') => {
+  const value = input('bar', { itemsLimit: 1 }, [
+    { category: 'A', revenue: 100, profit: 5 }, { category: 'B', revenue: 10, profit: 7 }, { category: 'C', revenue: 30, profit: 9 },
+  ]);
+  wells(value).values[0].numericalMeasureField.column.columnName = '__metric_test';
+  wells(value).values[0].numericalMeasureField.aggregationFunction.simpleNumericalAggregation = aggregation;
+  value.bindings = { revenue: 'revenue' };
+  value.metrics = [{ id: 'test', version: 1, name: 'Test', expression, defaultAggregation: aggregation, format: { style: 'number', decimalPlaces: 2 }, description: '', synonyms: [] }];
+  return value;
+};
+for (const [aggregation, expression] of [['AVG', '{revenue}'], ['DISTINCT_COUNT', '{category}'], ['SUM', 'sum({profit})/sum({revenue})'], ['SUM', 'sum({profit} * {revenue})/sum({revenue})']]) {
+  test(`category Other rejects ${aggregation} ${expression} at combination time (#313)`, () => {
+    const value = governed(aggregation, expression);
+    assert.throws(() => compileVisual(value), /NONADDITIVE_MEASURE_COMBINATION/);
+    config(value).sortConfiguration.categoryItemsLimit.itemsLimit = 3;
+    assert.equal(compileVisual(value).table.rows.length, 3);
+    config(value).sortConfiguration.categoryItemsLimit = { itemsLimit: 1, otherCategories: 'EXCLUDE' };
+    assert.deepEqual(compileVisual(value).table.rows, [['A', 100, 5]]);
+    // Renaming a single dropped group does not combine values.
+    config(value).sortConfiguration.categoryItemsLimit = { itemsLimit: 2 };
+    assert.deepEqual(compileVisual(value).table.rows.at(-1), ['Other', 30, 9]);
+    value.rows[0].category = 'Other';
+    assert.throws(() => compileVisual(value), /NONADDITIVE_MEASURE_COMBINATION/);
+  });
+}
+for (const [aggregation, expected] of [['SUM', 40], ['COUNT', 40], ['MIN', 10], ['MAX', 30]]) {
+  test(`category Other applies governed ${aggregation} per measure and preserves nulls (#313)`, () => {
+    const value = governed(aggregation);
+    assert.deepEqual(compileVisual(value).table.rows, [['A', 100, 5], ['Other', expected, 16]]);
+    value.rows[1].revenue = null;
+    assert.deepEqual(compileVisual(value).table.rows.at(-1), ['Other', 30, 16]);
+    value.rows[2].revenue = null;
+    assert.deepEqual(compileVisual(value).table.rows.at(-1), ['Other', null, 16]);
+  });
+}
+test('category Other uses metric expressions over binding enums and fails closed without definitions (#313)', () => {
+  const value = governed('SUM', 'min({revenue})');
+  assert.deepEqual(compileVisual(value).table.rows.at(-1), ['Other', 10, 16]);
+  delete value.metrics;
+  assert.throws(() => compileVisual(value), /NONADDITIVE_MEASURE_COMBINATION/);
+  config(value).sortConfiguration.categoryItemsLimit.itemsLimit = 3;
+  assert.equal(compileVisual(value).table.rows.length, 3);
+  const overflow = input('bar', { itemsLimit: 1 }, [{ category: 'A', revenue: 1, profit: 1 }, { category: 'B', revenue: Number.MAX_VALUE, profit: 1 }, { category: 'C', revenue: Number.MAX_VALUE, profit: 1 }]);
+  assert.throws(() => compileVisual(overflow), /total must be finite/);
+});
+
 for (const kind of kinds) {
   for (const otherCategories of ['INCLUDE', 'EXCLUDE']) test(`${kind}: ${otherCategories} limits categories in display order before series and view-data`, () => {
     const value = input(kind, { itemsLimit: 2, otherCategories });
@@ -165,6 +211,7 @@ test('grouped category transform retains every top-category row and merges Other
   const field = column => ({ id: column, column, dataSet: 'sales_data' });
   const category = field('category'), region = field('region'), color = field('color');
   const fields = { category, remainingDimensions: [region, color], measures: [field('revenue'), field('profit')], extraFields: [field('extra')],
+    combination: () => 'SUM', fail: message => { throw new Error(message); },
     cell: (row, f) => row[f.column], number: (row, f) => row[f.column], column: f => f.column };
   const data = [
     { category: 'Other', color: 'Red', region: 'West', revenue: 100, profit: null, extra: 1 },

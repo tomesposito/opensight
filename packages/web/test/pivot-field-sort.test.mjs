@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { withoutBindingAggregation } from './fixtures/compiler-baseline.mjs';
 import { readFileSync } from 'node:fs';
 import { act, createElement, useReducer } from 'react';
 import { create } from 'react-test-renderer';
@@ -147,9 +148,9 @@ test('sorting uses native field IDs and result aliases without requiring column-
 
 // Full-output hashes captured from 809591f0 before compiler edits, including function source.
 const baseline = JSON.parse(readFileSync(new URL('./fixtures/pivot-field-sort-baseline.json', import.meta.url), 'utf8'));
-for (const [name, value] of Object.entries(baselineInputs())) test(`no field sort preserves baseline bytes: ${name}`, () => {
+for (const [name, value] of Object.entries(baselineInputs())) test(`no field sort preserves baseline bytes apart from binding metadata: ${name}`, () => {
   const compiled = compileVisual(value);
-  const bytes = JSON.stringify(compiled, (_, v) => typeof v === 'function' ? v.toString() : v);
+  const bytes = JSON.stringify(withoutBindingAggregation(compiled), (_, v) => typeof v === 'function' ? v.toString() : v);
   assert.equal(createHash('sha256').update(bytes).digest('hex'), baseline.hashes[name]);
   assert.deepEqual(compileVisual(sorted(value, [])), compiled);
 });

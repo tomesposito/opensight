@@ -13,10 +13,58 @@ const config = v => v.definition.kpiVisual.chartConfiguration;
 const definition = visual => ({ dataSetIdentifierDeclarations: [], sheets: [{ sheetId: 's', name: 'Sheet', visuals: [visual] }] });
 const dialect = (v, source) => source === 'api' ? { ...v, source, definition: projectDefinition(definition(v.definition)).Sheets[0].Visuals[0] } : v;
 const normalize = v => normalizeVisual(v.source, v.definition, v.path);
+const metric = (expression, defaultAggregation = 'SUM') => ({ id: 'test', version: 1, name: 'Test metric', expression, defaultAggregation,
+  format: { style: 'number', decimalPlaces: 2 }, description: '', synonyms: [] });
+for (const source of ['bundle', 'api']) {
+  for (const well of ['values', 'targetValues']) {
+    test(`${source}: trended KPI ${well} rejects unproven grouped metrics (#313)`, () => {
+      const v = input(true);
+      config(v).fieldWells[well] = [measure(well === 'values' ? 'value' : 'target', '__metric_test')];
+      v.rows = [{ period: 'A', revenue: 10, budget: 20, __metric_test: .1 }, { period: 'B', revenue: 20, budget: 30, __metric_test: .2 }];
+      for (const expression of ['sum({profit})/sum({revenue})', 'sum({profit} * {revenue}) / sum({revenue})', 'avg({revenue})', 'distinct_count({category})']) {
+        assert.throws(() => compileVisual(dialect({ ...v, metrics: [metric(expression)] }, source)), /NONADDITIVE_MEASURE_COMBINATION/);
+      }
+      assert.throws(() => compileVisual(dialect(v, source)), /NONADDITIVE_MEASURE_COMBINATION/);
+      assert.throws(() => compileVisual(dialect({ ...v, metrics: [{ ...metric('sum({revenue})'), id: 'unrelated' }] }, source)), /NONADDITIVE_MEASURE_COMBINATION/);
+      for (const rows of [v.rows.slice(0, 1), [], null]) assert.doesNotThrow(() => compileVisual(dialect({ ...v, rows }, source)));
+    });
+  }
+  test(`${source}: trended KPI value and target use their own proven operation (#313)`, () => {
+    const v = input(true);
+    config(v).fieldWells.values = [measure('value', '__metric_test')];
+    config(v).fieldWells.targetValues = [measure('target', '__metric_goal')];
+    config(v).kpiOptions = { progressBar: {}, comparison: { comparisonMethod: 'DIFFERENCE' }, trendArrows: {} };
+    v.rows = [{ period: 'B', __metric_test: 30, __metric_goal: 80 }, { period: 'A', __metric_test: 10, __metric_goal: 50 }];
+    for (const [expression, total] of [['sum({revenue})', 40], ['count({revenue})', 40], ['min({revenue})', 10], ['max({revenue})', 30]]) {
+      v.metrics = [metric(expression), { ...metric('max({revenue})'), id: 'goal' }];
+      const c = compileVisual(dialect(v, source));
+      assert.equal(c.option.graphic[0].style.text, String(total));
+      assert.equal(c.kpiTarget.value, 80);
+      assert.equal(c.kpiTarget.progress.ratio, total / 80);
+      assert.deepEqual(c.option.series[0].data, [10, 30]);
+      assert.equal(c.kpiTrendArrow.direction, 'up');
+      assert.deepEqual(c.table.rows, [['A', 10, 50], ['B', 30, 80]]);
+    }
+  });
+  test(`${source}: non-trended governed KPI needs no combination proof (#313)`, () => {
+    const v = input();
+    for (const aggregation of ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'DISTINCT_COUNT']) {
+      config(v).fieldWells.values = [measure('value', '__metric_test', aggregation)];
+      config(v).fieldWells.targetValues = [measure('target', '__metric_goal', aggregation)];
+      v.rows = [{ __metric_test: .15, __metric_goal: .3 }];
+      const c = compileVisual(dialect(v, source));
+      assert.equal(c.model.measures[0].aggregation, aggregation);
+      assert.equal(c.model.targetMeasure.aggregation, aggregation);
+      assert.equal(c.option.graphic[0].style.text, '0.15');
+      assert.equal(c.kpiTarget.value, .3);
+    }
+  });
+}
 for (const source of ['bundle', 'api']) {
   test(`${source}: one KPI target uses the measure parser and joins result bindings`, () => {
     const v = dialect(input(), source);
-    assert.deepEqual(normalize(v).targetMeasure, { id: 'target', column: 'budget', dataSet: 'data' });
+    assert.deepEqual(normalize(v).targetMeasure, { id: 'target', column: 'budget', dataSet: 'data', aggregation: 'SUM' });
+    assert.equal(normalize(v).measures[0].aggregation, 'SUM');
     assert.deepEqual(compileVisual({ ...v, bindings: { target: 'goal' }, rows: [{ revenue: 10, goal: 20 }] }).table.rows, [[10, 20]]);
     assert.throws(() => compileVisual({ ...v, rows: [{ revenue: 10 }] }), /missing result column budget/);
     for (const budget of ['20', true, Infinity, NaN]) assert.throws(() => compileVisual({ ...v, rows: [{ revenue: 10, budget }] }), CompileError);
@@ -65,7 +113,7 @@ for (const source of ['bundle', 'api']) {
   });
   test(`${source}: target arithmetic and duplicate trend keys fail closed`, () => {
     const v = input(true); v.rows = [{ period: 'A', revenue: 1, budget: Number.MAX_VALUE }, { period: 'B', revenue: 2, budget: Number.MAX_VALUE }];
-    assert.throws(() => compileVisual(dialect(v, source)), /target: KPI total must be finite/);
+    assert.throws(() => compileVisual(dialect(v, source)), /target: grouped measure total must be finite/);
     v.rows = [input().rows[0], input().rows[0]];
     assert.throws(() => compileVisual(dialect(v, source)), /duplicate trend groups/);
   });

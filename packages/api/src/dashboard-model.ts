@@ -38,6 +38,7 @@ export interface DashboardBackend {
   query(version: DashboardVersion, definition: JsonObject, visualId: string): Promise<DashboardQuery>;
 }
 export interface DashboardQuery {
+  metrics?: readonly import('@opensight/query-engine').PublishedMetric[];
   columns: { name: string; type: 'string' | 'number' }[];
   rows: Record<string, string | number | null>[];
   bindings: Record<string, string>;

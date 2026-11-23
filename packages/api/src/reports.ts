@@ -45,7 +45,7 @@ export class DashboardSnapshots implements SnapshotProvider {
         const body = Object.values(visual)[0];
         if (!isObject(body) || typeof body.VisualId !== 'string') throw new Error('Invalid snapshot visual');
         const result = await this.sales.executeVisual(definition, body.VisualId);
-        visuals.push(compileVisual({ source: 'api', definition: visual, rows: result.rows, bindings: Object.fromEntries([...result.plan.dimensions, ...result.plan.measures].map(f => [f.fieldId, f.outputName])), path: `Definition.Sheets[${si}].Visuals[${vi}]` }));
+        visuals.push(compileVisual({ source: 'api', definition: visual, rows: result.rows, metrics: result.metrics, bindings: Object.fromEntries([...result.plan.dimensions, ...result.plan.measures].map(f => [f.fieldId, f.outputName])), path: `Definition.Sheets[${si}].Visuals[${vi}]` }));
       }
     }
     return { dashboardId, title: typeof dashboard.Name === 'string' ? dashboard.Name : dashboardId, capturedAt: new Date().toISOString(), visuals };

@@ -1,16 +1,11 @@
 import { groupedPeriodDate, resultDate } from '@opensight/query-engine/browser';
 import { compareCells } from './cell-sort.js';
 import type { Cell, Field, Row } from './model.js';
+import { combineGroupedValues, type MeasureCombination } from './measure-combination.js';
 
-/** Aggregate already grouped SUM results; nulls never manufacture a zero. */
-export function kpiTotal(values: readonly (number | null)[], fail: (message: string) => never): number | null {
-  let total: number | null = null;
-  for (const value of values) {
-    if (value === null) continue;
-    total = (total ?? 0) + value;
-    if (!Number.isFinite(total)) fail('KPI total must be finite');
-  }
-  return total;
+/** A single group needs no combination proof; nulls never manufacture a zero. */
+export function kpiTotal(values: readonly (number | null)[], mode: MeasureCombination, fail: (message: string) => never): number | null {
+  return values.length <= 1 ? values[0] ?? null : combineGroupedValues(values, mode, fail);
 }
 
 /** Sort already grouped rows without mutating input or combining result values. */
