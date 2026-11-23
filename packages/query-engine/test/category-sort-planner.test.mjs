@@ -83,17 +83,20 @@ for (const chart of charts) for (const dialect of dialects) {
     }
   }
 
-  test(`CategorySort preserves calculations, multiple Values, measure aggregations and parameters: ${chart.name}, ${dialect}`, () => {
+  test(`CategorySort preserves calculations, multiple Values and parameters: ${chart.name}, ${dialect}`, () => {
     const r = categoryRequest(chart);
     r.analysis.Definition.FilterGroups = request().analysis.Definition.FilterGroups;
-    wells(r).Values.push(measure('discounted_revenue', 'AVG', 'secondary-id'));
+    // Pie renders exactly one measure (issue #319), so the multiple-Values
+    // shape applies to the other category charts only.
+    const multi = chart.name !== 'pie';
+    if (multi) wells(r).Values.push(measure('discounted_revenue', 'SUM', 'secondary-id'));
     const baseline = planVisual(r, { dialect });
     assert.deepEqual(baseline.parameters, ['East']);
-    assert.equal(baseline.calculations.length, 1);
+    assert.equal(baseline.calculations.length, multi ? 1 : 0);
     for (const aggregation of aggregations) {
-      setSort(r, 'AggregationSort', aggregation, 'DESC', 'discounted_revenue');
+      setSort(r, 'AggregationSort', aggregation, 'DESC', multi ? 'discounted_revenue' : 'revenue');
       const actual = assertInvariant(r, dialect, baseline);
-      assert.deepEqual(actual.measures.map(m => m.aggregation), ['SUM', 'AVG']);
+      assert.deepEqual(actual.measures.map(m => m.aggregation), multi ? ['SUM', 'SUM'] : ['SUM']);
     }
   });
 
@@ -239,6 +242,46 @@ for (const kind of ['ComboChartVisual', 'PivotTableVisual', 'ScatterPlotVisual',
     }
   });
 }
+
+test('CategorySort admission rejects renderer-incompatible field wells (issue #319)', () => {
+  for (const chart of charts) {
+    // An ordinary AVG measure cannot render: the compiler accepts only SUM
+    // bindings or governed metric bindings. Without a sort admission the
+    // planner's wider native allowance still plans the same definition.
+    const r = categoryRequest(chart);
+    wells(r).Values.push(measure('discounted_revenue', 'AVG', 'secondary-id'));
+    assert.doesNotThrow(() => planVisual(r));
+    setSort(r);
+    assert.throws(() => planVisual(r), (error) => {
+      assert.equal(error.name, 'QueryEngineError');
+      assert.equal(error.code, 'UNSUPPORTED_FEATURE');
+      assert.ok(error.path.endsWith('.Values[1].NumericalMeasureField.AggregationFunction'), error.path);
+      return true;
+    });
+  }
+  // A second category dimension cannot render on a category chart.
+  const twoDims = categoryRequest(charts[0]);
+  wells(twoDims).Category.push(dimension('category', 'second-id'));
+  setSort(twoDims);
+  assert.throws(() => planVisual(twoDims), { name: 'QueryEngineError', code: 'UNSUPPORTED_FEATURE' });
+  // Pie cannot render a second measure, even when both bindings are SUM.
+  const pie = categoryRequest(charts[3]);
+  wells(pie).Values.push(measure('profit', 'SUM', 'secondary-id'));
+  setSort(pie);
+  assert.throws(() => planVisual(pie), (error) => {
+    assert.equal(error.name, 'QueryEngineError');
+    assert.equal(error.code, 'UNSUPPORTED_FEATURE');
+    assert.ok(error.path.endsWith('.Values'), error.path);
+    return true;
+  });
+  // Governed metric bindings keep their non-SUM aggregations under admission.
+  const governed = categoryRequest(charts[0]);
+  governed.analysis.Definition.CalculatedFields.push({ Name: '__metric_margin', DataSetIdentifier: 'sales_data', Expression: '{revenue} * 0.9' });
+  wells(governed).Values.push(measure('__metric_margin', 'AVG', 'metric-id'));
+  const baseline = planVisual(governed);
+  setSort(governed);
+  assert.deepEqual(planVisual(governed), baseline);
+});
 
 for (const chart of charts) test(`aggregation sort cannot bypass column security: ${chart.name}`, () => {
   for (const dialect of dialects) for (const indirect of [false, true]) {
