@@ -123,6 +123,7 @@ export interface MultiplesOptions {
 }
 export interface FixtureVisual {
   theme?: AnalysisTheme;
+  metrics?: readonly import('@opensight/query-engine/browser').PublishedMetric[];
   source: 'bundle' | 'api';
   definition: BundleVisual | Record<string, VisualBody>;
   rows: Row[] | null;
