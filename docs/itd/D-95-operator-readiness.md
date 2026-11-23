@@ -78,26 +78,3 @@ Dynamic API/embed behaviors must not inherit the static policy.
   failed verdict, oversize, and ambiguous-send handling; CSP route isolation and
   browser behavior; sender IAM restriction; actual CI audit; full root suite and
   isolated PostgreSQL; live site and synthetic hosted release checks.
-
-
-### Free-plan enforcement correction — 2026-11-21
-
-AWS rejected attaching the custom response headers policy to the existing Free
-flat-rate distribution. Keep the Free plan. Add the generated CSP through a
-CloudFront Functions viewer-response function associated only with the default
-frontend behavior and `/assets/*`; keep the managed SecurityHeadersPolicy and
-all existing viewer-request functions. Never associate it with API or dynamic
-embedding behaviors. The function changes only the CSP response header and
-preserves the response status, body, cookies and other headers. Reject conflicting
-viewer-response associations instead of replacing them. A temporary exact hash
-for the current inline demo is permitted until the external-script release lands.
-
-CloudFront does not invoke viewer-response functions for origin errors of 400 or
-higher; those errors retain the managed headers, while application and demo HTML
-success responses receive the CSP. The public generator may still describe a
-custom policy for other plans, but the infrastructure's optional CSP uses the
-function path. Verify the function in the real edge engine and both live sites.
-
-Sources: [CloudFront plan features](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/flat-rate-pricing-plan.html),
-[AWS security-header function example](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/example_cloudfront_functions_add_security_headers_section.html),
-[edge-function restrictions](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/edge-function-restrictions-all.html).

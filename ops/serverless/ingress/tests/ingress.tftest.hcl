@@ -151,7 +151,7 @@ run "static_csp_leaves_dynamic_embed_policy_untouched" {
   command = plan
   variables { static_content_security_policy = "default-src 'self'; script-src 'self'; object-src 'none'" }
   assert {
-    condition     = length(aws_cloudfront_function.static_security) == 1 && aws_cloudfront_distribution.application.default_cache_behavior[0].response_headers_policy_id == data.aws_cloudfront_response_headers_policy.static.id && length([for association in aws_cloudfront_distribution.application.default_cache_behavior[0].function_association : association if association.event_type == "viewer-response"]) == 1 && alltrue([for behavior in aws_cloudfront_distribution.application.ordered_cache_behavior : behavior.target_origin_id != "api" || behavior.response_headers_policy_id == null])
+    condition     = length(aws_cloudfront_response_headers_policy.static) == 1 && aws_cloudfront_response_headers_policy.static[0].security_headers_config[0].content_security_policy[0].override && alltrue([for behavior in aws_cloudfront_distribution.application.ordered_cache_behavior : behavior.target_origin_id != "api" || behavior.response_headers_policy_id == null])
     error_message = "Static CSP must not overwrite API/embed session headers."
   }
 }

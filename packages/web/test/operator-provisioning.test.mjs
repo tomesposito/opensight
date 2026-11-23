@@ -149,6 +149,17 @@ test('197: billing 404 removes controls; paused resolutions exclude drop-to-Free
   assert.doesNotMatch(paused.text(), /Drop to Free/);
 });
 
+test('326: waitlist billing states plainly that billing is not configured and offers no payment link', async t => {
+  const ui = await mount(t, OperatorTenant, detailHandler({ billing: { billingMode: 'waitlist', tier: null, subscriptionStatus: null, accessState: 'active' } }), { tenantId: 'tenant-one' });
+  await connect(ui);
+  assert.match(ui.text(), /Billing is not configured on this deployment/);
+  assert.match(ui.text(), /waiting list mode/);
+  assert.equal(ui.root.findAllByProps({ 'aria-label': 'Generate payment link' }).length, 0);
+  const checkout = await mount(t, OperatorTenant, detailHandler({ billing: { billingMode: 'checkout', tier: 'regular', subscriptionStatus: 'active', accessState: 'active' } }), { tenantId: 'tenant-one' });
+  await connect(checkout);
+  assert.doesNotMatch(checkout.text(), /Billing is not configured/);
+});
+
 test('192 C: lifecycle uses freshly read version; conflict refetches; restore-review refusal is explicit', async t => {
   let version = 2, state = 'active', conflict = true;
   const ui = await mount(t, OperatorTenant, detailHandler({ extra: call => {

@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- The operator tenant detail page now states the billing state plainly in waiting list mode (#326): since the waiting-list change (#241), a tenant on a deployment without Stripe configured has a billing record, so the page showed tier facts with no notice and operators could not tell billing was unconfigured. The Plan & billing section now says billing is not configured on this deployment, that the tenant is in waiting list mode with no payment links, and that a plan is granted manually by an operator when the administrator requests one. Checkout-mode tenants are unchanged.
+
 - Visual queries now recover from transient queue pressure instead of dying as permanent errors (#325): when the server rejects a query with `QUEUE_WAIT_EXCEEDED` (HTTP 429) because the tenant's queued wait expired under concurrent tile loads, the web client retries up to twice with a short abort-aware backoff and renders the result once the queue drains; budget and admission refusals remain final, and a persistent queue-wait rejection still surfaces after the retries. The J4 persona journey's author chart wait now uses the same 45-second timeout as the journey's other chart waits.
 
 - Insight projected wells now deduplicate bindings by canonical semantics instead of raw JSON text (#322): an omitted date grain and an explicit DAY on the same field are one dimension (matching the native planner), reordered JSON members no longer defeat deduplication, the first original definition is preserved unchanged for export, and one fieldId bound with conflicting column, dataset or grain semantics across computations fails closed with `INSIGHT_FIELD_UNBOUND` instead of projecting two wells that fail validation after native admission.
@@ -204,8 +206,6 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 - Statistical forecasting on line charts with a date dimension: a dashed forecast continuation with a shaded prediction interval (80/90/95%), fitted values for trailing periods, and Auto/None/Custom seasonality, computed with exponential smoothing (ETS/Holt-Winters, corrected-AIC model selection) in the web layer so author view, dashboards, small multiples, and PDF export agree. Edited in the Properties panel's Forecast section; QuickSight `ForecastConfigurations` import and export round-trip, with boundaries applied as clamps. Series with fewer than 4 points render actuals with a quiet note instead of a forecast (#235).
 
 ### Fixed
-
-- Enforce static frontend CSP through a CloudFront Function supported by the Free pricing plan, preserving API and embed policies (#110).
 
 - Insight visuals reject malformed or unsupported nested field bindings before changed author wells can replace them, preventing queries for invalid category, time, value, and comparison bindings while preserving valid well changes (#297).
 

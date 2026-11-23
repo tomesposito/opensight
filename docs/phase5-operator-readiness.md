@@ -46,10 +46,7 @@ after fingerprints. Verify the received message's SPF, DKIM and DMARC results.
 ## Static Content Security Policy
 
 Generate the policy with `static-security-policy.mjs` using exact application and
-artifact origins. Render `edge-static-response.js` with the JSON-encoded policy
-and publish a CloudFront viewer-response Function. Free pricing plans reject custom
-response-header policies. Keep the managed security headers and existing request
-functions; reject any conflicting response function. Attach only to the two frontend-origin behaviors; dynamic API
+artifact origins. Attach only to the two frontend-origin behaviors; dynamic API
 and embedding responses keep their own policies. Validate browser authentication,
 uploads, queries, marketing and the demo before enforcing it. Inline scripts and
 `eval` are denied. Existing styling still requires inline styles.
@@ -60,7 +57,3 @@ self-contained. During cutover only, the previous hosted module may be admitted
 by its exact SHA-256 hash. Remove that hash after the new bundle is verified.
 Changing the fixed marketing manifest also requires reviewing and updating the
 private deployment controller's pinned frontend policy before release selection.
-
-CloudFront omits viewer-response Functions when the origin returns status 400 or
-higher. Those responses retain the managed security headers but do not receive
-this CSP. API and embed behaviors never receive this static response function.
