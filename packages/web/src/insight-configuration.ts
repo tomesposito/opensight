@@ -128,14 +128,48 @@ function computations(config: unknown): [Kind, Obj][] | undefined {
   });
 }
 
+/**
+ * Canonical descriptor of one computation field binding (issue #322): the
+ * normalized semantics the native planner deduplicates by — variant, field
+ * identity, column, dataset, date grain with an omitted grain defaulting to
+ * DAY (the planner's rule), and the measure aggregation. Two raw bindings
+ * with the same descriptor are one field even when their JSON members are
+ * ordered differently or one spells out a default the other omits.
+ */
+function canonicalBinding(raw: unknown, measure: boolean): { key: string; fieldId: string } {
+  const { variant, field, column } = bindingShape(raw, measure);
+  const descriptor = [
+    variant, field.fieldId, column.columnName, column.dataSetIdentifier ?? null,
+    variant === 'dateDimensionField' ? (field.dateGranularity ?? 'DAY') : null,
+    measure ? insightObject(field.aggregationFunction).simpleNumericalAggregation : null,
+  ];
+  return { key: JSON.stringify(descriptor), fieldId: field.fieldId as string };
+}
+
 /** Native API insight computations own their fields. OpenSight wells are a projection. */
 export function insightWells(config: unknown): { category: unknown[]; values: unknown[] } {
   const entries = computations(config) ?? [];
-  const collect = (keys: string[]): unknown[] => {
-    const fields = entries.flatMap(([, c]) => keys.flatMap(k => c[k] === undefined ? [] : [c[k]]));
-    return [...new Map(fields.map(f => [JSON.stringify(f), f])).values()];
+  const collect = (slots: [string, boolean][]): unknown[] => {
+    const byKey = new Map<string, unknown>();
+    const keyByFieldId = new Map<string, string>();
+    for (const [, c] of entries) for (const [slot, measure] of slots) {
+      if (c[slot] === undefined) continue;
+      const { key, fieldId } = canonicalBinding(c[slot], measure);
+      // The planner fails closed when one fieldId is bound inconsistently
+      // across computations; the projection holds the same line instead of
+      // emitting two wells for a field whose semantics conflict.
+      const prior = keyByFieldId.get(fieldId);
+      if (prior !== undefined && prior !== key) insightFail('INSIGHT_FIELD_UNBOUND', `field ${fieldId} is bound inconsistently across computations`);
+      keyByFieldId.set(fieldId, key);
+      // Preserve the first original definition unchanged for export.
+      if (!byKey.has(key)) byKey.set(key, c[slot]);
+    }
+    return [...byKey.values()];
   };
-  return { category: collect(['category', 'time']), values: collect(['value', 'fromValue', 'targetValue']) };
+  return {
+    category: collect([['category', false], ['time', false]]),
+    values: collect([['value', true], ['fromValue', true], ['targetValue', true]]),
+  };
 }
 export function projectInsightBody(body: Obj): Obj {
   if (body.insightConfiguration !== undefined) computations(body.insightConfiguration);
