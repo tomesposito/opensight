@@ -251,7 +251,9 @@ function insightMeasure(raw: unknown, path: string, binder: ExpressionBinder): I
  * period-to-date, period-over-period, growth-rate and anomaly need a
  * date dimension, metric comparison binds two required, distinct SUM
  * measures (from and target) against a generic date-or-category
- * dimension, and a uniqueValues-only insight
+ * dimension, the whole collection derives at most two distinct measures
+ * (the narrative compiler's cardinality rule, enforced here before
+ * querying — issue #321), and a uniqueValues-only insight
  * carries a plan-only COUNT measure (the author-query treatment) that the
  * narrative compiler discards. Everything unvalidated fails closed.
  */
@@ -419,6 +421,13 @@ function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: re
     }
   }
   const measures = [...measuresById.values()];
+  // The web narrative compiler (normalizeInsight) accepts at most two
+  // distinct measures for the whole collection — one, or two for comparison —
+  // so a collection deriving three or more must fail here, before querying,
+  // instead of planning successfully and being rejected by its consumer
+  // (issue #321). Per-computation checks cannot see this: the bound is on
+  // the distinct measures across every computation combined.
+  if (measures.length > 2) fail('INVALID_INPUT', cp, 'insight computations must derive at most two distinct measures (one, or two for comparison)');
   if (!measures.length) {
     if (!kinds.every(k => k === 'UniqueValues')) fail('INVALID_INPUT', cp, 'at least one value binding is required unless every computation is uniqueValues');
     // A uniqueValues-only insight binds no measure; carry a COUNT like the
