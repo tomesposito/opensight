@@ -59,7 +59,7 @@ export function clearVisualRows(visualId: string): void {
  */
 const CSV_FORMULA_PREFIX = /^[=+\-@\t\r]/;
 const defuseCsvFormula = (text: string): string =>
-  CSV_FORMULA_PREFIX.test(text) ? `'${text}'` : text;
+  CSV_FORMULA_PREFIX.test(text) ? `'${text}` : text;
 
 export const csvCell = (value: unknown): string => {
   if (value === null || value === undefined) return '';
