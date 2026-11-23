@@ -84,9 +84,7 @@ test('issue #314 example: descending measure sort + one-category limit reach the
 test('issue #314: table visual row ordering reaches the export', () => {
   const input = authorInput('table', [{ region: 'C', revenue: 20 }, { region: 'A', revenue: 10 }, { region: 'B', revenue: 50 }]);
   chartConfig(input.definition).sortConfiguration = {
-    rowSort: [{ aggregationSort: { fieldId: 'region', direction: 'DESC',
-      column: { columnName: 'revenue', dataSetIdentifier: 'sales_data' },
-      aggregationFunction: { numericalAggregationFunction: { simpleNumericalAggregation: 'SUM' } } } }],
+    rowSort: [{ fieldSort: { fieldId: 'revenue', direction: 'DESC' } }],
   };
   const compiled = compileVisual(input);
   assert.equal(tableToCsv({ columns: compiled.table.columns, rows: compiled.table.rows }), 'region,revenue\r\nB,50\r\nC,20\r\nA,10\r\n');
