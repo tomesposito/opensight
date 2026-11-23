@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeInsight, validateInsightConfiguration, insightWells, rebindInsight, InsightError } from '../build/test/insight-configuration.js';
-import { insightNarrative } from '../build/test/insight-narrative.js';
+import { insightNarrative, ANOMALY_MAX_SERIES_POINTS, ANOMALY_MAX_WORK_UNITS } from '../build/test/insight-narrative.js';
 
 const field = column => ({ id: column, column, dataSet: 'sales' });
 const time = { ...field('date'), dateGranularity: 'DAY' }, measure = field('revenue');
@@ -147,4 +147,35 @@ test('anomaly caps the chronological list at five and discloses every remaining 
   assert.match(result.text, /2024-01-09 \(100, unusually high\); 2024-01-10 \(-100, unusually low\)/);
   assert.match(result.text, /2024-01-13 \(100, unusually high\); and 2 more\.$/);
   assert.doesNotMatch(result.text, /2024-01-14|2024-01-15/);
+});
+
+test('anomaly computations sharing a measure reuse statistics and stay behavior-identical', () => {
+  const rows = rowsOf([10, 10, 10, 10, 10, 100, -100]);
+  const multi = insightNarrative(rows, { category: time, measures: [measure], computations: { computations: [
+    { anomaly: { computationId: 'high', anomalyDetection: { direction: 'HIGHER' } } },
+    { anomaly: { computationId: 'low', anomalyDetection: { direction: 'LOWER' } } },
+    { anomaly: { computationId: 'both' } },
+    { anomaly: { computationId: 'sensitive', anomalyDetection: { minSensitivityPercentage: 100 } } },
+  ] } });
+  const singles = [{ direction: 'HIGHER' }, { direction: 'LOWER' }, undefined, { minSensitivityPercentage: 100 }]
+    .map(detection => narrative(rows, detection).text);
+  assert.deepEqual(multi.paragraphs.map(p => p.parts.map(part => part.text).join('')), singles);
+  assert.match(multi.paragraphs[0].parts.map(p => p.text).join(''), /\(100, unusually high\)/);
+  assert.match(multi.paragraphs[1].parts.map(p => p.text).join(''), /\(-100, unusually low\)/);
+});
+
+test('anomaly work budget fails closed before sorting and never truncates silently', () => {
+  assert.ok(ANOMALY_MAX_SERIES_POINTS > 0 && ANOMALY_MAX_WORK_UNITS > 0);
+  const over = rowsOf(Array.from({ length: ANOMALY_MAX_SERIES_POINTS + 1 }, (_, i) => i % 7));
+  assert.throws(() => narrative(over), error('INSIGHT_ANOMALY_WORK_EXCEEDED'));
+  // A series at the point cap passes with one computation but the total work
+  // budget binds when 100 computations each scan it.
+  const atCap = rowsOf(Array.from({ length: ANOMALY_MAX_SERIES_POINTS }, (_, i) => i % 7));
+  assert.match(narrative(atCap).text, /^Statistical anomaly detection for revenue by date: /);
+  const many = { computations: Array.from({ length: 100 }, (_, i) => ({ anomaly: { computationId: `a${i}` } })) };
+  assert.throws(() => insightNarrative(atCap, { category: time, measures: [measure], computations: many }), error('INSIGHT_ANOMALY_WORK_EXCEEDED'));
+  // The budget is anomaly-specific: a non-anomaly narrative over the same
+  // rows is unaffected.
+  const total = insightNarrative(over, { category: time, measures: [measure], computations: { computations: [{ totalAggregation: { computationId: 't' } }] } });
+  assert.match(total.text, /^Total revenue: /);
 });
