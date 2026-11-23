@@ -129,8 +129,9 @@ test('sort honors result bindings, typed mixed values and stable ties', () => {
   assert.deepEqual(titles(compileVisual(value)), ['East', 'West']);
   const cells = [2, '2', null, true, false, '10'];
   const groups = direction => groupRowsByFacet(cells.map(value => ({ value })), { id: 'facet' }, row => row.value, { fieldId: 'facet', direction }).map(g => g.value);
-  assert.deepEqual(groups('ASC'), ['10', 2, '2', false, true, null]);
-  assert.deepEqual(groups('DESC'), [true, false, 2, '2', '10', null]);
+  // Mixed types follow the #316 total order: numbers, then strings, then booleans.
+  assert.deepEqual(groups('ASC'), [2, '10', '2', false, true, null]);
+  assert.deepEqual(groups('DESC'), [true, false, '2', '10', 2, null]);
   assert.deepEqual(groupRowsByFacet(cells.map(value => ({ value })), { id: 'facet' }, row => row.value).map(g => g.value), cells);
 });
 
