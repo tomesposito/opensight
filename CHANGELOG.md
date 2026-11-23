@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Shared cell sorting is now a consistent total order for mixed-type columns (#316): numbers sort before strings and strings before booleans, each in their established within-type order, with null still last in either direction. The previous numeric-pair/string-otherwise rule was intransitive (2 < 10, 10 < "15", "15" < 2), so category and facet limits could keep different members depending on row order.
+
 - KPI trend groups now detect duplicates on the canonical decoded period (#315): equivalent date labels (`2025-01` vs `2025-01-01T00:00:00Z`) and distinct timestamps inside one declared period are rejected as duplicate trend groups instead of silently counting as separate observations in the total, sparkline and comparison. Every date label is decoded through the shared grain-aware decoder, matching the Insight fix in #259/#265.
 
 - Author CSV and Excel exports now download the visual's compiled data-view table instead of the raw query rows (#314): visual sorts, category/facet limits (including the “Other” bucket) and table/pivot presentation ordering reach the download, matching what the visual shows and what the hosted dashboard CSV already exported.
