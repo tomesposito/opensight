@@ -1,6 +1,6 @@
 import { validOProvenance } from './o-provenance.js';
 import { formatMetric } from './governed-metrics.js';
-import { parseKpiOptions, formatNumber, groupedPeriodDate, shiftDate, resultDate } from '@opensight/query-engine/browser';
+import { parseKpiOptions, formatNumber, groupedPeriodDate, shiftDate, resultDate, metricCombination, metricId, type PublishedMetric } from '@opensight/query-engine/browser';
 import { computeForecast, forecastConfigValid, MIN_FORECAST_POINTS, prepareChronological, type ForecastConfig } from './forecast.js';
 import { convertDefinition } from './definition-converter.js';
 import { InsightError, projectInsightBody, normalizeInsight, uniqueValuesOnly, topBottomMoversOnly } from './insight-configuration.js';
@@ -16,6 +16,7 @@ import { EXTRA_VISUALS, extraKind, variantKinds, type VisualKind } from './visua
 import { compileExtra } from './extra-charts.js';
 import { applyCategoryLimit, CATEGORY_LIMIT_KINDS } from './category-limit.js';
 import { kpiComparison, kpiTotal, orderKpiTrend } from './kpi-trend.js';
+import { type MeasureCombination } from './measure-combination.js';
 import { compareCells } from './cell-sort.js';
 import { applyDisplayOptions, legendTextStyle } from './display-options.js';
 import { FACETED_KINDS, applyFacetLimit, facetLayout, facetPanelGrids, facetTitles, groupRowsByFacet, type FacetGroup } from './facet-layout.js';
@@ -23,7 +24,7 @@ import { FACETED_KINDS, applyFacetLimit, facetLayout, facetPanelGrids, facetTitl
 export const DATA_REQUIRED_LABEL = 'Needs data';
 
 type ObjectValue = Record<string, unknown>;
-type Input = Pick<FixtureVisual, 'source' | 'rows' | 'bindings' | 'path' | 'theme'> & { definition: unknown };
+type Input = Pick<FixtureVisual, 'source' | 'rows' | 'bindings' | 'path' | 'theme'> & { definition: unknown; metrics?: readonly PublishedMetric[] };
 export interface CompiledVisual {
   model: VisualModel;
   narrative?: InsightNarrative;
@@ -747,11 +748,26 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   };
 }
 
+function measureCombination(field: Field, metrics: readonly PublishedMetric[] = []): MeasureCombination {
+  const id = metricId(field.column);
+  if (id !== undefined) {
+    const metric = metrics.find(metric => metric.id === id);
+    return metric ? metricCombination(metric) : 'NONE';
+  }
+  switch (field.aggregation) {
+    case undefined: case 'SUM': case 'COUNT': return 'SUM';
+    case 'MIN': return 'MIN';
+    case 'MAX': return 'MAX';
+    default: return 'NONE';
+  }
+}
+
 /** Pure renderer: rows must already be authorized, filtered and aggregated. No query execution. */
 export function compileVisual(input: Input): CompiledVisual {
   if (input.theme !== undefined && !themeValid(input.theme)) fail(input.path, 'invalid analysis theme');
   const theme = input.theme ?? LIGHT_THEME;
   const model = normalizeVisual(input.source, input.definition, input.path);
+  const combination = (field: Field) => measureCombination(field, input.metrics);
   let kpiTarget: CompiledVisual['kpiTarget'];
   let kpiTrendArrow: CompiledVisual['kpiTrendArrow'];
   const fields = [...model.dimensions, ...(model.trendDimension ? [model.trendDimension] : []), ...(model.breakdown ? [model.breakdown] : []), ...(model.facet ? [model.facet] : []), ...model.measures, ...(model.targetMeasure ? [model.targetMeasure] : [])];
@@ -1027,11 +1043,11 @@ export function compileVisual(input: Input): CompiledVisual {
     if (!model.trendDimension && rows.length > 1) fail(input.path, 'KPI expects exactly one aggregate row, not a client-side sum');
     const row = rows[0];
     const values = rows.map(row => number(row, model.measures[0]!));
-    const value = model.trendDimension ? kpiTotal(values, message => fail(input.path, message)) : row ? number(row, model.measures[0]!) : null;
+    const value = model.trendDimension ? kpiTotal(values, combination(model.measures[0]!), message => fail(input.path, message)) : row ? number(row, model.measures[0]!) : null;
     if (value !== null && !Number.isFinite(value)) fail(input.path, 'KPI total must be finite');
     if (model.targetMeasure) {
       const targets = rows.map(row => number(row, model.targetMeasure!));
-      const target = model.trendDimension ? kpiTotal(targets, message => fail(input.path, `target: ${message}`)) : targets[0] ?? null;
+      const target = model.trendDimension ? kpiTotal(targets, combination(model.targetMeasure), message => fail(input.path, `target: ${message}`)) : targets[0] ?? null;
       kpiTarget = { value: target, label: target === null ? 'No value' : formatMetric(target, model.formatting?.metricFormats?.[model.measures[0]!.column]) ?? displayCell(target) };
       if (model.kpiOptions?.progressBar?.visibility === 'VISIBLE') {
         const ratio = value !== null && target !== null && target > 0 ? value / target : null;
