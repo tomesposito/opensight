@@ -96,15 +96,37 @@ for (const chart of charts) for (const dialect of dialects) {
   test(`CategoryItemsLimit coexists with CategorySort and parameters: ${chart.name}, ${dialect}`, () => {
     const r = categoryRequest(chart);
     r.analysis.Definition.FilterGroups = request().analysis.Definition.FilterGroups;
-    wells(r).Values.push(measure('discounted_revenue', 'AVG', 'secondary-id'));
+    // Pie renders exactly one measure (issue #319), so the second binding
+    // applies to the other category charts only.
+    if (chart.name !== 'pie') wells(r).Values.push(measure('discounted_revenue', 'SUM', 'secondary-id'));
     const baseline = planVisual(r, { dialect });
     assert.deepEqual(baseline.parameters, ['East']);
-    assert.equal(baseline.calculations.length, 1);
+    assert.equal(baseline.calculations.length, chart.name !== 'pie' ? 1 : 0);
     setSort(r);
     setLimit(r, { ItemsLimit: 2, OtherCategories: 'INCLUDE' });
     assertInvariant(r, dialect, baseline);
   });
 }
+
+test('CategoryItemsLimit admission rejects renderer-incompatible field wells (issue #319)', () => {
+  for (const chart of charts) {
+    const r = categoryRequest(chart);
+    wells(r).Values.push(measure('discounted_revenue', 'AVG', 'secondary-id'));
+    assert.doesNotThrow(() => planVisual(r));
+    setLimit(r, { ItemsLimit: 2, OtherCategories: 'INCLUDE' });
+    assert.throws(() => planVisual(r), (error) => {
+      assert.equal(error.name, 'QueryEngineError');
+      assert.equal(error.code, 'UNSUPPORTED_FEATURE');
+      assert.ok(error.path.endsWith('.Values[1].NumericalMeasureField.AggregationFunction'), error.path);
+      return true;
+    });
+  }
+  // Pie cannot render a second measure, even when both bindings are SUM.
+  const pie = categoryRequest(charts[3]);
+  wells(pie).Values.push(measure('profit', 'SUM', 'secondary-id'));
+  setLimit(pie, { ItemsLimit: 2 });
+  assert.throws(() => planVisual(pie), { name: 'QueryEngineError', code: 'UNSUPPORTED_FEATURE' });
+});
 
 const lp = '.CategoryItemsLimit';
 const invalidCases = [

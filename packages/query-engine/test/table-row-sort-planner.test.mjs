@@ -87,20 +87,42 @@ for (const dialect of dialects) {
     });
   }
 
-  test(`RowSort preserves calculations, measure aggregations and filter parameters: ${dialect}`, () => {
+  test(`RowSort preserves calculations and filter parameters: ${dialect}`, () => {
     const r = tableRequest();
     r.analysis.Definition.FilterGroups = request().analysis.Definition.FilterGroups;
-    wells(r).Values[1] = measure('discounted_revenue', 'AVG', 'calculated-id');
     const baseline = planVisual(r, { dialect });
     assert.deepEqual(baseline.parameters, ['East']);
     assert.equal(baseline.calculations.length, 1);
     for (const fieldId of ['group-id', 'primary-id', 'calculated-id']) {
       setSort(r, fieldId, 'DESC');
       const actual = assertInvariant(r, dialect, baseline);
-      assert.deepEqual(actual.measures.map(m => m.aggregation), ['SUM', 'AVG']);
+      assert.deepEqual(actual.measures.map(m => m.aggregation), ['SUM', 'SUM']);
     }
   });
 }
+
+test('RowSort admission rejects renderer-incompatible field wells (issue #319)', () => {
+  // An ordinary AVG calculated measure cannot render: the compiler accepts
+  // only SUM bindings or governed metric bindings. Without a RowSort
+  // admission the planner's wider native allowance still plans it.
+  const r = tableRequest();
+  wells(r).Values[1] = measure('discounted_revenue', 'AVG', 'calculated-id');
+  assert.doesNotThrow(() => planVisual(r));
+  setSort(r);
+  assert.throws(() => planVisual(r), (error) => {
+    assert.equal(error.name, 'QueryEngineError');
+    assert.equal(error.code, 'UNSUPPORTED_FEATURE');
+    assert.ok(error.path.endsWith('.Values[1].NumericalMeasureField.AggregationFunction'), error.path);
+    return true;
+  });
+  // Governed metric bindings keep their non-SUM aggregations under admission.
+  const governed = tableRequest();
+  governed.analysis.Definition.CalculatedFields.push({ Name: '__metric_margin', DataSetIdentifier: 'sales_data', Expression: '{revenue} * 0.9' });
+  wells(governed).Values.push(measure('__metric_margin', 'AVG', 'metric-id'));
+  const baseline = planVisual(governed);
+  setSort(governed);
+  assert.deepEqual(planVisual(governed), baseline);
+});
 
 const fp = '.RowSort[0].FieldSort';
 const invalidCases = [

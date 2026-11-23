@@ -599,11 +599,9 @@ function fieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly 
         if (entry.Direction !== undefined && entry.Direction !== 'ASC' && entry.Direction !== 'DESC') fail('INVALID_INPUT', sp, 'invalid row sort direction');
         // RowSort validates consumer ordering only; the complete query plan stays unchanged.
         // Issue #319: like the category admissions, a RowSort admission is
-        // an execution gate — the wells must be renderer-compatible (SUM or
-        // governed metric bindings; at least one group-by dimension, as the
-        // compiler requires for tables).
+        // an execution gate — the measure wells must be renderer-compatible
+        // (SUM or governed metric bindings).
         assertRendererCompatibleMeasures();
-        if (!dimensions.length) fail('UNSUPPORTED_FEATURE', wp, 'table supports at least one group-by dimension');
       }
     }
   }
