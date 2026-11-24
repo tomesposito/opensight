@@ -327,3 +327,44 @@ for (const kind of ['generate', 'calculation', 'plan', 'revise']) test(`#229 ${k
   await answer(body, cancellationSource, complete, async () => {});
   assert.equal(commits, 1);
 });
+
+test('#329 local v1 ask shares generation and AISettings metering on the sales binding', async t => {
+  const calls = [], records = [];
+  const { api } = await organizationApi(t, { ai: { ...options(async (_url, init) => {
+    calls.push(JSON.parse(init.body)); return response({ question: 'sum revenue by region' });
+  }), aiMeter: {
+    check: async () => { if (records.length) throw Object.assign(new Error('cap'), { code: 'AI_SPEND_CAP_EXCEEDED', detail: { tenantId: 'default', spendCents: 12, capCents: 12 } }); },
+    record: async (...args) => { records.push(args); },
+  } } });
+  const body = { question: 'sum revenue by region', datasetId: 'sales' };
+  const first = await api('/api/v1/ai/ask', 'POST', body);
+  assert.equal(first.status, 200, JSON.stringify(first));
+  assert.deepEqual(Object.keys(first.body).sort(), ['errors', 'interpretations', 'question']);
+  assert.deepEqual(first.body.interpretations[0].grounding.fieldsUsed, ['revenue', 'region']);
+  assert.equal(records.length, 1); assert.equal(records[0][0], 'default'); assert.ok(records[0][1] > 0);
+  const second = await api('/api/v1/ai/ask', 'POST', body);
+  assert.equal(second.status, 429); assert.equal(second.body.errorCode, 'AI_SPEND_CAP_EXCEEDED');
+  assert.equal(calls.length, 1);
+});
+test('#329 local v1 ask enforces capability, explicit sales scope, body and provider configuration', async t => {
+  const { api } = await organizationApi(t);
+  const body = { question: 'sum revenue', datasetId: 'sales' };
+  const disabled = await api('/api/v1/ai/ask', 'POST', body);
+  assert.equal(disabled.status, 503); assert.equal(disabled.body.errorCode, 'AI_NOT_CONFIGURED');
+  const denied = await api('/api/v1/ai/ask', 'POST', body, 'default-alice');
+  assert.equal(denied.status, 403); assert.equal(denied.body.errorCode, 'SECURITY_AI_REQUIRED');
+  const missing = await api('/api/v1/ai/ask', 'POST', { ...body, datasetId: 'missing' });
+  assert.equal(missing.status, 404); assert.equal(missing.body.errorCode, 'RESOURCE_NOT_FOUND');
+  for (const invalid of [{ question: body.question }, { ...body, question: '' }, { ...body, question: 'x'.repeat(2001) }, { ...body, dashboardId: 'daily' }]) {
+    const bad = await api('/api/v1/ai/ask', 'POST', invalid);
+    assert.equal(bad.status, 400); assert.equal(bad.body.errorCode, 'HOSTED_REQUEST_INVALID');
+  }
+});
+test('#329 local v1 ask applies the physical field-name PII guard before provider transport', async t => {
+  let calls = 0;
+  const { api } = await organizationApi(t, { dataRoot: await physicalFieldRoot(t, 'test.person@example.com'),
+    ai: options(async () => { calls++; return response({ question: 'sum revenue' }); }) });
+  const denied = await api('/api/v1/ai/ask', 'POST', { question: 'sum revenue', datasetId: 'sales' });
+  assert.equal(denied.status, 400); assert.equal(denied.body.errorCode, 'AI_FIELD_NAME_PII');
+  assert.equal(JSON.stringify(denied.body).includes('test.person'), false); assert.equal(calls, 0);
+});
