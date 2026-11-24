@@ -1,5 +1,6 @@
 import { OpenSightApiError } from './errors.js';
 import type {
+  MetricView, MetricVersion,
   ApiErrorBody,
   AssetKind, TransferAssetKind, AssetSummary, AssetSearch, AssetMove, AssetCopy, AssetTransfer, AssetPrincipal, AssetRole, AssetShare, AssetGrantWrite, FolderDescribe, FolderPermissions,
   PublishAnalysisBody, PublishAnalysisResult, DashboardSummary, DashboardVersionSummary, DashboardDescribe, DashboardShare, DashboardQueryBody, DashboardExportBody, DashboardExportArtifact, DashboardRemoved,
@@ -72,6 +73,20 @@ export class OpenSightClient {
     const token = opts.getToken;
     this.getToken = typeof token === 'function' ? token : async () => token;
     this.fetchImpl = opts.fetch ?? fetch;
+  }
+
+  // ---- governed metrics ----
+
+  listMetrics(opts: Pick<RequestOptions, 'limit' | 'cursor'> = {}): Promise<Page<MetricView>> {
+    return this.request('GET', '/v1/metrics', { headers: pageHeaders(opts) });
+  }
+
+  getMetric(id: string): Promise<MetricView> {
+    return this.request('GET', `/v1/metrics/${encode(id)}`);
+  }
+
+  listMetricVersions(id: string, opts: Pick<RequestOptions, 'limit' | 'cursor'> = {}): Promise<Page<MetricVersion>> {
+    return this.request('GET', `/v1/metrics/${encode(id)}/versions`, { headers: pageHeaders(opts) });
   }
 
   // ---- datasets ----

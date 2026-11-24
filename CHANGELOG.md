@@ -81,6 +81,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Agents can discover governed metrics and their versions through MCP, CLI and both headless SDKs, then query historical published versions with `__metric_<id>@v<version>` references; draft and missing versions fail closed (#327).
+
 - Bounded SES forwarding for support/privacy aliases with private retention and duplicate-send protection (#209).
 
 - Native/API insight visuals with a MetricComparison computation (one measure compared against a distinct target measure over the bound date or category dimension) now pass query planning with strict binding, required-measure, distinct-measure and SUM validation and unchanged query plans; the narrative consumer still owns comparison math and sentence rendering (phase-plan fallback: parity-insight-metric-comparison-planner; no GitHub issue).

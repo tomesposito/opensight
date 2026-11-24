@@ -1,7 +1,7 @@
 # Headless v1 CLI
 
 `packages/cli` is the Apache-2.0 `@opensight/cli` npm workspace. Its `opensight`
-executable calls `@opensight/headless-sdk` for all 53 operations in
+executable calls `@opensight/headless-sdk` for all 56 operations in
 `docs/api/openapi-v1.yaml`. Node 24 or newer is required. This slice does not
 publish an npm release or enable the hosted Lambda v1 surface.
 
@@ -26,6 +26,7 @@ manifest before `npm ci`.
 | --- | --- |
 | `dataset` | `list`, `describe`, `update`, `delete`, `query`, `describe-lineage`, `refresh`, `get-refresh-status` |
 | `source` | `list`, `describe`, `delete` |
+| `metric` | `list`, `describe`, `list-versions` |
 | `analysis` | `list`, `describe`, `create`, `update`, `delete`, `add-visual`, `update-visual`, `remove-visual`, `set-layouts`, `add-filter-group`, `update-filter-group`, `remove-filter-group`, `set-calculated-fields` |
 | `dashboard` | `publish`, `list`, `describe`, `list-versions`, `describe-version`, `delete`, `delete-version`, `get-share`, `set-share`, `delete-share`, `query-visual`, `create-export` |
 | `asset` | `list`, `list-analyses-summary`, `list-dashboards-summary`, `list-datasets-summary`, `search`, `move`, `copy`, `get-share`, `set-share`, `delete-share` |

@@ -31,6 +31,6 @@ for a subsequent `--ifMatch`. Binary exports return base64 and SDK metadata.
 Primary IDs are positional; all other argument names follow camelCase wire
 parameters. Objects/arrays are inline JSON. `--body` accepts a complete request
 body (`--query` for dataset queries), instead of individual body-field flags.
-The CLI exposes exactly the 53 frozen v1 operations; no raw SQL is accepted.
+The CLI exposes exactly the 56 v1 operations; no raw SQL is accepted.
 See `docs/headless-v1-cli.md` in the repository for the command table and
 complete output, credential and generation contracts.

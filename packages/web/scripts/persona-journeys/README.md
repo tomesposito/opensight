@@ -159,8 +159,12 @@ action uses MCP. No new dependency or product-code change is involved.
 The agent sees its prepared datasets and accessible analyses/dashboards; a real
 second member's private dataset/analysis is absent and direct probes return 404.
 The delegated task creates an unpublished regional sales chart. A query using
-the human-supplied `__metric_weekly-sales` reference returns east 40 / west 20 and
-published metric v2, while v3 remains an unpublished draft with tenfold values.
+the unpinned `__metric_weekly-sales` reference returns east 80 / west 40 and
+published metric v4, while v5 remains an unpublished draft with tenfold values.
+Issue #327 replaces the metric discovery gap with an MCP-only step: discover
+Weekly sales by name, describe its publication, list published versions [2, 4],
+then pin v2 and assert east 40 / west 20 and version 2 in the response. Pins to
+draft v5 and missing v99 must fail with `METRIC_VERSION_NOT_PUBLISHED`.
 For CLS, two previously published dashboards probe the same `secret_amount`
 field: one source denies it and the other lacks it. `query_dashboard_visual`
 must reach the security-aware planner and return identical HTTP 422 status and
@@ -175,10 +179,8 @@ The human reads the exact draft through their member API session and confirms
 no published dashboard references it. The final `browser-health` step is the
 shared harness check; J10 launches no browser and captures no screenshots.
 
-J10 records four gaps with expected/actual details in its JSON and suite report:
+J10 records three gaps with expected/actual details in its JSON and suite report:
 
-- Metric discovery and direct name/version selection: MCP has no metric tools;
-  queries resolve a supplied ID to the current publication and report its version.
 - PII field-name stop: `AI_FIELD_NAME_PII` guards generative routes only; no MCP
   tool reaches that guard, so there is no simulated provider call or stop.
 - AI spend-cap binding: MCP has no AI/generative call; the compute quota above

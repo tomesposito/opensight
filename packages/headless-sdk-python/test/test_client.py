@@ -800,5 +800,25 @@ class DefaultTransportRedirectTest(unittest.TestCase):
         self.assertEqual(len(origin.hits), 1)
 
 
+class MetricReadsTest(unittest.TestCase):
+    def test_metric_routes_pagination_and_path_encoding(self):
+        for method, path, args, paged in [
+            ("list_metrics", "/metrics", {"limit": 2, "cursor": "next"}, True),
+            ("get_metric", "/metrics/weekly%20sales", {"id": "weekly sales"}, False),
+            ("list_metric_versions", "/metrics/weekly%20sales/versions",
+             {"id": "weekly sales", "limit": 2, "cursor": "next"}, True),
+        ]:
+            with self.subTest(method=method):
+                body = {"items": [{"version": 2}], "nextCursor": None} if paged else {"publishedVersion": 4}
+                transport = MockTransport({f"GET /api/v1{path}": _json_ok(body)})
+                client = OpenSightClient(base_url="https://h/api", get_token="t", transport=transport)
+                self.assertEqual(getattr(client, method)(**args), body)
+                call = transport.calls[0]
+                self.assertEqual(call["url"], f"https://h/api/v1{path}")
+                self.assertIsNone(call["body"])
+                self.assertEqual(call["headers"].get("Limit"), "2" if paged else None)
+                self.assertEqual(call["headers"].get("Cursor"), "next" if paged else None)
+
+
 if __name__ == "__main__":
     unittest.main()

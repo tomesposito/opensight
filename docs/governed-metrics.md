@@ -41,7 +41,7 @@ the selected metric and version in grounding. A governed aggregation cannot be
 changed by an Ask O step.
 
 Saved analyses and published dashboard versions retain stable metric IDs, not
-copies of metric expressions. Each query resolves the latest published definition
+copies of metric expressions. Each unpinned query resolves the latest published definition
 from the workspace asset store. A publication therefore affects the next query,
 including queries against an older dashboard version. Renaming a metric does not
 break existing visuals. Draft changes do not affect query results. Author refreshes
@@ -58,6 +58,28 @@ expressions. Caller-supplied calculations cannot replace a governed metric's
 reserved `__metric_` reference. An unpublished or wrong-dataset reference returns
 `METRIC_NOT_PUBLISHED`; a replacement expression returns
 `METRIC_OVERRIDE_FORBIDDEN`.
+
+### Discovery and version selection (#327)
+
+The v1 contract exposes `list_metrics`, `describe_metric`, and
+`list_metric_versions` through generated MCP tools and CLI commands (`metric
+list`, `metric describe`, `metric list-versions`), plus the TypeScript and Python
+headless SDKs. List operations accept Limit/Cursor pagination. Find a metric by
+its definition's name, retain its ID and dataset binding, and inspect `published`
+for its current publication. Editors also see the latest draft in `definition`;
+version history requires edit permission.
+
+A measure, filter, or calculated-field dependency can use
+`__metric_<id>@v<version>` to select a historical publication, for example
+`__metric_weekly-sales@v2`. Unpinned `__metric_<id>` references continue to follow
+the current publication. Two versions of the same metric can coexist in a query;
+each retains its exact reference name, selected expression and default aggregation.
+Query `metrics` metadata reports only the selected metrics and versions.
+
+Only published-state versions execute. Draft or nonexistent version pins fail
+with `METRIC_VERSION_NOT_PUBLISHED` at `$.metrics`. A metric without any
+publication still fails with `METRIC_NOT_PUBLISHED`. Pins retain normal dataset
+authorization, join-safety and field validation checks.
 
 ## Fan-out and schema changes
 

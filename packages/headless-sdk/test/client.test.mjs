@@ -374,3 +374,18 @@ describe('assets and folders', () => {
     assert.deepEqual(JSON.parse(calls[17].body),{grants:[{principal,role:'co-owner'}]});
   });
 });
+
+for (const [method, path, args, paged] of [
+  ['listMetrics', '/metrics', [{ limit: 2, cursor: 'next' }], true],
+  ['getMetric', '/metrics/weekly%20sales', ['weekly sales'], false],
+  ['listMetricVersions', '/metrics/weekly%20sales/versions', ['weekly sales', { limit: 2, cursor: 'next' }], true],
+]) it(`${method} uses the metric read route and pagination headers (#327)`, async () => {
+  const body = paged ? { items: [{ version: 2 }], nextCursor: null } : { id: 'weekly-sales', publishedVersion: 4 };
+  const transport = mockFetch({ [`GET /api/v1${path}`]: jsonOk(body) });
+  const client = new OpenSightClient({ baseUrl: 'https://h/api', getToken: 't', fetch: transport });
+  assert.deepEqual(await client[method](...args), body);
+  const call = transport.calls[0];
+  assert.equal(call.url, `https://h/api/v1${path}`); assert.equal(call.body, undefined);
+  assert.equal(call.headers.Limit, paged ? '2' : undefined);
+  assert.equal(call.headers.Cursor, paged ? 'next' : undefined);
+});

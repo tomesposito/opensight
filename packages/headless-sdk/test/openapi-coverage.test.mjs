@@ -36,6 +36,9 @@ const ROUTES = specRoutes();
 
 // The client method that implements each spec route.
 const COVERAGE = {
+  '/metrics|GET': 'listMetrics',
+  '/metrics/{id}|GET': 'getMetric',
+  '/metrics/{id}/versions|GET': 'listMetricVersions',
   '/assets|GET': 'listAssets',
   '/assets/analyses|GET': 'listAnalysesSummary',
   '/assets/dashboards|GET': 'listDashboardsSummary',

@@ -244,3 +244,37 @@ export interface AssetShare { Principal: { Type: 'user' | 'group'; Id: string };
 export interface AssetGrantWrite { principal: AssetPrincipal; role: AssetRole }
 export interface FolderDescribe { Id: string; Name: string; Version: number }
 export interface FolderPermissions { InheritedFrom: string; Grants: AssetShare[] | null }
+
+export interface MetricFormat {
+  style: 'number' | 'percent' | 'currency';
+  decimalPlaces: number;
+  currency?: string;
+}
+export interface MetricDefinition {
+  name: string;
+  expression: string;
+  defaultAggregation: 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX' | 'DISTINCT_COUNT';
+  format: MetricFormat;
+  description: string;
+  synonyms: string[];
+}
+export interface PublishedMetric extends MetricDefinition { id: string; version: number }
+export interface MetricVersion {
+  version: number;
+  state: 'draft' | 'published';
+  definition: MetricDefinition;
+  actor: string;
+  at: string;
+}
+export interface MetricView {
+  id: string;
+  dataset: { kind: 'dataset' | 'prepared-dataset'; id: string; ownerId?: string };
+  version: number;
+  publishedVersion: number | null;
+  provenance?: { kind: 'dataset-calculation'; datasetVersion: number; calculationId: string; name: string; expression: string };
+  createdBy: string;
+  state: 'draft' | 'published';
+  definition: MetricDefinition;
+  published: PublishedMetric | null;
+  permissions: { edit: boolean; publish: boolean };
+}

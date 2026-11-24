@@ -175,6 +175,17 @@ class OpenSightClient:
             raise TypeError("get_token must be a string or a callable")
         self._transport = transport or _urllib_transport
 
+    # ---- governed metrics ----
+
+    def list_metrics(self, limit: int | None = None, cursor: str | None = None):
+        return self._json("GET", "/v1/metrics", _page_headers(limit, cursor))
+
+    def get_metric(self, id: str):
+        return self._json("GET", f"/v1/metrics/{_encode(id)}")
+
+    def list_metric_versions(self, id: str, limit: int | None = None, cursor: str | None = None):
+        return self._json("GET", f"/v1/metrics/{_encode(id)}/versions", _page_headers(limit, cursor))
+
     # ---- datasets ----
 
     def list_datasets(self, limit: int | None = None, cursor: str | None = None):
