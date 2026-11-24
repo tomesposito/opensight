@@ -20,7 +20,7 @@
     "echarts": "^6.0.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-grid-layout": "^2.2.4",
+    "react-grid-layout": "^2.3.0",
     "@opensight/query-engine": "0.0.0"
   },
   "devDependencies": {
