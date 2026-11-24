@@ -55,8 +55,10 @@ test('tool credentials, caller principals, policy assertions and nested header e
   let calls = 0;
   const client = await connect(t, { fetch: async () => { calls++; return json({}); } });
   for (const key of ['credential', 'credentials', 'token', 'accessToken', 'refreshToken', 'authorization', 'principal', 'principals', 'principalId', 'subject', 'user', 'userId', 'tenantId', 'ownerId', 'namespaceId', 'groups', 'groupIds', 'role', 'roles', 'policy', 'security', 'capabilities', 'x-tenant-id']) {
-    const result = await call(client, 'list_datasets', { [key]: secret() });
-    assert.equal(result.isError, true, key); assert.equal(result.structuredContent.errorCode, 'FORGED_PRINCIPAL', key);
+    for (const tool of ['list_datasets', 'list_workspace_action_history']) {
+      const result = await call(client, tool, { [key]: secret() });
+      assert.equal(result.isError, true, key); assert.equal(result.structuredContent.errorCode, 'FORGED_PRINCIPAL', key);
+    }
   }
   for (const args of [{ headers: { Authorization: secret() } }, { query: { principal: 'other' }, id: 'sample' }]) {
     assert.equal((await call(client, 'run_dataset_query', args)).structuredContent.errorCode, 'FORGED_PRINCIPAL');
@@ -138,7 +140,7 @@ test('packaged stdio executable exchanges credentials over HTTP and produces pro
   let stderr = ''; transport.stderr.on('data', chunk => { stderr += chunk; });
   const client = new Client({ name: 'stdio-test', version: '1.0.0' });
   await client.connect(transport); t.after(() => client.close());
-  assert.equal((await client.listTools()).tools.length, 57);
+  assert.equal((await client.listTools()).tools.length, 58);
   assert.deepEqual((await call(client, 'list_datasets')).structuredContent, { items: [], nextCursor: null });
   assert.equal(exchanges, 1); assert.equal(calls, 1); assert.equal(stderr, '');
   const audit = JSON.parse(readFileSync(new URL('../dist/license-audit.json', import.meta.url)));

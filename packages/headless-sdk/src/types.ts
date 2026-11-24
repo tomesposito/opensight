@@ -303,3 +303,14 @@ export interface QuestionInterpretation {
     metricsUsed?: { id: string; name: string; version: number }[];
   };
 }
+
+/** A tenant-scoped audit event. v1 actor is the delegating member's userId. */
+export interface WorkspaceAuditEntry {
+  eventId: string;
+  createdAt: string;
+  actor: string;
+  action: string;
+  tenantId: string;
+  subject: string | null;
+  detail: unknown;
+}

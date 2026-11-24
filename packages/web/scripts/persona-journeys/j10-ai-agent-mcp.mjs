@@ -2,6 +2,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { assert, connectHostedMcp, runJourney, startHostedStack } from './harness.mjs';
 import { decode32 } from '../../../api/test/hosted-helpers.mjs';
+import { appendOperatorAudit, OPERATOR_ACTOR } from '../../../api/dist/operator-audit.js';
 import { totp } from '../../../api/dist/auth-crypto.js';
 import { upload } from '../../../api/test/source-helpers.mjs';
 
@@ -132,6 +133,10 @@ async function fixtures(stack) {
   });
   await f.metadata.put(await f.context(), { kind: 'dataset', id: 'cls-missing' }, dataset('cls-missing', missing.id), 1);
   await member.login(); stack.tokens.admin = (await f.login()).token;
+  await f.db.transaction(async c => {
+    await appendOperatorAudit(c, { actor: 'other-member', tenantId: 'journey-other-tenant', action: 'journey.foreign-audit' });
+    await appendOperatorAudit(c, { action: 'journey.operator-audit' });
+  });
   return { member, probes, baseline, publishedVersion: published.publishedVersion, piiSourceId: piiSource.id };
 }
 
@@ -139,13 +144,16 @@ await runJourney('j10-ai-agent-mcp', 'AI Agent', async j => {
   const stack = await startHostedStack({ aiStub: true, entitlements: { computeAttempts: 1, aiSpendCapCents: 12, aiCostCentsPerMillionTokens: 1_000_000 } }); j.cleanup(stack.stop);
   const { member, probes, baseline, publishedVersion, piiSourceId } = await fixtures(stack);
   let client, toolNames, draft, dashboardsBefore;
-  const calls = [];
+  const calls = [], receipts = [];
+  let historyBefore;
   const call = async (name, args = {}) => {
     calls.push(name);
     const result = await client.callTool({ name, arguments: args });
     assert.ok(result.structuredContent, `${name}: structured MCP result required`);
     assert.deepEqual(JSON.parse(result.content.find(c => c.type === 'text').text), result.structuredContent);
-    return { status: result._meta?.status, body: result.structuredContent, isError: result.isError === true };
+    const status = result._meta?.status;
+    if (name !== 'list_workspace_action_history') receipts.push({ action: name, status, subject: args.id ?? null });
+    return { status, body: result.structuredContent, isError: result.isError === true };
   };
   const success = async (name, args, status = 200) => {
     const result = await call(name, args); assert.equal(result.isError, false, JSON.stringify(result.body)); return good(result, status);
@@ -159,10 +167,12 @@ await runJourney('j10-ai-agent-mcp', 'AI Agent', async j => {
     assert.equal(good(await stack.request('/api/session')).role, 'administrator');
     const connection = await connectHostedMcp(stack, member.token); j.cleanup(connection.stop); client = connection.client;
     toolNames = (await client.listTools()).tools.map(t => t.name);
-    for (const name of ['list_datasets', 'list_analyses', 'list_dashboards', 'create_analysis', 'run_dataset_query', 'query_dashboard_visual', 'refresh_dataset', 'list_metrics', 'describe_metric', 'list_metric_versions', 'ask_question']) assert.ok(toolNames.includes(name), name);
-    assert.equal(toolNames.length, 57);
+    for (const name of ['list_datasets', 'list_analyses', 'list_dashboards', 'create_analysis', 'run_dataset_query', 'query_dashboard_visual', 'refresh_dataset', 'list_metrics', 'describe_metric', 'list_metric_versions', 'ask_question', 'list_workspace_action_history']) assert.ok(toolNames.includes(name), name);
+    assert.equal(toolNames.length, 58);
     assert.deepEqual(toolNames.filter(name => /metric/.test(name)).sort(), ['describe_metric', 'list_metric_versions', 'list_metrics']);
-    assert.deepEqual(toolNames.filter(name => /audit|history/.test(name)), [], 'Revisit the recorded gaps when MCP gains these tools');
+    assert.deepEqual(toolNames.filter(name => /audit|history/.test(name)), ['list_workspace_action_history']);
+    historyBefore = good(await member.request('/api/v1/workspace/action-history', 'GET', undefined, { Limit: '200' }));
+    assert.equal(historyBefore.nextCursor, null);
     return { transport: 'SDK Client + InMemoryTransport → real createMcpServer → hosted HTTP on localhost, Host opensight.test',
       role: session.role, workspace: session.tenantId, member: member.identity.userId, tools: toolNames, browserDriven: false };
   });
@@ -333,7 +343,40 @@ await runJourney('j10-ai-agent-mcp', 'AI Agent', async j => {
     return { analysisId: reviewed.AnalysisId, name: reviewed.Name, published: false,
       detail: 'Human API read matches the MCP draft exactly; no published dashboard references it and the agent never called publish_analysis.' };
   });
-  j.gap('audit-member-identity',
-    'The human can inspect workspace action history showing the delegating member identity on every MCP action.',
-    'The audit read endpoint is operator-only /api/host/audit (human member read: 403 OPERATOR_REQUIRED); MCP has no workspace action-history tool. Session identity is verified, but an attributable trail for every agent action cannot be reviewed through MCP.');
+  await j.step('audit-member-identity', null, async () => {
+    const history = await success('list_workspace_action_history', { limit: 200 });
+    assert.equal(history.nextCursor, null); assert.ok(history.items.length > historyBefore.items.length);
+    const tenantId = stack.fixture.tenant.tenantId, actor = member.identity.userId;
+    // This is the whole workspace trail. Fixture/admin calls retain their real
+    // actors; only the agent's actions must name the delegating member.
+    const expectedActors = new Set([actor, stack.fixture.identity.userId, OPERATOR_ACTOR]);
+    for (const entry of history.items) {
+      assert.equal(entry.tenantId, tenantId); assert.ok(expectedActors.has(entry.actor), entry.actor);
+      assert.ok(!['journey.foreign-audit', 'journey.operator-audit', 'list_workspace_action_history'].includes(entry.action));
+    }
+    const before = new Set(historyBefore.items.map(e => e.eventId));
+    const memberEntries = history.items.filter(e => !before.has(e.eventId) && e.actor === actor);
+    const used = new Set(), matched = [];
+    for (const receipt of receipts) {
+      const entry = memberEntries.find(e => !used.has(e.eventId) && e.action === receipt.action
+        && e.subject === receipt.subject && e.detail.status === receipt.status);
+      assert.ok(entry, `Missing distinct audit event: ${JSON.stringify(receipt)}`);
+      assert.equal(entry.actor, actor); assert.equal(entry.tenantId, tenantId);
+      assert.deepEqual(Object.keys(entry.detail).sort(), ['method', 'operationId', 'outcome', 'status']);
+      assert.equal(entry.detail.operationId, receipt.action);
+      assert.equal(entry.detail.outcome, receipt.status < 400 ? 'success' : receipt.status < 500 ? 'denied' : 'failed');
+      used.add(entry.eventId); matched.push(entry);
+    }
+    assert.equal(matched.length, receipts.length);
+    assert.ok(matched.some(e => e.action === 'create_analysis' && e.detail.status === 201), draft.AnalysisId);
+    assert.ok(matched.some(e => e.action === 'run_dataset_query' && e.subject === 'weekly-sales' && e.detail.status === 200));
+    for (const status of [200, 429]) assert.ok(matched.some(e => e.action === 'ask_question' && e.detail.status === status));
+    const human = good(await member.request('/api/v1/workspace/action-history', 'GET', undefined, { Limit: '200' }));
+    assert.deepEqual(human, history, 'MCP and direct human HTTP read the identical trail; reads add no entries');
+    const operator = await member.request('/api/host/audit');
+    assert.equal(operator.status, 403); assert.equal(operator.body.errorCode, 'OPERATOR_REQUIRED');
+    return { tenantId, actor, analysisId: draft.AnalysisId, attributedMcpActions: matched.length,
+      actions: matched.map(e => ({ eventId: e.eventId, action: e.action, subject: e.subject, status: e.detail.status, actor: e.actor, tenantId: e.tenantId })),
+      detail: 'Every MCP action has a distinct event with the delegating member identity, including draft creation, queries and successful/denied asks. All returned entries belong to this tenant; legitimate administrator/operator setup entries keep their own actors. The human reads the same history, while operator audit remains forbidden.' };
+  });
 });

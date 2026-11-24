@@ -820,6 +820,7 @@ class AskQuestionTest(unittest.TestCase):
 class MetricReadsTest(unittest.TestCase):
     def test_metric_routes_pagination_and_path_encoding(self):
         for method, path, args, paged in [
+            ("list_workspace_action_history", "/workspace/action-history", {"limit": 2, "cursor": "next"}, True),
             ("list_metrics", "/metrics", {"limit": 2, "cursor": "next"}, True),
             ("get_metric", "/metrics/weekly%20sales", {"id": "weekly sales"}, False),
             ("list_metric_versions", "/metrics/weekly%20sales/versions",

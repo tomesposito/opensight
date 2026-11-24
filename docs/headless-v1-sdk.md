@@ -106,3 +106,9 @@ for row in result["rows"]:
 - Not yet shipped: CLI generation (D-37 decision 1). The CLI's user-facing
   shape (argument names, output formats) is product surface and has no
   confirmed decision yet — it ships as its own slice once specified.
+
+Workspace history (#330): TypeScript `client.listWorkspaceActionHistory({ limit: 50 })`
+and Python `client.list_workspace_action_history(limit=50)` read
+`GET /api/v1/workspace/action-history`. Both accept an opaque `cursor` and return
+`{ items, nextCursor }`. The hosted API derives scope from the member credential;
+page size is 1–200 (default 50). TypeScript exports `WorkspaceAuditEntry`.

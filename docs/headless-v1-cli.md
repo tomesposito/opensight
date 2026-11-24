@@ -1,7 +1,7 @@
 # Headless v1 CLI
 
 `packages/cli` is the Apache-2.0 `@opensight/cli` npm workspace. Its `opensight`
-executable calls `@opensight/headless-sdk` for all 56 operations in
+executable calls `@opensight/headless-sdk` for all 58 operations in
 `docs/api/openapi-v1.yaml`. Node 24 or newer is required. This slice does not
 publish an npm release or enable the hosted Lambda v1 surface.
 
@@ -136,3 +136,7 @@ reuse the existing MIT `js-yaml`, MIT Node types and Apache-2.0 TypeScript
 versions. The SDK's optional delete idempotency argument was added without
 changing existing callers, so the CLI can forward the spec header entirely
 through the SDK. `SOLUTION_DESIGN.md` and the OpenAPI contract are unchanged.
+
+`opensight workspace list-action-history --limit 50` reads the current tenant's
+hosted audit history; pass `--cursor` to continue. The page size is 1–200.
+Entries include delegating member identities and successful or denied v1 actions.

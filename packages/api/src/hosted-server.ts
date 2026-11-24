@@ -58,7 +58,8 @@ import { HostedAI } from './hosted-ai.js';
 import type { HostedAIOptions } from './hosted-ai-settings.js';
 import { AIError } from './ai-providers.js';
 import type { AiMeter } from './ai-settings.js';
-import { appendOperatorAudit, readOperatorAudit } from './operator-audit.js';
+import { appendOperatorAudit, assertAuditReady, readOperatorAudit } from './operator-audit.js';
+import { recordWorkspaceAction, workspaceAuditAction } from './workspace-audit.js';
 import { referenceConfig, referenceDisclosure, assertReferenceSurfaces } from './single-node-config.js';
 import { V1Routes, type DurableV1Factory } from './v1-routes.js';
 import { publicQuotaMessage } from './storage-breakdown.js';
@@ -152,6 +153,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const accessNotifyTo = accessRequestNotifyTo(options.env ?? process.env);
   if (options.membershipDatabase?.durable !== true || options.tenantDatabase?.durable !== true) throw new MetadataError('DURABLE_MEMBERSHIP_STORE_REQUIRED', 503);
   if (typeof options.security?.authenticate !== 'function') throw new MetadataError('HOSTED_VERIFIER_REQUIRED', 503);
+  await assertAuditReady(options.membershipDatabase);
   const authenticate = options.security.authenticate;
   const reference = referenceConfig(options.env ?? process.env);
   if (options.invocation && reference) throw new MetadataError('SERVERLESS_REFERENCE_FORBIDDEN', 503);
@@ -224,7 +226,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const renderer = new JobRenderer(data.data, embedContent, config.origin), runner = new JobRunner(jobs, renderer, tenantMail,
     billingService ? async tenantId => { await billingService.expireTrials(); billingService.assertAccess(tenantId); } : undefined);
   const digests = new DigestStore(jobs, renderer);
-  const v1 = new V1Routes(data, options.env ?? process.env, { invocation: !!options.invocation, analytics, durable: invocation?.v1, digests, ask: (request, response, context, recheck) => ai.ask(request, response, context, recheck) });
+  const v1 = new V1Routes(data, options.env ?? process.env, { invocation: !!options.invocation, analytics, durable: invocation?.v1, digests, auditDatabase: options.membershipDatabase, ask: (request, response, context, recheck) => ai.ask(request, response, context, recheck) });
   const ownership = new JobOwnership(jobs, renderer), scheduler = new Scheduler(() => runner.tick());
   const sessions = new EmbedSessions(options.membershipDatabase, metadata, policy, embedSessionKey(options.env ?? process.env), async (context, grant) => { await billingService?.expireTrials(); billingService?.assertAccess(context.tenantId); await embedContent.authorize(context, grant); });
   await sessions.initialize(!options.invocation);
@@ -252,6 +254,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const handle = (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     requests++;
     let egressSettle: (() => Promise<void>) | undefined;
+    let audit: { context: TenantContext; action: NonNullable<ReturnType<typeof workspaceAuditAction>> } | undefined;
     const work = (async () => {
       boundary(request, config.origin);
       let path = request.url!;
@@ -474,6 +477,8 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         catch (error) { if (error instanceof MetadataError) throw error; throw new MetadataError('AUTHENTICATION_FAILED', 401); }
       };
       const context = await metadata.authenticate(request, verified);
+      const action = workspaceAuditAction(request.method ?? 'GET', path.replace(/^\/api\/namespaces\/[^/]+\//, '/api/'));
+      if (action) audit = { context, action };
       path = scopePath(path, context);
       // The pre-auth dark-flag check above only sees the literal path, so a
       // namespace-scoped checkout reaches here already normalized (#216):
@@ -686,7 +691,10 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         && typeof error.detail.field === 'string' && ['name', 'displayName', 'slug', 'administrator.name', 'administrator.email'].includes(error.detail.field) ? error.detail.field : undefined;
       send(response, status, { errorCode, ...(field ? { field } : {}), ...(quotaMessage === undefined ? {} : { Message: quotaMessage }) });
     }).finally(async () => {
-      try { await egressSettle?.(); } finally { active.delete(work); }
+      try {
+        if (audit) await recordWorkspaceAction(options.membershipDatabase, audit.context, audit.action, request.method ?? 'GET', response.statusCode);
+        await egressSettle?.();
+      } finally { active.delete(work); }
     });
     active.add(work);
     return work;

@@ -2038,6 +2038,45 @@ export const operations: Operation[] = [
     }
   },
   {
+    "name": "list_workspace_action_history",
+    "method": "GET",
+    "path": "/workspace/action-history",
+    "parameters": [
+      {
+        "input": "limit",
+        "name": "Limit",
+        "location": "header"
+      },
+      {
+        "input": "cursor",
+        "name": "Cursor",
+        "location": "header"
+      }
+    ],
+    "emptyBody": false,
+    "tool": {
+      "name": "list_workspace_action_history",
+      "description": "GET /api/v1/workspace/action-history — List workspace action history with delegating member identities. Hosted only. Any authenticated member can read their own tenant's audit entries, newest first. Other tenants and entries without a tenant are excluded. Hosted v1 calls include successful, denied and failed attempts; this history read is not recorded. Operator audit access remains separate.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50,
+            "description": "HTTP Limit header. Page size, 1–200 (default 50)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "HTTP Cursor header. Opaque page token from a previous nextCursor"
+          }
+        }
+      }
+    }
+  },
+  {
     "name": "move_asset",
     "method": "POST",
     "path": "/assets/{kind}/{id}/move",

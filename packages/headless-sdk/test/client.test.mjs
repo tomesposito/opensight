@@ -376,10 +376,11 @@ describe('assets and folders', () => {
 });
 
 for (const [method, path, args, paged] of [
+  ['listWorkspaceActionHistory', '/workspace/action-history', [{ limit: 2, cursor: 'next' }], true],
   ['listMetrics', '/metrics', [{ limit: 2, cursor: 'next' }], true],
   ['getMetric', '/metrics/weekly%20sales', ['weekly sales'], false],
   ['listMetricVersions', '/metrics/weekly%20sales/versions', ['weekly sales', { limit: 2, cursor: 'next' }], true],
-]) it(`${method} uses the metric read route and pagination headers (#327)`, async () => {
+]) it(`${method} uses its read route and pagination headers (#327, #330)`, async () => {
   const body = paged ? { items: [{ version: 2 }], nextCursor: null } : { id: 'weekly-sales', publishedVersion: 4 };
   const transport = mockFetch({ [`GET /api/v1${path}`]: jsonOk(body) });
   const client = new OpenSightClient({ baseUrl: 'https://h/api', getToken: 't', fetch: transport });

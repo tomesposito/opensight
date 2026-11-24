@@ -2,7 +2,7 @@ export { OpenSightClient } from './client.js';
 export type { OpenSightClientOptions, RequestOptions, AnalysisMutationOptions } from './client.js';
 export { OpenSightApiError } from './errors.js';
 export type {
-  AskQuestionBody, QuestionAnswer, QuestionInterpretation,
+  WorkspaceAuditEntry, AskQuestionBody, QuestionAnswer, QuestionInterpretation,
   MetricView, MetricVersion, MetricDefinition, MetricFormat, PublishedMetric,
   ApiErrorBody,
   AssetKind, TransferAssetKind, AssetSummary, AssetSearch, AssetMove, AssetCopy, AssetTransfer, AssetPrincipal, AssetRole, AssetShare, AssetGrantWrite, FolderDescribe, FolderPermissions,

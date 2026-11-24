@@ -89,7 +89,7 @@ These builds and the suite require no external network access.
 | j7-operator | Operator | Operator UI provisioning, list/create/detail screenshots and inline usage, operator user list, browser admin enrollment and sign-in, removal confirmed by API/database |
 | j8-embedding | Embedder (future) | Four offline preview states, branding, honest lack of active session |
 | j9-ideas | Member + Operator | Member submission/isolation, operator review and decline reason, member follow-up, hosted-only local notice |
-| j10-ai-agent-mcp | AI Agent | MCP-level: author_ai identity and scoped resources, regional draft, published metric version, identical CLS denied/missing errors, real BLAZE compute quota, PII field-name stop, managed AI spend cap, human draft review; audit-identity gap |
+| j10-ai-agent-mcp | AI Agent | MCP-level: author_ai identity and scoped resources, regional draft, published metric version, identical CLS denied/missing errors, real BLAZE compute quota, PII field-name stop, managed AI spend cap, human draft review; workspace action history with delegating member identities |
 | j11-notebooks | Author | Local CSV preparation, declared-dataset SQL and source totals, published run view versus scratch draft, data mutation and execution timestamps, calibrated result refusal and oldest-run eviction, hosted unavailable notice |
 
 **Gaps are product findings, not test bugs.** They must state what was expected
@@ -154,7 +154,7 @@ and real `createMcpServer` with linked `InMemoryTransport` endpoints. Its inject
 fetch forwards to `stack.apiTransport` on localhost with `Host: opensight.test`
 and the member's real hosted token. The bridge changes transport only. Trusted
 fixture provisioning uses real auth, APIs and Postgres metadata; every agent
-action uses MCP. No new dependency or product-code change is involved.
+action uses MCP. The original #276 journey added no dependency or product-code change.
 
 The agent sees its prepared datasets and accessible analyses/dashboards; a real
 second member's private dataset/analysis is absent and direct probes return 404.
@@ -179,7 +179,7 @@ The human reads the exact draft through their member API session and confirms
 no published dashboard references it. The final `browser-health` step is the
 shared harness check; J10 launches no browser and captures no screenshots.
 
-J10 discovers 57 MCP tools including `ask_question`. Its dedicated member-owned
+J10 discovers 58 MCP tools including `ask_question` and `list_workspace_action_history`. Its dedicated member-owned
 `ai-sales` fixture has columns `region,revenue`: east 17 + 31 = 48 and west 23.
 The first managed stub ask returns the existing interpretation answer, then a
 separate MCP dataset query verifies those totals. The stub reports 12 tokens;
@@ -187,7 +187,12 @@ separate MCP dataset query verifies those totals. The stub reports 12 tokens;
 12 cents. The second ask returns 429 `AI_SPEND_CAP_EXCEEDED` with no rows while
 nine monthly AI credits remain. The PII field-name stop also passes (#328).
 
-J10 records one remaining gap with expected/actual details in its JSON and suite report:
-
-- Audit identity: `/api/host/audit` is operator-only and MCP has no workspace
-  action-history tool; verified session identity is not proof of every action's audit record.
+Issue #330 replaces the final audit identity gap with a passing assertion:
+`list_workspace_action_history` returns the tenant's real audit trail, and each
+MCP call since connection matches a distinct event with the delegating member
+userId, tenant, path subject and status. This includes regional draft creation,
+queries, and successful/denied `ask_question` calls. Direct human HTTP reads the
+identical history; `/api/host/audit` still rejects the member. Seeded other-tenant
+and NULL-tenant events are absent. Legitimate fixture/operator and administrator
+entries in this tenant retain their own actor; the read never hides other members.
+J10 has no remaining recorded gaps.

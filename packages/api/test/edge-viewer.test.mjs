@@ -42,7 +42,7 @@ test('D-86 folded edge grammar matches shared routes without per-request regex c
       }
     }
   }
-  for (const path of ['/api/v1/ai/ask', '/api/v1/analyses', '/api/v1/dashboards', '/api/v1/metrics', '/api/v1/metric-datasets', '/api/uploads/reservations/a/complete', '/api/session'])
+  for (const path of ['/api/v1/workspace/action-history', '/api/v1/ai/ask', '/api/v1/analyses', '/api/v1/dashboards', '/api/v1/metrics', '/api/v1/metric-datasets', '/api/uploads/reservations/a/complete', '/api/session'])
     assert.equal(JSON.stringify(context.serverlessV1Methods(path)), JSON.stringify(serverlessV1Methods(path)), path);
 });
 test('edge rejects unsupported paths before reading a large header map', () => {
