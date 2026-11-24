@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Updated the dashboard grid dependency with upstream drag, resize, collision, and touch interaction fixes (#292), and aligned React with its DOM and test renderers at 19.3.1 (#291).
+
 - The operator tenant detail page now states the billing state plainly in waiting list mode (#326): since the waiting-list change (#241), a tenant on a deployment without Stripe configured has a billing record, so the page showed tier facts with no notice and operators could not tell billing was unconfigured. The Plan & billing section now says billing is not configured on this deployment, that the tenant is in waiting list mode with no payment links, and that a plan is granted manually by an operator when the administrator requests one. Checkout-mode tenants are unchanged.
 
 - Visual queries now recover from transient queue pressure instead of dying as permanent errors (#325): when the server rejects a query with `QUEUE_WAIT_EXCEEDED` (HTTP 429) because the tenant's queued wait expired under concurrent tile loads, the web client retries up to twice with a short abort-aware backoff and renders the result once the queue drains; budget and admission refusals remain final, and a persistent queue-wait rejection still surfaces after the retries. The J4 persona journey's author chart wait now uses the same 45-second timeout as the journey's other chart waits.
