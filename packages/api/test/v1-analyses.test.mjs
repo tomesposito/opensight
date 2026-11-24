@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { load } from 'js-yaml';
 import { validateAnalysisDefinition, projectDefinition, convertDefinition } from '@opensight/web/analysis';
 
 const schema = new Map([['sales', { columns: [{ name: 'region', type: 'STRING' }, { name: 'amount', type: 'INTEGER' }, { name: 'private', type: 'STRING' }], deniedColumns: ['private'] }]]);
@@ -430,8 +431,12 @@ test('v1 analyses replay rechecks current dataset policy, and deletion replay ca
 
 test('v1 analyses OpenAPI pins all approved operations and the closed dataset binding schema', async () => {
   const yaml = await readFile(new URL('../../../docs/api/openapi-v1.yaml', import.meta.url), 'utf8');
-  const analysisPaths = yaml.slice(yaml.indexOf('  /analyses:'), yaml.indexOf('  /datasets:'));
-  assert.deepEqual([...analysisPaths.matchAll(/operationId: (\w+)/g)].map(m => m[1]).sort(), ['list_analyses', 'describe_analysis', 'create_analysis', 'update_analysis', 'delete_analysis', 'add_visual', 'update_visual', 'remove_visual', 'set_layouts', 'add_filter_group', 'update_filter_group', 'remove_filter_group', 'set_calculated_fields'].sort());
+  // Publication and shares belong to the dashboard/asset contracts. Select
+  // analysis paths explicitly so unrelated resources can appear anywhere in YAML.
+  const analysisOperations = Object.entries(load(yaml).paths)
+    .filter(([path]) => /^\/analyses(?:\/|$)/.test(path) && !path.endsWith('/publish') && !path.includes('/shares/'))
+    .flatMap(([, path]) => Object.values(path).flatMap(operation => operation.operationId ? [operation.operationId] : []));
+  assert.deepEqual(analysisOperations.sort(), ['list_analyses', 'describe_analysis', 'create_analysis', 'update_analysis', 'delete_analysis', 'add_visual', 'update_visual', 'remove_visual', 'set_layouts', 'add_filter_group', 'update_filter_group', 'remove_filter_group', 'set_calculated_fields'].sort());
   const bindings = yaml.slice(yaml.indexOf('    DatasetBindings:'), yaml.indexOf('    AnalysisCreate:'));
   assert.match(bindings, /kind: \{ const: dataset \}/); assert.match(bindings, /kind: \{ const: prepared-dataset \}/);
   assert.equal([...bindings.matchAll(/additionalProperties: false/g)].length, 2); assert.equal([...bindings.matchAll(/required: \[kind, id\]/g)].length, 2);
