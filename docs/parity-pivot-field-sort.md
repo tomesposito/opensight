@@ -23,7 +23,8 @@ IDs, duplicate entries, malformed lists/objects and unknown keys raise named
 explicit directions must be `ASC` or `DESC`. An empty list leaves order unchanged.
 Field IDs and result-column aliases need not match source column names.
 
-Other visual kinds reject `fieldSortOptions`. Pivot rejects category/row sorts,
+Other visual kinds reject `fieldSortOptions`. Pivot rejects category sorts and
+table-wrapper row sorts,
 category limits, small-multiples sort/limit and breakdown settings inside the
 sort configuration. Its existing dataLabels, tooltip and legend gates still
 reject those properties.
@@ -69,7 +70,9 @@ not an object is rejected by the existing bundle-envelope validator.
 Field sorting orders each dimension by its own values.
 [Pivot ColumnSort](parity-pivot-column-sort.md) now supports sorting outer column
 groups by a bound measure aggregate and supersedes field sorting at that level.
-Pivot `RowLabelSort` and KPI `TrendGroupSort` remain unsupported. This slice makes no broader QuickSight fidelity claim.
+Pivot [RowLabelSort](parity-pivot-row-label-sort.md) and KPI
+[TrendGroupSort](parity-kpi-trend-group-sort.md) are now supported. Pivot
+`ColumnLabelSort` remains unsupported and fail closed. This slice makes no broader QuickSight fidelity claim.
 
 `packages/web/test/pivot-field-sort.test.mjs` is picked up by the existing web
 `test/*.test.mjs` glob, reached by root `npm test`. It covers both dialects,

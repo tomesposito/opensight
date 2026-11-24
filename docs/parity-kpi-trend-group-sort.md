@@ -129,7 +129,8 @@ number/font formatting, conditional formatting and sparkline tooltip properties.
 The full automotive dashboard still contains unsupported non-SUM measures and
 other properties; this slice does not claim it all renders.
 
-Pivot RowLabelSort remains unsupported. Targets, progress bars, trend arrows,
+Pivot [RowLabelSort](parity-pivot-row-label-sort.md) is now supported;
+`ColumnLabelSort` remains unsupported and fail closed. Targets, progress bars, trend arrows,
 additional KPI styling and numerical trend-field variants remain outside this
 slice. No broader QuickSight fidelity claim is made; visual fidelity is not
 measured.
