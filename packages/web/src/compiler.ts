@@ -499,7 +499,8 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
   const fieldSortOptionsKey = key('fieldSortOptions', 'FieldSortOptions');
   const columnSortKey = key('columnSort', 'ColumnSort');
   const pivotRowSortKey = key('rowSort', 'RowSort');
-  keys(sort, kind === 'kpi' ? [key('trendGroupSort', 'TrendGroupSort')] : kind === 'pivot' ? [fieldSortOptionsKey, columnSortKey, pivotRowSortKey] : ['table', 'radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration'), ...(FACETED_KINDS.includes(kind) ? [facetSortKey] : [])], sortPath);
+  const rowLabelSortKey = key('rowLabelSort', 'RowLabelSort');
+  keys(sort, kind === 'kpi' ? [key('trendGroupSort', 'TrendGroupSort')] : kind === 'pivot' ? [fieldSortOptionsKey, columnSortKey, pivotRowSortKey, rowLabelSortKey] : ['table', 'radar', 'sankey'].includes(kind) ? [sortsKey] : kind === 'waterfall' ? [sortsKey, breakdownLimitKey] : [sortsKey, key('categoryItemsLimit', 'CategoryItemsLimit'), key('smallMultiplesLimitConfiguration', 'SmallMultiplesLimitConfiguration'), ...(FACETED_KINDS.includes(kind) ? [facetSortKey] : [])], sortPath);
   const trendSortKey = key('trendGroupSort', 'TrendGroupSort');
   const trendSortPath = `${sortPath}.${trendSortKey}`;
   let trendGroupSort: VisualModel['trendGroupSort'];
@@ -589,6 +590,22 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     }
     rowSort = { measureFieldId: measure.id, direction, aggregation };
   }
+  const seenRowLabelSorts = new Set<string>();
+  const rowLabelSort = list(sort[rowLabelSortKey], `${sortPath}.${rowLabelSortKey}`).map((entry, index) => {
+    const entryPath = `${sortPath}.${rowLabelSortKey}[${index}]`;
+    const wrapper = object(entry, entryPath);
+    const fsKey = key('fieldSort', 'FieldSort');
+    keys(wrapper, [fsKey], entryPath);
+    const fsPath = `${entryPath}.${fsKey}`;
+    const fs = object(wrapper[fsKey], fsPath);
+    keys(fs, [key('fieldId', 'FieldId'), key('direction', 'Direction')], fsPath);
+    const fieldId = text(fs[key('fieldId', 'FieldId')], fsPath);
+    if (!rowDimensions.some(field => field.id === fieldId)) fail(fsPath, 'row label sort must reference a bound row dimension');
+    if (seenRowLabelSorts.has(fieldId)) fail(fsPath, 'duplicate row label sort');
+    seenRowLabelSorts.add(fieldId);
+    const direction = enumValue(fs[key('direction', 'Direction')], ['ASC', 'DESC'], 'ASC', fsPath) as 'ASC' | 'DESC';
+    return { fieldId, direction };
+  });
   const seenPivotSorts = new Set<string>();
   const fieldSortOptions = list(sort[fieldSortOptionsKey], `${sortPath}.${fieldSortOptionsKey}`).map((entry, index) => {
     const entryPath = `${sortPath}.${fieldSortOptionsKey}[${index}]`;
@@ -728,6 +745,7 @@ export function normalizeVisual(source: Input['source'], definition: Input['defi
     ...(columnSort ? { columnSort } : {}),
     ...(rowSort ? { rowSort } : {}),
     ...(fieldSortOptions.length ? { fieldSortOptions } : {}),
+    ...(rowLabelSort.length ? { rowLabelSort } : {}),
     ...(breakdownLimit ? { breakdownLimit } : {}),
     ...(trendDimension ? { trendDimension } : {}),
     ...(targetMeasure ? { targetMeasure } : {}),
@@ -1596,7 +1614,8 @@ function compilePivotTable(model: VisualModel, rows: Row[], cell: (row: Row, fie
   const rowFields = model.rowDimensions, columnFields = model.columnDimensions;
   const rowPaths = rows.map(row => rowFields.map(f => cell(row, f)));
   const colPaths = rows.map(row => columnFields.map(f => cell(row, f)));
-  const directions = (fields: Field[]) => fields.map(field => model.fieldSortOptions?.find(sort => sort.fieldId === field.id)?.direction);
+  const directions = (fields: Field[], labelSorts?: VisualModel['rowLabelSort']) => fields.map(field =>
+    labelSorts?.find(sort => sort.fieldId === field.id)?.direction ?? model.fieldSortOptions?.find(sort => sort.fieldId === field.id)?.direction);
   let rowOuterOrder: ((a: Cell, b: Cell) => number) | undefined;
   if (model.rowSort) {
     const sort = model.rowSort;
@@ -1610,11 +1629,11 @@ function compilePivotTable(model: VisualModel, rows: Row[], cell: (row: Row, fie
       groups.set(key, values);
     }
     const aggregates = new Map([...groups].map(([key, values]) => [key, aggregateSortValues(values, sort.aggregation, path)]));
-    // Only the first row level overrides fieldSortOptions. Stable sorting
+    // Only the first row level overrides rowLabelSort/fieldSortOptions. Stable sorting
     // preserves first appearance for ties; all inner and column sorts still apply.
     rowOuterOrder = (a, b) => compareCells(aggregates.get(a)!, aggregates.get(b)!, sort.direction);
   }
-  const rowAxis = axisEntries(rowPaths, rowFields.length, model.subtotals, model.totals, directions(rowFields), rowOuterOrder);
+  const rowAxis = axisEntries(rowPaths, rowFields.length, model.subtotals, model.totals, directions(rowFields, model.rowLabelSort), rowOuterOrder);
   let outerOrder: ((a: Cell, b: Cell) => number) | undefined;
   if (model.columnSort) {
     const sort = model.columnSort;

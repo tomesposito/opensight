@@ -50,7 +50,7 @@ for (const source of ['bundle', 'api']) {
   });
   test(`${source}: malformed entries and unknown keys at every level fail closed`, () => {
     for (const sorts of malformed) assert.throws(() => normalize(dialect(sorted(input(), sorts), source)), CompileError, JSON.stringify(sorts));
-    for (const key of ['unknown', 'rowLabelSort', 'categorySort', 'trendGroupSort']) {
+    for (const key of ['unknown', 'columnLabelSort', 'categorySort', 'trendGroupSort']) {
       const value = sorted(); config(value).sortConfiguration[key] = [];
       assert.throws(() => normalize(dialect(value, source)), CompileError, key);
     }
@@ -244,7 +244,7 @@ for (const source of ['bundle','api']) test(`${source}: invalid and missing-dire
     const edited = authorReducer(imported, { type: 'title', title: 'Retained sort' });
     assert.deepEqual(bundleConfig(exportBundle(edited)).sortConfiguration, bundleConfig(bundle).sortConfiguration);
   }
-  for (const extra of ['unknown','rowLabelSort']) {
+  for (const extra of ['unknown','columnLabelSort']) {
     const bundle = exportBundle(sortedDraft()); bundleConfig(bundle).sortConfiguration[extra] = [];
     const imported = importBundle(bundle);
     assert.equal(selected(imported).pivotRowSort, undefined);

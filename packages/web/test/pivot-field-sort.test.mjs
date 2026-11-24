@@ -47,7 +47,7 @@ for (const source of ['bundle', 'api']) {
     }
   });
   test(`${source}: pivot rejects foreign sort keys and keeps display gates unchanged`, () => {
-    for (const key of ['categorySort', 'trendGroupSort', 'rowLabelSort', 'categoryItemsLimit', 'smallMultiplesSort', 'smallMultiplesLimitConfiguration', 'breakdownItemsLimit', 'breakdownSort', 'extra']) {
+    for (const key of ['categorySort', 'trendGroupSort', 'columnLabelSort', 'categoryItemsLimit', 'smallMultiplesSort', 'smallMultiplesLimitConfiguration', 'breakdownItemsLimit', 'breakdownSort', 'extra']) {
       const value = sorted(); config(value).sortConfiguration[key] = [];
       assert.throws(() => normalize(dialect(value, source)), /unsupported property/);
     }
