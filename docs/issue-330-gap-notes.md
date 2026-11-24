@@ -46,7 +46,8 @@ below its existing size limit, with all 13 edge checks passing.
 
 ## Verification
 
-The focused recording/history suite covers migration failure, append failure,
+The focused recording/history suite passed **8 / 0 failed / 0 skipped** and
+covers migration failure, append failure,
 member authorization, secret redaction, pagination, ordering and cross-tenant
 exclusion. Generated CLI/MCP and TypeScript SDK checks passed **184 / 0 failed /
 0 skipped**; Python SDK checks passed **34 / 0 failed / 0 skipped**.
@@ -65,4 +66,32 @@ visual gap was identified. README images need no refresh because no UI changed.
 The demo is a local static artifact, not a deployed server. Captures/reports
 remain outside version control in `.opensight/issue-330/`.
 
-Full root-suite results are recorded after completion below.
+## Full root verification
+
+The final root `npm test` exited **0** on the committed implementation:
+**8,457 passed / 0 failed / 1 skipped / 0 cancelled** (8,458 tests).
+The run used local PostgreSQL and the installed Playwright headless Chromium.
+The only skip is the optional real TLS PostgreSQL CLI integration test because
+live TLS PostgreSQL is not configured; the regular PostgreSQL tests ran.
+
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 1,639 | 0 | 1 |
+| Bundle parser | 213 | 0 | 0 |
+| CLI | 78 | 0 | 0 |
+| Embedding SDK | 10 | 0 | 0 |
+| TypeScript headless SDK | 33 | 0 | 0 |
+| Python headless SDK | 34 | 0 | 0 |
+| MCP server | 79 | 0 | 0 |
+| O interpreter | 42 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 2,719 | 0 | 0 |
+| Web | 3,479 | 0 | 0 |
+| Root conformance | 120 | 0 | 0 |
+| **Total** | **8,457** | **0** | **1** |
+
+J10 was also rerun on the final implementation: **12 passed / 0 failed /
+0 gaps**, with all **30 MCP calls** attributed. Logs and journey JSON remain
+outside version control under `/tmp/issue330-*`. An earlier root run was
+interrupted for the member-identifier bound correction and is excluded from
+these counts. No deployment or push was performed.
