@@ -9,7 +9,7 @@ import type { Completion } from './ai-providers.js';
 import type { PublishedMetric, InteractiveQuery } from '@opensight/query-engine';
 import type { AISettings } from './ai-settings.js';
 import { readBody, RequestError, type SalesQuery } from './query.js';
-import { record, invalid } from './schedule.js';
+import { record, invalid, id } from './schedule.js';
 import type { Identity, SecurityService } from './security.js';
 import type { OrganizationService } from './organization.js';
 import { requireOScope } from './o-routes.js';
@@ -62,6 +62,27 @@ export async function generativeRoute(request: IncomingMessage, response: Server
   const calculation = path === '/api/o/calculation';
   if (calculation) security.require(identity, 'build');
   const body = record(await readBody(request), ['question', 'dashboardId', 'calculatedFields', ...(path === '/api/o/revise' ? ['currentQuestion'] : [])]);
+  await localAnswer(request, response, path, body, identity, security, organization, ai, sales, analytics);
+  return true;
+}
+/** The v1 dataset form deliberately exposes only the existing local sales scope. */
+export async function askLocalQuestion(request: IncomingMessage, response: ServerResponse, identity: Identity, security: SecurityService,
+  organization: OrganizationService, ai: AISettings, sales?: SalesQuery, analytics = disabledAnalytics, recheck: () => Promise<void> = async () => {}) {
+  security.require(identity, 'ai'); security.require(identity, 'build');
+  const body = askQuestionBody(await readBody(request));
+  if (body.datasetId !== 'sales') throw new RequestError(404, 'Dataset has no resolved local sales binding');
+  await localAnswer(request, response, '/api/o/generate', body, identity, security, organization, ai, sales, analytics, recheck);
+}
+export function askQuestionBody(value: unknown): Record<string, unknown> {
+  const body = record(value, ['question', 'datasetId']);
+  id(body.datasetId, '$.datasetId');
+  if (typeof body.question !== 'string' || !body.question.trim() || body.question.length > 2000) invalid('$.question', 'expected 1–2000 characters');
+  return body;
+}
+async function localAnswer(request: IncomingMessage, response: ServerResponse, path: string, body: Record<string, unknown>, identity: Identity,
+  security: SecurityService, organization: OrganizationService, ai: AISettings, sales: SalesQuery | undefined, analytics = disabledAnalytics,
+  recheck: () => Promise<void> = async () => {}) {
+  const calculation = path === '/api/o/calculation';
   requireOScope(body, identity, security, organization, sales);
   const source: GenerativeSchemaSource = {
     securitySchema: async () => { const m = sales!.securitySchema(); return { columns: m.columns, deniedColumns: resolveSecurity(security.context(identity), m.columns, m.localData.dataSetArn).deniedColumns, datasetId: 'sales' }; },
@@ -70,9 +91,9 @@ export async function generativeRoute(request: IncomingMessage, response: Server
   };
   const answer = path === '/api/o/plan' ? planAnswer : path === '/api/o/revise' ? reviseAnswer : (body: Record<string, unknown>, ...args: Parameters<typeof planAnswer> extends [unknown, ...infer Rest] ? Rest : never) => generateAnswer(body, calculation, ...args);
   const result = await answer(body, source, async input => ({ text: await ai.complete(identity.namespaceId, input), commit: async () => {} }), async () => {
-    requireOScope(body, identity, security, organization, sales); if (calculation) security.require(identity, 'build');
+    await recheck(); requireOScope(body, identity, security, organization, sales); if (calculation) security.require(identity, 'build');
   }, (count = 1) => analytics.track({ tenantId: identity.namespaceId, namespaceId: identity.namespaceId }, { name: 'ask_o_asked', props: { count } }));
-  send(response, 200, result); return true;
+  send(response, 200, result);
 }
 /** Both planes share the guard, prompt, grammar and calculation validation. */
 export async function generateAnswer(body: Record<string, unknown>, calculation: boolean, source: GenerativeSchemaSource,

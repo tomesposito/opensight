@@ -10,8 +10,8 @@ const entries = Object.entries(spec.paths).flatMap(([path, item]) => Object.entr
   .filter(([method]) => ['get', 'post', 'put', 'delete', 'patch', 'head', 'options'].includes(method))
   .map(([method, op]) => ({ path, item, method, op })));
 
-test('exactly one CLI command for each of the 56 spec operations, with no extra routes', () => {
-  assert.equal(entries.length, 56);
+test('exactly one CLI command for each of the 57 spec operations, with no extra routes', () => {
+  assert.equal(entries.length, 57);
   assert.deepEqual(operations.map(o => o.operationId).sort(), entries.map(e => e.op.operationId).sort());
   assert.equal(new Set(operations.map(o => `${o.noun} ${o.command}`)).size, entries.length);
   for (const e of entries) {

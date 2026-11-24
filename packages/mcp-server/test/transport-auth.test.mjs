@@ -138,7 +138,7 @@ test('packaged stdio executable exchanges credentials over HTTP and produces pro
   let stderr = ''; transport.stderr.on('data', chunk => { stderr += chunk; });
   const client = new Client({ name: 'stdio-test', version: '1.0.0' });
   await client.connect(transport); t.after(() => client.close());
-  assert.equal((await client.listTools()).tools.length, 56);
+  assert.equal((await client.listTools()).tools.length, 57);
   assert.deepEqual((await call(client, 'list_datasets')).structuredContent, { items: [], nextCursor: null });
   assert.equal(exchanges, 1); assert.equal(calls, 1); assert.equal(stderr, '');
   const audit = JSON.parse(readFileSync(new URL('../dist/license-audit.json', import.meta.url)));

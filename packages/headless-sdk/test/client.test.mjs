@@ -389,3 +389,16 @@ for (const [method, path, args, paged] of [
   assert.equal(call.headers.Limit, paged ? '2' : undefined);
   assert.equal(call.headers.Cursor, paged ? 'next' : undefined);
 });
+
+it('askQuestion posts the contract body and preserves the generative answer (#329)', async () => {
+  const body = { question: 'sum revenue by region', datasetId: 'sales' };
+  const answer = { question: body.question, interpretations: [{ measure: 'revenue', aggregation: 'SUM', dimensions: ['region'], filters: [],
+    granularity: null, topN: null, suggestedVisualType: 'bar', confidence: 1, explanation: 'Regional totals',
+    grounding: { fieldsUsed: ['revenue', 'region'], synonymsMatched: [], unmatchedTerms: [] } }], errors: [] };
+  const transport = mockFetch({ 'POST /api/v1/ai/ask': jsonOk(answer) });
+  const client = new OpenSightClient({ baseUrl: 'https://h/api', getToken: 't', fetch: transport });
+  assert.deepEqual(await client.askQuestion(body, { idempotencyKey: 'ask-replay' }), answer);
+  assert.equal(transport.calls.length, 1);
+  assert.deepEqual(JSON.parse(transport.calls[0].body), body);
+  assert.equal(transport.calls[0].headers['Idempotency-Key'], 'ask-replay');
+});

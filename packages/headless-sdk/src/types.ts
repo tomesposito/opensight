@@ -278,3 +278,28 @@ export interface MetricView {
   published: PublishedMetric | null;
   permissions: { edit: boolean; publish: boolean };
 }
+
+/** Existing generative question contract; execute an interpretation separately. */
+export interface AskQuestionBody { question: string; datasetId: string }
+export interface QuestionAnswer {
+  interpretations: QuestionInterpretation[];
+  errors: { code: string; message: string }[];
+  question: string;
+}
+export interface QuestionInterpretation {
+  measure: string | null;
+  aggregation: MeasureAggregation;
+  dimensions: string[];
+  filters: { field: string; operator: 'equals' | 'year'; value: string | number }[];
+  granularity: 'YEAR' | 'QUARTER' | 'MONTH' | 'DAY' | null;
+  topN: number | null;
+  suggestedVisualType: 'bar' | 'line' | 'pie' | 'table' | 'kpi';
+  confidence: number;
+  explanation: string;
+  grounding: {
+    fieldsUsed: string[];
+    synonymsMatched: { term: string; field: string }[];
+    unmatchedTerms: string[];
+    metricsUsed?: { id: string; name: string; version: number }[];
+  };
+}

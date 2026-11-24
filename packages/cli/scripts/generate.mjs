@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { load } from 'js-yaml';
 
 export const specUrl = new URL('../../../docs/api/openapi-v1.yaml', import.meta.url);
-const nouns = { analyses: 'analysis', datasets: 'dataset', dashboards: 'dashboard', sources: 'source', assets: 'asset', folders: 'folder', metrics: 'metric' };
+const nouns = { ai: 'ai', analyses: 'analysis', datasets: 'dataset', dashboards: 'dashboard', sources: 'source', assets: 'asset', folders: 'folder', metrics: 'metric' };
 const headers = { Limit: 'limit', Cursor: 'cursor', 'Idempotency-Key': 'idempotencyKey', 'If-Match': 'ifMatch' };
 
 export function inventory(spec) {

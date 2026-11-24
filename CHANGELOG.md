@@ -85,6 +85,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Agents can ask grounded generative questions through the v1 API, MCP, CLI and TypeScript/Python SDKs (#329). Managed asks share the existing workspace AI spend cap, capability and field-name PII checks; queries execute separately from generation.
+
 - Agents can discover governed metrics and their versions through MCP, CLI and both headless SDKs, then query historical published versions with `__metric_<id>@v<version>` references; draft and missing versions fail closed (#327).
 
 - Bounded SES forwarding for support/privacy aliases with private retention and duplicate-send protection (#209).
