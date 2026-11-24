@@ -10,6 +10,7 @@ import { method, send } from './automation-routes.js';
 import { readBody } from './query.js';
 import { dashboardVersion, describeDashboard, type DashboardBackend, type DashboardRecord, type DashboardChange } from './dashboard-model.js';
 import { dashboardControls } from './dashboard-controls.js';
+import { collectColumnNames, FIELD_NAME_PII_MESSAGE, hasFieldNamePII } from './ai-guard.js';
 import { dashboardExport } from './dashboard-export.js';
 import type { AnalysisProtocol } from './analysis-routes.js';
 import { RetryStore, type RetryAdapter } from './retry-store.js';
@@ -56,7 +57,13 @@ export class DashboardRoutes {
       if (!backend.authorizeQuestion) fail('SECURITY_AI_REQUIRED', 403);
       await backend.authorizeQuestion(question[1]!);
       const stamp = await backend.analyses.stamp(), body = analysisObject(await readBody(request), '$'); keys(body, ['query']);
-      const query = validateQuery(body.query), v = dashboardVersion(await backend.get(question[1]!));
+      const query = validateQuery(body.query);
+      // Field-name egress guard (#328): dashboard questions reach AI through
+      // the v1/MCP surface, so the generative routes' AI_FIELD_NAME_PII stop
+      // applies to the query's field names before any backend work.
+      const questionFieldNames = [...collectColumnNames(query), ...(query.calculatedFields ?? []).map(f => f.name)];
+      if (hasFieldNamePII(questionFieldNames.map(name => ({ name })))) throw new MetadataError('AI_FIELD_NAME_PII', 400, FIELD_NAME_PII_MESSAGE);
+      const v = dashboardVersion(await backend.get(question[1]!));
       if (v.definition.dataSetIdentifierDeclarations.length !== 1) fail('DASHBOARD_DATASET_UNSUPPORTED');
       const { bindings: _bindings, ...result } = await backend.query(v, dashboardQuestion(query, v), 'query');
       const check = async () => { await backend.analyses.check(stamp); await backend.authorizeQuestion!(question[1]!); };

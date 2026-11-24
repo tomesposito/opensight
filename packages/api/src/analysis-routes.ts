@@ -7,6 +7,7 @@ import { MetadataError } from './metadata-db.js';
 import { identifier } from './metadata-resources.js';
 import { method, send } from './automation-routes.js';
 import { readBody } from './query.js';
+import { collectColumnNames, FIELD_NAME_PII_MESSAGE, hasFieldNamePII } from './ai-guard.js';
 import { analysisName, datasetBindings, describeAnalysis, type AnalysisRecord, type AnalysisBackend } from './analysis-model.js';
 import type { RetryAdapter } from './retry-store.js';
 
@@ -143,6 +144,17 @@ export class AnalysisRoutes {
         const hadVisual = previous?.hasHadVisual === true || !!previous?.definition.sheets?.some(s => s.visuals?.length);
         const hasVisual = !!record.definition.sheets?.some(s => s.visuals?.length);
         record.hasHadVisual = hadVisual || hasVisual;
+        // Field-name egress guard (#328): an analysis carrying a personal-
+        // looking field name must not be stored through the v1/MCP surface —
+        // the same AI_FIELD_NAME_PII stop as the generative routes, applied
+        // to every columnName in the definition plus calculated-field names.
+        // Deletion of an existing record is not blocked.
+        if (!removed) {
+          const fieldNames = [...collectColumnNames(record.definition),
+            ...(record.definition.calculatedFields ?? []).map(f => (f as { name?: unknown } | null)?.name)
+              .filter((n): n is string => typeof n === 'string')];
+          if (hasFieldNamePII(fieldNames.map(name => ({ name })))) throw new MetadataError('AI_FIELD_NAME_PII', 400, FIELD_NAME_PII_MESSAGE);
+        }
         const body = await this.describe(record, backend);
         const reply: Reply = removed ? { status: 200, body: { id, removed: true } } : { status: pathId ? 200 : 201, body, version: record.version };
         // Retain and reserve all components before saving/removing anything. This

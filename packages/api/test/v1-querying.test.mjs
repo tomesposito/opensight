@@ -338,3 +338,36 @@ test('v1 querying: policy revision during execution prevents publication', async
   });
   error(await f.run(), 401, 'AUTHENTICATION_FAILED');
 });
+
+test('v1 querying: PII-shaped field names stop with AI_FIELD_NAME_PII before execution (#328)', async t => {
+  const pii = 'jane.doe@example.com';
+  const f = await fixture(t, {}, { ...upload(), base64: Buffer.from(`region,amount,${pii}\neast,10,a\nwest,20,b\neast,30,c\n`).toString('base64') });
+  // The dataset's permitted schema itself carries the personal-looking name:
+  // even a benign query over other fields stops, mirroring the generative guard.
+  const schemaStop = await f.run();
+  error(schemaStop, 400, 'AI_FIELD_NAME_PII');
+  assert.equal(JSON.stringify(schemaStop.body).includes('jane.doe'), false);
+  // A caller-supplied PII-shaped name on a clean dataset stops the same way.
+  const g = await fixture(t);
+  const callerStop = await g.run({ dimensions: [{ fieldId: 'owner', columnName: pii }], measures: query.measures, filters: [] });
+  error(callerStop, 400, 'AI_FIELD_NAME_PII');
+  assert.equal(JSON.stringify(callerStop.body).includes('jane.doe'), false);
+  // Control: the clean dataset still executes.
+  assert.equal((await g.run()).status, 200);
+});
+
+test('v1 analyses: PII-shaped field names stop create with AI_FIELD_NAME_PII (#328)', async t => {
+  const f = await fixture(t);
+  const body = columnName => ({ analysisId: 'pii-draft', name: 'pii-draft', definition: {
+    dataSetIdentifierDeclarations: [{ identifier: 'sales', dataSetArn: 'urn:synthetic:pii:sales' }],
+    calculatedFields: [], filterGroups: [], sheets: [{ sheetId: 'weekly', name: 'Weekly', visuals: [{ kpiVisual: {
+      visualId: 'v', chartConfiguration: { fieldWells: { values: [{ numericalMeasureField: {
+        fieldId: 'value', column: { dataSetIdentifier: 'sales', columnName },
+        aggregationFunction: { simpleNumericalAggregation: 'SUM' } } }] } } } }] }],
+  }, datasetBindings: { sales: { kind: 'prepared-dataset', id: 'sales' } } });
+  const stop = await f.request('/api/v1/analyses', { method: 'POST', body: body('jane.doe@example.com') });
+  error(stop, 400, 'AI_FIELD_NAME_PII');
+  assert.equal(JSON.stringify(stop.body).includes('jane.doe'), false);
+  const ok = await f.request('/api/v1/analyses', { method: 'POST', body: body('amount') });
+  assert.equal(ok.status, 201, JSON.stringify(ok.body));
+});
