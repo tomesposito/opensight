@@ -135,7 +135,8 @@ async function withoutDdl<T>(work: () => Promise<T>): Promise<T> {
 export async function appendOperatorAudit(c: SqlConnection, input: OperatorAuditInput, now = Date.now()): Promise<void> {
   const action = text(input.action, 'action', 128);
   if (action === null) throw new MetadataError('METADATA_INVALID', 400);
-  const actor = text(input.actor ?? OPERATOR_ACTOR, 'actor', 128) ?? OPERATOR_ACTOR;
+  // Hosted member identifiers use the metadata identifier bound (512).
+  const actor = text(input.actor ?? OPERATOR_ACTOR, 'actor', 512) ?? OPERATOR_ACTOR;
   const detail = input.detail === undefined ? null : JSON.stringify(redactAuditDetail(input.detail));
   await withoutDdl(() => c.query('INSERT INTO h8_audit (event_id, created_at, actor, action, tenant_id, subject, detail) VALUES (?,?,?,?,?,?,?)',
     [randomUUID(), new Date(now).toISOString(), actor, action,

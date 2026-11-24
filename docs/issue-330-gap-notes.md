@@ -50,4 +50,19 @@ The focused recording/history suite covers migration failure, append failure,
 member authorization, secret redaction, pagination, ordering and cross-tenant
 exclusion. Generated CLI/MCP and TypeScript SDK checks passed **184 / 0 failed /
 0 skipped**; Python SDK checks passed **34 / 0 failed / 0 skipped**.
-Full root-suite and static-demo results are recorded after completion below.
+The actor validation bound now matches the metadata userId bound (512), so
+valid longer member identities are preserved without changing the audit schema.
+
+## Static demo and reference comparison
+
+The demo was rebuilt and three offline browser captures were compared with the
+existing reference pairings, exclusions and pixel tolerance of 16. All captures
+are byte-for-byte identical to issue #329, with **0 page errors / 0 external
+requests**. The reference pixel differences remain classic editor **41.22%**,
+new-look editor **33.97%**, Q generative **45.30%**. These are pixel differences,
+not fidelity grades; existing fixture/chrome mismatches are unchanged. No new
+visual gap was identified. README images need no refresh because no UI changed.
+The demo is a local static artifact, not a deployed server. Captures/reports
+remain outside version control in `.opensight/issue-330/`.
+
+Full root-suite results are recorded after completion below.

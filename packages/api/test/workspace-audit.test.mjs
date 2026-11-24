@@ -7,6 +7,7 @@ import { workspaceAuditAction, recordWorkspaceAction } from '../dist/workspace-a
 import { AUDIT_REDACTED, appendOperatorAudit, assertAuditReady, readOperatorAudit, readWorkspaceAudit } from '../dist/operator-audit.js';
 import { h8Fixture, serveH8 } from './h8-helpers.mjs';
 import { createHostedApiServer, drainHostedServer } from '../dist/hosted-server.js';
+import { insertResource } from '../dist/metadata-resources.js';
 
 test('#330 audit operation inventory covers every OpenAPI method and uses safe route names', () => {
   const spec = load(readFileSync(new URL('../../../docs/api/openapi-v1.yaml', import.meta.url), 'utf8'));
@@ -37,6 +38,19 @@ test('#330 authenticated namespace denials before v1 dispatch retain the member 
   const [entry] = (await readWorkspaceAudit(f.db, 'tenant-one')).items;
   assert.equal(entry.action, 'describe_analysis'); assert.equal(entry.subject, 'private');
   assert.equal(entry.actor, 'admin'); assert.equal(entry.detail.status, 404);
+});
+
+test('#330 recording preserves a delegating member at the full metadata identifier bound', async t => {
+  const f = await h8Fixture(t), userId = 'u'.repeat(512);
+  await f.db.transaction(async c => {
+    await insertResource(c, { tenantId: 'tenant-one', namespaceId: 'one' }, { kind: 'user', id: userId }, { name: 'Member', role: 'administrator' });
+    await c.query("UPDATE h2_memberships SET user_id = ? WHERE namespace_id = 'one'", [userId]);
+  });
+  const s = await serveH8(t, f, { security: { authenticate: async () => ({ namespaceId: 'one', userId }) } });
+  const result = await s.request('/api/v1/analyses');
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  await drainHostedServer(s.server);
+  assert.equal((await readWorkspaceAudit(f.db, 'tenant-one')).items[0].actor, userId);
 });
 
 test('#330 hosted v1 success and failure are recorded once with member identity and no body or credentials', async t => {
