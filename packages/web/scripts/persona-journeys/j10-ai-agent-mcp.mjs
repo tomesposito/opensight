@@ -85,19 +85,24 @@ async function fixtures(stack) {
   good(await member.request('/api/v1/analyses', 'POST', analysis('weekly-baseline', 'weekly-sales')), 201);
   const baseline = good(await member.request('/api/v1/analyses/weekly-baseline/publish', 'POST', {}), 201);
 
-  // Current publication is v2. A newer draft has different math, making both
-  // the returned number and reported version meaningful assertions.
+  // Two publications have different math; a newer draft must never execute.
+  // Both returned values and reported versions distinguish all three definitions.
   const metric = { name: 'Weekly sales', expression: 'sum({amount})', defaultAggregation: 'SUM',
     format: { style: 'number', decimalPlaces: 2 }, description: 'Governed weekly sales', synonyms: [] };
   good(await member.request('/api/v1/metrics', 'POST', { id: 'weekly-sales',
     dataset: { kind: 'prepared-dataset', id: 'weekly-sales', ownerId: member.identity.userId }, definition: metric,
   }), 201);
-  const published = good(await member.request('/api/v1/metrics/weekly-sales/publish', 'POST', {}, { 'If-Match': '"1"' }));
-  assert.equal(published.publishedVersion, 2);
+  const firstPublication = good(await member.request('/api/v1/metrics/weekly-sales/publish', 'POST', {}, { 'If-Match': '"1"' }));
+  assert.equal(firstPublication.publishedVersion, 2);
+  good(await member.request('/api/v1/metrics/weekly-sales', 'PUT', {
+    definition: { ...metric, expression: 'sum({amount}) * 2' },
+  }, { 'If-Match': '"2"' }));
+  const published = good(await member.request('/api/v1/metrics/weekly-sales/publish', 'POST', {}, { 'If-Match': '"3"' }));
+  assert.equal(published.publishedVersion, 4);
   const edited = good(await member.request('/api/v1/metrics/weekly-sales', 'PUT', {
     definition: { ...metric, expression: 'sum({amount}) * 10' },
-  }, { 'If-Match': '"2"' }));
-  assert.equal(edited.version, 3); assert.equal(edited.publishedVersion, 2);
+  }, { 'If-Match': '"4"' }));
+  assert.equal(edited.version, 5); assert.equal(edited.publishedVersion, 4);
 
   // Freeze identical valid visuals before the two source schemas diverge.
   // Then deny the field in one world and remove it in the other. Queries reach
@@ -141,8 +146,10 @@ await runJourney('j10-ai-agent-mcp', 'AI Agent', async j => {
     assert.equal(good(await stack.request('/api/session')).role, 'administrator');
     const connection = await connectHostedMcp(stack, member.token); j.cleanup(connection.stop); client = connection.client;
     toolNames = (await client.listTools()).tools.map(t => t.name);
-    for (const name of ['list_datasets', 'list_analyses', 'list_dashboards', 'create_analysis', 'run_dataset_query', 'query_dashboard_visual', 'refresh_dataset']) assert.ok(toolNames.includes(name), name);
-    assert.deepEqual(toolNames.filter(name => /metric|generat|audit|history/.test(name)), [], 'Revisit the recorded gaps when MCP gains these tools');
+    for (const name of ['list_datasets', 'list_analyses', 'list_dashboards', 'create_analysis', 'run_dataset_query', 'query_dashboard_visual', 'refresh_dataset', 'list_metrics', 'describe_metric', 'list_metric_versions']) assert.ok(toolNames.includes(name), name);
+    assert.equal(toolNames.length, 56);
+    assert.deepEqual(toolNames.filter(name => /metric/.test(name)).sort(), ['describe_metric', 'list_metric_versions', 'list_metrics']);
+    assert.deepEqual(toolNames.filter(name => /generat|audit|history/.test(name)), [], 'Revisit the recorded gaps when MCP gains these tools');
     return { transport: 'SDK Client + InMemoryTransport → real createMcpServer → hosted HTTP on localhost, Host opensight.test',
       role: session.role, workspace: session.tenantId, member: member.identity.userId, tools: toolNames, browserDriven: false };
   });
@@ -186,15 +193,38 @@ await runJourney('j10-ai-agent-mcp', 'AI Agent', async j => {
       dimensions: [{ fieldId: 'region', columnName: 'region' }],
       measures: [{ fieldId: 'sales', columnName: '__metric_weekly-sales', aggregation: 'SUM' }], filters: [],
     } });
-    assert.deepEqual([...result.rows].sort((a, b) => a.region.localeCompare(b.region)), [{ region: 'east', sales: 40 }, { region: 'west', sales: 20 }]);
+    assert.deepEqual([...result.rows].sort((a, b) => a.region.localeCompare(b.region)), [{ region: 'east', sales: 80 }, { region: 'west', sales: 40 }]);
     assert.equal(result.metrics.length, 1);
     const metric = result.metrics[0]; assert.equal(metric.id, 'weekly-sales'); assert.equal(metric.name, 'Weekly sales');
-    assert.equal(metric.version, publishedVersion); assert.equal(metric.expression, 'sum({amount})');
-    return { rows: result.rows, metric, newerUnpublishedVersion: 3, detail: 'Reserved __metric_<id> resolves to published v2, not the newer v3 draft with tenfold values.' };
+    assert.equal(metric.version, publishedVersion); assert.equal(metric.expression, 'sum({amount}) * 2');
+    return { rows: result.rows, metric, newerUnpublishedVersion: 5, detail: 'Reserved __metric_<id> resolves to published v4, not the newer v5 draft with tenfold values.' };
   });
-  j.gap('metric-discovery-name-version-selection',
-    'The agent discovers governed metrics and selects a metric directly by name and version over MCP.',
-    'MCP has no metric discovery/version-selection tool. run_dataset_query accepts the human-supplied __metric_weekly-sales ID and reports current published v2; it cannot select a named historical version.');
+  await j.step('metric-discovery-name-version-selection', null, async () => {
+    const catalog = await success('list_metrics');
+    const metric = catalog.items.find(m => m.definition.name === 'Weekly sales');
+    assert.ok(metric); assert.equal(metric.id, 'weekly-sales'); assert.equal(metric.publishedVersion, 4);
+    const described = await success('describe_metric', { id: metric.id });
+    assert.equal(described.id, metric.id); assert.equal(described.publishedVersion, 4);
+    assert.equal(described.published.version, 4); assert.equal(described.published.expression, 'sum({amount}) * 2');
+    const versions = await success('list_metric_versions', { id: metric.id });
+    assert.equal(versions.nextCursor, null);
+    assert.deepEqual(versions.items.filter(v => v.state === 'published').map(v => v.version), [2, 4]);
+    const query = version => ({ dimensions: [{ fieldId: 'region', columnName: 'region' }],
+      measures: [{ fieldId: 'sales', columnName: `__metric_${metric.id}@v${version}`, aggregation: 'SUM' }], filters: [] });
+    const historical = await success('run_dataset_query', { id: metric.dataset.id, query: query(2) });
+    assert.deepEqual([...historical.rows].sort((a, b) => a.region.localeCompare(b.region)), [{ region: 'east', sales: 40 }, { region: 'west', sales: 20 }]);
+    assert.equal(historical.metrics.length, 1); assert.equal(historical.metrics[0].id, metric.id);
+    assert.equal(historical.metrics[0].version, 2); assert.equal(historical.metrics[0].expression, 'sum({amount})');
+    const rejected = [];
+    for (const version of [5, 99]) {
+      const result = await call('run_dataset_query', { id: metric.dataset.id, query: query(version) });
+      assert.equal(result.isError, true); assert.equal(result.status, 422);
+      assert.equal(result.body.errorCode, 'METRIC_VERSION_NOT_PUBLISHED'); assert.equal(result.body.path, '$.metrics');
+      assert.equal('rows' in result.body, false); rejected.push({ version, errorCode: result.body.errorCode });
+    }
+    return { id: metric.id, publishedVersions: [2, 4], historical, rejected,
+      detail: 'MCP discovers Weekly sales by name, describes its current publication, lists history and executes published v2. Draft v5 and missing v99 fail closed.' };
+  });
   await j.step('cls-denied-equals-missing', null, async () => {
     const failures = {};
     for (const [world, { id, version }] of Object.entries(probes)) {
