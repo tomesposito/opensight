@@ -204,8 +204,14 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     return actual;
   });
   await j.step('author-credit-limited-plan', author, async () => {
+    // The fixture's source-policy update invalidates earlier bearer revisions.
+    // A hash-only navigation never re-checks the session, so the sign-in state
+    // latched by the stale token survives the header renewal: reload the app
+    // with the fresh bearer (as admin-ai-mode-settings does), then follow the
+    // product navigation to the author surface.
     await author.context().setExtraHTTPHeaders({ Authorization: `Bearer ${(await f.login()).token}` });
-    await author.goto(`${stack.origin}/#/author`);
+    await author.goto(stack.origin); await author.locator('.app-shell').waitFor();
+    await navigate(author, 'author');
     await author.getByRole('button', { name: /^Ask a question about / }).click();
     const panel = author.locator('.q-side-panel');
     await author.waitForFunction(() => !document.querySelector('[role="switch"]').disabled);
