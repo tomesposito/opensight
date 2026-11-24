@@ -228,7 +228,9 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     assert.equal(result.status(), 200); const plan = await result.json();
     assert.equal(plan.delivered, 3); assert.deepEqual(plan.tiles.map(t => t.status), ['ok', 'ok', 'ok', 'credit-limited']);
     await author.locator('.o-plan-placeholder').getByText(/No monthly credits remain/).waitFor();
-    assert.match(await panel.locator('.o-credits').innerText(), /0 of 10 credits left/);
+    // The builder refreshes AI status asynchronously after the plan lands;
+    // wait for the refreshed balance like the earlier credit assertions do.
+    await panel.getByText(/0 of 10 credits left/).waitFor();
     await button(author, 'Discard proposed sheet').click();
     return 'The second plan delivers three tiles and leaves an explicit, uncharged credit-limited tail. Discard refunds no delivered tiles.';
   });
