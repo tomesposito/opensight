@@ -1,6 +1,6 @@
 import { validOProvenance } from './o-provenance.js';
 import { importObjects, serializeObject, objectElementType, type SheetObject } from './sheet-objects.js';
-import { analysisDescriptionValid, layoutSettingsValid, facetSortValid, pivotFieldSortsValid } from './authoring.js';
+import { analysisDescriptionValid, layoutSettingsValid, facetSortValid, pivotFieldSortsValid, pivotRowLabelSortsValid } from './authoring.js';
 import { projectInsightBody } from './insight-configuration.js';
 import { normalizeVisual, tooltipDetailKinds } from './compiler.js';
 import { FACETED_KINDS } from './facet-layout.js';
@@ -287,6 +287,12 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     pivotSortsRaw.every(entry => Object.keys(obj(entry)).every(key => key === 'fieldId' || key === 'sortDirection')) &&
     pivotFieldSortsValid(pivotSorts) && pivotSorts.every(sort => [...rows, ...columns].includes(sort.fieldId) && wellFields.get(sort.fieldId) === sort.fieldId)
     ? pivotSorts : undefined;
+  const rowLabelSortsRaw = obj(config.sortConfiguration).rowLabelSort;
+  const rowLabelSorts = Array.isArray(rowLabelSortsRaw) ? rowLabelSortsRaw.map(entry => obj(entry).fieldSort) : undefined;
+  const importedRowLabelSorts = kind === 'pivot' && Array.isArray(rowLabelSortsRaw) &&
+    rowLabelSortsRaw.every(entry => Object.keys(obj(entry)).length === 1 && Object.hasOwn(obj(entry), 'fieldSort')) &&
+    pivotRowLabelSortsValid(rowLabelSorts) && rowLabelSorts.every(sort => rows.includes(sort.fieldId) && wellFields.get(sort.fieldId) === sort.fieldId)
+    ? rowLabelSorts : undefined;
   // An imported category limit becomes editable draft state
   // (like the Group/Color sort). Unrecognized shapes stay retained read-only
   // through the differences check.
@@ -377,6 +383,7 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     // OpenSight extension: imported Group/Color sort imports into the draft.
     ...(importedGroupSort ? { groupSort: importedGroupSort } : {}),
     ...(importedAggregationSort ? { aggregationSort: importedAggregationSort } : {}),
+    ...(importedRowLabelSorts ? { pivotRowLabelSorts: importedRowLabelSorts } : {}),
     ...(importedPivotSorts ? { pivotFieldSorts: importedPivotSorts } : {}),
     ...(importedColumnSort ? { pivotColumnSort: importedColumnSort } : {}),
     ...(importedPivotRowSort ? { pivotRowSort: importedPivotRowSort } : {}),
