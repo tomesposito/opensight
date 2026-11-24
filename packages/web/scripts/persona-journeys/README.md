@@ -89,7 +89,7 @@ These builds and the suite require no external network access.
 | j7-operator | Operator | Operator UI provisioning, list/create/detail screenshots and inline usage, operator user list, browser admin enrollment and sign-in, removal confirmed by API/database |
 | j8-embedding | Embedder (future) | Four offline preview states, branding, honest lack of active session |
 | j9-ideas | Member + Operator | Member submission/isolation, operator review and decline reason, member follow-up, hosted-only local notice |
-| j10-ai-agent-mcp | AI Agent | MCP-level: author_ai identity and scoped resources, regional draft, published metric version, identical CLS denied/missing errors, real BLAZE compute quota, human draft review; explicit surface gaps |
+| j10-ai-agent-mcp | AI Agent | MCP-level: author_ai identity and scoped resources, regional draft, published metric version, identical CLS denied/missing errors, real BLAZE compute quota, PII field-name stop, managed AI spend cap, human draft review; audit-identity gap |
 | j11-notebooks | Author | Local CSV preparation, declared-dataset SQL and source totals, published run view versus scratch draft, data mutation and execution timestamps, calibrated result refusal and oldest-run eviction, hosted unavailable notice |
 
 **Gaps are product findings, not test bugs.** They must state what was expected
@@ -179,11 +179,15 @@ The human reads the exact draft through their member API session and confirms
 no published dashboard references it. The final `browser-health` step is the
 shared harness check; J10 launches no browser and captures no screenshots.
 
-J10 records three gaps with expected/actual details in its JSON and suite report:
+J10 discovers 57 MCP tools including `ask_question`. Its dedicated member-owned
+`ai-sales` fixture has columns `region,revenue`: east 17 + 31 = 48 and west 23.
+The first managed stub ask returns the existing interpretation answer, then a
+separate MCP dataset query verifies those totals. The stub reports 12 tokens;
+`aiSpendCapCents: 12` and `aiCostCentsPerMillionTokens: 1_000_000` record exactly
+12 cents. The second ask returns 429 `AI_SPEND_CAP_EXCEEDED` with no rows while
+nine monthly AI credits remain. The PII field-name stop also passes (#328).
 
-- PII field-name stop: `AI_FIELD_NAME_PII` guards generative routes only; no MCP
-  tool reaches that guard, so there is no simulated provider call or stop.
-- AI spend-cap binding: MCP has no AI/generative call; the compute quota above
-  is the reachable stop, not an assertion about `aiSpendCapCents`.
+J10 records one remaining gap with expected/actual details in its JSON and suite report:
+
 - Audit identity: `/api/host/audit` is operator-only and MCP has no workspace
   action-history tool; verified session identity is not proof of every action's audit record.

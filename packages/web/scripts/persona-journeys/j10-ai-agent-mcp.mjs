@@ -69,6 +69,9 @@ async function fixtures(stack) {
   const piiSource = await f.sources.upload(await member.context(), {
     ...upload(), base64: Buffer.from('region,amount,jane.doe@example.com\neast,10,a\nwest,20,b\neast,30,c\n').toString('base64'),
   });
+  const aiSource = await f.sources.upload(await member.context(), {
+    ...upload(), base64: Buffer.from('region,revenue\neast,17\nwest,23\neast,31\n').toString('base64'),
+  });
   stack.tokens.admin = (await f.login()).token;
   // A real second member owns private resources, so empty lists cannot make
   // the visibility assertions pass accidentally.
@@ -88,6 +91,9 @@ async function fixtures(stack) {
       name: id, pipeline: { version: 1, input: source.id, steps: [] }, expectedVersion: 0,
     }));
   }
+  good(await member.request('/api/datasets/ai-sales/prep', 'PUT', {
+    name: 'ai-sales', pipeline: { version: 1, input: aiSource.id, steps: [] }, expectedVersion: 0,
+  }));
   good(await member.request('/api/datasets/refresh-sales/execution', 'PUT', { mode: 'BLAZE', intervalMinutes: null, expectedVersion: 1 }));
   good(await member.request('/api/v1/analyses', 'POST', analysis('weekly-baseline', 'weekly-sales')), 201);
   const baseline = good(await member.request('/api/v1/analyses/weekly-baseline/publish', 'POST', {}), 201);
@@ -130,7 +136,7 @@ async function fixtures(stack) {
 }
 
 await runJourney('j10-ai-agent-mcp', 'AI Agent', async j => {
-  const stack = await startHostedStack({ entitlements: { computeAttempts: 1 } }); j.cleanup(stack.stop);
+  const stack = await startHostedStack({ aiStub: true, entitlements: { computeAttempts: 1, aiSpendCapCents: 12, aiCostCentsPerMillionTokens: 1_000_000 } }); j.cleanup(stack.stop);
   const { member, probes, baseline, publishedVersion, piiSourceId } = await fixtures(stack);
   let client, toolNames, draft, dashboardsBefore;
   const calls = [];
@@ -153,10 +159,10 @@ await runJourney('j10-ai-agent-mcp', 'AI Agent', async j => {
     assert.equal(good(await stack.request('/api/session')).role, 'administrator');
     const connection = await connectHostedMcp(stack, member.token); j.cleanup(connection.stop); client = connection.client;
     toolNames = (await client.listTools()).tools.map(t => t.name);
-    for (const name of ['list_datasets', 'list_analyses', 'list_dashboards', 'create_analysis', 'run_dataset_query', 'query_dashboard_visual', 'refresh_dataset', 'list_metrics', 'describe_metric', 'list_metric_versions']) assert.ok(toolNames.includes(name), name);
-    assert.equal(toolNames.length, 56);
+    for (const name of ['list_datasets', 'list_analyses', 'list_dashboards', 'create_analysis', 'run_dataset_query', 'query_dashboard_visual', 'refresh_dataset', 'list_metrics', 'describe_metric', 'list_metric_versions', 'ask_question']) assert.ok(toolNames.includes(name), name);
+    assert.equal(toolNames.length, 57);
     assert.deepEqual(toolNames.filter(name => /metric/.test(name)).sort(), ['describe_metric', 'list_metric_versions', 'list_metrics']);
-    assert.deepEqual(toolNames.filter(name => /generat|audit|history/.test(name)), [], 'Revisit the recorded gaps when MCP gains these tools');
+    assert.deepEqual(toolNames.filter(name => /audit|history/.test(name)), [], 'Revisit the recorded gaps when MCP gains these tools');
     return { transport: 'SDK Client + InMemoryTransport → real createMcpServer → hosted HTTP on localhost, Host opensight.test',
       role: session.role, workspace: session.tenantId, member: member.identity.userId, tools: toolNames, browserDriven: false };
   });
@@ -164,7 +170,7 @@ await runJourney('j10-ai-agent-mcp', 'AI Agent', async j => {
     const datasets = await success('list_datasets'), analyses = await success('list_analyses');
     dashboardsBefore = await success('list_dashboards');
     assert.equal(datasets.nextCursor, null); assert.equal(analyses.nextCursor, null); assert.equal(dashboardsBefore.nextCursor, null);
-    assert.deepEqual(datasets.items.map(d => d.id).sort(), ['refresh-sales', 'weekly-sales']);
+    assert.deepEqual(datasets.items.map(d => d.id).sort(), ['ai-sales', 'refresh-sales', 'weekly-sales']);
     assert.ok(analyses.items.some(a => a.id === 'weekly-baseline'));
     assert.ok(dashboardsBefore.items.some(d => d.id === baseline.DashboardId));
     assert.ok(!analyses.items.some(a => a.id === 'admin-private'));
@@ -287,9 +293,30 @@ await runJourney('j10-ai-agent-mcp', 'AI Agent', async j => {
     assert.equal(second.isError, true); assert.equal(second.status, 429); assert.equal(second.body.errorCode, 'USAGE_LIMIT_EXCEEDED');
     return { entitlement: { computeAttempts: 1 }, first, second, detail: 'Distinct idempotency keys exercise two real refresh attempts; the second stops at the compute quota. This is not an AI-spend-cap assertion.' };
   });
-  j.gap('ai-spend-cap-binding',
-    'The workspace AI spend cap binds agent work through MCP.',
-    'MCP exposes no AI/generative call, so aiSpendCapCents does not bind this task. The real reachable stop is computeAttempts: 1: first BLAZE refresh succeeds, second returns 429 USAGE_LIMIT_EXCEEDED.');
+  await j.step('ai-spend-cap-binding', null, async () => {
+    const body = { question: 'sum revenue by region', datasetId: 'ai-sales' };
+    const answer = await success('ask_question', { body });
+    assert.deepEqual(Object.keys(answer).sort(), ['errors', 'interpretations', 'question']);
+    assert.equal(answer.question, body.question); assert.deepEqual(answer.errors, []);
+    const interpretation = answer.interpretations[0];
+    assert.deepEqual(interpretation.grounding.fieldsUsed, ['revenue', 'region']);
+    assert.deepEqual(interpretation.filters, []);
+    const executed = await success('run_dataset_query', { id: body.datasetId, query: {
+      dimensions: interpretation.dimensions.map(columnName => ({ fieldId: columnName, columnName })),
+      measures: [{ fieldId: 'total', columnName: interpretation.measure, aggregation: interpretation.aggregation }], filters: [],
+    } });
+    assert.deepEqual([...executed.rows].sort((a, b) => a.region.localeCompare(b.region)), [{ region: 'east', total: 48 }, { region: 'west', total: 23 }]);
+    const denied = await call('ask_question', { body });
+    assert.equal(denied.isError, true); assert.equal(denied.status, 429);
+    assert.equal(denied.body.errorCode, 'AI_SPEND_CAP_EXCEEDED'); assert.equal('rows' in denied.body, false);
+    assert.equal('interpretations' in denied.body, false);
+    assert.equal(denied.body.detail.spendCents, 12); assert.equal(denied.body.detail.capCents, 12);
+    const credits = good(await member.request('/api/o/status')).credits;
+    assert.equal(credits.used, 1); assert.equal(credits.remaining, 9);
+    return { answer, rows: executed.rows, denied, credits,
+      entitlement: { aiSpendCapCents: 12, aiCostCentsPerMillionTokens: 1_000_000 },
+      detail: 'The managed test completion reports 12 tokens and records exactly 12 cents. A separate MCP query executes its interpretation against the member-owned ai-sales fixture. The next ask is denied by the workspace spend cap before provider transport.' };
+  });
   await j.step('human-reviews-unpublished-draft', null, async () => {
     // The delegating human uses their own member session directly, not the
     // agent client or the separate administrator's source authority.
