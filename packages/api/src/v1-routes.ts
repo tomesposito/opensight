@@ -25,6 +25,8 @@ import type { HostedDataRoutes } from './hosted-data-routes.js';
 import type { TenantContext } from './metadata.js';
 import { RetryStore, RETRY_TTL_MS, v1RateLimit, type RetryAdapter } from './retry-store.js';
 import { serverlessV1Methods } from './v1-route-contract.js';
+import { readWorkspaceAudit } from './operator-audit.js';
+import type { Database } from './metadata-db.js';
 
 export type DurableV1Factory = (context: TenantContext) => RetryAdapter & { take(): Promise<{ allowed: boolean; retryAfter: number }> };
 
@@ -95,7 +97,7 @@ export class V1Routes {
   private readonly metrics: MetricRoutes;
   private readonly dashboards: DashboardRoutes;
   constructor(private readonly hostedRoutes?: HostedDataRoutes, private readonly env: NodeJS.ProcessEnv = process.env,
-    private readonly options: { invocation?: boolean; analytics?: Analytics; durable?: DurableV1Factory; digests?: DigestStore; ask?: (request: IncomingMessage, response: ServerResponse, context: TenantContext, recheck: () => Promise<void>) => Promise<void> } = {}) {
+    private readonly options: { invocation?: boolean; analytics?: Analytics; durable?: DurableV1Factory; digests?: DigestStore; auditDatabase?: Database; ask?: (request: IncomingMessage, response: ServerResponse, context: TenantContext, recheck: () => Promise<void>) => Promise<void> } = {}) {
     this.limiter = new RateLimiter(env);
     this.templates = new PrepTemplateRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
     this.metrics = new MetricRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
@@ -112,6 +114,7 @@ export class V1Routes {
       const gate = this.limiter.take(backend.scope.tenantId);
       if (!gate.allowed) { response.setHeader('Retry-After', String(gate.retryAfter)); v1Fail('RATE_LIMIT_EXCEEDED', 429, 'Rate limit exceeded'); }
       if (path === '/api/v1/ai/ask') { await this.ask(request, response, ask); return; }
+      if (path === '/api/v1/workspace/action-history') throw new MetadataError('HOSTED_API_REQUIRED', 503);
       if (digestPath(path)) throw new MetadataError('HOSTED_API_REQUIRED', 503);
       if (this.templates.matches(path)) await this.templates.route(request, response, path, assets);
       else if (this.metrics.matches(path)) await this.metrics.route(request, response, path, assets);
@@ -129,6 +132,16 @@ export class V1Routes {
       const gate = durable ? await durable.take() : this.limiter.take(context.tenantId);
       if (!gate.allowed) { response.setHeader('Retry-After', String(gate.retryAfter)); v1Fail('RATE_LIMIT_EXCEEDED', 429, `Rate limit exceeded; retry after ${gate.retryAfter}s`); }
       this.routes.data.begin(context, undefined, recheck);
+      if (path === '/api/v1/workspace/action-history') {
+        method(request, response, ['GET']);
+        if (!this.options.auditDatabase) throw new MetadataError('HOSTED_API_REQUIRED', 503);
+        const rawLimit = this.header(request, 'limit');
+        if (rawLimit !== undefined && !/^\d+$/.test(rawLimit)) v1Fail('INVALID_PAGINATION', 400, 'Limit must be an integer 1–200');
+        const result = await readWorkspaceAudit(this.options.auditDatabase, context.tenantId,
+          { limit: rawLimit === undefined ? undefined : Number(rawLimit), cursor: this.header(request, 'cursor') });
+        await recheck();
+        send(response, 200, result); return true;
+      }
       if (path === '/api/v1/ai/ask') {
         await this.ask(request, response, this.options.ask ? () => this.options.ask!(request, response, context, recheck) : undefined); return true;
       }

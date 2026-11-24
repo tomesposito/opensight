@@ -21,10 +21,46 @@ tags:
   - name: querying
   - name: metrics
   - name: ai
+  - name: workspace
   - name: analyses
   - name: dashboards
   - name: assets
 paths:
+  /workspace/action-history:
+    get:
+      operationId: list_workspace_action_history
+      tags: [workspace]
+      summary: List workspace action history with delegating member identities
+      description: >-
+        Hosted only. Any authenticated member can read their own tenant's audit
+        entries, newest first. Other tenants and entries without a tenant are
+        excluded. Hosted v1 calls include successful, denied and failed attempts;
+        this history read is not recorded. Operator audit access remains separate.
+      parameters:
+        - name: Limit
+          in: header
+          required: false
+          description: Page size, 1–200 (default 50).
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Tenant-scoped audit page
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/WorkspaceAuditEntry' }
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '401': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/AnalysisError' }
   /ai/ask:
     post:
       operationId: ask_question
@@ -2522,6 +2558,18 @@ components:
       description: Quoted integer version, e.g. "3" (optimistic concurrency)
       schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
   schemas:
+    WorkspaceAuditEntry:
+      type: object
+      additionalProperties: false
+      required: [eventId, createdAt, actor, action, tenantId, subject, detail]
+      properties:
+        eventId: { type: string }
+        createdAt: { type: string, format: date-time }
+        actor: { type: string, description: Delegating member userId for v1 actions; deployment-operator for tenant lifecycle events. }
+        action: { type: string }
+        tenantId: { type: string }
+        subject: { type: [string, 'null'] }
+        detail: {}
     AskQuestion:
       type: object
       additionalProperties: false

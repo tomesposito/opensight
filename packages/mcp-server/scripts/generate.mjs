@@ -60,5 +60,10 @@ export function generate() {
   const spec = parse(readFileSync(specUrl, 'utf8'));
   const output = `// Generated from docs/api/openapi-v1.yaml. Do not edit.\nimport type { Operation } from './types.js';\nexport const apiVersion = ${JSON.stringify(spec.info.version)};\nexport const operations: Operation[] = ${JSON.stringify(inventory(spec), null, 2)};\n`;
   writeFileSync(new URL('../src/generated.ts', import.meta.url), output);
+  writeFileSync(new URL('../../api/src/v1-audit-operations.ts', import.meta.url), auditSource(spec));
+}
+export function auditSource(spec) {
+  const routes = inventory(spec).map(({ name, method, path }) => ({ operationId: name, method, path }));
+  return `// Generated from docs/api/openapi-v1.yaml by mcp-server/scripts/generate.mjs. Do not edit.\nexport const v1AuditOperations = ${JSON.stringify(routes, null, 2)} as const;\n`;
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) generate();

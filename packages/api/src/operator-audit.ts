@@ -149,6 +149,17 @@ function stored(row: SqlRow): OperatorAuditEntry {
     tenantId: row.tenant_id === null ? null : String(row.tenant_id), subject: row.subject === null ? null : String(row.subject), detail };
 }
 
+/** Verify the owner migration before serving requests; runtime never repairs audit DDL. */
+export async function assertAuditReady(db: Database): Promise<void> {
+  await db.transaction(c => withoutDdl(async () => {
+    const marker = (await c.query('SELECT version, checksum FROM h8_audit_schema WHERE id = 1'))[0];
+    if (!marker) throw new MetadataError('AUDIT_SCHEMA_NOT_MIGRATED', 503);
+    if (Number(marker.version) !== AUDIT_SCHEMA_VERSION || marker.checksum !== auditSchemaChecksum)
+      throw new MetadataError('AUDIT_SCHEMA_MISMATCH', 503);
+    await c.query('SELECT event_id, created_at, actor, action, tenant_id, subject, detail FROM h8_audit WHERE 1 = 0');
+  }));
+}
+
 /** Operator review read path: newest first, bounded. Operator authentication is the caller's job. */
 export async function readOperatorAudit(db: Database, options: { limit?: number } = {}): Promise<OperatorAuditEntry[]> {
   const limit = options.limit ?? 50;
@@ -156,5 +167,35 @@ export async function readOperatorAudit(db: Database, options: { limit?: number 
   return db.transaction(async c => withoutDdl(async () => {
     const rows = await c.query('SELECT event_id, created_at, actor, action, tenant_id, subject, detail FROM h8_audit ORDER BY created_at DESC LIMIT ?', [limit]);
     return rows.map(stored);
+  }));
+}
+
+/** Tenant identity is supplied by authentication, never decoded from a cursor or request. */
+export async function readWorkspaceAudit(db: Database, tenantId: string, options: { limit?: number; cursor?: string } = {}): Promise<{
+  items: OperatorAuditEntry[]; nextCursor: string | null;
+}> {
+  if (text(tenantId, 'tenantId', 512) === null) throw new MetadataError('METADATA_INVALID', 400);
+  const limit = options.limit ?? 50;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 200) throw new MetadataError('INVALID_PAGINATION', 400);
+  let before: { createdAt: string; eventId: string } | undefined;
+  if (options.cursor !== undefined) {
+    try {
+      if (!/^[A-Za-z0-9_-]{1,512}$/.test(options.cursor)) throw new Error();
+      const value: unknown = JSON.parse(Buffer.from(options.cursor, 'base64url').toString('utf8'));
+      if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join(',') !== 'createdAt,eventId') throw new Error();
+      const { createdAt, eventId } = value as Record<string, unknown>;
+      if (typeof createdAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(createdAt)
+        || !Number.isFinite(Date.parse(createdAt)) || typeof eventId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(eventId)) throw new Error();
+      before = { createdAt, eventId };
+    } catch { throw new MetadataError('INVALID_PAGINATION', 400); }
+  }
+  return db.transaction(c => withoutDdl(async () => {
+    const rows = await c.query(`SELECT event_id, created_at, actor, action, tenant_id, subject, detail FROM h8_audit
+      WHERE tenant_id = ?${before ? ' AND (created_at < ? OR (created_at = ? AND event_id < ?))' : ''}
+      ORDER BY created_at DESC, event_id DESC LIMIT ?`,
+    [tenantId, ...(before ? [before.createdAt, before.createdAt, before.eventId] : []), limit + 1]);
+    const items = rows.slice(0, limit).map(stored), last = items.at(-1);
+    return { items, nextCursor: rows.length > limit && last
+      ? Buffer.from(JSON.stringify({ createdAt: last.createdAt, eventId: last.eventId })).toString('base64url') : null };
   }));
 }

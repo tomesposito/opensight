@@ -11,8 +11,8 @@ subject, and when.
 |-------------|----------------------------------------------------------------|
 | `event_id`  | Random UUID, primary key                                       |
 | `created_at`| ISO-8601 timestamp                                             |
-| `actor`     | Operator identity; today always `deployment-operator` (the deployment has a single operator identity) |
-| `action`    | Dotted action name, e.g. `tenant.suspended`                    |
+| `actor`     | `deployment-operator` for operator actions; delegating member userId for hosted v1 calls |
+| `action`    | Operator action name (e.g. `tenant.suspended`) or v1 operationId |
 | `tenant_id` | Target tenant, when the action targets one                     |
 | `subject`   | Target subject identity (namespace, user, or email), when any  |
 | `detail`    | Redacted JSON object with action-specific context              |
@@ -39,9 +39,29 @@ subject, and when.
 
 Entries are written inside the mutation's own transaction: a rolled-back
 mutation leaves no entry, and an idempotent replay of an already-applied
-mutation appends nothing new. The log self-initializes (`initializeAudit`
-runs on every append and read), so any operator-plane database carries it
-without a separate migration step.
+mutation appends nothing new. The owner migration runs `initializeAudit`;
+runtime append/read paths do no DDL and require the migrated schema.
+
+Issue #330 records authenticated hosted v1 calls once at the central request
+boundary, including denials, failures and idempotent replays. These entries use
+a separate transaction after dispatch, so failed actions remain visible. Their
+actor and tenant come from the verified member context; subject is the primary
+resource `id` in a recognized route, when present. A create request has no path
+ID, so its subject is null. Detail contains only operationId (when known),
+method, outcome (`success`, `denied`, `failed`) and HTTP status, passed through
+the existing redaction. Bodies, query contents/results, credentials and error
+messages are never copied. Unknown methods on known OpenAPI routes use
+`METHOD /api/v1/<route-template>`; unrecognized routes use
+`METHOD /api/v1/{unmatched}` without caller-controlled path text.
+
+Hosted startup checks the schema columns and version/checksum marker before
+serving, failing with `AUDIT_SCHEMA_NOT_MIGRATED` or `AUDIT_SCHEMA_MISMATCH`.
+Later append failures emit a sanitized `WORKSPACE_AUDIT_APPEND_FAILED`
+diagnostic (including the named schema error when applicable); they never
+change the action's response. Shutdown/invocation completion awaits appends.
+Pre-authentication refusals have no verified member identity and are not
+recorded. The history read is excluded. Local fixture v1 dispatch is separate
+and has no hosted audit database; this recording covers hosted calls only.
 
 ## Secret redaction
 
