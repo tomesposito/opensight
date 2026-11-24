@@ -95,7 +95,7 @@ export class V1Routes {
   private readonly metrics: MetricRoutes;
   private readonly dashboards: DashboardRoutes;
   constructor(private readonly hostedRoutes?: HostedDataRoutes, private readonly env: NodeJS.ProcessEnv = process.env,
-    private readonly options: { invocation?: boolean; analytics?: Analytics; durable?: DurableV1Factory; digests?: DigestStore } = {}) {
+    private readonly options: { invocation?: boolean; analytics?: Analytics; durable?: DurableV1Factory; digests?: DigestStore; ask?: (request: IncomingMessage, response: ServerResponse, context: TenantContext, recheck: () => Promise<void>) => Promise<void> } = {}) {
     this.limiter = new RateLimiter(env);
     this.templates = new PrepTemplateRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
     this.metrics = new MetricRoutes({ paging: r => this.paging(r), ifMatch: r => this.ifMatch(r) });
@@ -107,10 +107,11 @@ export class V1Routes {
   }
   close(): void { this.retries.close(); }
   private get routes(): HostedDataRoutes { if (!this.hostedRoutes) throw new MetadataError('HOSTED_API_REQUIRED', 503); return this.hostedRoutes; }
-  async local(request: IncomingMessage, response: ServerResponse, path: string, backend: AnalysisBackend, dashboards: DashboardBackend, assets: MetricBackend & TemplateBackend): Promise<void> {
+  async local(request: IncomingMessage, response: ServerResponse, path: string, backend: AnalysisBackend, dashboards: DashboardBackend, assets: MetricBackend & TemplateBackend, ask?: () => Promise<void>): Promise<void> {
     try {
       const gate = this.limiter.take(backend.scope.tenantId);
       if (!gate.allowed) { response.setHeader('Retry-After', String(gate.retryAfter)); v1Fail('RATE_LIMIT_EXCEEDED', 429, 'Rate limit exceeded'); }
+      if (path === '/api/v1/ai/ask') { await this.ask(request, response, ask); return; }
       if (digestPath(path)) throw new MetadataError('HOSTED_API_REQUIRED', 503);
       if (this.templates.matches(path)) await this.templates.route(request, response, path, assets);
       else if (this.metrics.matches(path)) await this.metrics.route(request, response, path, assets);
@@ -128,6 +129,9 @@ export class V1Routes {
       const gate = durable ? await durable.take() : this.limiter.take(context.tenantId);
       if (!gate.allowed) { response.setHeader('Retry-After', String(gate.retryAfter)); v1Fail('RATE_LIMIT_EXCEEDED', 429, `Rate limit exceeded; retry after ${gate.retryAfter}s`); }
       this.routes.data.begin(context, undefined, recheck);
+      if (path === '/api/v1/ai/ask') {
+        await this.ask(request, response, this.options.ask ? () => this.options.ask!(request, response, context, recheck) : undefined); return true;
+      }
       const protocol = { paging: (r: IncomingMessage) => this.paging(r), ifMatch: (r: IncomingMessage) => this.ifMatch(r),
         publishData: async (r: IncomingMessage, res: ServerResponse, status: number, body: unknown, validate: () => Promise<void>) => {
           const output = await this.routes.output(r, context, status, body, async () => { await recheck(); await validate(); });
@@ -172,6 +176,12 @@ export class V1Routes {
       await this.dispatch(request, response, path, context, input, publish);
     } catch (error) { request.resume(); this.sendError(response, error); }
     return true;
+  }
+
+  private async ask(request: IncomingMessage, response: ServerResponse, serve?: () => Promise<void>): Promise<void> {
+    method(request, response, ['POST']);
+    if (!serve) throw new MetadataError('AI_NOT_CONFIGURED', 503);
+    await serve();
   }
 
   sendError(response: ServerResponse, error: unknown): void {

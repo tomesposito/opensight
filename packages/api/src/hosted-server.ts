@@ -224,7 +224,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const renderer = new JobRenderer(data.data, embedContent, config.origin), runner = new JobRunner(jobs, renderer, tenantMail,
     billingService ? async tenantId => { await billingService.expireTrials(); billingService.assertAccess(tenantId); } : undefined);
   const digests = new DigestStore(jobs, renderer);
-  const v1 = new V1Routes(data, options.env ?? process.env, { invocation: !!options.invocation, analytics, durable: invocation?.v1, digests });
+  const v1 = new V1Routes(data, options.env ?? process.env, { invocation: !!options.invocation, analytics, durable: invocation?.v1, digests, ask: (request, response, context, recheck) => ai.ask(request, response, context, recheck) });
   const ownership = new JobOwnership(jobs, renderer), scheduler = new Scheduler(() => runner.tick());
   const sessions = new EmbedSessions(options.membershipDatabase, metadata, policy, embedSessionKey(options.env ?? process.env), async (context, grant) => { await billingService?.expireTrials(); billingService?.assertAccess(context.tenantId); await embedContent.authorize(context, grant); });
   await sessions.initialize(!options.invocation);
