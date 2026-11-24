@@ -4,7 +4,18 @@ import type { TenantContext } from './metadata.js';
 import { appendOperatorAudit } from './operator-audit.js';
 import { v1AuditOperations } from './v1-audit-operations.js';
 
-const routes = v1AuditOperations.map(operation => ({ ...operation,
+// Existing UI v1 routes without an OpenAPI operationId still have stable names
+// and path subjects. These do not create additional MCP/CLI operations.
+const additionalPaths = [
+  '/metrics/promote-calc', '/metric-datasets', '/metrics/{id}/publish', '/metrics/{id}/export',
+  '/datasets/{id}/metrics', '/dashboards/{id}/question', '/prep-templates', '/prep-templates/{id}',
+  ...['publish', 'versions', 'export', 'datasets'].map(action => `/prep-templates/{id}/${action}`),
+  '/metrics/{id}/subscriptions', '/metric-subscriptions/{id}', '/metric-subscriptions/{id}/preview',
+];
+const operations: readonly { path: string; method?: string; operationId?: string }[] = [
+  ...v1AuditOperations, ...additionalPaths.map(path => ({ path })),
+];
+const routes = operations.map(operation => ({ ...operation,
   parts: operation.path.split('/'),
 })).sort((a, b) => a.parts.filter(p => p.startsWith('{')).length - b.parts.filter(p => p.startsWith('{')).length);
 
@@ -21,7 +32,7 @@ export function workspaceAuditAction(method: string, path: string): { action: st
   if (!route) return { action: `${safeMethod} /api/v1/{unmatched}` };
   const index = route.parts.indexOf('{id}');
   const subject = index < 0 ? undefined : parts[index];
-  return { action: route.method === method ? route.operationId : `${safeMethod} /api/v1${route.path}`,
+  return { action: route.method === method && route.operationId ? route.operationId : `${safeMethod} /api/v1${route.path}`,
     ...(route.method === method ? { operationId: route.operationId } : {}), ...(subject ? { subject } : {}) };
 }
 

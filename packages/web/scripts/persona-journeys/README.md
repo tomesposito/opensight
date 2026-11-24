@@ -154,7 +154,7 @@ and real `createMcpServer` with linked `InMemoryTransport` endpoints. Its inject
 fetch forwards to `stack.apiTransport` on localhost with `Host: opensight.test`
 and the member's real hosted token. The bridge changes transport only. Trusted
 fixture provisioning uses real auth, APIs and Postgres metadata; every agent
-action uses MCP. No new dependency or product-code change is involved.
+action uses MCP. The original #276 journey added no dependency or product-code change.
 
 The agent sees its prepared datasets and accessible analyses/dashboards; a real
 second member's private dataset/analysis is absent and direct probes return 404.

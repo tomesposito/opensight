@@ -50,7 +50,7 @@ resource `id` in a recognized route, when present. A create request has no path
 ID, so its subject is null. Detail contains only operationId (when known),
 method, outcome (`success`, `denied`, `failed`) and HTTP status, passed through
 the existing redaction. Bodies, query contents/results, credentials and error
-messages are never copied. Unknown methods on known OpenAPI routes use
+messages are never copied. Calls without an operationId on recognized v1 routes use
 `METHOD /api/v1/<route-template>`; unrecognized routes use
 `METHOD /api/v1/{unmatched}` without caller-controlled path text.
 
@@ -79,9 +79,19 @@ structures. Callers additionally pass only identifiers by construction:
 
 ## Reading the log
 
-Operator-only. Over HTTP: `GET /api/host/audit` (requires the `Operator`
+The deployment-wide read is operator-only. Over HTTP: `GET /api/host/audit` (requires the `Operator`
 bearer key like every `/api/host` route) returns the newest 50 entries.
 Programmatically: `readOperatorAudit(db, { limit })` with `1 <= limit <= 200`.
+
+Members use `GET /api/v1/workspace/action-history` (MCP
+`list_workspace_action_history`) with `Limit`/`Cursor` headers. The response is
+`{ items, nextCursor }`, default 50, maximum 200. `readWorkspaceAudit` always
+filters by the authenticated tenant, excluding NULL tenant entries, and orders
+by timestamp then event ID descending. The opaque cursor holds only the last
+position, never tenant or actor authority. Other members' and tenant lifecycle
+operator events remain visible with their original actor. Reads recheck member
+authorization before publication and fail with a named error when audit storage
+is unavailable. The operator endpoint and authentication are unchanged.
 
 ## Retention
 

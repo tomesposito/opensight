@@ -20,9 +20,23 @@ test('#330 audit operation inventory covers every OpenAPI method and uses safe r
     action: 'run_dataset_query', operationId: 'run_dataset_query', subject: 'sales',
   });
   assert.equal(workspaceAuditAction('PATCH', '/api/v1/datasets/sales').action, 'PATCH /api/v1/datasets/{id}');
+  assert.deepEqual(workspaceAuditAction('POST', '/api/v1/prep-templates/template/publish'), {
+    action: 'POST /api/v1/prep-templates/{id}/publish', subject: 'template',
+  });
+  assert.deepEqual(workspaceAuditAction('POST', '/api/v1/metrics/promote-calc'), { action: 'POST /api/v1/metrics/promote-calc' });
   assert.equal(workspaceAuditAction('GET', '/api/v1/unknown/secret-text').action, 'GET /api/v1/{unmatched}');
   assert.equal(workspaceAuditAction('GET', '/api/v1/workspace/action-history'), undefined);
   assert.equal(workspaceAuditAction('GET', '/api/session'), undefined);
+});
+
+test('#330 authenticated namespace denials before v1 dispatch retain the member identity and final status', async t => {
+  const f = await h8Fixture(t), s = await serveH8(t, f);
+  const denied = await s.request('/api/namespaces/two/v1/analyses/private', { headers: { authorization: 'one' } });
+  assert.equal(denied.status, 404);
+  await drainHostedServer(s.server);
+  const [entry] = (await readWorkspaceAudit(f.db, 'tenant-one')).items;
+  assert.equal(entry.action, 'describe_analysis'); assert.equal(entry.subject, 'private');
+  assert.equal(entry.actor, 'admin'); assert.equal(entry.detail.status, 404);
 });
 
 test('#330 hosted v1 success and failure are recorded once with member identity and no body or credentials', async t => {
