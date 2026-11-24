@@ -800,6 +800,23 @@ class DefaultTransportRedirectTest(unittest.TestCase):
         self.assertEqual(len(origin.hits), 1)
 
 
+class AskQuestionTest(unittest.TestCase):
+    def test_ask_question_posts_contract_body_and_round_trips_answer(self):
+        body = {"question": "sum revenue by region", "datasetId": "sales"}
+        answer = {"question": body["question"], "interpretations": [{
+            "measure": "revenue", "aggregation": "SUM", "dimensions": ["region"], "filters": [],
+            "granularity": None, "topN": None, "suggestedVisualType": "bar", "confidence": 1,
+            "explanation": "Regional totals", "grounding": {"fieldsUsed": ["revenue", "region"],
+                "synonymsMatched": [], "unmatchedTerms": []}}], "errors": []}
+        transport = MockTransport({"POST /api/v1/ai/ask": _json_ok(answer)})
+        client = OpenSightClient(base_url="https://h/api", get_token="t", transport=transport)
+        self.assertEqual(client.ask_question(body, idempotency_key="ask-replay"), answer)
+        self.assertEqual(len(transport.calls), 1)
+        call = transport.calls[0]
+        self.assertEqual(json.loads(call["body"]), body)
+        self.assertEqual(call["headers"]["Idempotency-Key"], "ask-replay")
+
+
 class MetricReadsTest(unittest.TestCase):
     def test_metric_routes_pagination_and_path_encoding(self):
         for method, path, args, paged in [

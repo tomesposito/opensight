@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
 import { HostedAIReceipts } from '../dist/hosted-ai-receipts.js';
+import { providerAdapters } from '../dist/ai-providers.js';
 import { HostedAI } from '../dist/hosted-ai.js';
 import { Analytics } from '../dist/analytics.js';
 import { randomBytes } from 'node:crypto';
@@ -20,7 +21,7 @@ import { serverlessDataPath } from '../dist/serverless-application.js';
 const limits = { apiCalls: 10000, storageBytes: 10000000, computeAttempts: 100, aiCallsPerMonth: 10, aiSpendCapCents: 1000, aiCostCentsPerMillionTokens: 1000000 };
 const query = { dimensions: [{ fieldId: 'region', columnName: 'region' }], measures: [{ fieldId: 'revenue', columnName: 'revenue', aggregation: 'SUM' }], filters: [] };
 const providerResponse = (text, bedrock = true) => Response.json(bedrock ? { output: { message: { content: [{ text }] } }, usage: { inputTokens: 2, outputTokens: 3 } } : { output: [{ type: 'message', content: [{ type: 'output_text', text }] }], usage: { input_tokens: 2, output_tokens: 3 } });
-async function fixture(t, { managed = true, entitlement = {}, stub = false, analytics } = {}) {
+async function fixture(t, { managed = true, entitlement = {}, stub = false, analytics, csv = 'region,revenue,private\neast,1000,secret\nwest,2000,secret\n' } = {}) {
   const cleanup = [], owner = { after: fn => cleanup.push(fn) }; t.after(async () => { for (const fn of cleanup.reverse()) await fn(); });
   const f = await h8Fixture(owner); await initializeUsage(f.db);
   await f.db.transaction(async c => { await c.query("INSERT INTO h2_identities (subject,email,status) VALUES ('other','other@example.test','active')"); await c.query("INSERT INTO h2_memberships (subject,tenant_id,namespace_id,user_id,status) VALUES ('other','tenant-one','one','other','active')"); });
@@ -36,7 +37,7 @@ async function fixture(t, { managed = true, entitlement = {}, stub = false, anal
     const c = await login(userId), oldKey = sources.key(c, 'source', source.id), old = await metadata.get(c, oldKey);
     await metadata.batch(c, [{ key: { ...oldKey, id: 'orders' }, body: old.body, expectedVersion: 0 }, { key: oldKey, body: null, expectedVersion: 1 }]);
   };
-  await file('admin', 'region,revenue,private\neast,1000,secret\nwest,2000,secret\n');
+  await file('admin', csv);
   await file('other', 'region,revenue,private\neast,4,hidden\nwest,6,hidden\n');
   await routes.prep.save(await login(), 'sales', { name: 'Sales', pipeline: { version: 1, input: 'orders', steps: [] }, expectedVersion: 0 });
   const wire = interactiveRequest(query, { dataSet: { DataSet: { Arn: 'urn:synthetic:sales' } }, dataSource: {}, localData: {} }).analysis.Definition;
@@ -49,7 +50,7 @@ async function fixture(t, { managed = true, entitlement = {}, stub = false, anal
   const api = (path, body, user = 'one') => request(path, { method: body === undefined ? 'GET' : 'POST', headers: { authorization: user }, body });
   const role = async role => { const c = await login(), r = await metadata.get(c, { kind: 'user', id: 'other' }); await metadata.put(c, { kind: 'user', id: 'other' }, { name: 'Other', role }, r.version); };
   const usage = new HostedUsage(f.db, { defaults: { ...limits, ...entitlement }, tenants: {} });
-  return { ...f, api, server, metadata, login, role, calls, usage, setText: value => { text = value; }, fail: value => { fail = value; }, pending: value => { pending = value; } };
+  return { ...f, api, server, metadata, login, role, calls, usage, routes, setText: value => { text = value; }, fail: value => { fail = value; }, pending: value => { pending = value; } };
 }
 const ask = { question: 'Which region drove revenue?', dashboardId: 'daily' };
 test('#190 hosted status, grounded answer, reader result visual query and calculation share scope', async t => {
@@ -354,4 +355,84 @@ test('#229 BYO receipts replay without managed credits or additional provider ca
   assert.equal(first.status, 200); assert.deepEqual(retry.body, first.body); assert.equal(retry.headers['idempotent-replayed'], 'true');
   assert.equal(f.calls.length, 1); assert.equal((await receipts(f))[0].managed, 0);
   assert.equal((await f.api('/api/o/status')).body.credits.used, 0);
+});
+
+
+const v1Ask = { question: 'sum revenue by region', datasetId: 'sales' };
+function stubCalls(t) { return t.mock.method(Object.getPrototypeOf(providerAdapters().stub), 'complete'); }
+test('#329 v1 managed ask records 12 cents, grounds a separate query and denies the next transport', async t => {
+  const provider = stubCalls(t), f = await fixture(t, { stub: true, entitlement: { aiSpendCapCents: 12 } });
+  const first = await f.api('/api/v1/ai/ask', v1Ask);
+  assert.equal(first.status, 200, JSON.stringify(first));
+  assert.deepEqual(Object.keys(first.body).sort(), ['errors', 'interpretations', 'question']);
+  assert.deepEqual(first.body.errors, []); assert.equal(first.body.question, v1Ask.question);
+  const interpretation = first.body.interpretations[0];
+  assert.deepEqual(interpretation.grounding.fieldsUsed, ['revenue', 'region']);
+  assert.deepEqual(interpretation.filters, []);
+  const executed = await f.api('/api/v1/datasets/sales/query', {
+    dimensions: interpretation.dimensions.map(columnName => ({ fieldId: columnName, columnName })),
+    measures: [{ fieldId: 'total', columnName: interpretation.measure, aggregation: interpretation.aggregation }], filters: [],
+  });
+  assert.equal(executed.status, 200, JSON.stringify(executed));
+  assert.deepEqual(executed.body.rows, [{ region: 'east', total: 1000 }, { region: 'west', total: 2000 }]);
+  const second = await f.api('/api/v1/ai/ask', v1Ask);
+  assert.equal(second.status, 429, JSON.stringify(second)); assert.equal(second.body.errorCode, 'AI_SPEND_CAP_EXCEEDED');
+  assert.equal('rows' in second.body, false); assert.equal('interpretations' in second.body, false);
+  assert.equal(second.body.detail.spendCents, 12); assert.equal(second.body.detail.capCents, 12);
+  assert.equal(provider.mock.callCount(), 1);
+  const credits = (await f.api('/api/o/status')).body.credits;
+  assert.equal(credits.used, 1); assert.equal(credits.remaining, 9);
+  assert.equal(serverlessDataPath('/api/v1/ai/ask'), true);
+});
+test('#329 v1 ask requires AI and dataset build capabilities before transport', async t => {
+  const provider = stubCalls(t), f = await fixture(t, { stub: true });
+  for (const [role, code] of [['author', 'SECURITY_AI_REQUIRED'], ['reader_ai', 'SECURITY_BUILD_REQUIRED']]) {
+    await f.role(role);
+    const denied = await f.api('/api/v1/ai/ask', v1Ask, 'other');
+    assert.equal(denied.status, 403); assert.equal(denied.body.errorCode, code);
+  }
+  assert.equal(provider.mock.callCount(), 0);
+});
+test('#329 v1 ask refuses missing and other-owner datasets before transport', async t => {
+  const provider = stubCalls(t), f = await fixture(t, { stub: true }); await f.role('author_ai');
+  for (const [datasetId, user] of [['missing', 'one'], ['sales', 'other']]) {
+    const denied = await f.api('/api/v1/ai/ask', { ...v1Ask, datasetId }, user);
+    assert.ok([403, 404].includes(denied.status), JSON.stringify(denied));
+    assert.equal(typeof denied.body.errorCode, 'string'); assert.equal('rows' in denied.body, false);
+  }
+  assert.equal(provider.mock.callCount(), 0);
+});
+test('#329 v1 ask rejects schema-carried PII before transport without echoing the name', async t => {
+  const provider = stubCalls(t), f = await fixture(t, { stub: true,
+    csv: 'region,revenue,test.person@example.com\neast,10,synthetic\n' });
+  const denied = await f.api('/api/v1/ai/ask', v1Ask);
+  assert.equal(denied.status, 400); assert.equal(denied.body.errorCode, 'AI_FIELD_NAME_PII');
+  assert.equal(JSON.stringify(denied.body).includes('test.person'), false);
+  assert.equal(provider.mock.callCount(), 0);
+});
+test('#329 v1 ask validates its bounded dataset-only body and HTTP method before transport', async t => {
+  const provider = stubCalls(t), f = await fixture(t, { stub: true });
+  for (const body of [{ question: 'sum revenue' }, { datasetId: 'sales' }, { ...v1Ask, question: ' ' },
+    { ...v1Ask, question: 'x'.repeat(2001) }, { ...v1Ask, datasetId: '../sales' }, { ...v1Ask, dashboardId: 'daily' }]) {
+    const denied = await f.api('/api/v1/ai/ask', body);
+    assert.equal(denied.status, 400); assert.equal(denied.body.errorCode, 'HOSTED_REQUEST_INVALID');
+  }
+  const method = await f.api('/api/v1/ai/ask'); assert.equal(method.status, 405); assert.equal(method.body.errorCode, 'METHOD_NOT_ALLOWED');
+  assert.equal(provider.mock.callCount(), 0);
+});
+test('#329 v1 ask without a configured provider fails honestly', async t => {
+  const f = await fixture(t, { managed: false });
+  const denied = await f.api('/api/v1/ai/ask', v1Ask);
+  assert.equal(denied.status, 503); assert.equal(denied.body.errorCode, 'AI_NOT_CONFIGURED'); assert.equal(f.calls.length, 0);
+});
+test('#329 v1 ask retains post-provider authorization checks and hosted receipt replay', async t => {
+  const f = await fixture(t); await f.role('author_ai');
+  await f.routes.prep.save(await f.login('other'), 'sales', { name: 'Sales', pipeline: { version: 1, input: 'orders', steps: [] }, expectedVersion: 0 });
+  const g = gate(f), pending = f.api('/api/v1/ai/ask', v1Ask, 'other');
+  await g.started; await f.role('author'); g.release();
+  assert.equal((await pending).status, 403); assert.equal((await f.api('/api/o/status')).body.credits.used, 0);
+  const first = await keyed(f, v1Ask, undefined, '/api/v1/ai/ask');
+  const replay = await keyed(f, v1Ask, undefined, '/api/v1/ai/ask');
+  assert.equal(first.status, 200, JSON.stringify(first)); assert.deepEqual(replay.body, first.body);
+  assert.equal(replay.headers['idempotent-replayed'], 'true'); assert.equal(f.calls.length, 2);
 });

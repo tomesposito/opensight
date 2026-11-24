@@ -5,7 +5,7 @@ import { readBody, validateQuery } from './query.js';
 import { record, id } from './schedule.js';
 import { AIError } from './ai-providers.js';
 import { HostedAISettings, type HostedAIOptions } from './hosted-ai-settings.js';
-import { generateAnswer, planAnswer, reviseAnswer, type GenerativeSchemaSource } from './o-generative.js';
+import { askQuestionBody, generateAnswer, planAnswer, reviseAnswer, type GenerativeSchemaSource } from './o-generative.js';
 import { HostedDashboards } from './hosted-dashboards.js';
 import { HostedAnalyses } from './hosted-analyses.js';
 import { dashboardVersion } from './dashboard-model.js';
@@ -92,6 +92,16 @@ export class HostedAI {
     const calculation = path === '/api/o/calculation', query = path === '/api/o/query';
     if (calculation) await this.require(context, 'build');
     const body = record(await readBody(request), query ? ['dashboardId', 'datasetId', 'query'] : ['question', 'dashboardId', 'datasetId', 'calculatedFields', ...(path === '/api/o/revise' ? ['currentQuestion'] : [])]);
+    await this.answer(request, response, path, body, context, recheck);
+    return true;
+  }
+  async ask(request: IncomingMessage, response: ServerResponse, context: TenantContext, recheck: () => Promise<void>): Promise<void> {
+    await this.require(context, 'ai'); await this.require(context, 'build');
+    const body = askQuestionBody(await readBody(request));
+    await this.answer(request, response, '/api/o/generate', body, context, recheck);
+  }
+  private async answer(request: IncomingMessage, response: ServerResponse, path: string, body: Record<string, unknown>, context: TenantContext, recheck: () => Promise<void>): Promise<void> {
+    const calculation = path === '/api/o/calculation', query = path === '/api/o/query';
     const source = await this.source(context, body, recheck), stamp = await this.metadata.revisions(context);
     const check = async () => { await recheck(); await this.require(context, 'ai'); if (calculation) await this.require(context, 'build'); await this.metadata.assertRevisions(context, stamp); await this.source(context, body, recheck); };
     if (query) {
@@ -124,6 +134,5 @@ export class HostedAI {
       });
       send(response, 200, result);
     }
-    return true;
   }
 }

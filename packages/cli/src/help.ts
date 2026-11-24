@@ -2,6 +2,7 @@ import { apiVersion, operations } from './generated.js';
 import type { Operation, Schema } from './types.js';
 
 export const descriptions: Record<string, string> = {
+  ask_question: 'Generate a grounded interpretation for a dataset. Requires AI and build capabilities; query separately for rows. Workspace AI spend caps apply.',
   list_metrics: 'List visible governed metrics with current definitions and publication details.',
   describe_metric: 'Read a governed metric, its current publication and edit/publish permissions.',
   list_metric_versions: 'List stored draft and published metric versions. Requires edit permission.',
@@ -60,6 +61,7 @@ export const descriptions: Record<string, string> = {
   set_folder_permissions: 'Replace folder grants with --grants JSON; null restores inheritance.',
 };
 const groups: Record<string, string> = {
+  ai: 'Ask generative questions within the workspace AI allowance.',
   analysis: 'Build and edit analysis drafts, visuals, filters and layouts.',
   asset: 'Browse, search, move, copy and share existing assets.',
   dashboard: 'Publish analyses and read, query, export or manage published dashboards.',

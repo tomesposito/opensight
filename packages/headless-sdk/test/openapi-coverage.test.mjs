@@ -36,6 +36,7 @@ const ROUTES = specRoutes();
 
 // The client method that implements each spec route.
 const COVERAGE = {
+  '/ai/ask|POST': 'askQuestion',
   '/metrics|GET': 'listMetrics',
   '/metrics/{id}|GET': 'getMetric',
   '/metrics/{id}/versions|GET': 'listMetricVersions',

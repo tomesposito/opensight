@@ -19,7 +19,7 @@ import { InputTableRoutes } from './input-table-routes.js';
 import { InputTableStore } from './input-tables.js';
 import { ConnectorRoutes } from './connector-routes.js';
 import { invitationRoute } from './invitations.js';
-import { generativeRoute } from './o-generative.js';
+import { askLocalQuestion, generativeRoute } from './o-generative.js';
 import { AISettings, aiFromEnvironment, type AIOptions } from './ai-settings.js';
 import { oRoute } from './o-routes.js';
 import { EmbeddingService, type EmbeddingOptions } from './embedding.js';
@@ -228,7 +228,8 @@ export async function createApiServer(options: ApiOptions): Promise<Server> {
         };
         const root = namespaceId === 'default' ? options.dataRoot : options.namespaceDataRoots?.[namespaceId];
         const analyses = new LocalAnalyses(scopedStore, scopedSales, prepRoutes, v1Identity, recheck, organization, root, !!options.security?.storePath);
-        await v1.local(request, response, path, analyses, new LocalDashboards(analyses, scopedStore, scopedSales, prepRoutes, v1Identity, recheck, organization, root, !!options.security?.storePath), new LocalAssets(scopedStore, prepRoutes, v1Identity, recheck, organization, root, !!options.security?.storePath, scopedSales)); return;
+        await v1.local(request, response, path, analyses, new LocalDashboards(analyses, scopedStore, scopedSales, prepRoutes, v1Identity, recheck, organization, root, !!options.security?.storePath), new LocalAssets(scopedStore, prepRoutes, v1Identity, recheck, organization, root, !!options.security?.storePath, scopedSales),
+          security && identity && organization ? () => askLocalQuestion(request, response, identity, security, organization, ai, scopedSales, analytics, recheck) : undefined); return;
       }
       if (/^\/api\/notebooks(?:\/|$)/.test(path)) {
         await notebooks.route(request, response, path, query, localIdentity ?? identity); return;

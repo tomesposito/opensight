@@ -174,6 +174,58 @@ export const operations: Operation[] = [
     }
   },
   {
+    "name": "ask_question",
+    "method": "POST",
+    "path": "/ai/ask",
+    "parameters": [
+      {
+        "input": "idempotencyKey",
+        "name": "Idempotency-Key",
+        "location": "header"
+      }
+    ],
+    "bodyInput": "body",
+    "emptyBody": false,
+    "tool": {
+      "name": "ask_question",
+      "description": "POST /api/v1/ai/ask — Generate a grounded question interpretation for a dataset. Requires ai and build capabilities. Uses the existing generative question flow and field-name PII guard. Returns interpretations, errors and question; execute the selected interpretation separately through the query API. Managed completions check the workspace AI spend cap before provider transport. Local/self-hosted serves the configured sales binding; unavailable AI returns AI_NOT_CONFIGURED. Idempotency-Key replays hosted answers with current authorization.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "idempotencyKey": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,512}$",
+            "description": "HTTP Idempotency-Key header. Honored on every v1 mutation and query POST (10-minute replay window, single node)"
+          },
+          "body": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "question",
+              "datasetId"
+            ],
+            "properties": {
+              "question": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "pattern": "\\S"
+              },
+              "datasetId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,512}$"
+              }
+            }
+          }
+        },
+        "required": [
+          "body"
+        ]
+      }
+    }
+  },
+  {
     "name": "copy_asset",
     "method": "POST",
     "path": "/assets/{kind}/{id}/copy",

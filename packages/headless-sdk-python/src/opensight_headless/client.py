@@ -175,6 +175,9 @@ class OpenSightClient:
             raise TypeError("get_token must be a string or a callable")
         self._transport = transport or _urllib_transport
 
+    def ask_question(self, body: dict, idempotency_key: str | None = None):
+        return self._json("POST", "/v1/ai/ask", _mutation_headers(idempotency_key), body)
+
     # ---- governed metrics ----
 
     def list_metrics(self, limit: int | None = None, cursor: str | None = None):

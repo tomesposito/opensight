@@ -20,10 +20,45 @@ tags:
   - name: sources
   - name: querying
   - name: metrics
+  - name: ai
   - name: analyses
   - name: dashboards
   - name: assets
 paths:
+  /ai/ask:
+    post:
+      operationId: ask_question
+      tags: [ai]
+      summary: Generate a grounded question interpretation for a dataset
+      description: >-
+        Requires ai and build capabilities. Uses the existing generative question
+        flow and field-name PII guard. Returns interpretations, errors and question;
+        execute the selected interpretation separately through the query API.
+        Managed completions check the workspace AI spend cap before provider transport.
+        Local/self-hosted serves the configured sales binding; unavailable AI returns
+        AI_NOT_CONFIGURED. Idempotency-Key replays hosted answers with current authorization.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AskQuestion' }
+      responses:
+        '200':
+          description: Grounded interpretation; no query execution or rows
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuestionAnswer' }
+        '400': { $ref: '#/components/responses/AIError' }
+        '401': { $ref: '#/components/responses/AIError' }
+        '403': { $ref: '#/components/responses/AIError' }
+        '404': { $ref: '#/components/responses/AIError' }
+        '409': { $ref: '#/components/responses/AIError' }
+        '422': { $ref: '#/components/responses/AIError' }
+        '429': { $ref: '#/components/responses/AIError' }
+        '502': { $ref: '#/components/responses/AIError' }
+        '503': { $ref: '#/components/responses/AIError' }
   /analyses/{id}/publish:
     parameters:
     - name: id
@@ -2487,6 +2522,75 @@ components:
       description: Quoted integer version, e.g. "3" (optimistic concurrency)
       schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
   schemas:
+    AskQuestion:
+      type: object
+      additionalProperties: false
+      required: [question, datasetId]
+      properties:
+        question: { type: string, minLength: 1, maxLength: 2000, pattern: '\S' }
+        datasetId: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+    QuestionAnswer:
+      type: object
+      additionalProperties: false
+      required: [interpretations, errors, question]
+      properties:
+        question: { type: string }
+        interpretations:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/QuestionInterpretation' }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [code, message]
+            properties:
+              code: { type: string }
+              message: { type: string }
+    QuestionInterpretation:
+      type: object
+      required: [measure, aggregation, dimensions, filters, granularity, topN, suggestedVisualType, confidence, explanation, grounding]
+      properties:
+        measure: { type: [string, 'null'] }
+        aggregation: { type: string, enum: [SUM, AVG, COUNT, MIN, MAX, DISTINCT_COUNT] }
+        dimensions: { type: array, items: { type: string } }
+        filters:
+          type: array
+          items:
+            type: object
+            required: [field, operator, value]
+            properties:
+              field: { type: string }
+              operator: { type: string, enum: [equals, year] }
+              value: { type: [string, number] }
+        granularity: { type: [string, 'null'], enum: [YEAR, QUARTER, MONTH, DAY, null] }
+        topN: { type: [integer, 'null'] }
+        suggestedVisualType: { type: string, enum: [bar, line, pie, table, kpi] }
+        confidence: { type: number }
+        explanation: { type: string }
+        grounding:
+          type: object
+          required: [fieldsUsed, synonymsMatched, unmatchedTerms]
+          properties:
+            fieldsUsed: { type: array, items: { type: string } }
+            unmatchedTerms: { type: array, items: { type: string } }
+            synonymsMatched:
+              type: array
+              items:
+                type: object
+                required: [term, field]
+                properties:
+                  term: { type: string }
+                  field: { type: string }
+            metricsUsed:
+              type: array
+              items:
+                type: object
+                required: [id, name, version]
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+                  version: { type: integer }
     AssetSummary:
       type: object
       additionalProperties: false
@@ -3349,6 +3453,16 @@ components:
               kind: { type: string, enum: [source, dataset] }
               id: { type: string }
   responses:
+    AIError:
+      description: >-
+        Named v1 error. 400 validation or AI_FIELD_NAME_PII; 403 SECURITY_AI_REQUIRED,
+        SECURITY_BUILD_REQUIRED or scope denial; 404 missing or inaccessible dataset;
+        429 AI_SPEND_CAP_EXCEEDED before provider transport, AI_CREDITS_EXHAUSTED or
+        RATE_LIMIT_EXCEEDED; 503 AI_NOT_CONFIGURED when no provider is configured.
+        Existing generative provider, interpretation and idempotency errors are preserved.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
     AssetError:
       description: >-
         Named errorCode. 403 METADATA_WRITE_FORBIDDEN or ASSET_FOLDER_FORBIDDEN;
