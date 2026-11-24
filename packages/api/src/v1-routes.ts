@@ -19,6 +19,7 @@ import { MetadataError } from './metadata-db.js';
 import { identifier, object } from './metadata-resources.js';
 import { method, send } from './automation-routes.js';
 import { readBody, RequestError, SecurityError, validateQuery } from './query.js';
+import { collectColumnNames, FIELD_NAME_PII_MESSAGE, hasFieldNamePII } from './ai-guard.js';
 import { BlazeError } from './blaze.js';
 import type { HostedDataRoutes } from './hosted-data-routes.js';
 import type { TenantContext } from './metadata.js';
@@ -308,6 +309,13 @@ export class V1Routes {
       // Revision changes invalidate responses, including changes to leaf policies.
       const revisions = await this.routes.data.sources.metadata.revisions(context);
       const dataset = await this.routes.prep.describe(context, id);
+      // Field-name egress guard (#328): the same AI_FIELD_NAME_PII stop as the
+      // generative routes reaches the v1/MCP surface. Describe columns are the
+      // permitted (CLS-filtered) field list; caller-supplied query names and
+      // calculated-field names are checked with them, before execution.
+      const fieldNames = [...dataset.columns.map(c => c.name), ...collectColumnNames(body),
+        ...(body.calculatedFields ?? []).map(f => f.name)];
+      if (hasFieldNamePII(fieldNames.map(name => ({ name })))) v1Fail('AI_FIELD_NAME_PII', 400, FIELD_NAME_PII_MESSAGE);
       // HostedPrep resolves current governed references before normal planning.
       await this.idempotent(request, response, context, path, body, async () => {
         const result = await this.routes.prep.execute(context, id, 'query', body);
