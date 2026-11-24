@@ -133,6 +133,13 @@ Defenses (issues #113 and #139):
   so new ones cannot be stored. CLS-denied columns are excluded before this check
   and cannot trigger it; calculations that reference denied columns still fail
   authorization.
+- The same stop reaches the v1 machine surface that MCP tools map to (#328):
+  `POST /api/v1/datasets/{id}/query` checks the dataset's permitted columns
+  plus the query's own field names, `POST /api/v1/dashboards/{id}/question`
+  checks its query's field names, and v1 analysis create/update checks every
+  `columnName` in the definition plus calculated-field names — each returns
+  HTTP 400 `AI_FIELD_NAME_PII` before execution or storage, with the same
+  no-echo message. Deleting an existing analysis is not blocked.
 - Provider keys are redacted from echoed answers (`AISettings.complete`), and
   the transport boundary allows no redirects, tools, retries, or provider
   error-body forwarding.

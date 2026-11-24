@@ -62,6 +62,13 @@ async function fixtures(stack) {
   const missing = await f.sources.upload(await member.context(), {
     ...upload(), base64: Buffer.from('region,amount\neast,10\nwest,20\neast,30\n').toString('base64'),
   });
+  // A source whose schema carries a personal-looking (email-shaped) column
+  // name, for the field-name PII stop step. Uploaded in the pre-login batch;
+  // the prep dataset is created inside the step, after the visibility step
+  // has asserted the member's exact dataset list.
+  const piiSource = await f.sources.upload(await member.context(), {
+    ...upload(), base64: Buffer.from('region,amount,jane.doe@example.com\neast,10,a\nwest,20,b\neast,30,c\n').toString('base64'),
+  });
   stack.tokens.admin = (await f.login()).token;
   // A real second member owns private resources, so empty lists cannot make
   // the visibility assertions pass accidentally.
@@ -119,12 +126,12 @@ async function fixtures(stack) {
   });
   await f.metadata.put(await f.context(), { kind: 'dataset', id: 'cls-missing' }, dataset('cls-missing', missing.id), 1);
   await member.login(); stack.tokens.admin = (await f.login()).token;
-  return { member, probes, baseline, publishedVersion: published.publishedVersion };
+  return { member, probes, baseline, publishedVersion: published.publishedVersion, piiSourceId: piiSource.id };
 }
 
 await runJourney('j10-ai-agent-mcp', 'AI Agent', async j => {
   const stack = await startHostedStack({ entitlements: { computeAttempts: 1 } }); j.cleanup(stack.stop);
-  const { member, probes, baseline, publishedVersion } = await fixtures(stack);
+  const { member, probes, baseline, publishedVersion, piiSourceId } = await fixtures(stack);
   let client, toolNames, draft, dashboardsBefore;
   const calls = [];
   const call = async (name, args = {}) => {
@@ -240,9 +247,39 @@ await runJourney('j10-ai-agent-mcp', 'AI Agent', async j => {
     assert.deepEqual(failures.denied, failures.missing, 'Compare status and full body without normalization');
     return { field: 'secret_amount', ...failures, detail: 'Both allowed controls return 60; the frozen probe visuals reach the security-aware dashboard planner and return identical errors.' };
   });
-  j.gap('pii-field-name-stop',
-    'A personal-looking field name stops the MCP task with AI_FIELD_NAME_PII before provider egress.',
-    'AI_FIELD_NAME_PII is enforced only on generative routes (o-generative/ai-guard); no MCP tool reaches them. No provider call or simulated PII stop is counted.');
+  await j.step('pii-field-name-stop', null, async () => {
+    good(await member.request('/api/datasets/pii-sales/prep', 'PUT', {
+      name: 'pii-sales', pipeline: { version: 1, input: piiSourceId, steps: [] }, expectedVersion: 0,
+    }));
+    const stops = {};
+    // The dataset's permitted schema carries the personal-looking name, so
+    // even a benign query over other fields stops before execution — the
+    // same semantics as the generative routes' field-list guard.
+    const benign = await call('run_dataset_query', { id: 'pii-sales', query: {
+      dimensions: [{ fieldId: 'region', columnName: 'region' }],
+      measures: [{ fieldId: 'sales', columnName: 'amount', aggregation: 'SUM' }], filters: [] } });
+    assert.equal(benign.isError, true); assert.equal(benign.status, 400);
+    assert.equal(benign.body.errorCode, 'AI_FIELD_NAME_PII'); assert.equal('rows' in benign.body, false);
+    assert.equal(JSON.stringify(benign.body).includes('jane.doe'), false);
+    stops.schemaCarried = benign.body.errorCode;
+    // A caller-supplied personal-looking name on a clean dataset stops too.
+    const direct = await call('run_dataset_query', { id: 'weekly-sales', query: {
+      dimensions: [{ fieldId: 'owner', columnName: 'jane.doe@example.com' }],
+      measures: [{ fieldId: 'sales', columnName: 'amount', aggregation: 'SUM' }], filters: [] } });
+    assert.equal(direct.isError, true); assert.equal(direct.status, 400);
+    assert.equal(direct.body.errorCode, 'AI_FIELD_NAME_PII'); assert.equal('rows' in direct.body, false);
+    stops.callerSupplied = direct.body.errorCode;
+    // Analysis authoring carrying the name is refused and stores nothing.
+    const draftStop = await call('create_analysis', { body: analysis('agent-pii-draft', 'weekly-sales', 'prepared-dataset',
+      [kpi('owner', 'jane.doe@example.com')]), idempotencyKey: randomUUID() });
+    assert.equal(draftStop.isError, true); assert.equal(draftStop.status, 400);
+    assert.equal(draftStop.body.errorCode, 'AI_FIELD_NAME_PII');
+    stops.analysisCreate = draftStop.body.errorCode;
+    const missing = await call('describe_analysis', { id: 'agent-pii-draft' });
+    assert.equal(missing.isError, true); assert.equal(missing.status, 404);
+    return { field: 'jane.doe@example.com (email-shaped column name)', stops,
+      detail: 'run_dataset_query stops on the dataset schema and on a caller-supplied name; create_analysis stops and stores nothing. The error never echoes the name and no rows are returned.' };
+  });
   await j.step('compute-quota-stops-refresh', null, async () => {
     const first = await success('refresh_dataset', { id: 'refresh-sales', idempotencyKey: randomUUID() });
     assert.equal(first.refreshed, true); assert.equal(first.mode, 'BLAZE'); assert.equal(first.state, 'ready');
