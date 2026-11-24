@@ -204,8 +204,14 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     return actual;
   });
   await j.step('author-credit-limited-plan', author, async () => {
+    // The fixture's source-policy update invalidates earlier bearer revisions.
+    // A hash-only navigation never re-checks the session, so the sign-in state
+    // latched by the stale token survives the header renewal: reload the app
+    // with the fresh bearer (as admin-ai-mode-settings does), then follow the
+    // product navigation to the author surface.
     await author.context().setExtraHTTPHeaders({ Authorization: `Bearer ${(await f.login()).token}` });
-    await author.goto(`${stack.origin}/#/author`);
+    await author.goto(stack.origin); await author.locator('.app-shell').waitFor();
+    await navigate(author, 'author');
     await author.getByRole('button', { name: /^Ask a question about / }).click();
     const panel = author.locator('.q-side-panel');
     await author.waitForFunction(() => !document.querySelector('[role="switch"]').disabled);
@@ -222,7 +228,9 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     assert.equal(result.status(), 200); const plan = await result.json();
     assert.equal(plan.delivered, 3); assert.deepEqual(plan.tiles.map(t => t.status), ['ok', 'ok', 'ok', 'credit-limited']);
     await author.locator('.o-plan-placeholder').getByText(/No monthly credits remain/).waitFor();
-    assert.match(await panel.locator('.o-credits').innerText(), /0 of 10 credits left/);
+    // The builder refreshes AI status asynchronously after the plan lands;
+    // wait for the refreshed balance like the earlier credit assertions do.
+    await panel.getByText(/0 of 10 credits left/).waitFor();
     await button(author, 'Discard proposed sheet').click();
     return 'The second plan delivers three tiles and leaves an explicit, uncharged credit-limited tail. Discard refunds no delivered tiles.';
   });
@@ -235,7 +243,10 @@ await runJourney('j4-reader-daily', 'Reader AI', async j => {
     assert.equal(await panel.getByRole('switch', { name: 'Generative mode', exact: true }).isDisabled(), true);
     assert.match(await panel.locator('.o-credits').innerText(), /0 of 10 credits left/);
     await panel.getByRole('searchbox', { name: 'Ask a question', exact: true }).fill('sum revenue by region');
-    await panel.getByRole('button', { name: 'Ask', exact: true }).click(); await panel.locator('.o-result .chart svg').waitFor();
+    // Tenant queries serialize (running limit 1) behind the plan's tile
+    // executions, so the result chart can take longer than the default wait
+    // to arrive; #325 raised the author chart wait to 45s for the same queue.
+    await panel.getByRole('button', { name: 'Ask', exact: true }).click(); await panel.locator('.o-result .chart svg').waitFor({ timeout: 45000 });
     assert.match(await panel.innerText(), /Standard interpreter · No AI/);
     return 'At zero credits the switch is off and disabled, the balance/reset are visible, and the standard interpreter still renders a result.';
   });
