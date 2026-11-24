@@ -4,6 +4,8 @@ import type { Format } from './types.js';
 type Column = [label: string, field: string];
 const assets: Column[] = [['Kind', 'kind'], ['ID', 'id'], ['Name', 'name'], ['Folder', 'folderId']];
 const listColumns: Record<string, Column[]> = {
+  list_metrics: [['ID', 'id'], ['Version', 'version'], ['Published version', 'publishedVersion'], ['State', 'state'], ['Definition', 'definition']],
+  list_metric_versions: [['Version', 'version'], ['State', 'state'], ['Definition', 'definition'], ['Actor', 'actor'], ['At', 'at']],
   list_datasets: [['ID', 'id'], ['Name', 'name'], ['Version', 'version'], ['Execution', 'execution']],
   list_sources: [['ID', 'id'], ['Connector', 'connectorId'], ['Available', 'available'], ['Error', 'errorCode']],
   list_analyses: [['ID', 'id'], ['Name', 'name']],
@@ -14,6 +16,7 @@ const listColumns: Record<string, Column[]> = {
   list_folder_assets: assets,
 };
 const describeFields: Record<string, Column[]> = {
+  describe_metric: [['ID', 'id'], ['Dataset', 'dataset'], ['Version', 'version'], ['Published version', 'publishedVersion'], ['Definition', 'definition'], ['Published', 'published'], ['Permissions', 'permissions']],
   describe_dataset: [['ID', 'id'], ['Name', 'name'], ['Version', 'version'], ['Execution', 'execution'], ['Schema', 'schema'], ['Lineage', 'lineage'], ['Refresh', 'refresh']],
   describe_dataset_lineage: [['Dataset', 'dataset'], ['Steps', 'steps'], ['Sources', 'sources'], ['Datasets', 'datasets'], ['Refresh', 'refresh']],
   describe_source: [['ID', 'id'], ['Version', 'version'], ['Connector', 'connectorId'], ['Columns', 'columns']],

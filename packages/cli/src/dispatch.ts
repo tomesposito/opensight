@@ -22,6 +22,9 @@ const value = async (result: Promise<{ value: unknown; etag: string | null }>): 
 
 /** Explicit SDK adapters only: this module never constructs HTTP requests or paths. */
 export const handlers: Record<string, Handler> = {
+  list_metrics: (c, i) => c.listMetrics(i.options),
+  describe_metric: (c, i) => c.getMetric(id(i)),
+  list_metric_versions: (c, i) => c.listMetricVersions(id(i), i.options),
   list_datasets: (c, i) => c.listDatasets(i.options),
   describe_dataset: (c, i) => c.getDataset(id(i)),
   update_dataset: (c, i) => c.saveDataset(id(i), body(i, c.saveDataset, 1), i.options),

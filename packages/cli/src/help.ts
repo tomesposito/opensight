@@ -2,6 +2,9 @@ import { apiVersion, operations } from './generated.js';
 import type { Operation, Schema } from './types.js';
 
 export const descriptions: Record<string, string> = {
+  list_metrics: 'List visible governed metrics with current definitions and publication details.',
+  describe_metric: 'Read a governed metric, its current publication and edit/publish permissions.',
+  list_metric_versions: 'List stored draft and published metric versions. Requires edit permission.',
   list_datasets: 'List the prepared datasets visible to this credential, one page at a time.',
   describe_dataset: 'Describe a prepared dataset, its columns, execution mode, lineage and refresh state.',
   update_dataset: 'Create or replace a prepared dataset. Use expectedVersion 0 for creation.',
@@ -62,6 +65,7 @@ const groups: Record<string, string> = {
   dashboard: 'Publish analyses and read, query, export or manage published dashboards.',
   dataset: 'Inspect, prepare, query and refresh datasets.',
   folder: 'Browse folders and manage their names, contents and permissions.',
+  metric: 'Discover governed metrics and inspect their publication history.',
   source: 'Inspect and retire sources used by prepared datasets.',
 };
 const globals = 'Global options:\n  --format json|table|yaml  Output format (default: json). Tables support list/describe commands only.\n  --help, -h               Show help without authentication or API calls.\n';

@@ -63,9 +63,11 @@ and generates `src/generated.ts`. Missing/duplicate/non-snake-case IDs,
 unsupported headers, external references and parameter collisions fail the
 build. No network access is used in generation or compilation.
 
-There are **53 tools**, one per implemented OpenAPI operation: 11 dataset/source/
-query operations, 13 analysis operations, 12 dashboard operations and 17
-asset/folder/share additions. The old 11-tool and 40-deferred-tool proposal
+There are **56 tools**, one per implemented OpenAPI operation: 11 dataset/source/
+query operations, 13 analysis operations, 12 dashboard operations, 17
+asset/folder/share additions and three governed metric reads (#327):
+`list_metrics`, `describe_metric`, and `list_metric_versions`.
+The old 11-tool and 40-deferred-tool proposal
 tables are superseded by the shipped REST inventory on master `4989fdc1`.
 The spec-only checkpoint added nine missing IDs and renamed `runDatasetQuery`
 to `run_dataset_query`; REST wire behavior did not change.

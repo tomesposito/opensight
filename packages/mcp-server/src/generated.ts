@@ -1204,6 +1204,37 @@ export const operations: Operation[] = [
     }
   },
   {
+    "name": "describe_metric",
+    "method": "GET",
+    "path": "/metrics/{id}",
+    "parameters": [
+      {
+        "input": "id",
+        "name": "id",
+        "location": "path"
+      }
+    ],
+    "emptyBody": false,
+    "tool": {
+      "name": "describe_metric",
+      "description": "GET /api/v1/metrics/{id} — Describe a governed metric and its current publication.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,512}$",
+            "description": ""
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    }
+  },
+  {
     "name": "describe_source",
     "method": "GET",
     "path": "/sources/{id}",
@@ -1805,6 +1836,97 @@ export const operations: Operation[] = [
     "tool": {
       "name": "list_folders",
       "description": "GET /api/v1/folders — List folders. Readable namespace folders; grants omitted.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "HTTP Limit header. Page size, 1–1000 (default 100). The hosted plane rejects query strings at the request boundary, so the frozen limit/cursor/nextCursor convention rides headers."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "HTTP Cursor header. Opaque page token from a previous nextCursor"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "list_metric_versions",
+    "method": "GET",
+    "path": "/metrics/{id}/versions",
+    "parameters": [
+      {
+        "input": "id",
+        "name": "id",
+        "location": "path"
+      },
+      {
+        "input": "limit",
+        "name": "Limit",
+        "location": "header"
+      },
+      {
+        "input": "cursor",
+        "name": "Cursor",
+        "location": "header"
+      }
+    ],
+    "emptyBody": false,
+    "tool": {
+      "name": "list_metric_versions",
+      "description": "GET /api/v1/metrics/{id}/versions — List stored metric versions (edit permission required).",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,512}$",
+            "description": ""
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "HTTP Limit header. Page size, 1–1000 (default 100). The hosted plane rejects query strings at the request boundary, so the frozen limit/cursor/nextCursor convention rides headers."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "HTTP Cursor header. Opaque page token from a previous nextCursor"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    }
+  },
+  {
+    "name": "list_metrics",
+    "method": "GET",
+    "path": "/metrics",
+    "parameters": [
+      {
+        "input": "limit",
+        "name": "Limit",
+        "location": "header"
+      },
+      {
+        "input": "cursor",
+        "name": "Cursor",
+        "location": "header"
+      }
+    ],
+    "emptyBody": false,
+    "tool": {
+      "name": "list_metrics",
+      "description": "GET /api/v1/metrics — List visible governed metrics (paginated).",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,

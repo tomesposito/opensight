@@ -2,6 +2,7 @@ export { OpenSightClient } from './client.js';
 export type { OpenSightClientOptions, RequestOptions, AnalysisMutationOptions } from './client.js';
 export { OpenSightApiError } from './errors.js';
 export type {
+  MetricView, MetricVersion, MetricDefinition, MetricFormat, PublishedMetric,
   ApiErrorBody,
   AssetKind, TransferAssetKind, AssetSummary, AssetSearch, AssetMove, AssetCopy, AssetTransfer, AssetPrincipal, AssetRole, AssetShare, AssetGrantWrite, FolderDescribe, FolderPermissions,
   PublishAnalysisBody, PublishAnalysisResult, DashboardSummary, DashboardVersionSummary, DashboardDescribe, DashboardShare, DashboardQueryBody, DashboardExportBody, DashboardExportArtifact, DashboardRemoved,
