@@ -19,6 +19,7 @@ tags:
   - name: datasets
   - name: sources
   - name: querying
+  - name: metrics
   - name: analyses
   - name: dashboards
   - name: assets
@@ -1073,6 +1074,96 @@ paths:
         '422': { $ref: '#/components/responses/AnalysisError' }
         '428': { $ref: '#/components/responses/AnalysisError' }
         '429': { $ref: '#/components/responses/RateLimited' }
+  /metrics:
+    get:
+      operationId: list_metrics
+      tags: [metrics]
+      summary: List visible governed metrics (paginated)
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/MetricView' }
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '401': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/AnalysisError' }
+  /metrics/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+    get:
+      operationId: describe_metric
+      tags: [metrics]
+      summary: Describe a governed metric and its current publication
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current metric revision
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricView'
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '401': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/AnalysisError' }
+  /metrics/{id}/versions:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+    get:
+      operationId: list_metric_versions
+      tags: [metrics]
+      summary: List stored metric versions (edit permission required)
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Success
+          headers:
+            ETag:
+              description: Quoted current metric revision
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/MetricVersion' }
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '401': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/AnalysisError' }
   /datasets:
     get:
       operationId: list_datasets
@@ -3124,6 +3215,82 @@ components:
           properties:
             mode: { type: string, enum: [BLAZE] }
             cached: { type: boolean, const: true }
+    MetricFormat:
+      type: object
+      additionalProperties: false
+      required: [style, decimalPlaces]
+      properties:
+        style: { type: string, enum: [number, percent, currency] }
+        decimalPlaces: { type: integer }
+        currency: { type: string }
+    MetricDefinition:
+      type: object
+      required: [name, expression, defaultAggregation, format, description, synonyms]
+      properties:
+        name: { type: string }
+        expression: { type: string }
+        defaultAggregation: { type: string, enum: [SUM, AVG, COUNT, MIN, MAX, DISTINCT_COUNT] }
+        format: { $ref: '#/components/schemas/MetricFormat' }
+        description: { type: string }
+        synonyms: { type: array, items: { type: string } }
+    PublishedMetric:
+      allOf:
+        - $ref: '#/components/schemas/MetricDefinition'
+        - type: object
+          required: [id, version]
+          properties:
+            id: { type: string }
+            version: { type: integer }
+    MetricView:
+      type: object
+      additionalProperties: false
+      required: [id, dataset, version, publishedVersion, createdBy, state, definition, published, permissions]
+      properties:
+        id: { type: string }
+        dataset:
+          type: object
+          additionalProperties: false
+          required: [kind, id]
+          properties:
+            kind: { type: string, enum: [dataset, prepared-dataset] }
+            id: { type: string }
+            ownerId: { type: string }
+        version: { type: integer }
+        publishedVersion: { type: [integer, 'null'] }
+        provenance:
+          type: object
+          additionalProperties: false
+          required: [kind, datasetVersion, calculationId, name, expression]
+          properties:
+            kind: { type: string, const: dataset-calculation }
+            datasetVersion: { type: integer }
+            calculationId: { type: string }
+            name: { type: string }
+            expression: { type: string }
+        createdBy: { type: string }
+        state: { type: string, enum: [draft, published] }
+        definition: { $ref: '#/components/schemas/MetricDefinition' }
+        published:
+          anyOf:
+            - $ref: '#/components/schemas/PublishedMetric'
+            - type: 'null'
+        permissions:
+          type: object
+          additionalProperties: false
+          required: [edit, publish]
+          properties:
+            edit: { type: boolean }
+            publish: { type: boolean }
+    MetricVersion:
+      type: object
+      additionalProperties: false
+      required: [version, state, definition, actor, at]
+      properties:
+        version: { type: integer }
+        state: { type: string, enum: [draft, published] }
+        definition: { $ref: '#/components/schemas/MetricDefinition' }
+        actor: { type: string }
+        at: { type: string, format: date-time }
     Page:
       type: object
       required: [items, nextCursor]
