@@ -175,6 +175,10 @@ class OpenSightClient:
             raise TypeError("get_token must be a string or a callable")
         self._transport = transport or _urllib_transport
 
+    def list_workspace_action_history(self, limit: int | None = None, cursor: str | None = None):
+        """Hosted audit history: page size 1–200, default 50."""
+        return self._json("GET", "/v1/workspace/action-history", _page_headers(limit, cursor))
+
     def ask_question(self, body: dict, idempotency_key: str | None = None):
         return self._json("POST", "/v1/ai/ask", _mutation_headers(idempotency_key), body)
 

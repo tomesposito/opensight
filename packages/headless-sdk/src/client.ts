@@ -1,6 +1,6 @@
 import { OpenSightApiError } from './errors.js';
 import type {
-  AskQuestionBody, QuestionAnswer, MetricView, MetricVersion,
+  WorkspaceAuditEntry, AskQuestionBody, QuestionAnswer, MetricView, MetricVersion,
   ApiErrorBody,
   AssetKind, TransferAssetKind, AssetSummary, AssetSearch, AssetMove, AssetCopy, AssetTransfer, AssetPrincipal, AssetRole, AssetShare, AssetGrantWrite, FolderDescribe, FolderPermissions,
   PublishAnalysisBody, PublishAnalysisResult, DashboardSummary, DashboardVersionSummary, DashboardDescribe, DashboardShare, DashboardQueryBody, DashboardExportBody, DashboardExportArtifact, DashboardRemoved,
@@ -73,6 +73,11 @@ export class OpenSightClient {
     const token = opts.getToken;
     this.getToken = typeof token === 'function' ? token : async () => token;
     this.fetchImpl = opts.fetch ?? fetch;
+  }
+
+  /** Hosted audit history: Limit 1–200, default 50. */
+  listWorkspaceActionHistory(opts: Pick<RequestOptions, 'limit' | 'cursor'> = {}): Promise<Page<WorkspaceAuditEntry>> {
+    return this.request('GET', '/v1/workspace/action-history', { headers: pageHeaders(opts) });
   }
 
   askQuestion(body: AskQuestionBody, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<QuestionAnswer> {

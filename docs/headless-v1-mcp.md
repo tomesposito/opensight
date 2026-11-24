@@ -63,10 +63,11 @@ and generates `src/generated.ts`. Missing/duplicate/non-snake-case IDs,
 unsupported headers, external references and parameter collisions fail the
 build. No network access is used in generation or compilation.
 
-There are **56 tools**, one per implemented OpenAPI operation: 11 dataset/source/
+There are **58 tools**, one per implemented OpenAPI operation: 11 dataset/source/
 query operations, 13 analysis operations, 12 dashboard operations, 17
 asset/folder/share additions and three governed metric reads (#327):
-`list_metrics`, `describe_metric`, and `list_metric_versions`.
+`list_metrics`, `describe_metric`, and `list_metric_versions`, plus `ask_question`
+and `list_workspace_action_history`.
 The old 11-tool and 40-deferred-tool proposal
 tables are superseded by the shipped REST inventory on master `4989fdc1`.
 The spec-only checkpoint added nine missing IDs and renamed `runDatasetQuery`
@@ -166,3 +167,21 @@ Streamable HTTP as its own slice. The [Python SDK](headless-v1-sdk.md) and
 [CLI](headless-v1-cli.md) now cover the same v1 operations. Issue
 #95 remains open. This slice changes no UI and does not deploy a server.
 Breaking tool changes require a version bump and migration notes (D-69).
+
+## Workspace action history (#330)
+
+`list_workspace_action_history({ limit: 50, cursor: "..." })` maps to
+`GET /api/v1/workspace/action-history`. Omit the cursor for the first page.
+Any authenticated member can inspect their tenant's `{ items, nextCursor }`
+history, newest first, with `Limit` 1–200 (default 50) and an opaque `Cursor`.
+Other tenants and entries with no tenant are excluded. No identity argument
+is accepted; the member Bearer credential selects the tenant.
+
+Hosted v1 actions record the delegating member's `userId` as `actor`, tenant,
+operationId (or a stable method/route name), path resource ID when present,
+and status/outcome. Denials and failures are included; history reads are not
+recorded. Tenant lifecycle entries retain their operator actor, and actions by
+other members retain those members' identities. Request bodies, query rows/text
+and credentials are never added to v1 details. The operator-only `/api/host/audit`
+endpoint remains separate. Local fixture servers return `HOSTED_API_REQUIRED`;
+the static demo has no hosted history. See [audit semantics](operator-audit.md).

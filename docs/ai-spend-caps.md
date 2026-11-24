@@ -75,7 +75,7 @@ without a meter retains its previous unmetered behavior.
 ### Headless AI questions (#329)
 
 `POST /api/v1/ai/ask` accepts exactly `{ question, datasetId }`, with a nonblank
-question of 1–2000 characters. MCP exposes `ask_question` (57 tools total); the CLI
+question of 1–2000 characters. MCP exposes `ask_question` (58 tools total); the CLI
 command is `opensight ai ask-question --question "sum revenue by region" --datasetId sales`.
 The TypeScript and Python SDK methods are `askQuestion` and `ask_question`.
 The response is the existing `{ interpretations, errors, question }` answer.
