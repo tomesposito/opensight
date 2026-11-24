@@ -49,8 +49,9 @@ closed before transport, including uncapped tenants.
 
 ## Composition and accounting
 
-The two current spend callers are `/api/admin/ai/test` and the generative O routes
-(`/api/o/generate`, `/api/o/calculation`) in `createApiServer`. Supply its trusted
+Spend callers include `/api/admin/ai/test`, the generative O routes
+(`/api/o/generate`, `/api/o/calculation`, `/api/o/plan`, `/api/o/revise`) and
+`POST /api/v1/ai/ask` (#329). In `createApiServer`, supply its trusted
 `hostedUsage` option to attach `HostedUsage.aiMeter()` to `AISettings.load`;
 hosted accounting overrides any optional caller-provided meter. Resolution uses
 the authenticated namespace and H1's immutable, unique tenant/namespace mapping.
@@ -64,12 +65,33 @@ The serverless owner migration also installs the warning table and its operator
 grants. Registered backups preserve pending and delivered intents; pre-warning
 backups remain readable and migrate to an empty warning table.
 
-`createHostedApiServer` currently does **not** expose either AI route. It passes
-the durable meter as the fourth argument of `invocation.compose` for explicitly
-composed adapters. Existing hosted/serverless capability gates remain closed;
-this issue does not introduce hosted AI configuration storage or dataset binding.
-An AI-enabled adapter must pass the supplied meter to `AISettings.load`. Plain
-self-hosted use without a meter retains its previous behavior.
+`createHostedApiServer` serves the existing generative flow through `HostedAI`
+and `HostedAISettings`, including hosted configuration and dataset authorization.
+Managed completions check `HostedUsage.aiMeter()` before transport and record token
+spend on completion; validated delivered answers consume monthly credits separately.
+The durable meter also reaches invocation compositions. Plain self-hosted use
+without a meter retains its previous unmetered behavior.
+
+### Headless AI questions (#329)
+
+`POST /api/v1/ai/ask` accepts exactly `{ question, datasetId }`, with a nonblank
+question of 1–2000 characters. MCP exposes `ask_question` (57 tools total); the CLI
+command is `opensight ai ask-question --question "sum revenue by region" --datasetId sales`.
+The TypeScript and Python SDK methods are `askQuestion` and `ask_question`.
+The response is the existing `{ interpretations, errors, question }` answer.
+Generation does not execute queries or return rows: submit the selected
+interpretation through the dataset query API to obtain results.
+
+Both `ai` and `build` capabilities are required. Hosted requests resolve the
+member's dataset through the same scope and field-name PII guard as `/api/o/generate`;
+unknown or inaccessible datasets fail closed. Managed calls use the same spend
+meter, so recorded spend at the cap returns 429 `AI_SPEND_CAP_EXCEEDED` before
+provider transport, independently of the remaining monthly answer credits.
+Hosted `Idempotency-Key` requests retain the existing answer-receipt replay and
+authorization checks. Local/self-hosted requests use `AISettings.complete` for
+the configured `sales` binding and its optional meter; other dataset IDs return
+404. Without the required local AI/auth composition or a configured provider,
+the operation returns 503 `AI_NOT_CONFIGURED`. The static demo cannot serve it.
 
 OpenAI Responses and Anthropic use `usage.input_tokens + usage.output_tokens`;
 compatible Chat Completions use `usage.prompt_tokens + usage.completion_tokens`.
@@ -78,8 +100,9 @@ or malformed usage falls back to
 `ceil((system.length + prompt.length + response.length) / 4)` using JavaScript
 string lengths. Reported zero is valid. The token event unit is `token` for
 reported usage and `estimated-token` for the fallback; both contribute to
-`aiTokens`. The call event unit is `call`. No prompts, answers or provider keys
-are persisted. Provider-key redaction of returned answers remains intact.
+`aiTokens`. The call event unit is `call`. Usage records contain no prompts,
+answers or provider keys. Hosted idempotent requests retain validated answers in
+the existing expiring receipt store (#229). Provider-key redaction remains intact.
 
 Successful provider completions are recorded before O grammar validation or its
 post-I/O authorization checks. Those later failures still consume usage. Provider

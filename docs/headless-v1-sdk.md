@@ -6,8 +6,12 @@ first, MCP second, SDK/CLI generated (TS then Python)").
 
 ## Scope (frozen)
 
-The SDK maps **1:1 onto `docs/api/openapi-v1.yaml`** — all five implemented
-slices: datasets, querying, analyses, dashboards, and assets/folders.
+The SDK maps **1:1 onto `docs/api/openapi-v1.yaml`** — the implemented
+slices: datasets, querying, analyses, dashboards, assets/folders, governed metric
+reads and AI questions. `askQuestion({ question, datasetId })` in TypeScript and
+`ask_question({"question": ..., "datasetId": ...})` in Python map to `POST /ai/ask`
+(#329). They return the existing interpretation answer without executing rows;
+see [AI spend caps](ai-spend-caps.md#headless-ai-questions-329) for plane support and limits.
 Method names mirror the TypeScript client's camelCase in Python
 snake_case (`get_dataset`, `query_dataset`, `publish_analysis`,
 `set_folder_permissions`, …). `test/test_openapi_coverage.py` parses the
