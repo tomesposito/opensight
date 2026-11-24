@@ -37,6 +37,8 @@ async function fixture(t) {
     c.create(`published-${suffix}`, ref, definition(`Published ${suffix}`), schema);
     c.publish(`published-${suffix}`, 1, schema);
     c.edit(`published-${suffix}`, 2, { ...definition(`Published ${suffix}`), expression: '{amount} * 2' }, schema);
+    c.publish(`published-${suffix}`, 3, schema);
+    c.edit(`published-${suffix}`, 4, { ...definition(`Published ${suffix}`), expression: '{amount} * 10' }, schema);
     catalog('editor').create(`draft-${suffix}`, ref, definition(`Draft ${suffix}`), schema);
   }
   await db.transaction(async c => {
@@ -63,8 +65,9 @@ test('targeted metrics: execution and vocabulary match the full catalog, includi
       const actual = await f.metadata.metricExecution(context, ref);
       assert.deepEqual(actual, await f.old(context, ref, 'execution'));
       assert.deepEqual(await f.metadata.metricVocabulary(context, ref), await f.old(context, ref, 'vocabulary'));
+      assert.deepEqual(actual.versions.map(m => [m.version, m.expression]), actual.metrics.flatMap(() => [[2, '{amount}'], [4, '{amount} * 2']]));
       assert.equal(actual.unsafeJoin, ref.kind === 'prepared-dataset' && ref.id === 'sales' && ref.ownerId === 'owner');
-      assert.ok(actual.metrics.every(m => m.id.startsWith('published-') && m.version === 2 && m.expression === '{amount}'));
+      assert.ok(actual.metrics.every(m => m.id.startsWith('published-') && m.version === 4 && m.expression === '{amount} * 2'));
     }
   }
   const peer = await f.login('peer');

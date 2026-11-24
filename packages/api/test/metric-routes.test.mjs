@@ -170,3 +170,33 @@ test('metric dataset catalog exposes real fields for editor drafts and preserves
   assert.equal(good(await f.request('/api/v1/metric-datasets')).items.find(d => d.dataset.id === 'prepared').owned, true);
   error(await f.request('/api/v1/metric-datasets', { user: 'reader' }), 403, 'METADATA_WRITE_FORBIDDEN');
 });
+
+
+test('hosted v1 query pins published metric history, excludes unrelated metrics and rejects draft/missing versions (#327)', async t => {
+  const f = await metricHosted(t);
+  const source = good(await f.request('/api/uploads', { method: 'POST', body: upload() }), 201);
+  await f.renew();
+  good(await f.request('/api/datasets/prepared/prep', { method: 'PUT', body: { name: 'Prepared', pipeline: { version: 1, input: source.id, steps: [] }, expectedVersion: 0 } }));
+  const dataset = { kind: 'prepared-dataset', id: 'prepared', ownerId: f.identity.userId };
+  const definition = { ...def, expression: 'sum({amount})' };
+  good(await f.request('/api/v1/metrics', { method: 'POST', body: { id: 'amount', dataset, definition } }), 201);
+  const query = columnName => ({ dimensions: [{ fieldId: 'region', columnName: 'region' }], measures: [{ fieldId: 'value', columnName, aggregation: 'SUM' }], filters: [] });
+  const run = columnName => f.request('/api/v1/datasets/prepared/query', { method: 'POST', body: query(columnName) });
+  error(await run('__metric_amount@v1'), 422, 'METRIC_NOT_PUBLISHED');
+  good(await f.request('/api/v1/metrics/amount/publish', { method: 'POST', body: {}, headers: at(1) }));
+  good(await f.request('/api/v1/metrics/amount', { method: 'PUT', body: { definition: { ...definition, expression: 'sum({amount}) * 2' } }, headers: at(2) }));
+  good(await f.request('/api/v1/metrics/amount/publish', { method: 'POST', body: {}, headers: at(3) }));
+  good(await f.request('/api/v1/metrics/amount', { method: 'PUT', body: { definition: { ...definition, expression: 'sum({amount}) * 10' } }, headers: at(4) }));
+  good(await f.request('/api/v1/metrics', { method: 'POST', body: { id: 'unused', dataset, definition: { ...definition, name: 'Unused' } } }), 201);
+  good(await f.request('/api/v1/metrics/unused/publish', { method: 'POST', body: {}, headers: at(1) }));
+  for (const [reference, version, multiplier] of [['__metric_amount', 4, 2], ['__metric_amount@v2', 2, 1], ['__metric_amount@v4', 4, 2]]) {
+    const result = good(await run(reference));
+    assert.deepEqual(result.rows.sort((a, b) => a.region.localeCompare(b.region)), [{ region: 'east', value: 40 * multiplier }, { region: 'west', value: 20 * multiplier }]);
+    assert.deepEqual(result.metrics.map(m => [m.id, m.version, m.expression]), [['amount', version, version === 2 ? definition.expression : 'sum({amount}) * 2']]);
+  }
+  for (const version of [1, 3, 5, 99]) {
+    const result = await run(`__metric_amount@v${version}`);
+    error(result, 422, 'METRIC_VERSION_NOT_PUBLISHED'); assert.equal(result.body.path, '$.metrics');
+    assert.equal('rows' in result.body, false);
+  }
+});

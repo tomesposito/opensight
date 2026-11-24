@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveMetricDefinition } from '@opensight/query-engine';
 import { AssetCatalog, assetKey } from '../dist/asset-model.js';
-import { lookupMetrics, metricDefinition } from '../dist/metric-consumption.js';
+import { lookupMetrics, metricDefinition, metricQuery } from '../dist/metric-consumption.js';
 import { DashboardSnapshots } from '../dist/reports.js';
 import { dashboardExport } from '../dist/dashboard-export.js';
 
@@ -60,10 +60,27 @@ test('metric lookup keeps the generic catalog fallback and never retries targete
   const catalog = new AssetCatalog(scope, [{ kind: 'user', id: 'author', version: 1, body: { role: 'author' } }, { ...dataset, version: 1, body: { definition: {} } }]);
   let calls = 0;
   const backend = { scope, async transaction(write, work) { assert.equal(write, false); calls++; return work(catalog); } };
-  assert.deepEqual(await lookupMetrics(backend)(dataset), { metrics: [], unsafeJoin: false });
+  assert.deepEqual(await lookupMetrics(backend)(dataset), { metrics: [], versions: [], unsafeJoin: false });
   assert.equal(calls, 1);
   await assert.rejects(lookupMetrics(backend)({ ...dataset, id: 'unknown' }), { code: 'METRIC_DATASET_NOT_FOUND' });
   backend.metricExecution = async () => { throw Object.assign(new Error('revised'), { code: 'AUTHORIZATION_REVISED' }); };
   await assert.rejects(lookupMetrics(backend)(dataset), { code: 'AUTHORIZATION_REVISED' });
   assert.equal(calls, 2);
+});
+
+
+test('metric consumers report selected publications only, including pins and repeated dataset bindings (#327)', async () => {
+  const current = { ...metric, version: 4, expression: '{amount} * 2' };
+  const resolution = { metrics: [current, { ...metric, id: 'unused' }], versions: [metric, current] };
+  let reported;
+  const capture = metrics => { reported = metrics; };
+  const query = { dimensions: [], measures: [{ fieldId: 'sales', columnName: '__metric_total@v2', aggregation: 'SUM' }], filters: [] };
+  await metricQuery(query, dataset, async () => resolution, capture);
+  assert.deepEqual(reported, [metric]);
+  await metricQuery({ ...query, measures: [{ ...query.measures[0], columnName: '__metric_total' }] }, dataset, async () => resolution, capture);
+  assert.deepEqual(reported, [current]);
+  const definition = wire('first', 'second');
+  definition.Sheets[0].Column.ColumnName = '__metric_total@v2';
+  await metricDefinition(definition, { first: dataset, second: dataset, unused: dataset }, async () => resolution, capture);
+  assert.deepEqual(reported, [metric, current]);
 });

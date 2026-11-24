@@ -2,7 +2,7 @@ import { evaluatePlan, metricCombination as browserMetricCombination } from '@op
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PGlite } from '@electric-sql/pglite';
-import { resolveMetricQuery, resolveMetricDefinition, metricColumn, metricCombination, interactiveRequest, executeLocal, planVisual } from '@opensight/query-engine';
+import { resolveMetricQuery, resolveMetricDefinition, parseMetricReference, metricId, queryUsesMetrics, metricColumn, metricCombination, interactiveRequest, executeLocal, planVisual } from '@opensight/query-engine';
 import { request, fixtureRoot, read } from './helpers.mjs';
 const metric = { id: 'net', version: 2, name: 'Net revenue', expression: '{revenue} - {profit}', defaultAggregation: 'AVG', format: { style: 'number', decimalPlaces: 2 }, description: '', synonyms: [] };
 const query = { dimensions: [{ fieldId: 'region', columnName: 'region' }], measures: [{ fieldId: 'net', columnName: metricColumn('net'), aggregation: 'SUM' }], filters: [] };
@@ -133,4 +133,80 @@ test('plain-column DISTINCT_COUNT plans as COUNT(DISTINCT ...) on every engine (
   const s = await runAllEngines(t, interactiveRequest(qs, request()));
   assert.equal(measureValue(s.duck.rows, 'East'), 2);
   assert.equal(measureValue(s.duck.rows, 'West'), 2);
+});
+
+
+test('metric references parse optional published-version pins without changing unpinned IDs (#327)', () => {
+  assert.equal(parseMetricReference('revenue'), undefined);
+  assert.equal(metricId('revenue'), undefined);
+  assert.deepEqual(parseMetricReference('__metric_weekly-sales'), { id: 'weekly-sales' });
+  assert.deepEqual(parseMetricReference('__metric_weekly-sales@v2'), { id: 'weekly-sales', version: 2 });
+  assert.equal(metricId('__metric_weekly-sales'), 'weekly-sales');
+  assert.equal(metricId('__metric_weekly-sales@v2'), 'weekly-sales');
+});
+
+const latest = { ...metric, version: 4, expression: 'sum({revenue}) * 2', defaultAggregation: 'SUM' };
+const history = { metrics: [latest, { ...metric, id: 'unrelated' }], versions: [metric, latest] };
+const pinnedQuery = version => ({ ...query, measures: [{ fieldId: 'net', columnName: `__metric_net@v${version}`, aggregation: 'SUM' }] });
+
+test('pins select historical math and aggregation, keep exact names and report only selections (#327)', () => {
+  const before = structuredClone(history);
+  let selected;
+  const result = resolveMetricQuery(pinnedQuery(2), history, metrics => { selected = metrics; });
+  assert.deepEqual(result.calculatedFields, [{ name: '__metric_net@v2', expression: 'avg({revenue} - {profit})' }]);
+  assert.equal(result.measures[0].aggregation, 'AVG');
+  assert.deepEqual(selected, [metric]);
+  const unpinned = resolveMetricQuery(query, history, metrics => { selected = metrics; });
+  assert.deepEqual(unpinned.calculatedFields, [{ name: '__metric_net', expression: latest.expression }]);
+  assert.equal(unpinned.measures[0].aggregation, 'SUM');
+  assert.deepEqual(selected, [latest]);
+  assert.deepEqual(history, before);
+  assert.equal(resolveMetricQuery(pinnedQuery(4), { metrics: [latest] }).calculatedFields[0].expression, latest.expression);
+});
+
+test('draft and missing pins fail closed; unpublished metrics and security checks retain named errors (#327)', () => {
+  for (const version of [1, 3, 5, 99, 0, '9007199254740993']) {
+    assert.throws(() => resolveMetricQuery(pinnedQuery(version), history), { code: 'METRIC_VERSION_NOT_PUBLISHED', path: '$.metrics' });
+    const wire = interactiveRequest(pinnedQuery(version), request()).analysis.Definition;
+    assert.throws(() => resolveMetricDefinition(wire, new Map([['sales_data', history]])), { code: 'METRIC_VERSION_NOT_PUBLISHED', path: '$.metrics' });
+  }
+  assert.throws(() => resolveMetricQuery(pinnedQuery(2), { metrics: [], versions: [metric] }), { code: 'METRIC_NOT_PUBLISHED', path: '$.metrics' });
+  assert.throws(() => resolveMetricQuery(pinnedQuery(2), { ...history, unsafeJoin: true }), { code: 'METRIC_UNSAFE_FANOUT' });
+  assert.throws(() => resolveMetricQuery({ ...query, dimensions: [{ fieldId: 'x', columnName: '__metric_net@v2' }] }, history), { code: 'METRIC_ROLE_INVALID' });
+  assert.throws(() => resolveMetricQuery({ ...query, calculatedFields: [{ name: '__metric_net@v2', expression: '1' }] }, history), { code: 'METRIC_OVERRIDE_FORBIDDEN' });
+});
+
+test('filter and calculated-field references select pins and dedupe exact references (#327)', () => {
+  const q = { dimensions: [], measures: [], filters: [{ columnName: '__metric_net@v2', value: '10' }],
+    calculatedFields: [{ name: 'delta', expression: '{__metric_net@v4} - {__metric_net@v2}' }] };
+  assert.equal(queryUsesMetrics(q), true);
+  assert.equal(queryUsesMetrics({ ...q, filters: [] }), true);
+  assert.equal(queryUsesMetrics({ ...q, calculatedFields: [] }), true);
+  let selected;
+  const result = resolveMetricQuery(q, history, metrics => { selected = metrics; });
+  assert.deepEqual(result.calculatedFields.map(c => c.name), ['delta', '__metric_net@v2', '__metric_net@v4']);
+  assert.deepEqual(selected, [metric, latest]);
+  const wire = { CalculatedFields: [{ Name: 'delta', Expression: q.calculatedFields[0].expression, DataSetIdentifier: 'data' }],
+    FilterGroups: [{ Column: { DataSetIdentifier: 'data', ColumnName: '__metric_net@v2' } }] };
+  const resolved = resolveMetricDefinition(wire, new Map([['data', history]]), metrics => { selected = metrics; });
+  assert.deepEqual(resolved.CalculatedFields.map(c => c.Name), ['delta', '__metric_net@v2', '__metric_net@v4']);
+  assert.deepEqual(selected, [metric, latest]);
+  assert.throws(() => resolveMetricDefinition({ CalculatedFields: [{ Name: '__metric_net@v2', Expression: '1', DataSetIdentifier: 'data' }] }, new Map([['data', history]])), { code: 'METRIC_OVERRIDE_FORBIDDEN' });
+});
+
+test('two publications and the current reference coexist on DuckDB, PostgreSQL and client paths (#327)', async t => {
+  const q = { ...query, measures: [
+    ...pinnedQuery(2).measures.map(m => ({ ...m, fieldId: 'old' })),
+    ...pinnedQuery(4).measures.map(m => ({ ...m, fieldId: 'new' })),
+    { fieldId: 'current', columnName: '__metric_net', aggregation: 'SUM' },
+  ] };
+  const resolved = resolveMetricQuery(q, history);
+  assert.deepEqual(resolved.calculatedFields.map(c => c.name), ['__metric_net@v2', '__metric_net@v4', '__metric_net']);
+  const { duck } = await runAllEngines(t, interactiveRequest(resolved, request()));
+  assert.equal(duck.rows.length, 2);
+  for (const row of duck.rows) { assert.equal(row.new, row.current); assert.notEqual(row.old, row.new); }
+  const base = interactiveRequest(q, request());
+  const definition = resolveMetricDefinition(base.analysis.Definition, new Map([['sales_data', history]]));
+  const saved = await runAllEngines(t, { ...base, analysis: { ...base.analysis, Definition: definition } });
+  assert.deepEqual(saved.duck.rows, duck.rows);
 });

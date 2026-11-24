@@ -190,9 +190,13 @@ export class MetricCatalog {
       const result = refs.some(r => r && typeof r === 'object' && 'dataset' in r && unsafe({ ...ref, id: String(r.dataset) }));
       seen.delete(key); return result;
     };
-    return { metrics: this.published(ref), unsafeJoin: unsafe(ref) };
+    return { metrics: this.published(ref), versions: this.published(ref, true), unsafeJoin: unsafe(ref) };
   }
-  published(ref: MetricDataset): PublishedMetric[] {
-    return this.list(ref).flatMap(r => { const b = metricRecord(r), v = b.versions.find(v => v.version === b.publishedVersion); return v ? [{ id: r.id, version: v.version, ...structuredClone(v.definition) }] : []; });
+  published(ref: MetricDataset, includeHistorical = false): PublishedMetric[] {
+    return this.list(ref).flatMap(r => {
+      const b = metricRecord(r);
+      return b.versions.filter(v => v.state === 'published' && (includeHistorical || v.version === b.publishedVersion))
+        .map(v => ({ id: r.id, version: v.version, ...structuredClone(v.definition) }));
+    });
   }
 }

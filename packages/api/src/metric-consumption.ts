@@ -5,7 +5,7 @@ export type MetricLookup = (ref: MetricDataset) => Promise<MetricResolution>;
 export const lookupMetrics = (backend: AssetBackend): MetricLookup => ref => backend.metricExecution ? backend.metricExecution(ref) : backend.transaction(false, c => new MetricCatalog(c).execution(ref));
 export async function metricQuery(query: InteractiveQuery, ref: MetricDataset, lookup: MetricLookup, resolved?: (metrics: readonly PublishedMetric[]) => void) {
   if (!queryUsesMetrics(query)) return query;
-  const resolution = await lookup(ref); const result = resolveMetricQuery(query, resolution); resolved?.(resolution.metrics); return result;
+  return resolveMetricQuery(query, await lookup(ref), resolved);
 }
 export async function metricDefinition(definition: Record<string, unknown>, bindings: Record<string, MetricDataset>, lookup: MetricLookup, resolved?: (metrics: readonly PublishedMetric[]) => void) {
   // Resolve only definitions that contain a reserved reference. No extra data admission for ordinary visuals.
@@ -17,7 +17,7 @@ export async function metricDefinition(definition: Record<string, unknown>, bind
     if (!resolution) { resolution = lookup(ref); lookups.set(key, resolution); }
     return [id, await resolution] as const;
   }));
-  const result = resolveMetricDefinition(definition, new Map(resolutions)); resolved?.(resolutions.flatMap(([, r]) => [...r.metrics])); return result;
+  return resolveMetricDefinition(definition, new Map(resolutions), resolved);
 }
 
 /** Compile Ask O's closed-vocabulary query against the dashboard's one durable binding. */
