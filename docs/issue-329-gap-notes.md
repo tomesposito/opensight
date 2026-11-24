@@ -20,6 +20,30 @@ See [AI spend caps](ai-spend-caps.md#headless-ai-questions-329).
 
 ## Verification
 
+The root build and full root `npm test` passed: **8,446 passed / 0 failed /
+1 skipped / 0 cancelled** (8,447 tests). The run used local PostgreSQL on
+localhost:5433 and the installed Playwright headless Chromium selected through
+`OPENSIGHT_CHROMIUM`.
+
+| Suite | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| API | 1,631 | 0 | 1 |
+| Bundle parser | 213 | 0 | 0 |
+| CLI | 77 | 0 | 0 |
+| Embedding SDK | 10 | 0 | 0 |
+| TypeScript headless SDK | 32 | 0 | 0 |
+| Python headless SDK | 34 | 0 | 0 |
+| MCP server | 78 | 0 | 0 |
+| O interpreter | 42 | 0 | 0 |
+| Parity | 11 | 0 | 0 |
+| Query engine | 2,719 | 0 | 0 |
+| Web | 3,479 | 0 | 0 |
+| Root conformance | 120 | 0 | 0 |
+| **Total** | **8,446** | **0** | **1** |
+
+The only skip is the optional real TLS PostgreSQL CLI integration test because
+live TLS PostgreSQL is not configured. The regular live PostgreSQL tests ran.
+
 Focused API verification passed **99 passed / 0 failed / 0 skipped**. Coverage
 includes the OpenAPI answer shape, a managed 12-token completion followed by
 429 `AI_SPEND_CAP_EXCEEDED` with exactly one provider invocation, separately
@@ -28,14 +52,13 @@ body validation, absent provider, authorization revocation and receipt replay.
 Local tests cover the sales binding, optional meter, capabilities and PII stop.
 SDK and generated MCP/CLI suites passed after wiring the CLI adapter and help.
 
-The root build passed. Final root-suite counts will be recorded after verification.
-The first full-suite process ended with SIGTERM before a summary and is excluded
-from the final counts; the fresh run uses a disk-backed temporary directory and
-records its completion status separately. That run exposed the edge generator's
-requirement that the shared identifier declaration remain first. The new route
-now follows it, both edge allowlists are regenerated, and all 13 edge tests pass,
-including AI ask admission and neighboring-path denials. Final counts come from
-a new complete root run after that correction.
+Earlier incomplete runs are excluded from these totals. Verification caught the
+edge generator's requirement that the shared identifier declaration remain first;
+the new route now follows it and both edge allowlists are regenerated. All
+**13 edge tests pass**, including AI ask admission and neighboring-path denials.
+The default managed Chromium could not start, so browser checks use the installed
+Playwright headless Chromium without changing browser policies. The final counts
+above come from a fresh complete root run after those corrections, with exit 0.
 
 J10 completed with **11 passed / 0 failed / 0 skipped / 1 gap** against local
 PostgreSQL 16.4 on localhost:5433 and the real MCP/hosted API stack. The dedicated
