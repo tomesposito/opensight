@@ -22,6 +22,7 @@ const value = async (result: Promise<{ value: unknown; etag: string | null }>): 
 
 /** Explicit SDK adapters only: this module never constructs HTTP requests or paths. */
 export const handlers: Record<string, Handler> = {
+  ask_question: (c, i) => c.askQuestion(body(i, c.askQuestion, 0), i.options),
   list_metrics: (c, i) => c.listMetrics(i.options),
   describe_metric: (c, i) => c.getMetric(id(i)),
   list_metric_versions: (c, i) => c.listMetricVersions(id(i), i.options),

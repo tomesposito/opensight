@@ -38,6 +38,7 @@ ROUTES = spec_routes()
 
 # The client method that implements each spec route.
 COVERAGE = {
+    "/ai/ask|POST": "ask_question",
     "/metrics|GET": "list_metrics",
     "/metrics/{id}|GET": "get_metric",
     "/metrics/{id}/versions|GET": "list_metric_versions",

@@ -1,6 +1,6 @@
 import { OpenSightApiError } from './errors.js';
 import type {
-  MetricView, MetricVersion,
+  AskQuestionBody, QuestionAnswer, MetricView, MetricVersion,
   ApiErrorBody,
   AssetKind, TransferAssetKind, AssetSummary, AssetSearch, AssetMove, AssetCopy, AssetTransfer, AssetPrincipal, AssetRole, AssetShare, AssetGrantWrite, FolderDescribe, FolderPermissions,
   PublishAnalysisBody, PublishAnalysisResult, DashboardSummary, DashboardVersionSummary, DashboardDescribe, DashboardShare, DashboardQueryBody, DashboardExportBody, DashboardExportArtifact, DashboardRemoved,
@@ -73,6 +73,10 @@ export class OpenSightClient {
     const token = opts.getToken;
     this.getToken = typeof token === 'function' ? token : async () => token;
     this.fetchImpl = opts.fetch ?? fetch;
+  }
+
+  askQuestion(body: AskQuestionBody, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<QuestionAnswer> {
+    return this.request('POST', '/v1/ai/ask', { body, headers: mutationHeaders(opts) });
   }
 
   // ---- governed metrics ----
