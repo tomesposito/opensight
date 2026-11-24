@@ -83,6 +83,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Pivot RowLabelSort orders each row dimension by its labels, with per-field Row label sort controls, validated editable bundle/native imports, and stable precedence alongside field and measure sorts (phase-plan parity slice `parity-pivot-row-label-sort`; no GitHub issue).
+
 - Workspace members can inspect tenant-scoped action history through the v1 API, MCP, CLI and headless SDKs, including the delegating member identity and outcomes of successful, denied and failed hosted v1 calls (#330).
 
 - Agents can ask grounded generative questions through the v1 API, MCP, CLI and TypeScript/Python SDKs (#329). Managed asks share the existing workspace AI spend cap, capability and field-name PII checks; queries execute separately from generation.

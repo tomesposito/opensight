@@ -191,6 +191,7 @@ const visualBody: Schema = {
     }],
     SortConfiguration: ['sortConfiguration', {
       FieldSortOptions: ['fieldSortOptions', members('FieldId SortDirection')],
+      RowLabelSort: ['rowLabelSort', sort],
       ColumnSort: ['columnSort', { ...members('Direction'), SortBy: ['sortBy', column],
         AggregationFunction: ['aggregationFunction', sortAggregation] }],
       CategorySort: ['categorySort', sort], TrendGroupSort: ['trendGroupSort', sort],

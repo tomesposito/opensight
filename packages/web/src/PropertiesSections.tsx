@@ -398,6 +398,30 @@ export function PivotFieldSortOptions({ visual, dispatch }: SectionProps) {
   </details>;
 }
 
+export function PivotRowLabelSortOptions({ visual, dispatch }: SectionProps) {
+  if (visual.kind !== 'pivot') return null;
+  const fields = [...new Set(visual.rows)];
+  const names = visual.formatting?.names;
+  const setSort = (fieldId: string, direction: string) => {
+    if (!fields.includes(fieldId) || !['', 'ASC', 'DESC'].includes(direction)) return;
+    const sorts = (visual.pivotRowLabelSorts ?? []).filter(sort => sort.fieldId !== fieldId);
+    if (direction === 'ASC' || direction === 'DESC') sorts.push({ fieldId, direction });
+    dispatch({ type: 'pivot-row-label-sorts', sorts: sorts.length ? sorts : undefined });
+  };
+  return <details className="property-section"><summary>Row label sort</summary>
+    <div className="property-control-row" role="group" aria-label="Pivot row label sort controls">
+      {fields.map(field => {
+        const name = names && Object.hasOwn(names, field) ? names[field] : field;
+        return <label key={field}>{name}<select aria-label={`Row label sort ${name}`} value={visual.pivotRowLabelSorts?.find(sort => sort.fieldId === field)?.direction ?? ''}
+          onChange={e => setSort(field, e.target.value)}>
+          <option value="">Default</option><option value="ASC">Ascending</option><option value="DESC">Descending</option>
+        </select></label>;
+      })}
+    </div>
+    <p className="field-hint">{fields.length ? 'Orders row labels by their own values. Row sort takes precedence at the outermost level.' : 'Assign a Rows field to sort row labels.'}</p>
+  </details>;
+}
+
 export function TableSortOptions({ visual, dispatch }: SectionProps) {
   if (visual.kind !== 'table') return null;
   const fields = [...new Set([...visual.rows, ...visual.measures])];

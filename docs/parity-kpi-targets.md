@@ -108,6 +108,7 @@ KPI well shape and supported explicit SUM fields/options. Existing automotive
 fixtures have empty targets; no real target dataset is invented or attributed
 to them. Their broader unsupported configurations are not claimed supported.
 
-Pivot RowLabelSort, Insight custom narratives and additional KPI styling remain
-outside this slice. No broader QuickSight fidelity claim is made; visual
+Pivot [RowLabelSort](parity-pivot-row-label-sort.md) is now supported. Pivot
+`ColumnLabelSort` remains unsupported and fail closed. Insight custom narratives
+and additional KPI styling remain outside this slice. No broader QuickSight fidelity claim is made; visual
 fidelity is not measured. See [verification and captures](parity-kpi-targets-gap-notes.md).
