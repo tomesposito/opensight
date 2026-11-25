@@ -98,7 +98,7 @@ existing bundle envelope rejects non-object outer sort configurations.
 
 Pivot [RowLabelSort](parity-pivot-row-label-sort.md) and KPI
 [TrendGroupSort](parity-kpi-trend-group-sort.md) are now supported. Pivot
-`ColumnLabelSort` remains unsupported and fail closed.
+[ColumnLabelSort](parity-pivot-column-label-sort.md) is now supported.
 This slice makes no broader QuickSight fidelity claim.
 
 `packages/web/test/pivot-row-sort.test.mjs` (74 tests) is reached by the
