@@ -28,6 +28,11 @@ test('native and bundle subset narratives import, query, compile, store and expo
   assert.deepEqual(parseBundleResource(resource), resource);
   const draft = importBundle(bundle), visual = selected(draft);
   assert.deepEqual(visual.imported.issues, []); validateDraft(draft);
+  const changedKind = authorReducer(draft, { type: 'kind', kind: 'bar' });
+  assert.doesNotThrow(() => validateDraft(changedKind));
+  const restoredKind = authorReducer(changedKind, { type: 'kind', kind: 'insight' });
+  assert.doesNotThrow(() => validateDraft(restoredKind));
+  assert.equal(selected(restoredKind).insightMeasureIds.revenue, 'revenue-id');
   const request = buildAuthorQuery(visual); assert.ok(request);
   const computed = structuredClone(visual); delete computed.insightConfiguration.customNarrative;
   assert.deepEqual(request, buildAuthorQuery(computed));

@@ -1504,7 +1504,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       if ((v.kind === 'radar' || v.kind === 'sankey') && !v.imported && (v.rows.length > 1 || v.columns.length > 1)) return fail();
       if (singleMeasure(v.kind as VisualKind) && v.measures.length > 1 || noDimensions(v.kind as VisualKind) && v.dimension !== null || v.kind !== 'pie' && v.donut || !splitDimensions(v.kind as VisualKind) && v.columns.length || (grouped(v.kind as VisualKind) ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
       if (v.insightConfiguration !== undefined && !isObject(v.insightConfiguration) || v.kind === 'insight' && !v.imported && v.measures.length > 2) return fail();
-      if (v.insightMeasureIds !== undefined && (v.kind !== 'insight' || !isObject(v.insightMeasureIds) || Object.entries(v.insightMeasureIds).some(([column, id]) => !column || column.includes('\0') || typeof id !== 'string' || !id || id.includes('\0')) || new Set(Object.values(v.insightMeasureIds)).size !== Object.keys(v.insightMeasureIds).length)) return fail();
+      if (v.insightMeasureIds !== undefined && (!isObject(v.insightMeasureIds) || Object.entries(v.insightMeasureIds).some(([column, id]) => !column || column.includes('\0') || typeof id !== 'string' || !id || id.includes('\0')) || new Set(Object.values(v.insightMeasureIds)).size !== Object.keys(v.insightMeasureIds).length)) return fail();
       // A native insight configuration must be completely well-formed at draft
       // admission — known variants, supported properties, unique computation
       // IDs, Movers-only collections — not merely an object (#267). Imported
