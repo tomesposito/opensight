@@ -199,6 +199,7 @@ export class McpOAuth {
       else send(response, 200, await this.connections(request, request.method === 'POST' ? await readBody(request, 16384) : undefined));
     } catch (error) {
       request.resume();
+      if (error instanceof MetadataError && error.code === 'AUTH_RATE_LIMITED') { response.setHeader('Retry-After', '900'); send(response, 429, { error: 'temporarily_unavailable' }); return true; }
       if (error instanceof MetadataError) throw error;
       send(response, error instanceof OAuthError ? error.status : 400, { error: error instanceof OAuthError ? error.code : 'invalid_request' });
     }

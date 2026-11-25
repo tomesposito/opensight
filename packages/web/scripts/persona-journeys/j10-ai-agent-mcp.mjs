@@ -173,7 +173,7 @@ await runJourney('j10-ai-agent-mcp', 'AI Agent', async j => {
     assert.deepEqual(toolNames.filter(name => /audit|history/.test(name)), ['list_workspace_action_history']);
     historyBefore = good(await member.request('/api/v1/workspace/action-history', 'GET', undefined, { Limit: '200' }));
     assert.equal(historyBefore.nextCursor, null);
-    return { transport: 'SDK Client + InMemoryTransport → real createMcpServer → hosted HTTP on localhost, Host opensight.test',
+    return { transport: (process.env.OPENSIGHT_J10_MCP_TRANSPORT ?? 'http') === 'http' ? 'SDK Streamable HTTP → hosted /api/mcp with dynamic registration, consent and PKCE on localhost' : 'SDK Client + InMemoryTransport → real createMcpServer → hosted HTTP on localhost',
       role: session.role, workspace: session.tenantId, member: member.identity.userId, tools: toolNames, browserDriven: false };
   });
   await j.step('member-scoped-visibility', null, async () => {

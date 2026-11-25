@@ -319,3 +319,15 @@ test('#332 MCP inventory recognizes pre-OAuth snapshots and rejects partial OAut
   assert.equal(snapshotInventory(tables), currentInventory.replace(/-mcp-v1$/, ''));
   tables.h2_mcp_clients = []; assert.throws(() => snapshotInventory(tables), { code: 'BACKUP_SCHEMA_INVALID' });
 });
+
+test('#332 registered pre-MCP migration creates empty OAuth stores and restore refuses existing registrations', async t => {
+  const f = await fixture(t), { mcpTables } = await import('../dist/mcp/schema.js'), { migrateRegistered } = await import('../dist/serverless-backup.js');
+  await f.db.transaction(async c => { for (const table of [...mcpTables].reverse()) await c.query(`DROP TABLE ${table}`); });
+  const snapshot = await snapshotServerless(f.db, 'test', randomUUID(), Date.now() + 3600000, ['a'.repeat(32)], 'sqlite');
+  const registry = { ...f.registry, epoch: 1, backups: { [snapshot.id]: checksum(snapshot) } }, operation = randomUUID();
+  assert.equal((await migrateRegistered(f.db, f.env, snapshot, registry, operation, 'sqlite')).replayed, false);
+  assert.equal((await migrateRegistered(f.db, f.env, snapshot, registry, operation, 'sqlite')).replayed, true);
+  for (const table of mcpTables) assert.deepEqual(await f.db.transaction(c => c.query(`SELECT * FROM ${table}`)), []);
+  await f.target.transaction(c => c.query('INSERT INTO h2_mcp_clients VALUES (?,?,?,?,?)', ['synthetic-client', 'Synthetic', '[]', 'opensight/mcp.read', 0]));
+  await assert.rejects(restoreServerless(f.target, f.snapshot, f.registry, 'sqlite'), { code: 'RESTORE_TARGET_NOT_EMPTY' });
+});

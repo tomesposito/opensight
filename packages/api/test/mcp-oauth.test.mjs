@@ -105,3 +105,13 @@ test('expired interaction and code cannot mint tokens, duplicate form keys and s
   const duplicate = await f.http('/api/mcp/oauth/token', { method: 'POST', rawBody: 'grant_type=refresh_token&grant_type=authorization_code', headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
   assert.equal(duplicate.body.error, 'invalid_request');
 });
+
+test('suspension, origin change and key rotation fence OAuth authority', async t => {
+  const f = await mcpFixture(t), g = await f.grant();
+  const changedOrigin = await HostedAuth.create(f.db, { ...f.config, origin: 'https://another.example' }, f.clock);
+  await assert.rejects(changedOrigin.mcpAccess(g.access_token), { code: 'AUTHENTICATION_FAILED' });
+  await f.db.transaction(c => c.query("UPDATE h1_tenants SET state = 'suspended' WHERE tenant_id = ?", [f.tenant.tenantId]));
+  assert.equal((await f.rpc(g.access_token, 'tools/list')).status, 401); assert.equal((await refresh(f, g)).body.error, 'invalid_grant');
+  await f.db.transaction(async c => { await c.query("UPDATE h1_tenants SET state = 'active' WHERE tenant_id = ?", [f.tenant.tenantId]); await c.query('UPDATE h2_keys SET active = 0'); });
+  assert.equal((await f.rpc(g.access_token, 'tools/list')).status, 401); assert.equal((await refresh(f, g)).body.error, 'invalid_grant');
+});
