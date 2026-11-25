@@ -77,6 +77,15 @@ for (const source of ['bundle', 'api']) {
     config(value).sortConfiguration.columnLabelSort.push(sortBy('quarter', 'DESC'));
     assert.deepEqual(compileVisual(dialect(value, source)).table.columns, headers([[2024, 'Q2'], [2024, 'Q1'], [2025, 'Q2'], [2025, 'Q1'], [null, null]]));
   });
+  test(`${source}: RowLabelSort applies independently without a measure RowSort`, () => {
+    const value = sorted(input(), [sortBy(), sortBy('quarter', 'DESC')]);
+    config(value).sortConfiguration.rowLabelSort = [sortBy('region'), sortBy('category')];
+    const base = structuredClone(value); delete config(base).sortConfiguration.columnLabelSort;
+    const table = compileVisual(dialect(value, source)).table;
+    assert.deepEqual(table.rowGroupPaths, [['East', 'A'], ['East', 'B'], ['West', 'A'], ['West', 'B'], [null, null]]);
+    assert.deepEqual(table.rowGroupPaths, compileVisual(dialect(base, source)).table.rowGroupPaths);
+    assert.deepEqual(cellsByIdentity(table), cellsByIdentity(compileVisual(dialect(base, source)).table));
+  });
   test(`${source}: measure ColumnSort overrides only outer ColumnLabelSort, including stable aggregate ties`, () => {
     const value = sorted(input(), [sortBy(), sortBy('quarter')]);
     config(value).sortConfiguration.columnSort = [{ sortBy: { dataSetIdentifier: 'data', columnName: 'revenue' }, direction: 'ASC' }];
@@ -150,4 +159,197 @@ test('converter round-trips the FieldSort wrapper in both dialects', () => {
 test('empty column label sorts preserve full output bytes across all baseline inputs', () => {
   const bytes = value => JSON.stringify(compileVisual(value), (_, v) => typeof v === 'function' ? v.toString() : v);
   for (const value of Object.values(baselineInputs())) assert.equal(bytes(sorted(structuredClone(value), [])), bytes(value));
+});
+
+const draftSortBy = (fieldId = 'region', direction = 'ASC') => sortBy(fieldId, direction);
+import { parseDraft, pivotColumnLabelSortsValid, dataFields } from '../build/test/authoring.js';
+import { exportBundle, importBundle } from '../build/test/bundle-authoring.js';
+import { interpretQuestion } from '@opensight/o-interpreter';
+const pivotDraft = () => ['region', 'category'].reduce((draft, field) => authorReducer(draft, { type: 'assign', field, well: 'columns' }), authorReducer(emptyDraft(), { type: 'add', kind: 'pivot' }));
+const draftSorts = [{ fieldId: 'region', direction: 'ASC' }, { fieldId: 'category', direction: 'DESC' }];
+const sortedDraft = () => authorReducer(pivotDraft(), { type: 'pivot-column-label-sorts', sorts: draftSorts });
+const bundleConfig = bundle => Object.values(bundle.members[0].resource.definition.sheets[0].visuals[0])[0].chartConfiguration;
+const invalidDraftSorts = [null, {}, 'sort', 1, [null], [[]], [{}], [{ fieldId: 'region' }], [{ direction: 'ASC' }],
+  ...['', ' ', ' region', 'region\0'].map(fieldId => [{ fieldId, direction: 'ASC' }]),
+  ...[null, '', 'asc', 'DOWN', 2].map(direction => [{ fieldId: 'region', direction }]),
+  [{ fieldId: 'region', direction: 'ASC', extra: true }], [draftSorts[0], draftSorts[0]]];
+test('column label reducer and storage validate, clone, enforce column membership and preserve last valid state', () => {
+  const sorts = structuredClone(draftSorts), draft = authorReducer(pivotDraft(), { type: 'pivot-column-label-sorts', sorts });
+  sorts[0].direction = 'DESC';
+  assert.deepEqual(selected(draft).pivotColumnLabelSorts, draftSorts);
+  assert.deepEqual(parseDraft(JSON.stringify(draft)), draft);
+  for (const bad of invalidDraftSorts) assert.equal(pivotColumnLabelSortsValid(bad), false, JSON.stringify(bad));
+  for (const bad of [...invalidDraftSorts, [{ fieldId: 'revenue', direction: 'ASC' }], [{ fieldId: 'missing', direction: 'ASC' }]]) {
+    assert.deepEqual(selected(authorReducer(draft, { type: 'pivot-column-label-sorts', sorts: bad })), selected(draft));
+    const tampered = structuredClone(draft); selected(tampered).pivotColumnLabelSorts = bad;
+    assert.throws(() => parseDraft(JSON.stringify(tampered)));
+  }
+  const row = authorReducer(draft, { type: 'assign', field: 'category', well: 'rows' });
+  assert.deepEqual(selected(authorReducer(row, { type: 'pivot-column-label-sorts', sorts: draftSorts })).pivotColumnLabelSorts, [draftSorts[0]]);
+  selected(row).pivotColumnLabelSorts = draftSorts;
+  assert.throws(() => parseDraft(JSON.stringify(row)));
+  assert.equal(selected(authorReducer(draft, { type: 'pivot-column-label-sorts', sorts: undefined })).pivotColumnLabelSorts, undefined);
+  const empty = authorReducer(draft, { type: 'pivot-column-label-sorts', sorts: [] });
+  assert.deepEqual(parseDraft(JSON.stringify(empty)), empty);
+});
+test('column label sorts clean only fields removed from Columns, including moves and kind changes', () => {
+  const draft = sortedDraft();
+  for (const field of ['region', 'category']) for (const action of [
+    { type: 'unassign', field, well: 'columns' }, { type: 'unassign', field }, { type: 'assign', field, well: 'rows' },
+  ]) {
+    const next = authorReducer(draft, action);
+    assert.deepEqual(selected(next).pivotColumnLabelSorts, draftSorts.filter(sort => sort.fieldId !== field));
+    const cleared = authorReducer(next, { type: 'unassign', field: field === 'region' ? 'category' : 'region' });
+    assert.equal(selected(cleared).pivotColumnLabelSorts, undefined);
+  }
+  assert.deepEqual(selected(authorReducer(draft, { type: 'unassign', field: 'revenue' })).pivotColumnLabelSorts, draftSorts);
+  for (const { kind } of VISUAL_TYPES.filter(v => v.kind !== 'pivot')) {
+    const other = authorReducer(draft, { type: 'kind', kind });
+    assert.equal(selected(other).pivotColumnLabelSorts, undefined, kind);
+    assert.equal(selected(authorReducer(other, { type: 'pivot-column-label-sorts', sorts: draftSorts })).pivotColumnLabelSorts, undefined);
+    selected(other).pivotColumnLabelSorts = [];
+    assert.throws(() => parseDraft(JSON.stringify(other)));
+  }
+});
+test('authoring serializes only columnLabelSort for this state and only on pivot', () => {
+  const visual = selected(sortedDraft());
+  assert.deepEqual(config({ definition: serializeVisual(visual) }).sortConfiguration, { columnLabelSort: draftSorts.map(fieldSort => ({ fieldSort })) });
+  for (const { kind } of VISUAL_TYPES.filter(v => v.kind !== 'pivot')) {
+    const other = { ...selected(authorReducer(emptyDraft(), { type: 'add', kind })), pivotColumnLabelSorts: draftSorts };
+    assert.equal(config({ definition: serializeVisual(other) }).sortConfiguration?.columnLabelSort, undefined, kind);
+  }
+});
+for (const source of ['bundle', 'api']) {
+  // Native import follows the same converter used by the app before bundle import.
+  const roundTripDialect = bundle => {
+    const next = structuredClone(bundle);
+    if (source === 'api') next.members[0].resource.definition = convertDefinition(projectDefinition(next.members[0].resource.definition));
+    return next;
+  };
+  test(`${source}: explicit column label imports stay editable through save, export, editing and clearing`, () => {
+    for (const sorts of [[], ...draftSorts.map(sort => [sort]), draftSorts]) {
+      let draft = authorReducer(pivotDraft(), { type: 'pivot-column-label-sorts', sorts });
+      draft = authorReducer(draft, { type: 'pivot-field-sorts', sorts: [{ fieldId: 'category', direction: 'ASC' }] });
+      draft = authorReducer(draft, { type: 'pivot-column-sort', sort: { measureFieldId: 'revenue', direction: 'DESC', aggregation: 'SUM' } });
+      draft = authorReducer(draft, { type: 'assign', field: 'order_id', well: 'rows' });
+      draft = authorReducer(draft, { type: 'pivot-row-label-sorts', sorts: [{ fieldId: 'order_id', direction: 'DESC' }] });
+      draft = authorReducer(draft, { type: 'pivot-row-sort', sort: { measureFieldId: 'revenue', direction: 'ASC', aggregation: 'SUM' } });
+      const bundle = roundTripDialect(exportBundle(draft)), imported = importBundle(bundle);
+      assert.deepEqual(selected(imported).pivotColumnLabelSorts, sorts);
+      assert.deepEqual(selected(imported).imported.issues, []);
+      assert.deepEqual(parseDraft(JSON.stringify(imported)), JSON.parse(JSON.stringify(imported)));
+      assert.deepEqual(exportBundle(imported), bundle);
+      const edited = authorReducer(imported, { type: 'pivot-column-label-sorts', sorts: [{ fieldId: 'category', direction: 'ASC' }] });
+      assert.deepEqual(selected(importBundle(roundTripDialect(exportBundle(edited)))).pivotColumnLabelSorts, [{ fieldId: 'category', direction: 'ASC' }]);
+      const cleared = importBundle(roundTripDialect(exportBundle(authorReducer(imported, { type: 'pivot-column-label-sorts', sorts: undefined }))));
+      assert.equal(selected(cleared).pivotColumnLabelSorts, undefined);
+      assert.deepEqual(selected(cleared).pivotFieldSorts, selected(imported).pivotFieldSorts);
+      assert.deepEqual(selected(cleared).pivotColumnSort, selected(imported).pivotColumnSort);
+      assert.deepEqual(selected(cleared).pivotRowLabelSorts, [{ fieldId: 'order_id', direction: 'DESC' }]);
+      assert.deepEqual(selected(cleared).pivotRowSort, selected(imported).pivotRowSort);
+    }
+  });
+  test(`${source}: malformed, unbound, duplicate, measure, row and missing-direction imports retain diagnostics and export verbatim`, () => {
+    for (const columnLabelSort of [...malformed.map(value => JSON.parse(JSON.stringify(value), (key, cell) => key === 'fieldId' ? ({ year: 'region', quarter: 'category', region: 'year', category: 'quarter' }[cell] ?? cell) : cell)), [{ fieldSort: { fieldId: 'region' } }], [draftSortBy('category')]]) {
+      const bundle = exportBundle(authorReducer(pivotDraft(), { type: 'assign', field: 'category', well: 'rows' }));
+      bundleConfig(bundle).sortConfiguration = { columnLabelSort };
+      const converted = roundTripDialect(bundle), imported = importBundle(converted);
+      assert.equal(selected(imported).pivotColumnLabelSorts, undefined, JSON.stringify(columnLabelSort));
+      assert.ok(selected(imported).imported.issues.length, JSON.stringify(columnLabelSort));
+      assert.deepEqual(exportBundle(imported), converted);
+      const edited = authorReducer(imported, { type: 'title', title: 'Retained sort' });
+      assert.deepEqual(bundleConfig(exportBundle(edited)).sortConfiguration, bundleConfig(converted).sortConfiguration);
+      assert.deepEqual(projectDefinition(exportBundle(imported).members[0].resource.definition), projectDefinition(converted.members[0].resource.definition));
+    }
+  });
+  test(`${source}: native field IDs differing from draft names remain read-only without export-time rebinding`, () => {
+    const bundle = exportBundle(pivotDraft());
+    bundleConfig(bundle).fieldWells.pivotTableAggregatedFieldWells.columns[0].categoricalDimensionField.fieldId = 'native-column';
+    for (const fieldId of ['native-column', 'region']) {
+      bundleConfig(bundle).sortConfiguration = { columnLabelSort: [draftSortBy(fieldId)] };
+      const converted = roundTripDialect(bundle), imported = importBundle(converted);
+      assert.equal(selected(imported).pivotColumnLabelSorts, undefined);
+      assert.ok(selected(imported).imported.issues.length);
+      assert.deepEqual(exportBundle(imported), converted);
+    }
+  });
+}
+test('non-pivot and empty-Columns imports retain unsupported column label sorts', () => {
+  for (const kind of ['bar', 'table', 'kpi', 'insight', 'pivot']) for (const sorts of kind === 'pivot' ? [[draftSortBy()]] : [[], [draftSortBy()]]) {
+    const draft = authorReducer(emptyDraft(), { type: 'add', kind }), bundle = exportBundle(draft);
+    if (kind === 'pivot') bundleConfig(bundle).fieldWells.pivotTableAggregatedFieldWells.columns = [];
+    bundleConfig(bundle).sortConfiguration = { columnLabelSort: sorts };
+    const imported = importBundle(bundle);
+    assert.equal(selected(imported).pivotColumnLabelSorts, undefined);
+    assert.ok(selected(imported).imported.issues.length);
+    assert.deepEqual(exportBundle(imported), bundle);
+  }
+});
+test('visual and sheet remaps remove only column label sorts whose dimensions leave the wells', () => {
+  const bundle = exportBundle(sortedDraft());
+  const field = bundleConfig(bundle).fieldWells.pivotTableAggregatedFieldWells.columns[0].categoricalDimensionField;
+  field.fieldId = field.column.columnName = 'unavailable';
+  bundleConfig(bundle).sortConfiguration.columnLabelSort[0] = draftSortBy('unavailable');
+  const imported = importBundle(bundle); selected(imported).imported.local = false;
+  for (const action of [{ type: 'remap', id: selected(imported).id }, { type: 'sheet-remap', id: activeSheet(imported).id }]) {
+    const remapped = authorReducer(imported, action);
+    assert.deepEqual(selected(remapped).columns, ['category']);
+    assert.deepEqual(selected(remapped).pivotColumnLabelSorts, [draftSorts[1]]);
+    assert.deepEqual(parseDraft(JSON.stringify(remapped)), JSON.parse(JSON.stringify(remapped)));
+    assert.deepEqual(bundleConfig(exportBundle(remapped)).sortConfiguration.columnLabelSort, [draftSortBy('category', 'DESC')]);
+  }
+});
+test('O-generated well replacement clears column label sorts that leave Columns before validation', () => {
+  const draft = sortedDraft(), visual = selected(draft);
+  visual.o = { question: 'sum revenue by region', interpretation: interpretQuestion('sum revenue by region', dataFields([])).interpretations[0] };
+  for (const replacement of [{ ...visual, columns: ['category'], rows: ['region'], dimension: 'region' }, { ...visual, kind: 'table', columns: [], rows: ['region'], dimension: 'region' }]) {
+    const next = authorReducer(draft, { type: 'o-replace', id: visual.id, visual: replacement, calculatedFields: [] });
+    assert.deepEqual(selected(next).columns, replacement.columns);
+    assert.equal(selected(next).kind, replacement.kind);
+    assert.deepEqual(selected(next).pivotColumnLabelSorts, replacement.kind === 'pivot' ? [draftSorts[1]] : undefined);
+    assert.doesNotThrow(() => parseDraft(JSON.stringify(next)));
+  }
+});
+
+import { act, createElement, useReducer } from 'react';
+import { create } from 'react-test-renderer';
+import { PivotColumnLabelSortOptions } from '../build/test/PropertiesSections.js';
+test('Properties lists only Columns with display names, independent choices, invalid-edit protection and prerequisite text', async t => {
+  const oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let renderer, current, dispatch;
+  function Harness() {
+    [current, dispatch] = useReducer(authorReducer, authorReducer(pivotDraft(), { type: 'formatting', formatting: { names: { region: 'Sales region', category: 'Product' } } }));
+    return createElement(PivotColumnLabelSortOptions, { visual: selected(current), dispatch });
+  }
+  await act(() => { renderer = create(createElement(Harness)); });
+  t.after(async () => { await act(() => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
+  const control = name => renderer.root.findByProps({ 'aria-label': `Column label sort ${name}` });
+  assert.equal(renderer.root.findByType('summary').children[0], 'Column label sort');
+  assert.deepEqual(renderer.root.findAllByType('label').map(label => label.children[0]), ['Sales region', 'Product']);
+  for (const name of ['Sales region', 'Product']) {
+    assert.equal(control(name).props.value, '');
+    assert.deepEqual(control(name).findAllByType('option').map(o => [o.props.value, o.children[0]]), [['', 'Default'], ['ASC', 'Ascending'], ['DESC', 'Descending']]);
+  }
+  const change = async (name, value) => act(() => control(name).props.onChange({ target: { value } }));
+  await change('Sales region', 'ASC'); await change('Product', 'DESC');
+  assert.deepEqual(selected(current).pivotColumnLabelSorts, draftSorts);
+  await change('Sales region', 'DESC');
+  assert.equal(selected(current).pivotColumnLabelSorts.length, 2);
+  assert.equal(control('Sales region').props.value, 'DESC');
+  const before = structuredClone(selected(current).pivotColumnLabelSorts);
+  for (const invalid of ['invalid', 'asc', null]) await change('Sales region', invalid);
+  assert.deepEqual(selected(current).pivotColumnLabelSorts, before);
+  await change('Sales region', '');
+  assert.deepEqual(selected(current).pivotColumnLabelSorts, [draftSorts[1]]);
+  await act(() => dispatch({ type: 'assign', field: 'category', well: 'rows' }));
+  assert.equal(selected(current).pivotColumnLabelSorts, undefined);
+  assert.equal(renderer.root.findAllByType('select').length, 1);
+  await act(() => dispatch({ type: 'unassign', field: 'region', well: 'columns' }));
+  assert.equal(renderer.root.findAllByType('select').length, 0);
+  assert.equal(renderer.root.findByType('p').children[0], 'Assign a Columns field to sort column labels.');
+  for (const kind of ['table', 'bar', 'kpi', 'insight']) {
+    await act(() => dispatch({ type: 'kind', kind }));
+    assert.equal(renderer.root.findAllByType('details').length, 0);
+  }
 });
