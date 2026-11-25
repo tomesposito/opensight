@@ -63,15 +63,16 @@ already shipped selectable connector. These are capture-script repairs only.
 
 ## Verification
 
-The full root `npm test` exited **0** on the completed implementation:
-**8,539 passed / 0 failed / 38 skipped / 0 cancelled** (8,577 tests).
+The full root `npm test` exited **0** after the cold-review fix pass:
+**8,552 passed / 0 failed / 38 skipped / 0 cancelled** (8,590 tests).
+This includes 13 additional regressions beyond the main build's 8,539 passes.
 All 38 skips are live PostgreSQL integration cases: 36 in API and two in the
 query engine, with `DATABASE_URL` or live TLS PostgreSQL not configured.
 The Python SDK's 34 passing tests are included in these totals.
 
 | Suite | Passed | Failed | Skipped |
 | --- | ---: | ---: | ---: |
-| api | 1,617 | 0 | 36 |
+| api | 1,630 | 0 | 36 |
 | bundle-parser | 213 | 0 | 0 |
 | cli | 78 | 0 | 0 |
 | embedding-sdk | 10 | 0 | 0 |
@@ -83,16 +84,15 @@ The Python SDK's 34 passing tests are included in these totals.
 | query-engine | 2,704 | 0 | 2 |
 | web | 3,595 | 0 | 0 |
 | root-conformance | 120 | 0 | 0 |
-| **Total** | **8,539** | **0** | **38** |
+| **Total** | **8,552** | **0** | **38** |
 
 The completed command used
 `OPENSIGHT_CHROMIUM=/home/hatch/workspace/tools/chromium-wrapper.sh npm test`.
-That existing wrapper supplies the environment's required WebGL policy; the
-initial unconfigured-browser run was stopped and is excluded from these
-counts. Local test servers and browser subprocesses ran with the execution
-permissions they require. The completed log is
-`/tmp/codex-issue-332-full-test-final.log`; parsed counts are retained in
-ignored `.opensight/issue-332/root-test-counts.json`.
+That existing wrapper supplies the environment's required WebGL policy.
+Local test servers and browser subprocesses ran with the execution permissions
+they require. The completed fix-pass log is
+`/tmp/issue-332-fix-pass-full-test.log`; parsed counts are retained in
+ignored `.opensight/issue-332/fix-pass-root-test-counts.json`.
 
 ## Scope and handoff
 
@@ -112,6 +112,38 @@ ignored `.opensight/issue-332/root-test-counts.json`.
   journey was not run; root SQLite HTTP governance tests provide the local
   transport proof. Live Muse connector registration/consent/read proof belongs
   to Tom after deployment, as the brief specifies.
-- The brief's independent cold auth review remains a supervisor step before
-  merge, along with the supervisor's independent full-suite run. This build's
-  own review and tests do not substitute for that review.
+- The independent cold auth review completed with three findings, addressed
+  below. The supervisor retains independent verification of these fixes and
+  a full-suite run before merge; this builder's tests do not substitute for
+  that verification.
+
+## Cold review fix pass (2026-11-25)
+
+The interrupted branch was clean at `45435df7`, with all six main-build
+checkpoints present. The fix pass preserves those commits and addresses the
+three findings in separate checkpoints:
+
+1. `c0dd47d0`: bound credential replay revokes the family before scope
+   validation. Regressions cover refresh and authorization-code replay after
+   narrowing, including original, unknown and empty scope parameters, plus
+   wrong-client, wrong-redirect and wrong-PKCE attempts that must not revoke.
+2. `65fd8097`: OAuth uses separate durable budgets for bound connections,
+   consent members and unauthenticated traffic. Twelve connections sharing
+   one public client and IP complete exchanges, refresh and revocation without
+   spending interactive-auth budgets. Tests also cover rotation/restart,
+   window recovery, unknown credentials, independent revocation, and family
+   revocation even when the token budget is exhausted.
+3. `a77a6c0b`: unsupported large MCP results return `MCP_RESULT_TOO_LARGE`
+   with `isError: true`. The production serverless publisher refuses them
+   before chunk storage, and the bridge rejects descriptors and oversized
+   inline responses. A real dashboard query exceeding 1 MiB traverses OAuth,
+   MCP and invocation-mode v1 routing; only external chunk storage is stubbed.
+   Browser chunk publication, the exact size boundary, UTF-8 byte accounting,
+   authority rechecks and the bridge envelope limit are covered as well.
+
+The targeted OAuth regressions passed **21 / 0 / 0** and the large-result
+regressions passed **2 / 0 / 0** (passed / failed / skipped). The existing
+interactive-auth suite also passed all nine tests during the fix pass.
+There are no UI changes, new dependencies, AWS calls or deployments in these
+fixes. The prior UI captures remain applicable; the supervisor retains the
+demo rebuild, independent full-suite verification, merge and publish steps.

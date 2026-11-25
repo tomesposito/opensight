@@ -13,8 +13,6 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
-- MCP credential replay now revokes the whole connection even when an earlier refresh narrowed its scopes; client and PKCE binding remain required before revocation (#332).
-
 - MCP OAuth exchanges and revocations now have separate per-connection budgets, so independent connections behind one host do not share a ten-request IP limit or consume interactive sign-in budgets; unknown credentials retain dedicated abuse limits (#332).
 
 - Hosted MCP now reports `MCP_RESULT_TOO_LARGE` for unsupported large results instead of returning an unusable chunk descriptor as tool success; the error directs callers to reduce the result size (#332).
@@ -70,6 +68,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 - Forecast work-bound regressions now assert the work itself (#298): `computeForecast` can report the grid tier selected, the filter runs and steps performed, and the seasonal ring-buffer writes via a `ForecastWorkStats` out-parameter, and the tests pin exact counts at the step-budget thresholds — a regression to the unconditional full grid (issue #262) or to the O(season-length) seasonal rotation now fails on counts instead of passing on output shape alone. No forecast results change.
 
 ### Security
+
+- MCP credential replay now revokes the whole connection even when an earlier refresh narrowed its scopes; client and PKCE binding remain required before revocation (#332).
 
 - The field-name PII stop now reaches the v1 machine surface that MCP tools map to (#328): `AI_FIELD_NAME_PII` was previously enforced only on the generative Ask O routes, so an AI agent working through MCP never hit it. Dataset queries now check the dataset's permitted (CLS-filtered) columns plus the query's own field names, dashboard questions check their query's field names, and analysis create/update checks every field reference in the definition — each stops with HTTP 400 `AI_FIELD_NAME_PII` before execution or storage, without echoing the sensitive name. The J10 persona journey's PII step now passes as a real assertion instead of a recorded gap.
 
