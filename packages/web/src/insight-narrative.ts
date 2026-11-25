@@ -2,7 +2,7 @@ import { aggregateValue, formatNumber, relativeDifference, shiftDate, resultDate
 import type { Cell, Field } from './model.js';
 import type { VisualFormatting } from './formatting.js';
 import { fieldName } from './formatting.js';
-import { insightFail, normalizeInsight } from './insight-configuration.js';
+import { insightFail, normalizeInsight, insightTemplate, customNarrativeUnsupported, type InsightTemplatePart } from './insight-configuration.js';
 import { computeForecast, MIN_FORECAST_POINTS, prepareChronological } from './forecast.js';
 export { InsightError } from './insight-configuration.js';
 
@@ -47,9 +47,80 @@ function median(values: readonly number[]): number {
   return finiteAnomalyValue(Math.sign(lower) === Math.sign(upper) ? lower + (upper - lower) / 2 : lower / 2 + upper / 2);
 }
 
+interface PublishedValue { value: number | string | null; percent?: boolean; formatted?: boolean; date?: Date }
+type PublishedValues = Record<string, PublishedValue>;
+interface PublishedComputation { values: PublishedValues; items: PublishedValues[] }
+function publishNumber(outputs: PublishedValues, key: string, n: number | null, percent = false): void {
+  outputs[key] = { value: n, percent };
+  outputs[key === 'value' ? 'formattedValue' : `${key}.formattedValue`] = { value: n, percent, formatted: true };
+  if (percent) outputs[`${key}.value`] = { value: n };
+}
+function periodLabel(date: Date, grain: NonNullable<Field['dateGranularity']>): string {
+  const iso = date.toISOString();
+  return grain === 'YEAR' ? iso.slice(0, 4) : grain === 'MONTH' ? iso.slice(0, 7)
+    : grain === 'QUARTER' ? `${iso.slice(0, 4)}-Q${Math.floor(date.getUTCMonth() / 3) + 1}` : iso.slice(0, 10);
+}
+
+/** Substitution is pure presentation over the same published results as computed prose. */
+function customNarrative(template: InsightTemplatePart[], published: Map<string, PublishedComputation>,
+  fieldValue: (id: string) => number | null, formatting?: VisualFormatting): InsightNarrative {
+  const parts = template.map((part): NarrativePart => {
+    if (part.kind === 'text') return { text: part.text };
+    const { reference, format } = part;
+    let output: PublishedValue;
+    if (reference.kind === 'field') output = { value: fieldValue(reference.fieldId), formatted: reference.output === 'formattedValue' };
+    else {
+      const computed = published.get(reference.computationId)!;
+      let values = computed.values, key = reference.output;
+      if (reference.index !== undefined) {
+        const item = computed.items[reference.index];
+        if (!item) return insightFail('INSIGHT_CUSTOM_NARRATIVE_REFERENCE', `${reference.computationId}: items[${reference.index}] is out of range`);
+        values = item; key = key.replace(/^items\[\d+\]\.?/, '');
+      }
+      output = key === 'itemsCount' ? { value: computed.items.length } : values[key] ?? { value: null };
+    }
+    if (output.value === null) return { text: 'unavailable' };
+    if (format.date) {
+      if (!output.date || format.decimals !== undefined || format.grouping !== undefined || format.percent) return customNarrativeUnsupported('date format requires a date-valued output and no number formats');
+      return { text: periodLabel(output.date, format.date) };
+    }
+    if (typeof output.value === 'string') {
+      if (Object.keys(format).length) return customNarrativeUnsupported('number formats require a numeric output');
+      return { text: output.value };
+    }
+    const percent = format.percent ?? output.percent, n = percent ? output.value * 100 : output.value;
+    if (!Number.isFinite(n)) return insightFail('INSIGHT_VALUE_INVALID', 'nonfinite computed result');
+    const decimals = format.decimals ?? (output.formatted ? formatting?.decimalPlaces : undefined) ?? (percent ? 2 : undefined);
+    const number = formatNumber(n, decimals);
+    return { text: `${format.grouping === false ? number.replaceAll(',', '') : number}${percent ? '%' : ''}`, value: n };
+  });
+  const rendered = parts.map(part => part.text).join('');
+  if (rendered.length > UNIQUE_VALUES_MAX_TEXT_CHARS) return insightFail('INSIGHT_CUSTOM_NARRATIVE_TOO_LARGE', `rendered custom narrative exceeds ${UNIQUE_VALUES_MAX_TEXT_CHARS} characters`);
+  // Split after substitution, including blank lines in category labels, while
+  // retaining numeric value parts for the existing graphic emphasis/layout.
+  const paragraphs: NarrativeParagraph[] = [];
+  const boundaries = [...rendered.matchAll(/\r?\n[ \t]*\r?\n(?:[ \t]*\r?\n)*/g)].map(match => [match.index, match.index + match[0].length] as const);
+  let start = 0;
+  for (const [end, next] of [...boundaries, [rendered.length, rendered.length] as const]) {
+    let offset = 0;
+    const paragraphParts: NarrativePart[] = [];
+    for (const part of parts) {
+      const from = Math.max(0, start - offset), to = Math.min(part.text.length, end - offset);
+      if (to > from) paragraphParts.push({ ...part, text: part.text.slice(from, to) });
+      offset += part.text.length;
+    }
+    paragraphs.push({ id: `custom-${paragraphs.length}`, parts: paragraphParts });
+    start = next;
+  }
+  return { paragraphs, text: rendered };
+}
+
 /** Pure post-processing of authorized, aggregated rows, shared by every renderer. */
 export function insightNarrative(rows: readonly InsightRow[], input: InsightInput): InsightNarrative {
   const requests = normalizeInsight(input.computations ?? {}, input.category ? [input.category, ...(input.time ? [input.time] : [])] : [], input.measures);
+  const template = insightTemplate(input.computations ?? {});
+  const referenced = new Set(template?.flatMap(part => part.kind === 'placeholder' && part.reference.kind === 'computation' ? [part.reference.computationId] : []));
+  const published = new Map(requests.map(request => [request.id, { values: {}, items: [] } as PublishedComputation]));
   const text = (text: string): NarrativePart => ({ text });
   const value = (n: number | null, percent = false): NarrativePart => {
     if (n === null) return text('unavailable');
@@ -115,9 +186,12 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
     try { return aggregateValue('sum', groups.map(r => r.values[index]!)) as number | null; }
     catch { return insightFail('INSIGHT_VALUE_INVALID', 'nonfinite total'); }
   };
-  const paragraphs = requests.filter(request => rows.length || request.kind === 'periodToDate' || request.kind === 'anomaly').map(request => {
+  const paragraphs = requests.filter(request => !template || referenced.has(request.id)).filter(request => rows.length || request.kind === 'periodToDate' || request.kind === 'anomaly').map(request => {
     const name = request.kind === 'uniqueValues' ? '' : fieldName(input.measures[request.measure]!, input.formatting), total = request.kind === 'forecast' || request.kind === 'periodToDate' || request.kind === 'uniqueValues' || request.kind === 'topBottomMovers' || request.kind === 'anomaly' ? null : sum(request.measure);
     const numeric = rows.filter(r => r.values[request.measure] !== null);
+    const output = published.get(request.id)!;
+    const numericOutput = (key: string, n: number | null, percent = false) => publishNumber(output.values, key, n, percent);
+    const categoryOutput = (c: Cell): PublishedValue => ({ value: label(c), ...(input.category?.dateGranularity ? { date: groupedPeriodDate(c, input.category.dateGranularity) ?? undefined } : {}) });
     let parts: NarrativePart[];
     if (request.kind === 'uniqueValues') {
       // Distinct categories in deterministic typed order, independent of incoming row order.
@@ -136,11 +210,13 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
         if (used + cost > UNIQUE_VALUES_MAX_TEXT_CHARS) break;
         shown.push(named); used += cost;
       }
+      output.items = sorted.map(row => ({ '': categoryOutput(row.category) }));
       const omitted = sorted.length - shown.length;
       parts = [text(`Unique ${fieldName(input.category!, input.formatting)}: `),
         ...shown.flatMap((named, index) => [...(index ? [text('; ')] : []), text(named)]),
         ...(omitted ? [text(`; and ${omitted} more`)] : []), text('.')];
     } else if (request.kind === 'totalAggregation') {
+      numericOutput('value', total);
       parts = [text(`Total ${name}: `), value(total), text('.')];
     } else if (request.kind === 'maximumMinimum' || request.kind === 'topBottomRanked') {
       // Stable ties use typed category ordering, independent of incoming row order.
@@ -151,19 +227,26 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
         const ak = JSON.stringify(a.category), bk = JSON.stringify(b.category); return ak < bk ? -1 : ak > bk ? 1 : 0;
       });
       const chosen = sorted.slice(0, request.kind === 'maximumMinimum' ? 1 : request.size);
+      output.items = chosen.map(row => { const item: PublishedValues = { category: categoryOutput(row.category) }; publishNumber(item, 'value', row.values[request.measure]!); return item; });
+      if (request.kind === 'maximumMinimum' && chosen[0]) {
+        output.values = output.items[0]!;
+        numericOutput('percentOfTotal', total === null || total === 0 ? null : chosen[0].values[request.measure]! / total, true);
+      }
       parts = [text(`${request.kind === 'maximumMinimum' ? request.type === 'MAXIMUM' ? 'Highest' : 'Lowest' : request.type === 'TOP' ? `Top ${request.size}` : `Bottom ${request.size}`} ${name}: `)];
       if (!chosen.length) parts.push(text('no non-null values'));
       chosen.forEach((row, index) => {
         if (index) parts.push(text('; '));
         const n = row.values[request.measure]!;
         parts.push(text(`${label(row.category)} (`), value(n));
-        if (request.kind === 'maximumMinimum') parts.push(text(', '), value(total === null || total === 0 ? null : n! / total, true), text(' of total'));
+        if (request.kind === 'maximumMinimum') parts.push(text(', '), value(output.values.percentOfTotal!.value as number | null, true), text(' of total'));
         parts.push(text(')'));
       });
       parts.push(text('.'));
     } else if (request.kind === 'metricComparison') {
       const target = sum(request.target!), targetName = fieldName(input.measures[request.target!]!, input.formatting);
-      parts = [text(`${name} vs ${targetName}: `), value(total), text(' vs '), value(target), text('; difference '), value(total === null || target === null ? null : total - target), text(' ('), value(relativeDifference(total, target, true), true), text(').')];
+      const difference = total === null || target === null ? null : total - target, percent = relativeDifference(total, target, true);
+      numericOutput('value', total); numericOutput('targetValue', target); numericOutput('difference', difference); numericOutput('percentDifference', percent, true);
+      parts = [text(`${name} vs ${targetName}: `), value(total), text(' vs '), value(target), text('; difference '), value(difference), text(' ('), value(percent, true), text(').')];
     } else if (request.kind === 'periodToDate') {
       const dated = datedRows(), latest = dated.at(-1), grain = request.periodTimeGranularity;
       const grains = ['DAY', 'MONTH', 'QUARTER', 'YEAR'];
@@ -174,9 +257,8 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
         const start = groupedPeriodDate(latest.date.toISOString(), grain)!;
         const next = resultDate(shiftDate(start.toISOString(), 1, { DAY: 'DD', MONTH: 'MM', QUARTER: 'Q', YEAR: 'YYYY' }[grain]));
         const groups = dated.filter(r => r.date >= start && r.date < next).map(r => r.row);
-        const periodTotal = sum(request.measure, groups), iso = start.toISOString();
-        const period = grain === 'YEAR' ? iso.slice(0, 4) : grain === 'MONTH' ? iso.slice(0, 7)
-          : grain === 'QUARTER' ? `${iso.slice(0, 4)}-Q${Math.floor(start.getUTCMonth() / 3) + 1}` : iso.slice(0, 10);
+        const periodTotal = sum(request.measure, groups), period = periodLabel(start, grain);
+        numericOutput('value', periodTotal); output.values.period = { value: period, date: start };
         parts = [text(`Period-to-date ${name} for ${period} (${grain}): `),
           ...(periodTotal === null ? [text('unavailable (no non-null values in the period)')] : [value(periodTotal)]), text('.')];
         const nulls = groups.filter(r => r.values[request.measure] === null).length;
@@ -192,11 +274,6 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
       const latestTime = Math.max(...dated.map(d => d.date.getTime()));
       const latestDate = new Date(latestTime);
       const previousDate = resultDate(shiftDate(latestDate.toISOString(), -1, { DAY: 'DD', MONTH: 'MM', QUARTER: 'Q', YEAR: 'YYYY' }[grain]));
-      const periodLabel = (d: Date): string => {
-        const iso = d.toISOString();
-        return grain === 'YEAR' ? iso.slice(0, 4) : grain === 'MONTH' ? iso.slice(0, 7)
-          : grain === 'QUARTER' ? `${iso.slice(0, 4)}-Q${Math.floor(d.getUTCMonth() / 3) + 1}` : iso.slice(0, 10);
-      };
       // Reject duplicate decoded category/period pairs before building the
       // map (issue #265): raw spellings such as `2024-01` and `2024-01-01`
       // decode to the same period, and a silent overwrite would make the
@@ -235,7 +312,12 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
         const ak = JSON.stringify(a.category), bk = JSON.stringify(b.category); return ak < bk ? -1 : ak > bk ? 1 : 0;
       });
       const chosen = eligible.slice(0, request.size);
-      const heading = `${request.type === 'TOP' ? 'Top' : 'Bottom'} movers ${name} (${periodLabel(latestDate)} vs ${periodLabel(previousDate)}): `;
+      output.items = chosen.map(m => {
+        const item: PublishedValues = { category: { value: label(m.category) } };
+        publishNumber(item, 'previousValue', m.prev); publishNumber(item, 'value', m.cur);
+        publishNumber(item, 'change', m.diff); publishNumber(item, 'percentChange', m.pct, true); return item;
+      });
+      const heading = `${request.type === 'TOP' ? 'Top' : 'Bottom'} movers ${name} (${periodLabel(latestDate, grain)} vs ${periodLabel(previousDate, grain)}): `;
       if (!chosen.length) parts = [text(heading), text('unavailable (no category has a value in both periods)'), text('.')];
       else {
         parts = [text(heading)];
@@ -269,12 +351,14 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
           return candidate && Math.abs(deviation) >= minimum
             && (direction === 'BOTH' || (direction === 'HIGHER' ? deviation > 0 : deviation < 0));
         });
+        output.items = anomalies.map(({ date, n }) => {
+          const item: PublishedValues = { period: { value: periodLabel(date, input.category!.dateGranularity!), date } };
+          publishNumber(item, 'value', n); return item;
+        });
         parts = [text(heading)];
         if (!anomalies.length) parts.push(text('no anomalies detected'));
         anomalies.slice(0, 5).forEach(({ date, n, deviation }, index) => {
-          const iso = date.toISOString(), grain = input.category!.dateGranularity!;
-          const period = grain === 'YEAR' ? iso.slice(0, 4) : grain === 'MONTH' ? iso.slice(0, 7)
-            : grain === 'QUARTER' ? `${iso.slice(0, 4)}-Q${Math.floor(date.getUTCMonth() / 3) + 1}` : iso.slice(0, 10);
+          const period = periodLabel(date, input.category!.dateGranularity!);
           if (index) parts.push(text('; '));
           parts.push(text(`${period} (`), value(n), text(`, unusually ${deviation > 0 ? 'high' : 'low'})`));
         });
@@ -293,9 +377,9 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
       }
       else {
         const date = resultDate(shiftDate(dated.at(-1)!.date.toISOString(), config.periodsForward, { DAY: 'DD', MONTH: 'MM', QUARTER: 'Q', YEAR: 'YYYY' }[grain]));
-        const iso = date.toISOString();
-        const period = grain === 'YEAR' ? iso.slice(0, 4) : grain === 'MONTH' ? iso.slice(0, 7)
-          : grain === 'QUARTER' ? `${iso.slice(0, 4)}-Q${Math.floor(date.getUTCMonth() / 3) + 1}` : iso.slice(0, 10);
+        const period = periodLabel(date, grain);
+        numericOutput('value', final.value); numericOutput('lowerBound', final.lower); numericOutput('upperBound', final.upper);
+        output.values.period = { value: period, date };
         parts = [text(`Statistical forecast for ${name} in ${config.periodsForward} ${grain.toLowerCase()}${config.periodsForward === 1 ? '' : 's'} (${period}): `),
           value(final.value), text(`; ${config.predictionInterval}% prediction interval `), value(final.lower), text('–'), value(final.upper), text('.')];
       }
@@ -308,12 +392,16 @@ export function insightNarrative(rows: readonly InsightRow[], input: InsightInpu
       if (!previous) parts = [text(`${request.kind === 'growthRate' ? 'Growth rate' : 'Period change'} for ${name}: previous period unavailable.`)];
       else {
         const current = latest.row.values[request.measure]!, prior = previous.row.values[request.measure]!;
-        parts = [text(`${request.kind === 'growthRate' ? 'Growth rate' : 'Period change'} for ${name}, ${label(latest.row.category)} vs ${label(previous.row.category)}: `), value(current), text(' vs '), value(prior), text('; change '), value(current === null || prior === null ? null : current - prior), text(' ('), value(relativeDifference(current, prior), true), text(').')];
+        const change = current === null || prior === null ? null : current - prior, percent = relativeDifference(current, prior);
+        numericOutput('value', current); numericOutput('previousValue', prior); numericOutput('change', change); numericOutput('percentChange', percent, true);
+        output.values.currentPeriod = categoryOutput(latest.row.category); output.values.previousPeriod = categoryOutput(previous.row.category);
+        parts = [text(`${request.kind === 'growthRate' ? 'Growth rate' : 'Period change'} for ${name}, ${label(latest.row.category)} vs ${label(previous.row.category)}: `), value(current), text(' vs '), value(prior), text('; change '), value(change), text(' ('), value(percent, true), text(').')];
       }
     }
     const nulls = rows.length - numeric.length;
     if (nulls && ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'anomaly'].includes(request.kind)) parts.push(text(` ${nulls} null group${nulls === 1 ? '' : 's'} excluded.`));
     return { id: request.id, parts };
   });
+  if (template) return customNarrative(template, published, id => sum(input.measures.findIndex(field => field.id === id)), input.formatting);
   return { paragraphs, text: paragraphs.map(p => p.parts.map(part => part.text).join('')).join('\n\n') };
 }
