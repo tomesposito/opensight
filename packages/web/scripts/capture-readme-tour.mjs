@@ -225,6 +225,7 @@ try {
   await page.getByLabel('New type', { exact: true }).selectOption('INTEGER');
   await page.getByRole('button', { name: 'Apply step', exact: true }).click();
   await page.getByRole('button', { name: '＋ Join', exact: true }).click();
+  await page.getByRole('button', { name: 'Use suggested key: region = region', exact: true }).click();
   await page.getByRole('button', { name: 'Apply step', exact: true }).click();
   await page.getByRole('tab', { name: 'Preview', exact: true }).click();
   await page.getByRole('button', { name: '＋ Formula column', exact: true }).click();
@@ -255,7 +256,7 @@ try {
   await page.locator('.data-tools').getByRole('button', { name: 'Create data source', exact: true }).click();
   await page.waitForTimeout(900);
   assert.ok((await page.locator('.data-connector-tile strong').allTextContents()).includes('Upload a file'));
-  assert.equal(await page.getByRole('radio', { name: 'MySQL', exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole('radio', { name: 'MySQL', exact: true }).isEnabled(), true);
   await hold(1600);
 
   await page.keyboard.press('Escape');

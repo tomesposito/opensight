@@ -85,6 +85,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Hosted MCP connections now use dynamic public-client OAuth with PKCE and member consent, read/write scopes, one-hour access tokens, rotating refresh tokens, and self-serve revocation under Account. The same 58 tools retain v1 governance and member-attributed action history (#332).
+
 - Insight custom narratives now import, render, export unchanged and can be authored with computation/measure placeholders and number/date formats (#333, IDD D-96 custom narratives). Templates reuse the existing query results and computation values; unsupported syntax, unresolved references and rendered text over 1,000 characters fail with named errors.
 
 - Pivot column labels can now be sorted independently at each Columns level with QuickSight `ColumnLabelSort`, including editable Properties controls and bundle/native round-trips (phase-plan parity slice `parity-pivot-column-label-sort`; no GitHub issue). Label sorts override the same field’s flat field sort; measure-based ColumnSort keeps precedence at the outermost level, with row order and all values preserved.

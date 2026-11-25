@@ -5,6 +5,10 @@ date: 2026-10-14
 labels: [itd]
 ---
 
+> Update (2026-11-24): [IDD D-95](../idd/D-95-connectable-mcp.md), issue #332,
+> supersedes this record’s exclusion of hosted token minting/exchange and
+> Streamable HTTP. The other boundaries and stdio behavior stand.
+
 ## Purpose
 
 Implement D-63/D-68 without inventing a hosted auth route or shipping
