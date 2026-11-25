@@ -1,6 +1,7 @@
 import { allowed, type Access } from './access.js';
 
 export const pages = {
+  'mcp-connections': { path: '/account/connections', section: 'Account', title: 'MCP connections' },
   billing: { path: '/admin/billing', section: 'Admin', title: 'Billing' },
   notebooks: { path: '/notebooks', section: 'Notebooks', title: 'Notebooks' },
   metric: { path: '/metrics', section: 'Data', title: 'Governed metric' },
