@@ -38,7 +38,7 @@ for (const source of ['bundle', 'api']) {
       const value = input(); config(value).sortConfiguration = sortConfiguration;
       assert.throws(() => normalize(dialect(value, source)), CompileError);
     }
-    for (const key of ['categorySort', 'columnLabelSort', 'trendGroupSort', 'smallMultiplesSort']) {
+    for (const key of ['categorySort', 'trendGroupSort', 'smallMultiplesSort']) {
       const value = sorted(); config(value).sortConfiguration[key] = [];
       assert.throws(() => normalize(dialect(value, source)), /unsupported property/);
     }

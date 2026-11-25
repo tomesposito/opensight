@@ -89,6 +89,8 @@ export interface VisualModel {
   /** Independent sibling ordering at each pivot row/column dimension level. */
   fieldSortOptions?: { fieldId: string; direction: 'ASC' | 'DESC' }[];
   rowLabelSort?: { fieldId: string; direction: 'ASC' | 'DESC' }[];
+  /** Native column-label sorts override flat field sorts on the same column field. */
+  columnLabelSort?: { fieldId: string; direction: 'ASC' | 'DESC' }[];
   /** Category limit (QuickSight CategoryItemsLimit): show the top N categories,
    *  rolling the rest into an "Other" bucket when includeOther. Applied per facet
    *  group for category-axis charts and pies. Absent means no limit. */
