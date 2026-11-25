@@ -1,3 +1,5 @@
+import { McpConsent } from './McpConsent.js';
+import { mcpAuthorization } from './mcp-oauth.js';
 import { SignupVerification } from './SignupVerification.js';
 import { OperatorSignups } from './OperatorSignups.js';
 import { OperatorTenants } from './OperatorTenants.js';
@@ -19,6 +21,8 @@ export const invitationToken = (hash: string): string | undefined => /^#invite=(
 
 export default function App() {
   const offline = import.meta.env?.VITE_OPENSIGHT_OFFLINE_DEMO === 'true';
+  const [mcp] = useState(() => mcpAuthorization(window.location.search));
+  useEffect(() => { if (mcp) window.history.replaceState(null, '', window.location.pathname + window.location.hash); }, [mcp]);
   const [invite, setInvite] = useState(() => invitationToken(window.location.hash));
   const [operator, setOperator] = useState(() => window.location.hash);
   useEffect(() => {
@@ -35,5 +39,5 @@ export default function App() {
   if (!offline && operator === '#operator-ideas') return <OperatorIdeas baseUrl={import.meta.env?.VITE_OPENSIGHT_API_URL} />;
   if (!offline && operator === '#operator-users') return <OperatorUsers baseUrl={import.meta.env?.VITE_OPENSIGHT_API_URL} />;
   const invitation = invite ? { token: invite, onAccepted: () => { window.history.replaceState(null, '', window.location.pathname + window.location.search); setInvite(undefined); } } : undefined;
-  return <SessionGate offline={offline} client={api} invitation={invitation}><Application api={api} fixtures={fixtures} /></SessionGate>;
+  return <SessionGate offline={offline} client={api} invitation={invitation}>{mcp ? <McpConsent client={api} authorization={mcp} /> : <Application api={api} fixtures={fixtures} />}</SessionGate>;
 }

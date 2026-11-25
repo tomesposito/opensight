@@ -11,6 +11,11 @@ import { emailAddress } from './mail.js';
 import { appendOperatorAudit } from './operator-audit.js';
 import { workspaceLabel } from './workspace-naming.js';
 import type { TenantContext } from './metadata.js';
+import { mcpRouteAllowed } from '@opensight/mcp-server/http';
+
+export interface MemberDelegation {
+  subject: string; tenantId: string; namespaceId: string; userId: string; membershipVersion: number; keyId: string; origin: string; issuer: string; audience: string;
+}
 
 /** A workspace picker challenge lives at most five minutes and is single-use. */
 export const LOGIN_SELECTION_MS = 5 * 60 * 1000;
@@ -309,7 +314,40 @@ export class HostedAuth {
     return value.slice(7);
   }
   /** The existing SecurityOptions.authenticate seam remains transport/verifier independent. */
-  readonly authenticate: SecurityOptions['authenticate'] = async request => this.verify(this.bearer(request));
+  readonly authenticate: SecurityOptions['authenticate'] = async request => {
+    const token = this.bearer(request);
+    if (!token.startsWith('mcp_a_')) return this.verify(token);
+    const access = await this.mcpAccess(token);
+    if (!mcpRouteAllowed(request.method ?? 'GET', request.url ?? '', access.scopes)) throw new MetadataError('MCP_SCOPE_REQUIRED', 403);
+    return access.identity;
+  };
+  /** Only an authenticated H2 browser session can create a delegation. */
+  async delegate(c: SqlConnection, token: string): Promise<MemberDelegation> {
+    const { session, membership } = await this.session(c, token);
+    return { subject: String(session.subject), tenantId: String(session.tenant_id), namespaceId: String(session.namespace_id), userId: String(session.user_id),
+      membershipVersion: Number(membership.version), keyId: this.config.keyId, origin: this.config.origin, issuer: this.config.issuer, audience: this.config.audience };
+  }
+  async checkDelegation(c: SqlConnection, binding: MemberDelegation): Promise<Identity> {
+    await this.key(c);
+    const membership = await this.membership(c, binding.subject, binding.tenantId);
+    if (binding.origin !== this.config.origin || binding.issuer !== this.config.issuer || binding.audience !== this.config.audience || binding.keyId !== this.config.keyId || membership.namespace_id !== binding.namespaceId || membership.user_id !== binding.userId
+      || Number(membership.version) !== binding.membershipVersion
+      || !(await c.query("SELECT subject FROM h2_identities WHERE subject = ? AND status = 'active'", [binding.subject])).length) denied();
+    return { namespaceId: binding.namespaceId, userId: binding.userId };
+  }
+  async mcpAccess(token: string): Promise<{ identity: Identity; scopes: string[]; id: string; expiresAt: number }> {
+    if (!/^mcp_a_[A-Za-z0-9_-]{43}$/.test(token)) denied();
+    return this.database.transaction(async c => {
+      const row = (await c.query(`SELECT t.expires_at AS access_expiry, g.* FROM h2_mcp_tokens t JOIN h2_mcp_grants g ON g.grant_id = t.grant_id
+        WHERE t.token_hash = ? AND t.kind = 'access' AND t.consumed = 0`, [digest(token)]))[0];
+      if (!row || Number(row.revoked) || Number(row.access_expiry) <= this.clock() || Number(row.expires_at) <= this.clock()) denied();
+      const identity = await this.checkDelegation(c, JSON.parse(String(row.binding)) as MemberDelegation);
+      // Lock/recheck after the tenant lock, in the same order as refresh/revoke.
+      const current = (await c.query('UPDATE h2_mcp_grants SET revoked = revoked WHERE grant_id = ? AND revoked = 0 RETURNING *', [String(row.grant_id)]))[0];
+      if (!current) denied();
+      return { identity, scopes: String(current.scopes).split(' '), id: String(row.grant_id), expiresAt: Number(row.access_expiry) };
+    });
+  }
   async verify(token: string): Promise<Identity> {
     return this.database.transaction(async c => {
       const { session } = await this.session(c, token);
@@ -318,6 +356,11 @@ export class HostedAuth {
   }
   /** Internal result binding. It contains no credential and never reaches an API response. */
   async resultSession(request: IncomingMessage): Promise<{ kind: 'author'; id: string; expiresAt: number }> {
+    if (this.bearer(request).startsWith('mcp_a_')) {
+      const access = await this.mcpAccess(this.bearer(request));
+      if (!mcpRouteAllowed(request.method ?? 'GET', request.url ?? '', access.scopes)) throw new MetadataError('MCP_SCOPE_REQUIRED', 403);
+      return { kind: 'author', id: access.id, expiresAt: access.expiresAt };
+    }
     return this.database.transaction(async c => {
       const { session } = await this.session(c, this.bearer(request));
       return { kind: 'author', id: String(session.session_id), expiresAt: Number(session.expires_at) };
