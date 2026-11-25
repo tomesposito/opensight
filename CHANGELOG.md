@@ -91,6 +91,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Native planning now admits Insight `TotalAggregation` computations (phase-plan parity slice `parity-insight-total-aggregation-planner`; no GitHub issue). A total binds only its SUM measure and derives no dimension, so a collection containing one takes its single dimension from a sibling computation and a total-only collection still fails closed — completing native planner admission for all eleven web-supported Insight computation kinds.
+
 - Hosted MCP connections now use dynamic public-client OAuth with PKCE and member consent, read/write scopes, one-hour access tokens, rotating refresh tokens, and self-serve revocation under Account. The same 58 tools retain v1 governance and member-attributed action history (#332).
 
 - Insight custom narratives now import, render, export unchanged and can be authored with computation/measure placeholders and number/date formats (#333, IDD D-96 custom narratives). Templates reuse the existing query results and computation values; unsupported syntax, unresolved references and rendered text over 1,000 characters fail with named errors.

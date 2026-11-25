@@ -298,7 +298,7 @@ test('issue #257: malformed insight configurations fail closed', () => {
     [[{ Forecast: { ComputationId: 'a', Time: insightDateField(), Value: insightValueField(), ForecastProperties: { PeriodsForward: 101 } } }], 'INVALID_INPUT'],
     [[{ Forecast: { ComputationId: 'a', Time: insightDateField(), Value: insightValueField(), ForecastProperties: { Seasonality: 'CUSTOM' } } }], 'INVALID_INPUT'],
     [[{ Anomaly: { ComputationId: 'a' } }], 'INVALID_INPUT'],
-    [[{ TotalAggregation: { ComputationId: 'a', Value: insightValueField() } }], 'UNSUPPORTED_FEATURE'],
+    [[{ TotalAggregation: { ComputationId: 'a', Value: insightValueField() } }], 'INVALID_INPUT'],
     [[{ FutureComputation: { ComputationId: 'a' } }], 'UNSUPPORTED_FEATURE'],
     [[{ TopBottomMovers: { ComputationId: 'a', Category: insightCatField(), Time: insightDateField(), Value: insightValueField() } }], 'INVALID_INPUT'],
     [[{ TopBottomMovers: { ComputationId: 'a', Type: 'TOP', MoverSize: 21, Category: insightCatField(), Time: insightDateField(), Value: insightValueField() } }], 'INVALID_INPUT'],

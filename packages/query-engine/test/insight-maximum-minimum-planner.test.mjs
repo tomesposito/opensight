@@ -132,7 +132,8 @@ test('MaximumMinimum fails closed on malformed configuration and bindings', () =
     [[{ MaximumMinimum: { ComputationId: 'mm', Type: 'MAXIMUM', Value: insightValueField() } }], 'INVALID_INPUT'],
     // Movers still cannot combine with any other computation.
     [[mmComputation(), { TopBottomMovers: { ComputationId: 'm', Type: 'TOP', Category: insightCatField(), Time: insightDateField(), Value: insightValueField() } }], 'UNSUPPORTED_FEATURE'],
-    // The remaining unadmitted kinds stay rejected.
-    [[{ TotalAggregation: { ComputationId: 'a', Value: insightValueField() } }], 'UNSUPPORTED_FEATURE'],
+    // TotalAggregation is admitted but derives no dimension, so a
+    // standalone collection still fails the exactly-one-dimension rule.
+    [[{ TotalAggregation: { ComputationId: 'a', Value: insightValueField() } }], 'INVALID_INPUT'],
   ]) assert.throws(() => planVisual(insightRequest(computations)), { code }, JSON.stringify(computations).slice(0, 120));
 });
