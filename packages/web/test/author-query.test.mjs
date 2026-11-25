@@ -190,7 +190,7 @@ test('malformed and mixed insight configurations fail closed with zero query cal
     ['unknown computation variant', { computations: [{ futureComputation: { computationId: 'x' } }] }],
     ['unsupported computation property', { computations: [{ totalAggregation: { computationId: 't', futureOption: 1 } }] }],
     ['duplicate computation IDs', { computations: [{ totalAggregation: { computationId: 't' } }, { totalAggregation: { computationId: 't' } }] }],
-    ['custom narrative', { customNarrative: { narrative: 'Total: ${total}' } }],
+    ['custom narrative parameter outside the bounded subset', { customNarrative: { narrative: 'Total: ${total}' } }],
     ['movers without a type', { computations: [{ topBottomMovers: { computationId: 'm' } }] }],
     ['forecast periods out of range', { computations: [{ forecast: { computationId: 'f', forecastProperties: { periodsForward: 101 } } }] }],
   ];
@@ -342,4 +342,22 @@ test('valid imported insight bindings still follow changed author wells and pres
     if (kind === 'topBottomMovers') assert.deepEqual(requests[0], { kind, id: 'c', measure: 0, type: 'BOTTOM', size: 2, sortOrder: 'ABSOLUTE_DIFFERENCE' });
     assert.deepEqual(item, before);
   }
+});
+
+test('bounded custom narratives use exactly the computed form query and perform no additional fetches (#333)', async () => {
+  const computed = { ...visual('insight'), insightConfiguration: { computations: [{ totalAggregation: { computationId: 'total' } }] } };
+  const custom = { ...computed, insightConfiguration: { ...computed.insightConfiguration, customNarrative: { narrative: 'Revenue {total.value|decimals:2}; field {field.revenue}' } } };
+  const request = buildAuthorQuery(custom);
+  assert.ok(request); assert.deepEqual(request, buildAuthorQuery(computed));
+  let calls = 0;
+  const client = { async queryDataset() { calls++; return { rows: [{ region: 'East', revenue: 100 }, { region: 'West', revenue: 200 }] }; } };
+  const result = await loadAuthorRows(client, request, controller().signal);
+  assert.equal(compileVisual({ ...buildAuthorVisual(custom), rows: result.rows }).narrative.text, 'Revenue 300.00; field 300');
+  assert.equal(calls, 1);
+  for (const narrative of ['{field.missing}', '{field.region}', '{missing.value}']) {
+    const invalid = { ...custom, insightConfiguration: { ...custom.insightConfiguration, customNarrative: { narrative } } };
+    const blocked = buildAuthorQuery(invalid); assert.equal(blocked, null);
+    if (blocked) await loadAuthorRows(client, blocked, controller().signal);
+  }
+  assert.equal(calls, 1, 'failed references cannot fetch additional data');
 });

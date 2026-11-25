@@ -126,7 +126,9 @@ test('compiler checks insight wells and computation errors before unavailable ro
   const movers = input(null); body(movers).insightConfiguration = { computations: [{ topBottomMovers: { computationId: 'c', type: 'TOP' } }] };
   assert.throws(() => compileVisual(movers), /INSIGHT_CATEGORY_REQUIRED/);
   const source = input(null); body(source).insightConfiguration = { customNarrative: { narrative: '${forecast.result}' } };
-  assert.throws(() => compileVisual(source), /INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED/);
+  assert.throws(() => compileVisual(source), /INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED.*bounded subset/);
+  body(source).insightConfiguration = { customNarrative: { narrative: 'Revenue {field.revenue}' } };
+  assert.equal(compileVisual({ ...source, rows: [{ category: 'East', revenue: 42 }] }).narrative.text, 'Revenue 42');
 });
 test('empty and unavailable insight panels contain no manufactured totals', () => {
   for (const [rows, state] of [[[], 'empty'], [null, 'unavailable']]) { const c = compileVisual(input(rows)); assert.equal(c.state, state); assert.equal(c.narrative.text, ''); assert.deepEqual(c.option.graphic, []); }
