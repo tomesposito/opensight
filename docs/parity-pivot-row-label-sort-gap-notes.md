@@ -8,8 +8,9 @@ issue. Work is confined to `work/parity-pivot-row-label-sort`.
 Both converter dialects preserve the native FieldSort wrapper. Normalization
 rejects malformed lists/wrappers, unknown keys, duplicate field IDs and any
 reference outside the bound Rows dimensions. Non-pivot kinds reject even an
-empty RowLabelSort. Existing rejection tests now cover ColumnLabelSort, which
-remains unsupported.
+empty RowLabelSort. At this checkpoint, rejection tests covered the then-unsupported ColumnLabelSort.
+[ColumnLabelSort](parity-pivot-column-label-sort.md) is now supported; its slice
+replaces those assertions with non-pivot and malformed-shape rejection checks.
 
 RowLabelSort feeds the existing pivot axis traversal and shared `compareCells`
 function. It overrides only the same field's flat field sort. Measure RowSort

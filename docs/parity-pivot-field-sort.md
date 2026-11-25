@@ -72,7 +72,7 @@ Field sorting orders each dimension by its own values.
 groups by a bound measure aggregate and supersedes field sorting at that level.
 Pivot [RowLabelSort](parity-pivot-row-label-sort.md) and KPI
 [TrendGroupSort](parity-kpi-trend-group-sort.md) are now supported. Pivot
-`ColumnLabelSort` remains unsupported and fail closed. This slice makes no broader QuickSight fidelity claim.
+[ColumnLabelSort](parity-pivot-column-label-sort.md) is now supported. This slice makes no broader QuickSight fidelity claim.
 
 `packages/web/test/pivot-field-sort.test.mjs` is picked up by the existing web
 `test/*.test.mjs` glob, reached by root `npm test`. It covers both dialects,

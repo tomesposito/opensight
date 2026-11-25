@@ -83,6 +83,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Pivot column labels can now be sorted independently at each Columns level with QuickSight `ColumnLabelSort`, including editable Properties controls and bundle/native round-trips (phase-plan parity slice `parity-pivot-column-label-sort`; no GitHub issue). Label sorts override the same field’s flat field sort; measure-based ColumnSort keeps precedence at the outermost level, with row order and all values preserved.
+
 - Pivot RowLabelSort orders each row dimension by its labels, with per-field Row label sort controls, validated editable bundle/native imports, and stable precedence alongside field and measure sorts (phase-plan parity slice `parity-pivot-row-label-sort`; no GitHub issue).
 
 - Workspace members can inspect tenant-scoped action history through the v1 API, MCP, CLI and headless SDKs, including the delegating member identity and outcomes of successful, denied and failed hosted v1 calls (#330).

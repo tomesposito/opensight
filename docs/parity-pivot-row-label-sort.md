@@ -28,7 +28,8 @@ and unbound IDs raise named `CompileError`s. Bound IDs and result aliases may
 differ from source column names when compiling.
 
 Every other visual kind rejects `rowLabelSort`, including an empty list.
-Pivot continues to reject category sorts and `ColumnLabelSort`.
+Pivot continues to reject category sorts.
+[ColumnLabelSort](parity-pivot-column-label-sort.md) is now supported.
 
 ## Ordering and precedence
 
@@ -89,8 +90,8 @@ bundle envelope rejects non-object outer sort configurations.
 
 ## Limits and verification
 
-`ColumnLabelSort` remains unsupported and fail closed; it is the remaining
-pivot label-sort follow-up. Insight custom narratives remain unsupported and
+[ColumnLabelSort](parity-pivot-column-label-sort.md) is now supported; no pivot
+label-sort follow-up remains. Insight custom narratives remain unsupported and
 need a product design decision. No broader QuickSight fidelity is claimed.
 
 `packages/web/test/pivot-row-label-sort.test.mjs` is reached by the existing
