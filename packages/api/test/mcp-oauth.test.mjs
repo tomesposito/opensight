@@ -64,6 +64,28 @@ test('concurrent refresh has one winner and a committed family revocation', asyn
   const results = await Promise.all([refresh(f, g), refresh(f, g)]); assert.deepEqual(results.map(r => r.status).sort(), [200, 400]);
   assert.equal((await f.rpc(results.find(r => r.status === 200).body.access_token, 'tools/list')).status, 401);
 });
+for (const kind of ['refresh', 'code']) for (const scope of [allScopes, 'unknown', '']) {
+  test(`${kind} replay revokes a narrowed connection before validating scope ${JSON.stringify(scope)}`, async t => {
+    const f = await mcpFixture(t), g = await f.grant(), other = await f.register();
+    const next = await refresh(f, g, { scope: readScope }); assert.equal(next.status, 200);
+    const replay = kind === 'refresh'
+      ? { grant_type: 'refresh_token', client_id: g.client.client_id, refresh_token: g.refresh_token }
+      : g.exchange;
+    // An unbound caller cannot revoke the family, even using a consumed credential.
+    assert.equal((await f.form('/api/mcp/oauth/token', { ...replay, client_id: other.client_id, scope })).body.error, 'invalid_grant');
+    if (kind === 'code') {
+      for (const change of [{ code_verifier: randomBytes(32).toString('base64url') }, { redirect_uri: 'https://attacker.example/cb' }]) {
+        assert.equal((await f.form('/api/mcp/oauth/token', { ...replay, ...change, scope })).body.error, 'invalid_grant');
+      }
+    }
+    assert.equal((await f.rpc(next.body.access_token, 'tools/list')).status, 200);
+    assert.equal((await f.form('/api/mcp/oauth/token', { ...replay, scope })).body.error, 'invalid_grant');
+    const grants = await f.db.transaction(c => c.query('SELECT revoked FROM h2_mcp_grants'));
+    assert.equal(Number(grants[0].revoked), 1);
+    for (const token of [g.access_token, next.body.access_token]) assert.equal((await f.rpc(token, 'tools/list')).status, 401);
+    assert.equal((await refresh(f, { ...g, ...next.body })).body.error, 'invalid_grant');
+  });
+}
 test('read scope and browser/MCP credential separation are enforced for HTTP and direct REST', async t => {
   const f = await mcpFixture(t), g = await f.grant(readScope);
   assert.equal((await f.rpc(f.token(), 'tools/list')).status, 401);

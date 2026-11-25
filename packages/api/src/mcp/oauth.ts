@@ -130,12 +130,13 @@ export class McpOAuth {
         if (p.redirect_uri !== data.redirect || !/^[A-Za-z0-9._~-]{43,128}$/.test(p.code_verifier ?? '')
           || !equal(data.challenge, createHash('sha256').update(p.code_verifier!).digest('base64url'))) throw new OAuthError('invalid_grant');
       }
-      const selected = p.scope === undefined ? String(grant.scopes).split(' ') : scopes(p.scope);
-      if (selected.some(s => !String(grant.scopes).split(' ').includes(s))) throw new OAuthError('invalid_scope');
       if (!(await c.query('UPDATE h2_mcp_tokens SET consumed = 1 WHERE token_hash = ? AND consumed = 0 RETURNING token_hash', [digest(credential)])).length) {
-        // Commit family revocation even though the exchange itself fails.
+        // Binding is verified above. Commit replay revocation before scope validation
+        // can fail, including when an earlier rotation narrowed the connection.
         await c.query('UPDATE h2_mcp_grants SET revoked = 1 WHERE grant_id = ?', [String(grant.grant_id)]); return null;
       }
+      const selected = p.scope === undefined ? String(grant.scopes).split(' ') : scopes(p.scope);
+      if (selected.some(s => !String(grant.scopes).split(' ').includes(s))) throw new OAuthError('invalid_scope');
       // Scope narrowing applies to the whole connection, including older access tokens.
       await c.query('UPDATE h2_mcp_grants SET scopes = ? WHERE grant_id = ?', [selected.join(' '), String(grant.grant_id)]);
       const access = random('mcp_a_'), refresh = random('mcp_r_'), expiry = Math.min(this.clock() + hour, Number(grant.expires_at));

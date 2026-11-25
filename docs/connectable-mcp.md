@@ -63,7 +63,8 @@ in memory during sign-in. An interrupted/reloaded flow must restart.
 
 Access tokens last one hour. Refresh tokens rotate on every exchange and
 have a fixed 30-day connection lifetime. Successful credential replay revokes
-the token family; wrong-client or wrong-PKCE attempts cannot revoke another
+the token family before validating requested scopes, including after scope
+narrowing; wrong-client or wrong-PKCE attempts cannot revoke another
 client's grant. Scope narrowing persists across refresh and older access
 tokens. Every admission checks current identity, membership, tenant, key and
 workspace authority. Only hashes of opaque codes/tokens are stored.
