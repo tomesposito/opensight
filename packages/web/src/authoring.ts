@@ -111,6 +111,8 @@ export interface AuthorVisual {
   gauge?: { min: number; max: number };
   bins?: number;
   insightConfiguration?: Record<string, unknown>;
+  /** Imported measure identities keep custom field references intact in author wells. */
+  insightMeasureIds?: Record<string, string>;
   referenceLines?: ReferenceLine[];
   /** Statistical forecast overlay config (line/area charts with a date dimension; issue #235). */
   forecast?: ForecastConfig;
@@ -1223,6 +1225,11 @@ function serializeForecast(forecast: ForecastConfig): Record<string, unknown> {
   };
 }
 
+/** Queries retain column aliases; only the Insight well identity is preserved. */
+export function insightMeasureId(visual: AuthorVisual, name: string): string {
+  return visual.kind === 'insight' && visual.insightMeasureIds && Object.hasOwn(visual.insightMeasureIds, name) ? visual.insightMeasureIds[name]! : name;
+}
+
 /** Typed camelCase projection, including the parser's opaque extensions. */
 export function serializeVisual(visual: AuthorVisual, includeInteractions = true, calculations: readonly CalculatedField[] = [], dataset?: AuthorDataset): BundleVisual {
   if (visual.smallMultiples?.length && !hasSmallMultiplesWell(visual.kind)) throw new Error('SMALL_MULTIPLES_UNSUPPORTED: Remove Small multiples fields before exporting this visual type.');
@@ -1240,7 +1247,7 @@ export function serializeVisual(visual: AuthorVisual, includeInteractions = true
     } catch { /* invalid configurations fail closed in the compiler */ }
   }
   const measureField = (name: string, fieldId = name, aggregation?: AuthorVisual['targetAggregation']): BundleMeasureField => ({ numericalMeasureField: { ...columnField(name), fieldId, aggregationFunction: { simpleNumericalAggregation: aggregation ?? dataset?.metrics?.find(m => metricColumn(m.id) === name)?.defaultAggregation ?? 'SUM' } } });
-  const values = visual.measures.map(name => measureField(name));
+  const values = visual.measures.map(name => measureField(name, insightMeasureId(visual, name)));
   const visibility = (show: boolean) => ({ visibility: show ? 'VISIBLE' : 'HIDDEN' });
   visual = { ...visual, formatting: metricFormatting(visual.formatting, dataset?.metrics?.filter(m => visual.measures.includes(metricColumn(m.id)))) };
   const body = { ...(visual.o ? { opensightO: visual.o } : {}), ...(visual.subtitle !== undefined ? { subtitle: { ...visibility(visual.subtitleVisible !== false), formatText: { plainText: visual.subtitle } } } : {}), ...(visual.formatting ? { opensightFormatting: visual.formatting } : {}), ...(visual.palette ? { opensightPalette: visual.palette } : {}), ...(visual.referenceLines?.length ? { opensightReferenceLines: visual.referenceLines.map(l => ({ value: l.value, label: l.label, color: l.color })) } : {}), ...(includeInteractions ? serializeInteractions(visual) : {}), visualId: visual.id, ...(visual.title.trim() || !visual.titleVisible ? { title: { ...visibility(visual.titleVisible), ...(visual.title.trim() ? { formatText: { plainText: visual.title.trim() } } : {}) } } : {}) } satisfies BundleVisualBody;
@@ -1463,7 +1470,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       }
       const fieldNames = (v: unknown, role: string): v is string[] => imported || unresolvedAllowed ? Array.isArray(v) && v.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) && new Set(v).size === v.length : names(v, role);
 
-      if (!isObject(v) || !onlyKeys(v, ['o', 'id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'breakdowns', 'multiplesOptions', 'groupSort', 'aggregationSort', 'pivotFieldSorts', 'pivotRowLabelSorts', 'pivotColumnLabelSorts', 'pivotColumnSort', 'pivotRowSort', 'trendField', 'targetField', 'targetAggregation', 'kpiTrendSort', 'kpiOptions', 'sliceLimit', 'facetLimit', 'facetSort', 'breakdownLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'referenceLines', 'forecast', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
+      if (!isObject(v) || !onlyKeys(v, ['o', 'id', 'kind', 'title', 'subtitle', 'subtitleVisible', 'dimension', 'measures', 'smallMultiples', 'breakdowns', 'multiplesOptions', 'groupSort', 'aggregationSort', 'pivotFieldSorts', 'pivotRowLabelSorts', 'pivotColumnLabelSorts', 'pivotColumnSort', 'pivotRowSort', 'trendField', 'targetField', 'targetAggregation', 'kpiTrendSort', 'kpiOptions', 'sliceLimit', 'facetLimit', 'facetSort', 'breakdownLimit', 'donut', 'imported', 'filterActions', 'urlActions', 'navigationActions', 'hierarchy', 'dateGrain', 'palette', 'formatting', 'gauge', 'bins', 'insightConfiguration', 'insightMeasureIds', 'referenceLines', 'forecast', ...Object.keys(defaults())]) || typeof v.id !== 'string' || !/^visual-[1-9][0-9]*$/.test(v.id) || ids.has(v.id) || !VISUAL_TYPES.some(t => t.kind === v.kind) || typeof v.title !== 'string' || !['donut', 'titleVisible', 'legend', 'labels', 'tooltipVisible', 'horizontal', 'stacked', 'totals', 'subtotals'].every(k => typeof v[k] === 'boolean') || (v.tooltipType !== 'basic' && v.tooltipType !== 'detailed') || (v.tooltipTitleType !== 'primaryValue' && v.tooltipTitleType !== 'fieldId') || typeof v.tooltipAggregations !== 'boolean' || !Array.isArray(v.tooltipHiddenFields) || !v.tooltipHiddenFields.every(n => typeof n === 'string' && !!n.trim() && n === n.trim() && !n.includes('\0')) || new Set(v.tooltipHiddenFields).size !== v.tooltipHiddenFields.length || !tooltipExtraFieldsValid(v.tooltipExtraFields) || !fieldNames(v.measures, 'measure') || !fieldNames(v.rows, 'dimension') || !fieldNames(v.columns, 'dimension') || (v.dimension !== null && !fieldNames([v.dimension], 'dimension')) || !Array.isArray(v.filters)) return fail();
       if (v.o !== undefined && !validOProvenance(v.o)) return fail();
       if (v.referenceLines !== undefined && (!Array.isArray(v.referenceLines) || !v.referenceLines.every(referenceLineValid))) return fail();
       if (v.forecast !== undefined && !forecastConfigValid(v.forecast)) return fail();
@@ -1497,6 +1504,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
       if ((v.kind === 'radar' || v.kind === 'sankey') && !v.imported && (v.rows.length > 1 || v.columns.length > 1)) return fail();
       if (singleMeasure(v.kind as VisualKind) && v.measures.length > 1 || noDimensions(v.kind as VisualKind) && v.dimension !== null || v.kind !== 'pie' && v.donut || !splitDimensions(v.kind as VisualKind) && v.columns.length || (grouped(v.kind as VisualKind) ? v.dimension !== (v.rows[0] ?? null) : v.rows.length) || v.rows.some(n => (v.columns as string[]).includes(n))) return fail();
       if (v.insightConfiguration !== undefined && !isObject(v.insightConfiguration) || v.kind === 'insight' && !v.imported && v.measures.length > 2) return fail();
+      if (v.insightMeasureIds !== undefined && (v.kind !== 'insight' || !isObject(v.insightMeasureIds) || Object.entries(v.insightMeasureIds).some(([column, id]) => !column || column.includes('\0') || typeof id !== 'string' || !id || id.includes('\0')) || new Set(Object.values(v.insightMeasureIds)).size !== Object.keys(v.insightMeasureIds).length)) return fail();
       // A native insight configuration must be completely well-formed at draft
       // admission — known variants, supported properties, unique computation
       // IDs, Movers-only collections — not merely an object (#267). Imported
