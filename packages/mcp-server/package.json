@@ -9,6 +9,7 @@
     "opensight-mcp": "dist/cli.js"
   },
   "exports": {
+    "./http": { "types": "./dist/http.d.ts", "import": "./dist/http.js" },
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
