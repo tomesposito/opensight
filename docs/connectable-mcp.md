@@ -83,8 +83,19 @@ Invocation handlers perform no DDL. The owner migration, runtime grants,
 backup inventory, registered legacy upgrade and restore fences include all
 four tables. Restore revokes grants/tokens and discards pending consent.
 Tenant deletion purges that tenant's grants/tokens; shared public-client
-registrations contain no member identity. Existing auth attempt buckets rate
-limit OAuth routes, and registration is capped at 10,000 clients.
+registrations contain no member identity. Registration is capped at 10,000 clients.
+
+OAuth uses separate durable, hashed attempt buckets in `h2_attempts`, with a
+15-minute window; it never consumes interactive sign-in budgets. Bound token
+requests (client plus credential, and PKCE for codes) get 10 attempts per
+connection, shared across code exchange and refresh rotation. Revocation has
+its own 10-attempt connection budget. Shared public clients and host IPs do
+not pool these budgets. Consent endpoints allow 50 attempts per member and
+workspace, separately per endpoint. Unauthenticated traffic, including
+registration and unknown/misbound credentials, is limited to 50 attempts per
+peer and 200 globally per endpoint. Invented client IDs do not bypass these
+limits. Limits survive restart; throttling returns `429 temporarily_unavailable`
+with `Retry-After: 900`. Bound replay still revokes the family when throttled.
 
 Deploy with the normal hosted build and registered schema migration. The
 frontend serves the authorization entry at `/`; the reverse proxy must route

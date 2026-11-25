@@ -18,8 +18,9 @@ export async function mcpFixture(t, env = {}, options = {}) {
       code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256', ...overrides };
     return { result: await browser('/api/mcp/oauth/interaction', params, token), params, verifier };
   };
-  const grant = async (scope = allScopes, token) => {
-    const client = await register(), i = await interaction(client, scope, {}, token);
+  const grant = async (scope = allScopes, token, client = undefined) => {
+    client ??= await register();
+    const i = await interaction(client, scope, {}, token);
     assert.equal(i.result.status, 200, JSON.stringify(i.result.body));
     const consent = await browser('/api/mcp/oauth/authorize', { id: i.result.body.id, action: 'approve', scope }, token);
     assert.equal(consent.status, 200, JSON.stringify(consent.body));
