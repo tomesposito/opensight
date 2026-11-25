@@ -21,7 +21,9 @@ test('read scope hides and refuses writes and direct non-tool v1 routes', async 
   const read = { ...options, scopes: [mcpScopes[0]], fetch: async () => { throw Error('Must not dispatch a write'); } };
   const list = (await (await handleMcpHttp(request(rpc('tools/list')), read)).json()).result.tools;
   assert.ok(list.some(t => t.name === 'run_dataset_query')); assert.ok(list.some(t => t.name === 'ask_question'));
+  for (const name of ['query_dashboard_visual', 'search_assets']) assert.ok(list.some(t => t.name === name));
   assert.ok(!list.some(t => t.name === 'create_analysis'));
+  assert.ok(!list.some(t => t.name === 'create_dashboard_export'));
   const call = (await (await handleMcpHttp(request(rpc('tools/call', { name: 'create_analysis' })), read)).json()).result;
   assert.equal(call.isError, true); assert.equal(call.structuredContent.errorCode, 'MCP_SCOPE_REQUIRED');
   assert.equal(mcpRouteAllowed('POST', '/api/v1/datasets/sales/query', read.scopes), true);

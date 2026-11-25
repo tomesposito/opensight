@@ -4,7 +4,7 @@ import { operations } from './generated.js';
 
 export const mcpScopes = ['opensight/mcp.read', 'opensight/mcp.write'] as const;
 // POST query/ask are reads: their existing v1 compute/spend guards still apply.
-const read = (op: typeof operations[number]) => op.method === 'GET' || ['run_dataset_query', 'ask_question'].includes(op.name);
+const read = (op: typeof operations[number]) => op.method === 'GET' || ['run_dataset_query', 'query_dashboard_visual', 'search_assets', 'ask_question'].includes(op.name);
 export function scopedTools(scopes: readonly string[]): ReadonlySet<string> {
   return new Set(operations.filter(op => scopes.includes(read(op) ? mcpScopes[0] : mcpScopes[1])).map(op => op.name));
 }
