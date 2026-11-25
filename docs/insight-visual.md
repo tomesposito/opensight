@@ -106,7 +106,9 @@ combine with other supported computations sharing its dimension and measure
 bindings, except TopBottomMovers, whose two-dimension collection remains exclusive.
 QuickSight uses ML anomaly detection; OpenSight uses deterministic robust
 statistics and labels it statistical. No ML-result, exact-wording or
-visual-fidelity parity is claimed. Custom narrative templates remain unsupported.
+visual-fidelity parity is claimed. [Bounded custom narrative templates](insight-custom-narratives.md)
+can replace computed prose with catalog computation/measure placeholders and
+number/date formats (#333); expressions, conditionals and parameters remain unsupported.
 
 UniqueValues computations accept `computationId`, optional string `name` and
 `category` only; any other property (including `value` or `time`) fails closed.

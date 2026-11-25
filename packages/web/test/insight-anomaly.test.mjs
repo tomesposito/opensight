@@ -38,7 +38,9 @@ test('anomaly config rejects malformed bodies, options, unknown keys, duplicate 
   }
   assert.throws(() => validateInsightConfiguration({ computations: [...configuration().computations, ...configuration().computations] }), error('INSIGHT_COMPUTATION_INVALID'));
   assert.throws(() => validateInsightConfiguration({ computations: [...configuration().computations, { topBottomMovers: { computationId: 'm', type: 'TOP' } }] }), error('INSIGHT_COMPUTATION_INVALID'));
+  // Parameters remain outside the bounded subset (#333).
   assert.throws(() => normalizeInsight({ ...configuration(), customNarrative: { narrative: '${anomaly.result}' } }, [time], [measure]), error('INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED'));
+  assert.doesNotThrow(() => normalizeInsight({ ...configuration(), customNarrative: { narrative: '{anomaly.itemsCount}' } }, [time], [measure]));
 });
 
 test('anomaly projects and rebinds time/value while preserving options and rejecting conflicts', () => {

@@ -377,7 +377,8 @@ function importVisual(raw: BundleVisual, id: string, definition: BundleDefinitio
     return candidate;
   })() : undefined;
   if (body.opensightO !== undefined && !validOProvenance(body.opensightO)) throw new Error('Invalid Ask O provenance.');
-  const visual: AuthorVisual = { ...defaults(), ...(validOProvenance(body.opensightO) ? { o: copy(body.opensightO) } : {}), ...(validInsight && body.insightConfiguration !== undefined ? { insightConfiguration: copy(obj(body.insightConfiguration)) } : {}), ...(paletteValid(body.opensightPalette) ? { palette: [...body.opensightPalette] } : {}), id, kind, title: string(obj(obj(body.title).formatText).plainText),
+  const insightMeasureIds = validInsight ? Object.fromEntries(list(wells.values).map(wrapper => { const field = obj(Object.values(obj(wrapper))[0]); return [string(obj(field.column).columnName), string(field.fieldId)]; })) : undefined;
+  const visual: AuthorVisual = { ...defaults(), ...(insightMeasureIds ? { insightMeasureIds } : {}), ...(validOProvenance(body.opensightO) ? { o: copy(body.opensightO) } : {}), ...(validInsight && body.insightConfiguration !== undefined ? { insightConfiguration: copy(obj(body.insightConfiguration)) } : {}), ...(paletteValid(body.opensightPalette) ? { palette: [...body.opensightPalette] } : {}), id, kind, title: string(obj(obj(body.title).formatText).plainText),
     ...(formattingValid(body.opensightFormatting) ? { formatting: copy(body.opensightFormatting) } : {}),
     ...(body.subtitle !== undefined ? { subtitle: string(obj(subtitle.formatText).plainText), subtitleVisible: subtitle.visibility !== 'HIDDEN' } : {}),
     ...(legendPositionValid(legendPosition) ? { formatting: { ...(formattingValid(body.opensightFormatting) ? copy(body.opensightFormatting) : {}), legendPosition } } : {}),

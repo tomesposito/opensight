@@ -211,10 +211,14 @@ Insight writes rule-based narratives from your aggregated data: totals, contribu
 shares, ranked categories, date-period changes, statistical forecasts and optional
 measure comparisons. Forecasts require a date dimension and report a projected
 value with a prediction interval; short histories show an unavailable message.
-Anomalies and custom narrative templates fail with named errors.
+Statistical anomalies use median/MAD detection. [Custom narrative templates](docs/insight-custom-narratives.md)
+can insert computation results and bound measure totals with number/date formats;
+unsupported expressions and unresolved references fail with named errors.
 See [Insight semantics and limits](docs/insight-visual.md).
 
 ![Insight narrative showing revenue totals and category contributors](docs/images/insight.png)
+
+![Custom Insight narrative with formatted revenue placeholders](docs/images/insight-custom-narrative.png)
 
 Pivot row groups expand and collapse with +/−, Enter or Space. Enabled subtotals
 stay visible, and group state survives draft saves and bundle round trips.

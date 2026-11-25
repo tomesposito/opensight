@@ -3,7 +3,7 @@ import { normalizeInsight, rebindInsight, uniqueValuesOnly, topBottomMoversTimeC
 import { unresolvedVisualFieldDiagnostics } from './unresolved-fields.js';
 import { declaration, type AuthorParameter } from './parameters.js';
 import type { AuthorControl } from './controls.js';
-import { authorVisualProblem, kpiTargetFieldId, kpiTrendAggregationProblem, noDimensions, visualDimensions, dataFields, type AuthorDataset, type CalculatedField, type AuthorVisual } from './authoring.js';
+import { authorVisualProblem, insightMeasureId, kpiTargetFieldId, kpiTrendAggregationProblem, noDimensions, visualDimensions, dataFields, type AuthorDataset, type CalculatedField, type AuthorVisual } from './authoring.js';
 import { FACETED_KINDS } from './facet-layout.js';
 import type { createApiClient, QueryRequest, QueryResponse } from './api-client.js';
 import { ApiError } from './api-client.js';
@@ -20,8 +20,8 @@ function insightDimensionWell(name: string, visual: AuthorVisual, calculations: 
 }
 
 /** Measure well for one author field, mirroring serializeVisual's measure fields. */
-function insightMeasureWell(name: string, dataset?: AuthorDataset): unknown {
-  return { numericalMeasureField: { fieldId: name, column: { dataSetIdentifier: 'sales_data', columnName: name }, aggregationFunction: { simpleNumericalAggregation: dataset?.metrics?.find(m => metricColumn(m.id) === name)?.defaultAggregation ?? 'SUM' } } };
+function insightMeasureWell(name: string, visual: AuthorVisual, dataset?: AuthorDataset): unknown {
+  return { numericalMeasureField: { fieldId: insightMeasureId(visual, name), column: { dataSetIdentifier: 'sales_data', columnName: name }, aggregationFunction: { simpleNumericalAggregation: dataset?.metrics?.find(m => metricColumn(m.id) === name)?.defaultAggregation ?? 'SUM' } } };
 }
 
 /** Compiler-shaped Field for one author dimension name. */
@@ -55,10 +55,10 @@ export function buildAuthorQuery(visual: AuthorVisual, calculations: readonly Ca
       if (moversTime && !dimensions.includes(moversTime)) dimensions = [...dimensions, moversTime];
       const rebound = rebindInsight(visual.insightConfiguration,
         dimensions.map(name => insightDimensionWell(name, visual, calculations, dataset)),
-        visual.measures.map(name => insightMeasureWell(name, dataset)));
+        visual.measures.map(name => insightMeasureWell(name, visual, dataset)));
       normalizeInsight(rebound,
         dimensions.map(name => insightDimensionField(name, visual, calculations, dataset)),
-        visual.measures.map((name): Field => ({ id: name, column: name, dataSet: 'sales_data' })));
+        visual.measures.map((name): Field => ({ id: insightMeasureId(visual, name), column: name, dataSet: 'sales_data' })));
       uvOnly = uniqueValuesOnly(rebound);
     } catch { return null; }
   }
