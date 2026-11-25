@@ -161,11 +161,12 @@ contracts are recorded, tool generation and transport/auth adapters are
 implemented, and contract/security tests are wired into the full suite.
 [Gap notes](issue-95-mcp-gap-notes.md) record final counts and demo comparison.
 
-Remaining boundaries are explicit: the operator refresh-exchange integration
-above; serverless `/api/v1` durable adapters owned by the remote developer;
-Streamable HTTP as its own slice. The [Python SDK](headless-v1-sdk.md) and
-[CLI](headless-v1-cli.md) now cover the same v1 operations. Issue
-#95 remains open. This slice changes no UI and does not deploy a server.
+The stdio client still uses the operator refresh-exchange integration above.
+Hosted Streamable HTTP and in-app OAuth are now implemented by
+[issue #332](connectable-mcp.md), superseding D-70's exchange/transport
+exclusion for hosted connections. The [Python SDK](headless-v1-sdk.md) and
+[CLI](headless-v1-cli.md) cover the same v1 operations. Hosted deployment and
+live connector proof are separate operator steps.
 Breaking tool changes require a version bump and migration notes (D-69).
 
 ## Workspace action history (#330)

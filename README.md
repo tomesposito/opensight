@@ -426,14 +426,19 @@ delivery and dedupe keys. See [tenant automation](docs/tenant-automation.md).
 
 ### Headless v1, SDKs, MCP and CLI
 
-The headless REST API has TypeScript and Python SDKs, a stdio MCP server and
-an `opensight` CLI covering the same 53 operations for datasets, querying,
-analyses, dashboards and assets. The CLI uses resource commands such as
-`opensight dataset list` and defaults to JSON output. MCP and CLI calls use
-one user/tenant credential and require an operator-provided refresh exchange
-endpoint, which the built-in hosted auth does not yet implement. See the
-[SDK contracts](docs/headless-v1-sdk.md), [MCP setup](docs/headless-v1-mcp.md)
+The headless REST API has TypeScript and Python SDKs, an `opensight` CLI,
+and an MCP server with 58 generated tools. The CLI uses resource commands
+such as `opensight dataset list` and defaults to JSON output.
+
+Hosted MCP connects at `/api/mcp` using dynamic public-client OAuth, PKCE
+and in-app consent. Members choose read/write scopes and act with their own
+workspace permissions; Account → MCP connections provides immediate revoke.
+Stdio and CLI retain their operator-configured refresh exchange. See the
+[hosted connection and deployment guide](docs/connectable-mcp.md),
+[SDK contracts](docs/headless-v1-sdk.md), [stdio MCP setup](docs/headless-v1-mcp.md)
 and [CLI command and output contracts](docs/headless-v1-cli.md).
+
+![Hosted MCP consent using a synthetic member and workspace](docs/images/mcp-consent.png)
 
 ## Contributor quickstart
 
@@ -487,7 +492,7 @@ packages/bundle-parser  Observed .qs archive import + synthetic JSON inventory
 packages/api            Local definition and dataset-query API
 packages/web            React renderer + authoring and bundle round trips
 packages/query-engine   Typed synthetic planner + local DuckDB CSV executor
-packages/mcp-server     Stdio MCP client for the implemented headless v1 API
+packages/mcp-server     Shared MCP tools for stdio and hosted Streamable HTTP
 packages/headless-sdk   TypeScript client for the headless v1 API
 packages/headless-sdk-python Python client for the headless v1 API
 packages/cli            Generated resource commands over the TypeScript SDK

@@ -495,3 +495,29 @@
 .trial-plans { border:0; padding:0; display:flex; gap:12px; margin:22px 0; }.trial-plans legend { font-size:13px; }.trial-plans label { flex:1; border:1.5px solid #d5dcea; border-radius:11px; padding:14px; cursor:pointer; }.trial-plans .selected { border-color:#3b82f6; background:#f5f9ff; }.trial-plans span { font-size:13px; text-transform:uppercase; }.trial-plans strong { display:block; font-size:21px; }.trial-plans small { font-size:12px; color:#75839c; font-weight:normal; }
 .trial-actions { display:flex; gap:12px; }.trial-card button { cursor:pointer; padding:11px 18px; border:1px solid #d5dcea; border-radius:9px; font-weight:bold; background:#fff; color:#0f172a; }.trial-card button.trial-primary { background:linear-gradient(90deg,#3b82f6,#6d3bff); color:#fff; border:0; }.trial-card button:disabled { opacity:.6; cursor:wait; }.trial-close { display:flex; align-items:center; gap:12px; border-top:1px solid #eef1f6; margin-top:26px; padding-top:18px; font-size:13px; color:#75839c; }.trial-close button { border:0; color:#b3372f; }
 @media(max-width:650px) { .trial-banner { flex-wrap:wrap; }.trial-card { padding:24px; }.trial-plans { gap:6px; }.trial-plans label { padding:8px; }.trial-actions,.trial-close { flex-wrap:wrap; } }
+
+/* Hosted connector consent uses the same compact system typography as account controls. */
+.mcp-consent-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f4f6f9; color: #18283b; font: 13px Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.mcp-consent-card { width: min(100%, 520px); padding: 32px; background: #fff; border: 1px solid #d5dce5; border-radius: 8px; box-shadow: 0 8px 24px #162b4610; }
+.mcp-consent-card h1 { font-size: 22px; margin: 16px 0 24px; }
+.mcp-consent-card p { line-height: 1.6; }
+.mcp-consent-card fieldset { margin: 24px 0; padding: 16px; border: 1px solid #d5dce5; border-radius: 4px; }
+.mcp-consent-card legend { padding: 0 8px; font-weight: 700; }
+.mcp-scope { display: flex; gap: 12px; align-items: flex-start; margin: 8px 0 16px; cursor: pointer; }
+.mcp-scope input { margin-top: 3px; }
+.mcp-scope span span { display: block; margin-top: 4px; line-height: 1.5; }
+.mcp-redirect { overflow-wrap: anywhere; color: #526275; }
+.mcp-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
+.mcp-consent-card button { padding: 8px 16px; border-radius: 4px; border: 1px solid #9aa8bb; background: #fff; color: #18283b; cursor: pointer; }
+.mcp-consent-card button.primary { background: #176fa5; border-color: #176fa5; color: #fff; }
+.mcp-consent-card button:disabled { opacity: .55; cursor: default; }
+.mcp-consent-card button:focus-visible, .mcp-scope input:focus-visible { outline: 2px solid #176fa5; outline-offset: 3px; }
+.mcp-connections { max-width: 960px; margin: 0 auto; padding: 24px; }
+.mcp-connections > p { line-height: 1.6; }
+.mcp-table-scroll { overflow-x: auto; margin-top: 24px; }
+.mcp-connections table { width: 100%; border-collapse: collapse; text-align: left; }
+.mcp-connections caption { text-align: left; margin-bottom: 12px; font-weight: 700; }
+.mcp-connections th, .mcp-connections td { padding: 12px; border-bottom: 1px solid var(--border, #d5dce5); vertical-align: top; }
+.mcp-connections thead { background: var(--surface-muted, #f4f6f9); }
+.mcp-connections button { min-height: 32px; }
+.mcp-empty { padding: 24px; border: 1px solid var(--border, #d5dce5); border-radius: 4px; }

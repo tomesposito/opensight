@@ -1,10 +1,11 @@
+import { mcpTables } from './mcp/schema.js';
 import { aiReceiptTables } from './hosted-ai-receipts.js';
 import { randomUUID } from 'node:crypto';
 import { MetadataError, type Database, type SqlConnection, type SqlRow } from './metadata-db.js';
 import { checksum } from './metadata-operator.js';
 import { coordinationNow, type CoordinationDialect } from './coordination-schema.js';
 import { appendOperatorAudit } from './operator-audit.js';
-import { databaseInventory, inventoryTables, snapshotInventory, upgradedAudit, currentInventory, namedWorkspaces, aiWarnings, usageTracking, monthlyBilling, durableAuthoring, accessRequestCapture, ideaCapture, egressReservations, aiReceipts } from './serverless-backup-schema.js';
+import { databaseInventory, inventoryTables, snapshotInventory, upgradedAudit, currentInventory, namedWorkspaces, aiWarnings, usageTracking, monthlyBilling, durableAuthoring, accessRequestCapture, ideaCapture, egressReservations, aiReceipts, connectableMcp } from './serverless-backup-schema.js';
 
 export interface CloudSnapshot {
   version: 1; id: string; deployment: string; epoch: number; createdAt: number; expiresAt: number;
@@ -91,6 +92,7 @@ export async function restoreServerless(db: Database, snapshot: CloudSnapshot, r
   return db.transaction(async c => {
     if (await locked(c, dialect) !== currentInventory) denied('BACKUP_SCHEMA_INVALID');
     if ((await c.query('SELECT 1 FROM h8_ideas LIMIT 1')).length || (await c.query('SELECT 1 FROM h8_access_requests LIMIT 1')).length || (await c.query('SELECT 1 FROM h1_tenants LIMIT 1')).length || (await c.query('SELECT 1 FROM h8_ai_warnings LIMIT 1')).length) denied('RESTORE_TARGET_NOT_EMPTY');
+    for (const table of mcpTables) if ((await c.query(`SELECT 1 FROM ${table} LIMIT 1`)).length) denied('RESTORE_TARGET_NOT_EMPTY');
     const control = await c.query('SELECT * FROM sr_control');
     if (control.length !== 1 || control[0]?.state !== 'maintenance' || control[0]?.deployment !== snapshot.deployment) denied('RESTORE_TARGET_INVALID');
     for (const table of sourceTables.filter(t => t.endsWith('_schema'))) {
@@ -131,6 +133,7 @@ export async function restoreServerless(db: Database, snapshot: CloudSnapshot, r
     await c.query("UPDATE h1_tenants SET state='suspended', version=version+1 WHERE state IN ('active','provisioning')");
     await c.query('UPDATE h1_revisions SET "authorization"="authorization"+1, policy=policy+1, configuration=configuration+1');
     await c.query("UPDATE h2_memberships SET status='removed', version=version+1");
+    await c.query('UPDATE h2_mcp_grants SET revoked=1'); await c.query('UPDATE h2_mcp_tokens SET consumed=1'); await c.query('DELETE FROM h2_mcp_interactions');
     await c.query('UPDATE h2_login_selections SET consumed=1'); await c.query('UPDATE h2_sessions SET revoked=1'); await c.query('UPDATE h6_sessions SET revoked=1');
     await c.query('DELETE FROM h2_onboarding'); await c.query('DELETE FROM h2_invitations');
     await c.query('UPDATE h7_jobs SET stopped=1, next_run=NULL, version=version+1');
@@ -178,6 +181,9 @@ export async function migrateRegistered(db: Database, env: NodeJS.ProcessEnv, sn
         if (fingerprint(await c.query(`SELECT * FROM ${table} LIMIT 100001`)) !== fingerprint(baseline)) denied('MIGRATION_PRESERVATION_FAILED');
       }
       if (upgraded && !namedWorkspaces(sourceInventory) && (await c.query('SELECT 1 FROM h2_login_selections LIMIT 1')).length) denied('MIGRATION_PRESERVATION_FAILED');
+      if (upgraded && !connectableMcp(sourceInventory)) for (const table of mcpTables) {
+        if ((await c.query(`SELECT 1 FROM ${table} LIMIT 1`)).length) denied('MIGRATION_PRESERVATION_FAILED');
+      }
       if (upgraded && !aiReceipts(sourceInventory)) for (const table of aiReceiptTables) {
         if ((await c.query(`SELECT 1 FROM ${table} LIMIT 1`)).length) denied('MIGRATION_PRESERVATION_FAILED');
       }

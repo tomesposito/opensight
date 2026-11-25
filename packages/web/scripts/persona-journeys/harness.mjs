@@ -8,7 +8,7 @@ import { homedir } from 'node:os';
 import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { randomUUID, randomBytes } from 'node:crypto';
+import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import { createServer } from 'vite';
 export { navigate } from '../app-navigation.mjs';
 export { default as assert } from 'node:assert/strict';
@@ -101,6 +101,37 @@ export async function startHostedStack({ invitationSeconds, aiStub = false, usag
 // The real MCP server and SDK exchange protocol messages in process; only the
 // HTTP transport is bridged, preserving the hosted Host boundary and token.
 export async function connectHostedMcp(stack, token) {
+  if ((process.env.OPENSIGHT_J10_MCP_TRANSPORT ?? 'http') === 'http') {
+    const [{ Client }, { StreamableHTTPClientTransport }] = await Promise.all([
+      import('@modelcontextprotocol/sdk/client/index.js'), import('@modelcontextprotocol/sdk/client/streamableHttp.js'),
+    ]);
+    const base = new URL(stack.apiTransport);
+    assert.ok(['localhost', '127.0.0.1', '[::1]'].includes(base.hostname));
+    const post = async (path, body, browser = false, form = false) => {
+      const response = await forward(stack.apiTransport + path, 'POST', { host: new URL(stack.origin).host,
+        'content-type': form ? 'application/x-www-form-urlencoded' : 'application/json',
+        ...(browser ? { authorization: `Bearer ${token}`, origin: stack.origin } : {}) }, form ? new URLSearchParams(body).toString() : JSON.stringify(body));
+      assert.ok(response.status < 300, `OAuth step failed: ${path} (${response.status})`); return JSON.parse(response.body);
+    };
+    const clientInfo = await post('/api/mcp/register', { client_name: 'Local J10 HTTP journey', redirect_uris: ['https://connector.example/callback'], token_endpoint_auth_method: 'none' });
+    const verifier = randomBytes(32).toString('base64url'), scope = 'opensight/mcp.read opensight/mcp.write';
+    const interaction = await post('/api/mcp/oauth/interaction', { client_id: clientInfo.client_id, redirect_uri: clientInfo.redirect_uris[0], scope,
+      response_type: 'code', state: randomUUID(), code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256', resource: `${stack.origin}/api/mcp` }, true);
+    const consent = await post('/api/mcp/oauth/authorize', { id: interaction.id, action: 'approve', scope }, true);
+    const grant = await post('/api/mcp/oauth/token', { grant_type: 'authorization_code', client_id: clientInfo.client_id,
+      code: new URL(consent.redirect).searchParams.get('code'), redirect_uri: clientInfo.redirect_uris[0], code_verifier: verifier }, false, true);
+    const client = new Client({ name: 'opensight-persona-journey-http', version: '1.0.0' });
+    const transport = new StreamableHTTPClientTransport(new URL(`${stack.origin}/api/mcp`), {
+      requestInit: { headers: { Authorization: `Bearer ${grant.access_token}` } },
+      fetch: async (input, init) => {
+        const url = new URL(input); assert.equal(url.origin, stack.origin); assert.equal(url.pathname, '/api/mcp');
+        const response = await forward(stack.apiTransport + url.pathname, init?.method ?? 'GET', { ...Object.fromEntries(new Headers(init?.headers)), host: new URL(stack.origin).host }, init?.body);
+        return new Response(response.body, { status: response.status, headers: response.headers });
+      }
+    });
+    try { await client.connect(transport); } catch (error) { await client.close(); throw error; }
+    return { client, stop: () => client.close() };
+  }
   const [{ Client }, { InMemoryTransport }, { createMcpServer }] = await Promise.all([
     import('@modelcontextprotocol/sdk/client/index.js'), import('@modelcontextprotocol/sdk/inMemory.js'),
     import('../../../mcp-server/dist/index.js'),

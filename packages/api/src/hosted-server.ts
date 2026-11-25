@@ -1,3 +1,5 @@
+import { McpOAuth } from './mcp/oauth.js';
+import { serveMcp } from './mcp/server.js';
 import { downloadAdmission, workspaceDownloads } from './table-download.js';
 import { StoredTableFiles } from './stored-tables.js';
 import { hostedS3Settings } from './source-s3-config.js';
@@ -129,7 +131,7 @@ function code(value: unknown): string {
 }
 function idempotency(request: IncomingMessage): string { return identifier(request.headers['idempotency-key']); }
 function boundary(request: IncomingMessage, origin: string): void {
-  for (const header of ['host', 'authorization', 'origin', 'idempotency-key', 'if-match', 'idea-status', 'idea-tenant']) {
+  for (const header of ['host', 'authorization', 'origin', 'idempotency-key', 'if-match', 'idea-status', 'idea-tenant', 'content-type', 'mcp-protocol-version', 'mcp-session-id']) {
     let count = 0;
     for (let i = 0; i < request.rawHeaders.length; i += 2) if (request.rawHeaders[i]!.toLowerCase() === header) count++;
     if (count > 1) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
@@ -155,6 +157,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   if (typeof options.security?.authenticate !== 'function') throw new MetadataError('HOSTED_VERIFIER_REQUIRED', 503);
   await assertAuditReady(options.membershipDatabase);
   const authenticate = options.security.authenticate;
+  const mcp = options.builtinAuth ? new McpOAuth(options.membershipDatabase, options.builtinAuth, config.origin, clock) : undefined;
   const reference = referenceConfig(options.env ?? process.env);
   if (options.invocation && reference) throw new MetadataError('SERVERLESS_REFERENCE_FORBIDDEN', 503);
   // Every single-node hosted deployment composes billing, including waitlist
@@ -290,6 +293,8 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         send(response, 200, { ready: true }); return;
       }
       if (draining) throw new MetadataError('SERVER_DRAINING', 503);
+      if (await mcp?.route(request, response, path)) return;
+      if (path === '/api/mcp' && options.builtinAuth) { await serveMcp(request, response, server, options.builtinAuth, config.origin, options.invocation?.signal); return; }
       if (/^\/api\/signup(?:\/|$)/.test(path) && path !== '/api/signup/checkout') {
         if (!signup || !signupCfg.enabled) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
         if (request.headers.origin !== 'https://getopensight.org' && !(path === '/api/signup/verify' && request.headers.origin === config.origin)) throw new MetadataError('UNTRUSTED_ORIGIN', 403);

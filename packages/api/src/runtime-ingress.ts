@@ -1,3 +1,4 @@
+import { isMcpPublicPath } from './mcp/paths.js';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { MetadataError } from './metadata-db.js';
@@ -12,7 +13,7 @@ function invalid(): never { throw new MetadataError('HOSTED_REQUEST_INVALID', 40
 function denied(): never { throw new MetadataError('UNTRUSTED_INGRESS', 403); }
 const record = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : invalid();
 const singleton = new Set(['host', 'authorization', 'origin', 'content-type', 'content-length', 'idempotency-key', 'if-match', 'if-none-match', 'if-modified-since', 'if-unmodified-since', 'range', 'limit', 'cursor',
-  'x-opensight-ingress-key-id', 'x-opensight-ingress-secret', 'x-opensight-ingress-origin', 'x-opensight-ingress-peer', 'cloudfront-viewer-address']);
+  'mcp-protocol-version', 'mcp-session-id', 'x-opensight-ingress-key-id', 'x-opensight-ingress-secret', 'x-opensight-ingress-origin', 'x-opensight-ingress-peer', 'cloudfront-viewer-address']);
 export const forgedPrincipalHeaders = ['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id', 'x-tenant', 'x-tenant-id', 'x-subject', 'x-role', 'x-roles', 'x-capabilities'];
 
 export function ingressConfig(env: NodeJS.ProcessEnv): IngressConfig {
@@ -38,7 +39,7 @@ export function ingressConfig(env: NodeJS.ProcessEnv): IngressConfig {
 export function publicPath(path: unknown): string {
   if (typeof path !== 'string' || path.length > 4096 || !/^\/[A-Za-z0-9_./-]*$/.test(path) || path.includes('//') || path.split('/').some(p => p === '.' || p === '..')) invalid();
   let internal: string;
-  if (path === '/api/access-requests') internal = path;
+  if (path === '/api/access-requests' || isMcpPublicPath(path)) internal = path;
   else if (path.startsWith('/api/api/')) internal = path.slice(4);
   else if (/^\/api\/embed\/sessions\/[A-Za-z0-9_-]+\/(redeem|status|content|question|analysis|save)$/.test(path) || /^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(path)) internal = path;
   else throw new MetadataError('RESOURCE_NOT_FOUND', 404);
@@ -47,6 +48,7 @@ export function publicPath(path: unknown): string {
   const unscoped = internal.replace(/^\/api\/namespaces\/[A-Za-z0-9_-]+\//, '/api/');
   if (!/^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(unscoped)
     && internal !== '/api/access-requests'
+    && !isMcpPublicPath(internal)
     && !serverlessV1Methods(unscoped)
     && !/^\/api\/(?:o\/(?:status|generate|calculation|query|plan|revise)|admin\/ai(?:\/(?:key|test))?)$/.test(unscoped)
     && !/^\/api\/invitations(?:\/[A-Za-z0-9_-]+)?$/.test(unscoped)
@@ -66,7 +68,8 @@ export function publicPath(path: unknown): string {
 function routeMethod(path: string, method: string): void {
   const p = path.replace(/^\/api\/namespaces\/[A-Za-z0-9_-]+\//, '/api/');
   let allowed: readonly string[] = ['GET'];
-  if (serverlessV1Methods(p)) allowed = serverlessV1Methods(p)!;
+  if (isMcpPublicPath(path)) allowed = path.startsWith('/.well-known/') ? ['GET'] : path.endsWith('/connections') ? ['GET', 'POST'] : path === '/api/mcp' ? ['POST', 'GET', 'DELETE'] : ['POST'];
+  else if (serverlessV1Methods(p)) allowed = serverlessV1Methods(p)!;
   else if (p === '/api/connectors/s3/browse') allowed = ['POST'];
   else if (path === '/api/access-requests') allowed = ['POST', 'OPTIONS'];
   else if (p === '/api/admin/ai') allowed = ['GET', 'POST'];
@@ -189,7 +192,7 @@ export function adaptGatewayRequest(raw: unknown, env: NodeJS.ProcessEnv): Runti
   if (['GET', 'HEAD'].includes(method) && body.length || h['content-length'] !== undefined && (!/^\d+$/.test(h['content-length']) || Number(h['content-length']) !== body.length)) invalid();
   routeMethod(path, method);
   const forwarded: Record<string, string> = { host: new URL(config.origin).host, 'content-length': String(body.length) };
-  for (const name of ['authorization', 'content-type', 'origin', 'idempotency-key', 'if-match', 'if-none-match', 'if-modified-since', 'if-unmodified-since', 'range', 'accept', 'limit', 'cursor', 'metric-dataset']) if (h[name] !== undefined) forwarded[name] = h[name];
+  for (const name of ['authorization', 'content-type', 'origin', 'idempotency-key', 'if-match', 'if-none-match', 'if-modified-since', 'if-unmodified-since', 'range', 'accept', 'limit', 'cursor', 'metric-dataset', 'mcp-protocol-version', 'mcp-session-id']) if (h[name] !== undefined) forwarded[name] = h[name];
   if (event.cookies !== undefined) {
     if (h.cookie !== undefined) invalid();
     if (!Array.isArray(event.cookies) || event.cookies.some(c => typeof c !== 'string' || /[\r\n\x00]/.test(c)) || Buffer.byteLength(event.cookies.join('; ')) > 8192) invalid();
@@ -205,7 +208,7 @@ export function validateLocalRequest(request: RuntimeRequest, origin: string): v
   if (!['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(request.method)
     || ['GET', 'HEAD'].includes(request.method) && request.body.length
     || h['content-length'] !== undefined && (!/^\d+$/.test(h['content-length']) || Number(h['content-length']) !== request.body.length)) invalid();
-  const path = publicPath(request.path.startsWith('/embed/') || request.path.startsWith('/api/embed/') ? request.path : `/api${request.path}`);
+  const path = publicPath(isMcpPublicPath(request.path) || request.path.startsWith('/embed/') || request.path.startsWith('/api/embed/') ? request.path : `/api${request.path}`);
   routeMethod(path, request.method);
 }
 

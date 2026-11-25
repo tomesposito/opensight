@@ -13,6 +13,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- MCP OAuth exchanges and revocations now have separate per-connection budgets, so independent connections behind one host do not share a ten-request IP limit or consume interactive sign-in budgets; unknown credentials retain dedicated abuse limits (#332).
+
+- Hosted MCP now reports `MCP_RESULT_TOO_LARGE` for unsupported large results instead of returning an unusable chunk descriptor as tool success; the error directs callers to reduce the result size (#332).
+
 - Updated the dashboard grid dependency with upstream drag, resize, collision, and touch interaction fixes (#292), and aligned React with its DOM and test renderers at 19.3.1 (#291).
 
 - The operator tenant detail page now states the billing state plainly in waiting list mode (#326): since the waiting-list change (#241), a tenant on a deployment without Stripe configured has a billing record, so the page showed tier facts with no notice and operators could not tell billing was unconfigured. The Plan & billing section now says billing is not configured on this deployment, that the tenant is in waiting list mode with no payment links, and that a plan is granted manually by an operator when the administrator requests one. Checkout-mode tenants are unchanged.
@@ -65,6 +69,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Security
 
+- MCP credential replay now revokes the whole connection even when an earlier refresh narrowed its scopes; client and PKCE binding remain required before revocation (#332).
+
 - The field-name PII stop now reaches the v1 machine surface that MCP tools map to (#328): `AI_FIELD_NAME_PII` was previously enforced only on the generative Ask O routes, so an AI agent working through MCP never hit it. Dataset queries now check the dataset's permitted (CLS-filtered) columns plus the query's own field names, dashboard questions check their query's field names, and analysis create/update checks every field reference in the definition — each stops with HTTP 400 `AI_FIELD_NAME_PII` before execution or storage, without echoing the sensitive name. The J10 persona journey's PII step now passes as a real assertion instead of a recorded gap.
 
 - Athena queries now require a scanned-byte cost bound before they start (#302): the connector's workgroup setting is required, and the executor verifies via `GetWorkGroup` that the operator-selected workgroup enforces a per-query `BytesScannedCutoffPerQuery`, failing closed with `INVALID_CONNECTOR_CONFIG` when it does not. While polling, reported `DataScannedInBytes` are checked against the verified cutoff; an execution that passes it is stopped and rejected instead of returning results. Athena configurations without a workgroup environment name no longer validate.
@@ -84,6 +90,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 - Marketing meta batch: the page titles and meta descriptions on the home, pricing, QuickSight/Tableau/Power BI alternatives, Metabase/Superset versus and docs pages now match the approved values exactly — no truncated titles and no auto-truncated excerpt descriptions on those pages; the docs generator carries the approved docs values as explicit meta overrides (#238).
 
 ### Added
+
+- Hosted MCP connections now use dynamic public-client OAuth with PKCE and member consent, read/write scopes, one-hour access tokens, rotating refresh tokens, and self-serve revocation under Account. The same 58 tools retain v1 governance and member-attributed action history (#332).
 
 - Insight custom narratives now import, render, export unchanged and can be authored with computation/measure placeholders and number/date formats (#333, IDD D-96 custom narratives). Templates reuse the existing query results and computation values; unsupported syntax, unresolved references and rendered text over 1,000 characters fail with named errors.
 

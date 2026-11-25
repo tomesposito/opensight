@@ -149,12 +149,15 @@ that step. Other journeys keep their existing provider configuration. All model
 responses are deterministic; no live provider or AWS access is needed.
 
 Issue #276: J10 provisions a distinct `author_ai` fixture member and keeps the
-administrator separate. `connectHostedMcp` in `harness.mjs` connects the SDK Client
-and real `createMcpServer` with linked `InMemoryTransport` endpoints. Its injected
-fetch forwards to `stack.apiTransport` on localhost with `Host: opensight.test`
-and the member's real hosted token. The bridge changes transport only. Trusted
-fixture provisioning uses real auth, APIs and Postgres metadata; every agent
-action uses MCP. The original #276 journey added no dependency or product-code change.
+administrator separate. Issue #332 changes `connectHostedMcp` in `harness.mjs`
+to use the SDK's Streamable HTTP client and the app's `/api/mcp` endpoint by
+default. It dynamically registers a public client, approves consent with the
+member's real hosted session, and exchanges an S256-bound code for OAuth
+credentials. Injected fetch forwards to `stack.apiTransport` on localhost with
+`Host: opensight.test`; no outside connector is contacted. Set
+`OPENSIGHT_J10_MCP_TRANSPORT=stdio` to retain the original linked
+`InMemoryTransport` journey. Trusted fixture provisioning uses real auth, APIs
+and Postgres metadata; every agent action uses MCP.
 
 The agent sees its prepared datasets and accessible analyses/dashboards; a real
 second member's private dataset/analysis is absent and direct probes return 404.

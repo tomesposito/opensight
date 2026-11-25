@@ -1,3 +1,4 @@
+import { initializeMcp } from './mcp/schema.js';
 import { MetadataError, type Database } from './metadata-db.js';
 import { initializeJobs } from './job-schema.js';
 
@@ -35,6 +36,7 @@ export async function initializeAuth(database: Database, dialect: 'sqlite' | 'po
         expires_at BIGINT NOT NULL, consumed INTEGER NOT NULL DEFAULT 0)`,
       `CREATE TABLE IF NOT EXISTS h2_requests (operation_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL)`
     ]) await c.query(sql);
+    await initializeMcp(c);
   });
   await initializeJobs(database, dialect);
 }

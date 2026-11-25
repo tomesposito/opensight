@@ -4,7 +4,7 @@ import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const result = await build({ absWorkingDir: root, entryPoints: ['src/index.ts', 'src/cli.ts'], outdir: 'dist',
+const result = await build({ absWorkingDir: root, entryPoints: ['src/index.ts', 'src/cli.ts', 'src/http.ts'], outdir: 'dist',
   bundle: true, platform: 'node', target: 'node24', format: 'esm', metafile: true,
   plugins: [{ name: 'sdk-supported-mit-validator', setup(b) {
     // The low-level protocol imports parseWithCompat; its unused Zod-v3 converter
@@ -42,5 +42,5 @@ for (const output of Object.values(result.metafile.outputs)) {
 writeFileSync(join(root, 'dist/THIRD_PARTY_NOTICES.txt'), [...packages.values()].map(p => `${p.name} ${p.version} (${p.license})\n${p.notice}`).join('\n\n'));
 writeFileSync(join(root, 'dist/license-audit.json'), JSON.stringify([...packages.values()].map(({ notice, ...p }) => p), null, 2) + '\n');
 // tsc supplies declarations; only the audited bundles may remain executable in dist.
-for (const name of readdirSync(join(root, 'dist'))) if ((name.endsWith('.js') && !['cli.js', 'index.js'].includes(name)) || name.endsWith('.map')) rmSync(join(root, 'dist', name));
+for (const name of readdirSync(join(root, 'dist'))) if ((name.endsWith('.js') && !['cli.js', 'index.js', 'http.js'].includes(name)) || name.endsWith('.map')) rmSync(join(root, 'dist', name));
 console.log(`Bundled runtime licenses: ${[...packages.values()].map(p => `${p.name}@${p.version} ${p.license}`).join(', ')}`);

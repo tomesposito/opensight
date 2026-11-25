@@ -40,6 +40,8 @@ export interface ServerOptions {
   baseUrl: string;
   credentials: Credentials;
   fetch?: typeof fetch;
+  /** Hosted transport scope filter; omitted by stdio, whose inventory is unchanged. */
+  allowedTools?: ReadonlySet<string>;
 }
 export function apiBase(value: string): URL {
   const url = new URL(value);
@@ -58,10 +60,11 @@ export function createMcpServer(options: ServerOptions): Server {
     [op.name, schemaValidator.getValidator(op.tool.inputSchema.properties!.query as JsonSchemaType)]));
   const server = new Server({ name: 'opensight-v1', version: serverVersion, title: `OpenSight API v${apiVersion}` },
     { jsonSchemaValidator: schemaValidator, capabilities: { tools: {} }, instructions: `Tools map exactly to OpenSight HTTP API ${apiVersion}. One configured user and tenant. Response headers are in _meta.headers.` });
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: operations.map(op => op.tool) }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: operations.filter(op => !options.allowedTools || options.allowedTools.has(op.name)).map(op => op.tool) }));
   server.setRequestHandler(CallToolRequestSchema, async request => {
     const op = operations.find(candidate => candidate.name === request.params.name);
     if (!op) throw new McpError(ErrorCode.InvalidParams, 'Unknown tool');
+    if (options.allowedTools && !options.allowedTools.has(op.name)) return failure('MCP_SCOPE_REQUIRED', 'This connection does not permit this tool');
     const args = request.params.arguments ?? {};
     if (!record(args)) throw new McpError(ErrorCode.InvalidParams, 'Expected tool arguments object');
     const properties = op.tool.inputSchema.properties ?? {};

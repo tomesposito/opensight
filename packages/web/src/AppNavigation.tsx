@@ -111,6 +111,7 @@ export function AppNavigation({ route, navigate, recentPages = [], children }: {
           <strong>{access.mode === 'hosted' ? access.session?.name ?? 'Hosted workspace' : access.mode === 'local' ? 'Local workspace' : 'Public sample preview'}</strong>
           {access.mode === 'hosted' && (access.session?.workspaceName || access.session?.tenantId) && <p className="account-workspace">{access.session?.workspaceName || access.session?.tenantId}</p>}
           <p>{access.mode === 'hosted' ? access.session?.role ?? 'No active session' : access.mode === 'local' ? 'Files and drafts stay on this computer.' : 'Synthetic sample data · No hosted account.'}</p>
+          {access.mode === 'hosted' && <AppLink to={{ page: 'mcp-connections' }} navigate={navigate} current={route?.page === 'mcp-connections'}>MCP connections</AppLink>}
           {access.mode === 'hosted' && access.signOut && <button type="button" onClick={() => void access.signOut?.()}>Sign out</button>}
         </div>
       </details>

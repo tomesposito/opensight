@@ -778,6 +778,7 @@ Headless API decision register (issue #95):
 | ID | Contract | Status / gate |
 | --- | --- | --- |
 | [D-70](itd/D-70-mcp-runtime-boundaries.md) | MCP runtime boundaries | ✅ Explicit operator OAuth exchange configuration; MIT-only bundled stdio SDK runtime |
+| [D-95](idd/D-95-connectable-mcp.md) | Connectable MCP (#332) | ✅ Hosted Streamable HTTP, in-app public-client OAuth/PKCE, member authority, consent and self-serve revoke; supersedes D-70 transport/exchange exclusion |
 | [D-71](itd/D-71-pilot-migration-release.md) | Pilot additive migration release | ✅ Bounded operator bridge, registered backup, real promotion before the new compatibility baseline |
 | [D-37](idd/D-37-headless-first-api.md) | Headless-first API foundation | ✅ REST/OpenAPI, no raw SQL, tenant-scoped user credentials and rate limiting |
 | [D-38](idd/D-38-dashboard-publish-semantics.md) | Dashboard publish semantics | ✅ Immutable versioned definition, live data; publish authorization remains with the dashboards slice |

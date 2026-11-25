@@ -1,4 +1,6 @@
 import { hostedS3Settings } from './source-s3-config.js';
+import type { IncomingMessage } from 'node:http';
+import { mcpResultBytes, mcpResultSizeError } from './mcp/results.js';
 import { HostedAIReceipts } from './hosted-ai-receipts.js';
 import { HostedAI } from './hosted-ai.js';
 import type { AiMeter } from './ai-settings.js';
@@ -6,7 +8,7 @@ import { unsubscribePath } from './digest-routes.js';
 import { disabledAnalytics } from './analytics.js';
 import { createBuiltinHostedServer, type HostedInvocationAdapters } from './hosted-server.js';
 import { MetadataError, type Database } from './metadata-db.js';
-import { TenantMetadata } from './metadata.js';
+import { TenantMetadata, type TenantContext } from './metadata.js';
 import { TenantBudgets } from './budgets.js';
 import { HostedUsage, entitlementConfig } from './hosted-usage.js';
 import { InvocationScope } from './runtime-scope.js';
@@ -33,7 +35,7 @@ import { DurableUploadRoutes } from './upload-routes.js';
 import { ServerlessWork } from './serverless-work.js';
 import type { HostedAuth } from './hosted-auth.js';
 import { ResultObjects } from './result-objects.js';
-import { DurableResults } from './durable-results.js';
+import { DurableResults, type ResultReader } from './durable-results.js';
 import { method, send } from './automation-routes.js';
 import { JobStore } from './job-store.js';
 import { serverlessMail } from './serverless-mail.js';
@@ -68,6 +70,16 @@ export function serverlessDataPath(raw: string): boolean {
     || /^\/api\/embed\/sessions\/[A-Za-z0-9_-]+\/(?:redeem|status|content|question|analysis|save)$/.test(path)
     || /^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(path);
 }
+/** Keep unsupported MCP results inline as named failures, before any chunk storage. */
+export function serverlessResultPublisher(results: Pick<DurableResults, 'publish'>, authority: (request: IncomingMessage) => Promise<ResultReader>) {
+  return async (request: IncomingMessage, context: TenantContext, status: number, body: unknown, recheck: () => Promise<void>) => {
+    if (Buffer.byteLength(JSON.stringify(body)) <= mcpResultBytes) return { status, body };
+    const reader = await authority(request);
+    await recheck();
+    if (request.headers.authorization?.startsWith('Bearer mcp_a_')) throw new MetadataError(mcpResultSizeError.errorCode, 413, mcpResultSizeError.message);
+    return results.publish(context, body, reader, recheck);
+  };
+}
 export function serverlessAdapters(database: Database, metadata: TenantMetadata, budgets: TenantBudgets, aws: InvocationAws,
   env: NodeJS.ProcessEnv, auth?: HostedAuth, analytics = disabledAnalytics, aiMeter?: AiMeter): HostedInvocationAdapters {
   const deployment = deploymentId(env), config = hostedConfig(env), bucket = env.OPENSIGHT_ARTIFACT_BUCKET;
@@ -84,10 +96,7 @@ export function serverlessAdapters(database: Database, metadata: TenantMetadata,
   const authority = (request: Parameters<HostedAuth['resultSession']>[0]) => {
     if (!auth) throw new MetadataError('RESULT_SESSION_REQUIRED', 503); return auth.resultSession(request);
   };
-  const data = new HostedDataRoutes(new HostedData(sources, undefined, budgets, work.cache, work, analytics), jobs, async (request, context, status, body, recheck) => {
-    if (Buffer.byteLength(JSON.stringify(body)) <= 1024 * 1024) return { status, body };
-    return results.publish(context, body, await authority(request), recheck);
-  });
+  const data = new HostedDataRoutes(new HostedData(sources, undefined, budgets, work.cache, work, analytics), jobs, serverlessResultPublisher(results, authority));
   const embedContent = new EmbedContent(new HostedData(embedSources, undefined, budgets, work.cache, work, analytics));
   const uploadService = new DurableUploads(metadata, dispatch, ledger, new UploadObjects(aws, bucket)), uploads = new DurableUploadRoutes(uploadService);
   const ai = new HostedAI(data, config.encryptionKey.toString('base64'), env, aiMeter, undefined, new HostedAIReceipts(database));

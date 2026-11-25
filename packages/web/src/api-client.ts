@@ -1,3 +1,4 @@
+import type { McpInteraction, McpConnection } from './mcp-oauth.js';
 import type { PrepJoinDiagnostics } from '@opensight/query-engine/browser';
 import type { Notebook, NotebookSummary, NotebookContent, NotebookRun, NotebookSnapshot, NotebookDataset } from './notebooks.js';
 import type { MetricSubscriptionInput, MetricSubscription, MetricDigestPreview } from './metric-digests.js';
@@ -614,6 +615,10 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     if (typeof body.DashboardId !== 'string' || !/^[A-Za-z0-9_-]{1,512}$/.test(body.DashboardId) || !Number.isSafeInteger(body.Version) || Number(body.Version) < 1 || !Array.isArray(body.Errors)) throw new ApiError('DASHBOARD_RESPONSE_INVALID: Missing publication receipt.');
     return body as unknown as Publication;
   }
+  const mcpInteraction = (params: Record<string, string>, signal?: AbortSignal) => resource<McpInteraction>('/api/mcp/oauth/interaction', 'POST', params, signal);
+  const mcpAuthorize = (id: string, action: 'approve' | 'deny', scope: string) => resource<{ redirect: string }>('/api/mcp/oauth/authorize', 'POST', { id, action, scope });
+  const mcpConnections = (signal?: AbortSignal) => resource<{ connections: McpConnection[] }>('/api/mcp/connections', 'GET', undefined, signal);
+  const revokeMcpConnection = (id: string) => resource<{ revoked: boolean }>('/api/mcp/connections', 'POST', { id });
   return {
     listMyIdeas: (signal?: AbortSignal) => rawResource('/api/ideas', 'GET', undefined, signal) as Promise<{ ideas: Idea[] }>,
     submitIdea: (input: { title: string; description: string; surface: string }) => rawResource('/api/ideas', 'POST', input) as Promise<Idea>,
@@ -632,6 +637,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     onDemand, connect, subscribeAvailability,
     checkout, requestPaidPlan, withdrawPaidRequest, exportWorkspace, closeWorkspace, enroll, acceptEnrollment, login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob, retryJobDelivery,
+    mcpInteraction, mcpAuthorize, mcpConnections, revokeMcpConnection,
     listPrepTemplates, proposePrepTemplate, publishPrepTemplate, createFromPrepTemplate, promoteCalculation, metricDatasets, listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, publishStoredTable, downloadStoredTable, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, joinDiagnostics, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, planO, reviseO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     listNotebooks, getNotebook, createNotebook, updateNotebook, deleteNotebook, runNotebook, notebookDatasets, notebookRuns, snapshotNotebookCell,
     listInputTables, getInputTable, createInputTable, updateInputTable, deleteInputTable, setInputTableEditors, addInputTableRow, updateInputTableRow, deleteInputTableRow, getInputTableAudit,
