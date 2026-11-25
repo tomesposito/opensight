@@ -14,7 +14,84 @@ const allowed = (value: Obj, names: string[]) => {
   for (const name of Object.keys(value)) if (!names.includes(name)) insightFail('INSIGHT_CONFIGURATION_UNSUPPORTED', `unsupported property ${name}`);
 };
 const variants = ['totalAggregation', 'maximumMinimum', 'topBottomRanked', 'growthRate', 'periodOverPeriod', 'metricComparison', 'forecast', 'periodToDate', 'uniqueValues', 'topBottomMovers', 'anomaly'] as const;
-type Kind = typeof variants[number];
+export type InsightKind = typeof variants[number];
+type Kind = InsightKind;
+/** The bounded public catalog is shared by structural validation and authoring. */
+export const INSIGHT_OUTPUTS: Record<Kind, readonly string[]> = {
+  totalAggregation: ['value', 'formattedValue'],
+  maximumMinimum: ['value', 'formattedValue', 'category', 'percentOfTotal', 'percentOfTotal.value', 'percentOfTotal.formattedValue'],
+  topBottomRanked: ['itemsCount', 'items[i].category', 'items[i].value', 'items[i].formattedValue'],
+  metricComparison: ['value', 'formattedValue', 'targetValue', 'targetValue.formattedValue', 'difference', 'difference.formattedValue', 'percentDifference', 'percentDifference.value', 'percentDifference.formattedValue'],
+  growthRate: ['value', 'formattedValue', 'previousValue', 'previousValue.formattedValue', 'change', 'change.formattedValue', 'percentChange', 'percentChange.value', 'percentChange.formattedValue', 'currentPeriod', 'previousPeriod'],
+  periodOverPeriod: ['value', 'formattedValue', 'previousValue', 'previousValue.formattedValue', 'change', 'change.formattedValue', 'percentChange', 'percentChange.value', 'percentChange.formattedValue', 'currentPeriod', 'previousPeriod'],
+  periodToDate: ['value', 'formattedValue', 'period'],
+  forecast: ['value', 'formattedValue', 'lowerBound', 'lowerBound.formattedValue', 'upperBound', 'upperBound.formattedValue', 'period'],
+  uniqueValues: ['itemsCount', 'items[i]'],
+  topBottomMovers: ['itemsCount', 'items[i].category', 'items[i].previousValue', 'items[i].previousValue.formattedValue', 'items[i].value', 'items[i].formattedValue', 'items[i].change', 'items[i].change.formattedValue', 'items[i].percentChange', 'items[i].percentChange.value'],
+  anomaly: ['itemsCount', 'items[i].period', 'items[i].value', 'items[i].formattedValue'],
+};
+export interface InsightPlaceholderFormat { decimals?: number; grouping?: boolean; percent?: true; date?: NonNullable<Field['dateGranularity']> }
+export type InsightTemplatePart = { kind: 'text'; text: string } | {
+  kind: 'placeholder'; format: InsightPlaceholderFormat;
+  reference: { kind: 'field'; fieldId: string; output: string } | { kind: 'computation'; computationId: string; output: string; index?: number };
+};
+export const customNarrativeUnsupported = (detail: string): never => insightFail('INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED',
+  `bounded subset supports only plain text, catalog computation/measure placeholders and number/date formats: ${detail}`);
+
+function parseCustomNarrative(raw: unknown, entries: readonly [Kind, Obj][]): InsightTemplatePart[] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return customNarrativeUnsupported('expected an object with only narrative');
+  const object = raw as Obj;
+  if (Object.keys(object).some(key => key !== 'narrative') || typeof object.narrative !== 'string') return customNarrativeUnsupported('expected only a narrative string');
+  const template = object.narrative;
+  if (template.includes('$')) return customNarrativeUnsupported('parameters ($) are unsupported');
+  const parts: InsightTemplatePart[] = [];
+  let cursor = 0;
+  const pattern = /\{([^{}]*)\}/g;
+  for (const match of template.matchAll(pattern)) {
+    const literal = template.slice(cursor, match.index);
+    if (/[{}]/.test(literal)) return customNarrativeUnsupported('nested or unbalanced braces');
+    if (literal) parts.push({ kind: 'text', text: literal });
+    const [ref, formats, extra] = match[1]!.split('|');
+    if (extra !== undefined || !ref || !/^[\w-]+(?:\.[\w-]+(?:\[\d+\])?)*$/.test(ref)) return customNarrativeUnsupported('invalid placeholder reference');
+    const format: InsightPlaceholderFormat = {};
+    if (formats !== undefined) for (const pair of formats.split(',')) {
+      const [key, value, extra] = pair.split(':');
+      if (!key || extra !== undefined || Object.hasOwn(format, key)) return customNarrativeUnsupported('invalid or repeated format');
+      if (key === 'decimals' && /^[0-6]$/.test(value ?? '')) format.decimals = Number(value);
+      else if (key === 'grouping' && (value === 'true' || value === 'false')) format.grouping = value === 'true';
+      else if (key === 'percent' && value === 'true') format.percent = true;
+      else if (key === 'date' && (value === 'DAY' || value === 'MONTH' || value === 'QUARTER' || value === 'YEAR')) format.date = value;
+      else return customNarrativeUnsupported(`unknown format ${pair}`);
+    }
+    const [name, ...segments] = ref.split('.');
+    let reference: Extract<InsightTemplatePart, { kind: 'placeholder' }>['reference'];
+    if (name === 'field') {
+      const [fieldId, output = 'value', ...rest] = segments;
+      if (!fieldId || !/^[\w-]+$/.test(fieldId) || rest.length || !['value', 'formattedValue'].includes(output)) return customNarrativeUnsupported('invalid field reference');
+      reference = { kind: 'field', fieldId, output };
+    } else {
+      const found = entries.filter(([, body]) => (body.name ?? body.computationId) === name);
+      if (found.length !== 1) return insightFail('INSIGHT_CUSTOM_NARRATIVE_REFERENCE', `computation ${name} is ${found.length ? 'ambiguous' : 'not on this Insight'}`);
+      const [kind, body] = found[0]!, output = segments.join('.');
+      if (!INSIGHT_OUTPUTS[kind].includes(output.replace(/\[\d+\]/g, '[i]'))) return customNarrativeUnsupported(`unknown ${kind} output ${output}`);
+      const index = /^items\[(\d+)\]/.exec(output);
+      reference = { kind: 'computation', computationId: body.computationId as string, output, ...(index ? { index: Number(index[1]) } : {}) };
+    }
+    parts.push({ kind: 'placeholder', reference, format });
+    cursor = match.index + match[0].length;
+  }
+  const tail = template.slice(cursor);
+  if (/[{}]/.test(tail)) return customNarrativeUnsupported('nested or unbalanced braces');
+  if (tail) parts.push({ kind: 'text', text: tail });
+  return parts;
+}
+
+/** Parse with the same structural checks used by import, drafts and querying. */
+export function insightTemplate(config: unknown): InsightTemplatePart[] | undefined {
+  const entries = computations(config);
+  const c = insightObject(config);
+  return Object.hasOwn(c, 'customNarrative') ? parseCustomNarrative(c.customNarrative, entries ?? []) : undefined;
+}
 interface AnomalyDetection { direction: 'HIGHER' | 'LOWER' | 'BOTH'; minSensitivityPercentage?: number }
 export type InsightRequest = { id: string; measure: number } & (
   { kind: Exclude<Kind, 'forecast' | 'periodToDate' | 'uniqueValues' | 'topBottomMovers' | 'anomaly'>; target?: number; type?: string; size?: number }
@@ -93,11 +170,12 @@ function bindingShape(raw: unknown, measure: boolean): { variant: string; field:
 
 function computations(config: unknown): [Kind, Obj][] | undefined {
   const c = insightObject(config);
-  if (Object.hasOwn(c, 'customNarrative')) insightFail('INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED', 'custom narrative templates and placeholders are not supported');
-  allowed(c, ['computations']);
-  if (c.computations === undefined) return;
-  if (!Array.isArray(c.computations) || !c.computations.length || c.computations.length > 100) insightFail('INSIGHT_COMPUTATION_INVALID', 'expected 1–100 computations');
-  return (c.computations as unknown[]).map(raw => {
+  allowed(c, ['computations', 'customNarrative']);
+  const custom = Object.hasOwn(c, 'customNarrative');
+  if (c.computations === undefined && !custom) return;
+  const rawComputations = c.computations === undefined ? [] : c.computations;
+  if (!Array.isArray(rawComputations) || (!rawComputations.length && !custom) || rawComputations.length > 100) insightFail('INSIGHT_COMPUTATION_INVALID', 'expected 1–100 computations (or zero with customNarrative)');
+  const entries = (rawComputations as unknown[]).map((raw): [Kind, Obj] => {
     const entries = Object.entries(insightObject(raw));
     if (entries.length !== 1) return insightFail('INSIGHT_COMPUTATION_INVALID', 'expected exactly one computation variant');
     const [kind, value] = entries[0]!;
@@ -126,6 +204,8 @@ function computations(config: unknown): [Kind, Obj][] | undefined {
     if (kind === 'topBottomMovers') moversProperties(body);
     return [kind as Kind, body];
   });
+  if (custom) parseCustomNarrative(c.customNarrative, entries);
+  return entries;
 }
 
 /**
@@ -225,6 +305,11 @@ export function topBottomMoversTimeColumn(config: unknown): string | undefined {
 export function normalizeInsight(config: unknown, dimensions: Field[], measures: Field[]): InsightRequest[] {
   validateInsightConfiguration(config);
   const entries = computations(config);
+  for (const part of insightTemplate(config) ?? []) if (part.kind === 'placeholder' && part.reference.kind === 'field') {
+    const { fieldId } = part.reference;
+    if (!measures.some(field => field.id === fieldId) || dimensions.some(field => field.id === fieldId))
+      insightFail('INSIGHT_CUSTOM_NARRATIVE_REFERENCE', `field ${fieldId} must be a measure bound in this Insight's wells`);
+  }
   const moversOnly = !!entries?.length && entries.every(([kind]) => kind === 'topBottomMovers');
   if (moversOnly ? dimensions.length !== 2 : dimensions.length !== 1) insightFail('INSIGHT_CATEGORY_REQUIRED', moversOnly ? 'expected a Category dimension and a Time dimension' : 'expected exactly one Category dimension');
   if (measures.length > 2 || (measures.length < 1 && !(entries?.length && entries.every(([kind]) => kind === 'uniqueValues')))) insightFail('INSIGHT_VALUES_REQUIRED', 'expected one Values measure, or two for comparison');
