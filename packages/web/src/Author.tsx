@@ -1,4 +1,5 @@
 import { hostedAnalysisInput, saveHostedDraft, publishHostedDraft, type PublishingClient, type HostedDraftLink } from './hosted-publish.js';
+import { INSIGHT_OUTPUTS, type InsightKind } from './insight-configuration.js';
 import { unresolvedFieldDiagnostics, unresolvedFieldMessage } from './unresolved-fields.js';
 import { SheetObjectCard, SheetObjectProperties } from './SheetObjectCard.js';
 import { useAccess, allowed } from './access.js';
@@ -49,7 +50,7 @@ import { LiveAuthorVisual } from './LiveAuthorVisual.js';
 import { buildDistinctQuery, loadAuthorRows } from './author-query.js';
 import type { QueryClient } from './author-query.js';
 import {
-  authorVisualProblem, VISUAL_TYPES, GRID_COLUMNS, FIELD_GROUPS, fieldGroup, activeSheet, calculationError, dataFields, dimensionLabel,
+  authorVisualProblem, insightMeasureId, VISUAL_TYPES, GRID_COLUMNS, FIELD_GROUPS, fieldGroup, activeSheet, calculationError, dataFields, dimensionLabel,
   emptyDraft, serializeDraft, sheetParameters, tabular, visualDimensions, grouped, splitDimensions, noDimensions, capabilityNote, hasSmallMultiplesWell, hasBreakdownWell,
 } from './authoring.js';
 import type { AuthorAction, AuthorDataset, AuthorDraft, AuthorVisual, CalculatedField, FieldGroup, VisualKind, Well } from './authoring.js';
@@ -792,6 +793,20 @@ function ParameterFilterEditor({ dataset, parameters, calculations, dispatch }: 
 }
 
 function InsightOptions({ visual, dispatch }: { visual: AuthorVisual; dispatch: Dispatch<AuthorAction> }) {
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const insertedCursor = useRef<number | undefined>(undefined);
+  const [format, setFormat] = useState('');
+  const { customNarrative, ...computedConfiguration } = visual.insightConfiguration ?? {};
+  const template = customNarrative && typeof customNarrative === 'object' && 'narrative' in customNarrative && typeof customNarrative.narrative === 'string' ? customNarrative.narrative : '';
+  useEffect(() => {
+    if (insertedCursor.current === undefined) return;
+    textarea.current?.focus();
+    textarea.current?.setSelectionRange(insertedCursor.current, insertedCursor.current);
+    insertedCursor.current = undefined;
+  }, [template]);
+  const editTemplate = (narrative: string) => dispatch({ type: 'insight', configuration: {
+    ...computedConfiguration, ...(narrative ? { customNarrative: { narrative } } : {}),
+  } });
   const raw = visual.insightConfiguration?.computations;
   const computations = Array.isArray(raw) ? raw as Record<string, Record<string, unknown>>[] : [];
   const first = computations[0];
@@ -800,9 +815,13 @@ function InsightOptions({ visual, dispatch }: { visual: AuthorVisual; dispatch: 
   const preset = (kind: string, n = size): Record<string, unknown> => kind === 'summary' ? {} : { computations: kind === 'topBottomRanked'
     ? ['TOP', 'BOTTOM'].map(type => ({ topBottomRanked: { computationId: type.toLowerCase(), type, resultSize: n } }))
     : [{ [kind]: { computationId: kind } }] };
-  const selected = JSON.stringify(visual.insightConfiguration ?? {}) === JSON.stringify(preset(kind ?? 'summary')) ? kind : 'imported';
+  const selected = JSON.stringify(computedConfiguration) === JSON.stringify(preset(kind ?? 'summary')) ? kind : 'imported';
+  const editPreset = (configuration: Record<string, unknown>) => dispatch({ type: 'insight', configuration: { ...configuration, ...(customNarrative !== undefined ? { customNarrative } : {}) } });
+  const placeholders = computations.flatMap(computation => Object.entries(computation).flatMap(([kind, body]) =>
+    Object.hasOwn(INSIGHT_OUTPUTS, kind) ? INSIGHT_OUTPUTS[kind as InsightKind].map(output => `${String(body.name ?? body.computationId)}.${output.replace('[i]', '[0]')}`) : []));
+  placeholders.push(...visual.measures.map(name => `field.${insightMeasureId(visual, name)}`));
   return <>
-    <label>Narrative computation<select aria-label="Narrative computation" value={selected} onChange={e => dispatch({ type: 'insight', configuration: preset(e.target.value) })}>
+    <label>Narrative computation<select aria-label="Narrative computation" value={selected} onChange={e => editPreset(preset(e.target.value))}>
       <option value="summary">Summary (total, contributors, available comparisons)</option>
       <option value="totalAggregation">Total aggregation</option><option value="topBottomRanked">Top and bottom ranked</option>
       <option value="growthRate">Growth rate (date required)</option><option value="periodOverPeriod">Period over period (date required)</option>
@@ -814,7 +833,22 @@ function InsightOptions({ visual, dispatch }: { visual: AuthorVisual; dispatch: 
       {selected === 'imported' && <option value="imported" disabled>Imported computations (choose to replace)</option>}
     </select></label>
     {selected === 'topBottomRanked' && <label>Ranked categories<input type="number" min="1" max="20" value={size} onChange={e => {
-      const n = Number(e.target.value); if (Number.isInteger(n) && n >= 1 && n <= 20) dispatch({ type: 'insight', configuration: preset('topBottomRanked', n) });
+      const n = Number(e.target.value); if (Number.isInteger(n) && n >= 1 && n <= 20) editPreset(preset('topBottomRanked', n));
     }} /></label>}
+    <label>Custom narrative<textarea ref={textarea} aria-label="Custom narrative template" rows={4} value={template} onChange={e => editTemplate(e.target.value)} /></label>
+    <label>Placeholder format<select aria-label="Placeholder format" value={format} onChange={e => setFormat(e.target.value)}>
+      <option value="">None</option><option value="decimals:0">decimals:0</option><option value="decimals:2">decimals:2</option>
+      <option value="percent:true">Percent</option><option value="grouping:false">grouping:false</option>
+    </select></label>
+    <label>Insert placeholder<select aria-label="Insert placeholder" value="" onChange={e => {
+      if (!e.target.value) return;
+      const start = textarea.current?.selectionStart ?? template.length, end = textarea.current?.selectionEnd ?? start;
+      const placeholder = `{${e.target.value}${format ? `|${format}` : ''}}`;
+      insertedCursor.current = start + placeholder.length;
+      editTemplate(template.slice(0, start) + placeholder + template.slice(end));
+    }}>
+      <option value="">Choose a value</option>
+      {[...new Set(placeholders)].map(reference => <option key={reference} value={reference}>{reference}</option>)}
+    </select></label>
   </>;
 }

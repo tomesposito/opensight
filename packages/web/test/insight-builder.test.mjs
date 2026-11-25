@@ -58,6 +58,7 @@ test('native InsightVisual computations hydrate wells, render equally in both di
 test('unsupported native computations and properties appear in import reports, block queries, and retain originals', () => {
   for (const [change, code] of [
     [c => { c.Computations = [{ Forecast: { ComputationId: 'forecast', Time: c.Computations[0].TopBottomRanked.Category, Value: c.Computations[0].TopBottomRanked.Value } }]; }, 'INSIGHT_TIME_REQUIRED'],
+    // Preserve the native parameter rejection alongside the subset acceptance below.
     [c => { c.CustomNarrative = { Narrative: '${forecast.result}' }; }, 'INSIGHT_CUSTOM_NARRATIVE_UNSUPPORTED'],
     [c => { c.Computations = [{ GrowthRate: { ComputationId: 'growth', Time: c.Computations[0].TopBottomRanked.Category, Value: c.Computations[0].TopBottomRanked.Value } }]; }, 'INSIGHT_TIME_REQUIRED'],
     [c => { c.NativeFutureOption = true; }, 'INSIGHT_CONFIGURATION_UNSUPPORTED'],
@@ -247,4 +248,42 @@ test('anomaly authoring preset dispatches, serializes and round-trips with the d
   assert.throws(() => compile(categorical), /INSIGHT_TIME_REQUIRED/);
   await act(() => renderer.update(createElement(AuthorCanvas, { draft: categorical, dispatch() {} })));
   assert.match(JSON.stringify(renderer.toJSON()), /INSIGHT_TIME_REQUIRED/);
+});
+
+test('custom narrative editor inserts catalog/field placeholders and formats, round-trips, and clears only the template', async t => {
+  const oldWindow = globalThis.window, oldAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
+  globalThis.window = { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) };
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let renderer, lastAction;
+  const computations = [{ totalAggregation: { computationId: 'sum', name: 'Total' } }, { topBottomRanked: { computationId: 'top', type: 'TOP', resultSize: 2 } }];
+  let draft = authorReducer(add(), { type: 'insight', configuration: { computations } });
+  const dispatch = action => { lastAction = action; draft = authorReducer(draft, action); };
+  const update = () => renderer.update(createElement(AuthorCanvas, { draft, dispatch }));
+  const control = label => renderer.root.findByProps({ 'aria-label': label });
+  const change = async (label, value) => { await act(() => control(label).props.onChange({ target: { value } })); await act(update); };
+  t.after(async () => { if (renderer) await act(() => renderer.unmount()); globalThis.window = oldWindow; globalThis.IS_REACT_ACT_ENVIRONMENT = oldAct; });
+  await act(() => { renderer = create(createElement(AuthorCanvas, { draft, dispatch })); });
+  const options = control('Insert placeholder').findAllByType('option').map(option => option.props.value);
+  for (const option of ['Total.value', 'Total.formattedValue', 'top.itemsCount', 'top.items[0].category', 'top.items[0].value', 'field.revenue']) assert.ok(options.includes(option));
+  assert.ok(!options.includes('sum.value')); assert.ok(!options.includes('field.region'));
+  assert.deepEqual(control('Placeholder format').findAllByType('option').map(option => option.props.value), ['', 'decimals:0', 'decimals:2', 'percent:true', 'grouping:false']);
+  await change('Custom narrative template', 'Revenue ');
+  await change('Placeholder format', 'decimals:2');
+  await change('Insert placeholder', 'Total.value');
+  assert.deepEqual(lastAction, { type: 'insight', configuration: { computations, customNarrative: { narrative: 'Revenue {Total.value|decimals:2}' } } });
+  await change('Custom narrative template', `${control('Custom narrative template').props.value}\n\nSum `);
+  await change('Placeholder format', 'grouping:false');
+  await change('Insert placeholder', 'field.revenue');
+  validateDraft(draft);
+  const template = 'Revenue {Total.value|decimals:2}\n\nSum {field.revenue|grouping:false}';
+  assert.equal(visual(draft).insightConfiguration.customNarrative.narrative, template);
+  const bundle = bundleOf(serializeDraft(draft)), imported = importBundle(bundle);
+  assert.deepEqual(visual(imported).imported.issues, []); assert.deepEqual(exportBundle(imported), bundle);
+  const rows = [{ region: 'East', revenue: 1234.5 }];
+  const compileRows = d => compileVisual({ source: 'bundle', rows, definition: serializeVisual(visual(d)), path: '$', bindings: {} });
+  assert.equal(compileRows(draft).narrative.text, 'Revenue 1,234.50\n\nSum 1234.5');
+  assert.deepEqual(compileRows(imported).narrative, compileRows(draft).narrative);
+  await change('Custom narrative template', '');
+  assert.deepEqual(lastAction, { type: 'insight', configuration: { computations } });
+  assert.match(compileRows(draft).narrative.text, /Total revenue/);
 });
