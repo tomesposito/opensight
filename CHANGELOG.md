@@ -17,6 +17,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 - MCP OAuth exchanges and revocations now have separate per-connection budgets, so independent connections behind one host do not share a ten-request IP limit or consume interactive sign-in budgets; unknown credentials retain dedicated abuse limits (#332).
 
+- Hosted MCP now reports `MCP_RESULT_TOO_LARGE` for unsupported large results instead of returning an unusable chunk descriptor as tool success; the error directs callers to reduce the result size (#332).
+
 - Updated the dashboard grid dependency with upstream drag, resize, collision, and touch interaction fixes (#292), and aligned React with its DOM and test renderers at 19.3.1 (#291).
 
 - The operator tenant detail page now states the billing state plainly in waiting list mode (#326): since the waiting-list change (#241), a tenant on a deployment without Stripe configured has a billing record, so the page showed tier facts with no notice and operators could not tell billing was unconfigured. The Plan & billing section now says billing is not configured on this deployment, that the tenant is in waiting list mode with no payment links, and that a plan is granted manually by an operator when the administrator requests one. Checkout-mode tenants are unchanged.

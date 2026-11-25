@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { authFixture } from './hosted-helpers.mjs';
 import { serving } from './v1-helpers.mjs';
+import { migrateBudgets } from '../dist/budget-store.js';
 export const readScope = 'opensight/mcp.read', writeScope = 'opensight/mcp.write', allScopes = `${readScope} ${writeScope}`;
-export async function mcpFixture(t, env = {}, options = {}) {
-  const f = await authFixture(t), http = await serving(t, f, env, { clock: f.clock, ...options });
+export async function mcpFixture(t, env = {}, { testBudgets, ...options } = {}) {
+  const f = await authFixture(t);
+  if (testBudgets) await migrateBudgets(f.db, testBudgets, 'frozen');
+  const http = await serving(t, f, env, { clock: f.clock, ...options });
   let session = await f.login();
   const browser = (path, body, token = session.token) => http(path, { method: body === undefined ? 'GET' : 'POST', body, token, headers: { Origin: f.config.origin } });
   const form = (path, body) => http(path, { method: 'POST', rawBody: new URLSearchParams(body).toString(), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });

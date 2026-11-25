@@ -4,6 +4,7 @@ import type { HostedAuth } from '../hosted-auth.js';
 import { dispatchRuntimeRequest } from '../runtime-http-bridge.js';
 import { MetadataError } from '../metadata-db.js';
 import { send } from '../automation-routes.js';
+import { isResultDescriptor, mcpResultBytes, mcpResultSizeError } from './results.js';
 
 /** Only the generated v1 request crosses this in-process bridge; no network fetch or identity headers. */
 export async function serveMcp(request: IncomingMessage, response: ServerResponse, server: Server, auth: HostedAuth, origin: string, signal?: AbortSignal): Promise<void> {
@@ -36,10 +37,21 @@ export async function serveMcp(request: IncomingMessage, response: ServerRespons
         const url = input instanceof URL ? input : new URL(typeof input === 'string' ? input : input.url);
         if (url.origin !== origin || !url.pathname.startsWith('/api/v1/') || url.search || url.hash) throw new MetadataError('MCP_ROUTE_INVALID', 403);
         const body = Buffer.from(typeof init?.body === 'string' ? init.body : '');
-        const result = await dispatchRuntimeRequest(server, { method: init?.method ?? 'GET', path: url.pathname,
-          headers: { ...Object.fromEntries(new Headers(init?.headers)), host: new URL(origin).host, 'content-length': String(body.length) },
-          body, peer: request.socket.remoteAddress ?? 'unknown', requestTime: Date.now() }, controller.signal);
-        return new Response(Buffer.from(result.body, result.isBase64Encoded ? 'base64' : 'utf8'), { status: result.statusCode, headers: result.headers });
+        let result: Awaited<ReturnType<typeof dispatchRuntimeRequest>>;
+        try {
+          result = await dispatchRuntimeRequest(server, { method: init?.method ?? 'GET', path: url.pathname,
+            headers: { ...Object.fromEntries(new Headers(init?.headers)), host: new URL(origin).host, 'content-length': String(body.length) },
+            body, peer: request.socket.remoteAddress ?? 'unknown', requestTime: Date.now() }, controller.signal);
+        } catch (error) {
+          if (error instanceof MetadataError && error.code === 'RESPONSE_TOO_LARGE') return Response.json(mcpResultSizeError, { status: 413 });
+          throw error;
+        }
+        const bytes = Buffer.from(result.body, result.isBase64Encoded ? 'base64' : 'utf8');
+        if (result.statusCode >= 200 && result.statusCode < 300) {
+          const descriptor = result.headers['content-type']?.includes('application/json') && isResultDescriptor(JSON.parse(bytes.toString('utf8')) as unknown);
+          if (bytes.length > mcpResultBytes || descriptor) return Response.json(mcpResultSizeError, { status: 413 });
+        }
+        return new Response(bytes, { status: result.statusCode, headers: result.headers });
       }
     });
     result.headers.forEach((value, name) => response.setHeader(name, value));

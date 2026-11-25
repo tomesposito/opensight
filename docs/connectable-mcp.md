@@ -53,6 +53,13 @@ keeps no transport session, SSE history or in-memory credential authority.
 Batch JSON-RPC requests are rejected. Requests are bounded at 1 MiB; OAuth
 bodies at 16 KiB. Cancellation propagates into the existing HTTP bridge.
 
+Hosted MCP refuses result bodies over 1 MiB with the named tool error
+`MCP_RESULT_TOO_LARGE` (upstream HTTP 413, MCP `isError: true`). Narrow the
+query or reduce its result size. MCP chunk retrieval is not supported: the
+serverless publisher refuses oversized MCP results before storing chunks,
+and the bridge also rejects upstream result descriptors and oversized inline
+responses. Browser sessions retain their existing governed chunk retrieval.
+
 Registration permits HTTPS redirects and HTTP loopback redirects with an
 explicit port; no credentials or fragments. Redirect matching is exact.
 S256 PKCE is mandatory, with one-use 60-second codes and a 10-minute consent
@@ -118,5 +125,7 @@ J10 now defaults to hosted HTTP with dynamic registration, consent and PKCE;
 journey. Its separate Postgres persona harness is available to the supervisor;
 the root suite's SQLite HTTP governance tests exercise PII, CLS, spend,
 compute, role changes, cross-owner/tenant isolation and action attribution.
-Tom's post-deploy Muse connector and harmless-read proof remains required,
-as does the brief's independent cold auth review before merge.
+Tom's post-deploy Muse connector and harmless-read proof remains required.
+The cold auth review identified replay, shared-host throttling and oversized
+result findings; the fix pass adds regression coverage for all three. The
+supervisor's independent verification is still required before merge.
