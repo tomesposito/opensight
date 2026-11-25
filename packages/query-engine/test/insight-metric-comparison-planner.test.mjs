@@ -252,10 +252,8 @@ test('MetricComparison preserves collection rules with exact diagnostics', () =>
   ]) assert.throws(() => planVisual(insightRequest(computations)), { code, path }, JSON.stringify(computations).slice(0, 120));
 });
 
-test('TotalAggregation alone derives no dimension and fails the collection rule', () => {
-  // Admitted by the TotalAggregation planner slice, but it binds no
-  // dimension, so a standalone collection still fails closed.
+test('TotalAggregation remains unsupported with exact kind path', () => {
   assert.throws(() => planVisual(insightRequest([
     { TotalAggregation: { ComputationId: 'a', Value: insightValueField() } },
-  ])), { code: 'INVALID_INPUT', path: configPath });
+  ])), { code: 'UNSUPPORTED_FEATURE', path: computationPath('TotalAggregation') });
 });

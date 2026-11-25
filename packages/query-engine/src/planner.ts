@@ -255,12 +255,7 @@ function insightMeasure(raw: unknown, path: string, binder: ExpressionBinder): I
  * (the narrative compiler's cardinality rule, enforced here before
  * querying — issue #321), and a uniqueValues-only insight
  * carries a plan-only COUNT measure (the author-query treatment) that the
- * narrative compiler discards. TotalAggregation binds only its SUM
- * measure and derives no dimension — the web flow takes the grouping
- * dimension from the visual's category well, which this planner does not
- * have — so a collection containing it must derive its single dimension
- * from a sibling computation, and a total-only collection fails the
- * exactly-one-dimension rule. Everything unvalidated fails closed.
+ * narrative compiler discards. Everything unvalidated fails closed.
  */
 function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: readonly BoundColumn[]): { dimensions: Dimension[]; measures: Measure[] } {
   const { path, body } = visual;
@@ -310,7 +305,7 @@ function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: re
     const ep = `${cp}.Computations[${i}]`;
     const [kind, c] = variant(value, ep);
     const kp = `${ep}.${kind}`;
-    if (!['Forecast', 'PeriodToDate', 'UniqueValues', 'TopBottomMovers', 'Anomaly', 'MaximumMinimum', 'TopBottomRanked', 'PeriodOverPeriod', 'GrowthRate', 'MetricComparison', 'TotalAggregation'].includes(kind)) {
+    if (!['Forecast', 'PeriodToDate', 'UniqueValues', 'TopBottomMovers', 'Anomaly', 'MaximumMinimum', 'TopBottomRanked', 'PeriodOverPeriod', 'GrowthRate', 'MetricComparison'].includes(kind)) {
       fail('UNSUPPORTED_FEATURE', kp, 'insight computation is not executable in the native planning slice');
     }
     kinds.push(kind);
@@ -399,18 +394,6 @@ function insightFieldWells(visual: Visual, binder: ExpressionBinder, columns: re
       const target = insightMeasure(c.TargetValue, `${kp}.TargetValue`, binder);
       addMeasure(target);
       if (from.fieldId === target.fieldId) fail('INVALID_INPUT', `${kp}.TargetValue`, 'metric comparison requires two distinct bound measures');
-    } else if (kind === 'TotalAggregation') {
-      keys(c, ['ComputationId', 'Name', 'Value'], kp);
-      // TotalAggregation binds only a measure and derives no dimension:
-      // in the web flow the grouping dimension comes from the visual's
-      // category well, but this planner has no wells — the computations
-      // own the fields — so the collection's single dimension must come
-      // from a sibling computation, and a total-only collection fails
-      // the exactly-one-dimension rule below (the contract decision in
-      // docs/parity-insight-total-aggregation-planner.md). Value may be
-      // omitted when a companion derives the measure, like the other
-      // kinds' bindings.
-      if (c.Value !== undefined) addMeasure(insightMeasure(c.Value, `${kp}.Value`, binder));
     } else {
       keys(c, ['ComputationId', 'Name', 'Time', 'Category', 'Value', 'MoverSize', 'SortOrder', 'Type'], kp);
       if (c.Type !== 'TOP' && c.Type !== 'BOTTOM') fail('INVALID_INPUT', `${kp}.Type`, 'type must be TOP or BOTTOM');

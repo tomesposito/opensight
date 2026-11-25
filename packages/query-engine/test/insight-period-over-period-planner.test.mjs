@@ -197,10 +197,11 @@ test('PeriodOverPeriod preserves collection rules with exact diagnostics', () =>
   ]) assert.throws(() => planVisual(insightRequest(computations)), { code, path }, JSON.stringify(computations).slice(0, 120));
 });
 
-test('TotalAggregation alone derives no dimension and fails the collection rule', () => {
-  // Admitted by the TotalAggregation planner slice, but it binds no
-  // dimension, so a standalone collection still fails closed.
-  assert.throws(() => planVisual(insightRequest([
+test('TotalAggregation remains unsupported with exact kind path', () => {
+  for (const computation of [
     { TotalAggregation: { ComputationId: 'a', Value: insightValueField() } },
-  ])), { code: 'INVALID_INPUT', path: configPath });
+  ]) {
+    const kind = Object.keys(computation)[0];
+    assert.throws(() => planVisual(insightRequest([computation])), { code: 'UNSUPPORTED_FEATURE', path: computationPath(kind) });
+  }
 });

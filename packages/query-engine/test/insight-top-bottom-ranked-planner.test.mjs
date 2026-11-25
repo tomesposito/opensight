@@ -153,8 +153,7 @@ test('TopBottomRanked fails closed on malformed configuration and bindings', () 
     [[{ TopBottomRanked: { ComputationId: 'ranked', Type: 'TOP', Value: insightValueField() } }], 'INVALID_INPUT'],
     // Movers still cannot combine with any other computation.
     [[rankedComputation(), { TopBottomMovers: { ComputationId: 'm', Type: 'TOP', Category: insightCatField(), Time: insightDateField(), Value: insightValueField() } }], 'UNSUPPORTED_FEATURE'],
-    // TotalAggregation is admitted but derives no dimension, so a
-    // standalone collection still fails the exactly-one-dimension rule.
-    [[{ TotalAggregation: { ComputationId: 'a', Value: insightValueField() } }], 'INVALID_INPUT'],
+    // The remaining unadmitted kinds stay rejected.
+    [[{ TotalAggregation: { ComputationId: 'a', Value: insightValueField() } }], 'UNSUPPORTED_FEATURE'],
   ]) assert.throws(() => planVisual(insightRequest(computations)), { code }, JSON.stringify(computations).slice(0, 120));
 });
