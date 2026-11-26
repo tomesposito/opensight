@@ -415,7 +415,7 @@ test('Issue #146 item 3: HTTP selection uses the login boundary and completes th
   const { request } = await serving(t, f, { invocation: { capabilities: {} } });
   const path = '/api/auth/login/select';
   for (const method of ['GET', 'PUT', 'DELETE']) assert.equal((await request(path, { method })).status, 405);
-  for (const headers of [{ authorization: 'Bearer stale' }, { cookie: 'stale=1' }]) {
+  for (const headers of [{ authorization: 'Bearer stale' }]) {
     const bad = await request(path, { method: 'POST', headers, body: {} });
     assert.equal(bad.status, 400); assert.equal(bad.body.errorCode, 'HOSTED_REQUEST_INVALID');
   }

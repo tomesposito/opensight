@@ -219,7 +219,7 @@ test('Issue #146: no workspace input; challenge renders email, names and slugs; 
   await act(async()=>list.findAllByType('button')[0].props.onClick());
   assert.equal(ui.renderer.root.findByType('output').props['data-access'].mode,'hosted');
   assert.equal(ui.renderer.root.findByProps({className:'account-workspace'}).props.children,'Sales team');
-  const call=f.calls.find(c=>c.url.endsWith('/select'));assert.deepEqual(JSON.parse(call.options.body),{selectionToken:f.selectionToken,tenantId:'workspace'});
+  const call=f.calls.find(c=>c.url.endsWith('/select'));assert.deepEqual(JSON.parse(call.options.body),{selectionToken:f.selectionToken,tenantId:'workspace',remember:false});
 });
 
 for(const back of [false,true]) test(`Issue #146: picker ${back?'back button':'expired/failed selection'} returns to cleared credentials`,async t=>{
