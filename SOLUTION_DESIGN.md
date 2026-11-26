@@ -2221,3 +2221,17 @@ The function changes only CSP; conflicting response-function associations fail
 closed. Origin error responses of 400 or higher keep managed headers because
 CloudFront does not invoke viewer-response functions for those responses. See
 [D-95](docs/itd/D-95-operator-readiness.md) for the measured restriction and checks.
+
+### Operator transition: MCP and hosted refresh (D-100)
+
+Deploy the authorized latest release through the registered maintenance bridge
+described in [D-100](docs/itd/D-100-mcp-refresh-maintenance.md). Preserve existing
+rows, retry counters, cleanup schedules, recovery history and the external epoch.
+The schema additions are the four MCP authorization tables, hosted refresh-token
+table (#332/#282), and #334's `migration-import` resource kind with a required
+member owner. Route exactly the three
+MCP discovery paths through the existing uncached API CloudFront behavior and
+ingress checks, in both infrastructure entry points. Preserve static CSP, SMTP
+configuration and sandbox restrictions. Rehearse the additive migration and
+failure rollback, bind the exact release and helper bytes, and require fresh
+backup, held promotion, browser/authentication checks and final readback.

@@ -16,8 +16,18 @@ export function checkSource(entries) {
     if (/(?:AKIA|ASIA)[A-Z0-9]{16}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}/.test(text)) throw Error('CREDENTIAL_PATTERN_IN_GIT');
   }
 }
+export function checkWorkspaceManifests(paths, dockerfile) {
+  const dependencies = dockerfile.split(/^FROM /m).find(stage => / AS dependencies\s*$/m.test(stage));
+  const beforeInstall = dependencies?.split(/^RUN npm ci\b/m)[0];
+  if (!beforeInstall || beforeInstall === dependencies) throw Error('DEPENDENCY_INSTALL_REQUIRED');
+  const copied = new Set([...beforeInstall.matchAll(/^COPY (packages\/[^/]+\/package\.json) \1\s*$/gm)].map(match => match[1]));
+  for (const path of paths.filter(path => /^packages\/[^/]+\/package\.json$/.test(path))) {
+    if (!copied.has(path)) throw Error('WORKSPACE_MANIFEST_MISSING: ' + path);
+  }
+}
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const paths = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean);
   checkSource(paths.map(path => ({ path, text: readFileSync(path, 'utf8') })));
+  checkWorkspaceManifests(paths, readFileSync('ops/serverless/Dockerfile', 'utf8'));
   console.log('Tracked source secret/path checks passed. Pattern checks are not a guarantee.');
 }

@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Route the three MCP OAuth discovery endpoints through the uncached hosted API in both AWS infrastructure entry points (#332); discovery previously reached static hosting and returned a missing page.
+
 - Hosted page reloads silently restore a valid sign-in using a rotating HttpOnly refresh cookie, waking sleeping workspaces before opening the app. Logout and revoked access prevent restoration; bearer tokens remain only in memory (#282).
 
 - MCP OAuth exchanges and revocations now have separate per-connection budgets, so independent connections behind one host do not share a ten-request IP limit or consume interactive sign-in budgets; unknown credentials retain dedicated abuse limits (#332).
