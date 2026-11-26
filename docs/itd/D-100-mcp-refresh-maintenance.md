@@ -68,3 +68,25 @@ expansion from the deployed checks; preserve every resource row and old check.
   where verified compatible with the additive schema. After reopening, close
   admission for forward reconciliation instead of restoring over new writes.
   Reconcile private configuration and remove temporary authority after readback.
+
+
+### Lambda startup and forward recovery — 2026-11-26
+
+Lambda disables Node's experimental ES/CommonJS auto-detection. The import
+feature must resolve compression through the package's explicit Node module
+entry point while preserving browser bundling. Do not enable experimental
+runtime flags as a workaround. Exercise the packaged Lambda handler under
+Lambda's disabled-feature flags before publishing or promoting its image.
+
+If startup fails after reopening, close admission and fully drain again. A
+separately recorded forward-recovery plan may return to the previously verified
+runtime only after a read-only comparison proves every application table equals
+the registered snapshot. The only allowed differences are the control state's
+expected reopen and this operation's exact migration/reopen receipts and audit
+entries; prior audit and receipt rows must remain unchanged. Bind the inspection
+code, immutable runner version, snapshot, lock, epoch, actual configurations and
+prior image/frontend/edge bytes. Verify again before reopening. Preserve the
+entire current database and recovery registry; never restore a database snapshot
+or clear the fact that the failed target had reopened. Record the reconciliation
+and remove temporary authority. Any unexpected application write requires a
+compatible forward fix instead of returning to the prior runtime.
