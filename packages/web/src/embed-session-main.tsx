@@ -2,10 +2,10 @@ import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { useEffect, useRef, useState } from 'react';
 import { EmbedFrame, embedAsset, type EmbedBrand } from './EmbedFrame.js';
-import { VisualCard } from './VisualCard.js';
 import type { FixtureVisual } from './model.js';
 import { startEmbedTransport, type EmbedShell, type EmbedTransport, type SessionState } from './embed-transport.js';
 import { EmbeddedAuthor, type ConsoleContent } from './EmbeddedAuthor.js';
+import { EmbeddedDashboard, type DashboardContent, type EmbedReaderState } from './EmbeddedDashboard.js';
 import './style.css';
 import './embed.css';
 interface Shell extends EmbedShell { appearance: EmbedBrand; assets: Record<string, string> }
@@ -24,16 +24,18 @@ function Question({ transport, columns }: { transport: EmbedTransport; columns: 
 }
 function SessionFrame({ shell }: { shell: Shell }) {
   const [state, setState] = useState<SessionState>('loading'), [content, setContent] = useState<Content | null>(null), transport = useRef<EmbedTransport | null>(null);
+  const readerState = useRef<EmbedReaderState | undefined>(undefined);
   useEffect(() => {
     document.title = shell.appearance.iframeTitle;
     const favicon = embedAsset(shell.appearance.faviconAssetId, shell.assets);
     if (favicon) { const link = document.createElement('link'); link.rel = 'icon'; link.href = favicon; document.head.appendChild(link); }
     const value = bootstrap; bootstrap = '';
     const current = startEmbedTransport(shell, value, state => {
+      if (['expired', 'revoked', 'error', 'saved'].includes(state)) readerState.current = undefined;
       const update = () => { setState(state); if (shell.idleReconnect ? state !== 'ready' : ['expired', 'revoked', 'error', 'saved'].includes(state)) setContent(null); };
       if (shell.idleReconnect && state !== 'ready') flushSync(update); else update();
     }, async t => {
-      const result = await t.request<Content>('content'); setContent(result); t.ready();
+      const result = await t.request<Content>('content', readerState.current); setContent(result); t.ready();
     });
     transport.current = current; return () => current.destroy();
   }, [shell]);
@@ -45,7 +47,7 @@ function SessionFrame({ shell }: { shell: Shell }) {
     detail={['idle', 'unavailable'].includes(state) ? 'Connect to check access and load current data. Idle views hide their data after 45 seconds.' : state === 'connecting' ? 'The workspace may take a moment to wake up.' : state === 'revoked' ? 'Access has been revoked. Request a new session from your application.' : state === 'saved' ? 'Analysis saved. Request a new session to continue editing.' : state === 'expired' ? 'This session has expired. Request a new session from your application.' : undefined}>
     {ready && content.kind === 'q' && transport.current && <Question transport={transport.current} columns={content.columns ?? []} />}
     {ready && content.kind === 'console' && transport.current && <EmbeddedAuthor initial={content as ConsoleContent} transport={transport.current} />}
-    {ready && content.kind !== 'console' && <div className="dashboard-grid">{content.visuals?.map(v => <VisualCard key={v.id} visual={v} />)}</div>}
+    {ready && ['dashboard', 'visual'].includes(content.kind) && transport.current && <EmbeddedDashboard initial={content as DashboardContent} transport={transport.current} onState={value => { readerState.current = value; }} />}
   </EmbedFrame>;
 }
 createRoot(document.getElementById('root')!).render(shell ? <SessionFrame shell={shell} /> : <EmbedFrame state="error" />);

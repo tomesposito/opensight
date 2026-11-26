@@ -29,6 +29,19 @@ test('H6 iframe rejects forged initialization and omits cookies; parent never re
   b.emit(valid); await settle(); assert.equal(calls.length, 3);
   transport.destroy(); assert.equal(b.listeners.size, 0); assert.equal(b.timers.size, 0); assert.equal(b.intervals.size, 0);
 });
+
+test('#335 frame submits reader state as an authenticated content POST without parent messages', async () => {
+  const b = browser(), calls = [], expiresAt = Date.now() + 900000;
+  const transport = startEmbedTransport({ sessionId: id, allowedDomains: [parentOrigin] }, bootstrap, () => {}, async t => t.ready(), b.view,
+    async (url, options) => { calls.push({ url, options }); return new Response(JSON.stringify(url.endsWith('/redeem') ? { credential, expiresAt } : { expiresAt })); });
+  b.emit(event(b)); await settle();
+  const state = { filters: { Region: ['east'] }, parameters: { Minimum: [25] } };
+  await transport.request('content', state);
+  const request = calls.at(-1); assert.ok(request.url.endsWith('/content')); assert.equal(request.options.method, 'POST');
+  assert.equal(request.options.headers.Authorization, `Embed ${credential}`); assert.equal(request.options.credentials, 'omit');
+  assert.deepEqual(JSON.parse(request.options.body), state); assert.ok(!JSON.stringify(b.events).includes('Minimum'));
+  transport.destroy();
+});
 test('H6 iframe revocation, status outage and expiry clear memory and view within the declared bound', async () => {
   for (const mode of ['revoked', 'outage', 'watchdog', 'expired']) {
     const b = browser(), states = [], expiresAt = Date.now() + 900000; let statusCalls = 0;
