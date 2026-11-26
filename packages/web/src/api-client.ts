@@ -1,3 +1,4 @@
+import type { MigrationGuidance } from '@opensight/o-interpreter';
 import type { McpInteraction, McpConnection } from './mcp-oauth.js';
 import type { PrepJoinDiagnostics } from '@opensight/query-engine/browser';
 import type { Notebook, NotebookSummary, NotebookContent, NotebookRun, NotebookSnapshot, NotebookDataset } from './notebooks.js';
@@ -436,6 +437,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
   };
   const planO = (request: ORequest) => oExtension<OPlan>('/api/o/plan', request);
   const reviseO = (request: ORequest & { currentQuestion: string }) => oExtension<InterpretationResult & { question: string }>('/api/o/revise', request);
+  const migrationGuidance = (importId: string) => resource<{ migration: MigrationGuidance }>('/api/v1/ai/ask', 'POST', { question: 'Review this QuickSight import', migration: { phase: 'after-import', importId } });
   const generateO = (request: ORequest) => resource<InterpretationResult>('/api/o/generate', 'POST', request);
   const generateCalculation = (request: ORequest) => resource<CalculationResult>('/api/o/calculation', 'POST', request);
   const getAnalyticsConfig = () => resource<AnalyticsConfig>('/api/admin/analytics');
@@ -653,7 +655,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     checkout, requestPaidPlan, withdrawPaidRequest, exportWorkspace, closeWorkspace, enroll, acceptEnrollment, login, selectWorkspace, restoreSession, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob, retryJobDelivery,
     mcpInteraction, mcpAuthorize, mcpConnections, revokeMcpConnection,
-    listPrepTemplates, proposePrepTemplate, publishPrepTemplate, createFromPrepTemplate, promoteCalculation, metricDatasets, listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, publishStoredTable, downloadStoredTable, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, joinDiagnostics, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, planO, reviseO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
+    listPrepTemplates, proposePrepTemplate, publishPrepTemplate, createFromPrepTemplate, promoteCalculation, metricDatasets, listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, publishStoredTable, downloadStoredTable, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, joinDiagnostics, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, migrationGuidance, generateO, planO, reviseO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
     listNotebooks, getNotebook, createNotebook, updateNotebook, deleteNotebook, runNotebook, notebookDatasets, notebookRuns, snapshotNotebookCell,
     listInputTables, getInputTable, createInputTable, updateInputTable, deleteInputTable, setInputTableEditors, addInputTableRow, updateInputTableRow, deleteInputTableRow, getInputTableAudit,
     queryDataset,

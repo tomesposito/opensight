@@ -168,7 +168,7 @@ await runJourney('j10-ai-agent-mcp', 'AI Agent', async j => {
     const connection = await connectHostedMcp(stack, member.token); j.cleanup(connection.stop); client = connection.client;
     toolNames = (await client.listTools()).tools.map(t => t.name);
     for (const name of ['list_datasets', 'list_analyses', 'list_dashboards', 'create_analysis', 'run_dataset_query', 'query_dashboard_visual', 'refresh_dataset', 'list_metrics', 'describe_metric', 'list_metric_versions', 'ask_question', 'list_workspace_action_history']) assert.ok(toolNames.includes(name), name);
-    assert.equal(toolNames.length, 58);
+    assert.equal(toolNames.length, 60);
     assert.deepEqual(toolNames.filter(name => /metric/.test(name)).sort(), ['describe_metric', 'list_metric_versions', 'list_metrics']);
     assert.deepEqual(toolNames.filter(name => /audit|history/.test(name)), ['list_workspace_action_history']);
     historyBefore = good(await member.request('/api/v1/workspace/action-history', 'GET', undefined, { Limit: '200' }));

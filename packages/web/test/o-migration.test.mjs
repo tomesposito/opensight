@@ -28,3 +28,34 @@ test('D-97 pre-import guidance is available without a dataset or hosted AI provi
   assert.match(html, /SSO profile/); assert.match(html, /3 List and 4 Describe/);
   assert.doesNotMatch(html, /Migration remediation checklist/);
 });
+
+import { AccessProvider } from '../build/test/access.js';
+import { interpretMigration } from '@opensight/o-interpreter';
+import { serializeImportReport } from '@opensight/bundle-parser/browser';
+import { createApiClient } from '../build/test/api-client.js';
+test('D-97 hosted guide continues an MCP import through governed Ask O and discards late answers after a member switch', async () => {
+  const calls = [], guidance = interpretMigration({ phase: 'after-import', report: serializeImportReport(draft().bundle.report) });
+  let resolve;
+  const aiClient = { migrationGuidance: async id => { calls.push(id); return new Promise(r => { resolve = r; }); } };
+  const node = id => createElement(AccessProvider, { access: { mode: 'hosted', session: { id, namespaceId: 'one', role: 'author_ai' }, aiClient } }, createElement(OMigration, { draft: emptyDraft() }));
+  let tree; await act(async () => { tree = create(node('member-one')); });
+  await act(async () => tree.root.findByType('input').props.onChange({ target: { value: 'mcp-import' } }));
+  await act(async () => { void tree.root.findByType('form').props.onSubmit({ preventDefault() {} }); });
+  assert.deepEqual(calls, ['mcp-import']);
+  await act(async () => resolve({ migration: guidance }));
+  assert.ok(tree.root.findAll(n => n.props['aria-label'] === 'Migration remediation checklist').length);
+  await act(async () => { void tree.root.findByType('form').props.onSubmit({ preventDefault() {} }); });
+  await act(async () => tree.update(node('member-two')));
+  await act(async () => resolve({ migration: guidance }));
+  assert.equal(tree.root.findAll(n => n.props['aria-label'] === 'Migration remediation checklist').length, 0);
+  await act(async () => tree.unmount());
+});
+test('D-97 web client sends only the import identity to the existing governed Ask O operation', async () => {
+  const calls = [];
+  const client = createApiClient('https://opensight.example', async (url, init) => {
+    calls.push({ url, init }); return new Response(JSON.stringify({ migration: { applied: false } }), { headers: { 'Content-Type': 'application/json' } });
+  });
+  await client.migrationGuidance('import-one');
+  assert.match(String(calls[0].url), /\/api\/v1\/ai\/ask$/);
+  assert.deepEqual(JSON.parse(calls[0].init.body), { question: 'Review this QuickSight import', migration: { phase: 'after-import', importId: 'import-one' } });
+});
