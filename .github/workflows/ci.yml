@@ -98,7 +98,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release/frontend
-          docker run --rm --network none --read-only --user 1000:1000 --tmpfs /tmp:rw,nosuid,nodev,size=512m --entrypoint node -i opensight-runtime:ci --input-type=module < ops/serverless/image-smoke.mjs
+          docker run --rm --network none --read-only --user 1000:1000 --tmpfs /tmp:rw,nosuid,nodev,size=512m --entrypoint node -i opensight-runtime:ci --no-experimental-detect-module --no-experimental-require-module --input-type=module < ops/serverless/image-smoke.mjs
           container=$(docker create opensight-tested:ci)
           docker cp "$container:/frontend/." release/frontend/
           docker rm "$container"

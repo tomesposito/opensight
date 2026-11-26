@@ -28,8 +28,14 @@ docker build --platform linux/arm64 --provenance=false --sbom=false \
   --target runtime -t opensight-validation -f ops/serverless/Dockerfile .
 docker run --rm --network none --read-only --user 1000:1000 \
   --tmpfs /tmp:rw,nosuid,nodev,size=512m --entrypoint node -i \
-  opensight-validation --input-type=module < ops/serverless/image-smoke.mjs
+  opensight-validation --no-experimental-detect-module \
+  --no-experimental-require-module --input-type=module < ops/serverless/image-smoke.mjs
 ```
+
+Both image construction and exact-image acceptance import the packaged Lambda
+handlers with experimental module detection and `require(ESM)` disabled, matching
+Lambda's Node.js defaults. Keep these checks offline and retain the runtime
+defaults; do not enable experimental features to make an image start.
 
 The test-only browser is Sparticuz Chromium 153.0.0, ARM64 pack SHA-256
 `b6874fc0d7af15e16a15ef1b73177731f698c296c73d26aa4a90840c0777a338`, with the

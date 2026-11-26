@@ -1,7 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { checkSource, checkWorkspaceManifests } from '../ops/serverless/ci-check.mjs';
 import { compatibility, validateManifest } from '../ops/serverless/release-manifest.mjs';
+
+test('Lambda handlers cold-start with experimental module features disabled', () => {
+  const result = execFileSync(process.execPath, ['--no-experimental-detect-module', '--no-experimental-require-module', '--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    const runtime = await import('./packages/api/dist/aws-lambda.js');
+    for (const name of ['handler', 'scheduler', 'migration', 'administration']) assert.equal(typeof runtime[name], 'function');
+    for (const name of ['platform-probe', 'lambda', 'scheduler-lambda', 'migration-lambda']) await import('./packages/api/dist/' + name + '.js');
+    console.log('LAMBDA_MODULE_STARTUP_PASSED');
+  `], { cwd: new URL('../', import.meta.url), env: {}, encoding: 'utf8', timeout: 30000 });
+  assert.equal(result.trim(), 'LAMBDA_MODULE_STARTUP_PASSED');
+});
 
 test('SR4c source checks reject credential-shaped material, private config and unsafe paths', () => {
   checkSource([{ path: 'docs/example.md', text: 'Synthetic configuration only.' }]);

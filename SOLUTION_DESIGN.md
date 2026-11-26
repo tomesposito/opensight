@@ -2239,3 +2239,14 @@ and prior migration receipts under a new operation. Preserve static CSP, SMTP
 configuration and sandbox restrictions. Rehearse the additive migration and
 failure rollback, bind the exact release and helper bytes, and require fresh
 backup, held promotion, browser/authentication checks and final readback.
+
+
+### Lambda module startup and recorded forward recovery (D-100)
+
+The bundle importer resolves compression through explicit Node/browser module
+entry points. Validate the packaged Lambda handler with experimental module
+auto-detection and require-module disabled before release and promotion. Do not
+turn on experimental Lambda flags. D-100 permits a recorded return to the prior
+verified runtime after a post-reopen startup failure only when exact snapshot
+comparison proves no application writes, excluding only this operation's known
+control/audit/receipt changes; preserve the current database and all history.

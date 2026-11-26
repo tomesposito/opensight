@@ -8,6 +8,7 @@ import { TenantBudgets, WorkScope } from './packages/api/dist/budgets.js';
 import { blazeLimits } from './packages/api/dist/blaze.js';
 assert.equal(process.platform, 'linux'); assert.equal(process.arch, 'arm64');
 assert.match(process.version, /^v24\./);
+for (const flag of ['--no-experimental-detect-module', '--no-experimental-require-module']) assert.ok(process.execArgv.includes(flag), `Lambda startup flag required: ${flag}`);
 await assert.rejects(writeFile('/var/task/forbidden', 'synthetic'), { code: 'EROFS' });
 const fs = statfsSync('/tmp'); assert.ok(fs.blocks * fs.bsize <= 512 * 1024 * 1024);
 for (const file of ['aws-lambda', 'platform-probe', 'lambda', 'scheduler-lambda', 'migration-lambda']) await import(`./packages/api/dist/${file}.js`);

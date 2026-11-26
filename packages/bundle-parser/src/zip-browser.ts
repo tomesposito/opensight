@@ -22,7 +22,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-import { Inflate } from 'fflate/browser';
+// Conditional exports select explicit Node ESM or the browser build. The browser
+// subpath alone relies on module auto-detection, which Lambda disables.
+import { Inflate } from 'fflate';
 import { fail, ValidationError } from './validation.js';
 import { ZIP_LIMITS, memberJsonPath, type ZipMemberInfo } from './zip-common.js';
 
