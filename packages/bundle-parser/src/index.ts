@@ -14,3 +14,6 @@ export type * from './types.js';
 export type * as QuickSightApi from './api-types.js';
 
 export * from './prep.js';
+
+export * from './migration-report.js';
+export { object, convertDefinition, projectDefinition } from './definition-converter.js';

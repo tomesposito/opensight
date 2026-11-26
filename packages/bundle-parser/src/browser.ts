@@ -43,3 +43,6 @@ export async function assembleQsBundle(bundle: QsBundle): Promise<Uint8Array> {
 }
 
 export * from './prep.js';
+
+export * from './migration-report.js';
+export { object, convertDefinition, projectDefinition } from './definition-converter.js';
