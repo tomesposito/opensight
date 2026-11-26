@@ -8,11 +8,11 @@ const request = (message, headers = {}) => new Request('https://opensight.exampl
 });
 const rpc = (method, params = {}) => ({ jsonrpc: '2.0', id: 1, method, params });
 const options = { baseUrl: 'https://opensight.example/api/v1', credentials: credentials(), scopes: mcpScopes, fetch: async () => json({ items: [] }) };
-test('Streamable HTTP initializes, lists the unchanged 58 tools, calls v1, and accepts notifications', async () => {
+test('Streamable HTTP initializes, lists the unchanged 60 tools, calls v1, and accepts notifications', async () => {
   const init = await handleMcpHttp(request(rpc('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'test', version: '1' } })), options);
   assert.equal(init.status, 200); assert.equal((await init.json()).result.protocolVersion, '2025-11-25');
   assert.equal(init.headers.has('mcp-session-id'), false);
-  assert.equal((await (await handleMcpHttp(request(rpc('tools/list')), options)).json()).result.tools.length, 58);
+  assert.equal((await (await handleMcpHttp(request(rpc('tools/list')), options)).json()).result.tools.length, 60);
   const call = await handleMcpHttp(request(rpc('tools/call', { name: 'list_datasets' })), options);
   assert.deepEqual((await call.json()).result.structuredContent, { items: [] });
   assert.equal((await handleMcpHttp(request({ jsonrpc: '2.0', method: 'notifications/initialized' }), options)).status, 202);

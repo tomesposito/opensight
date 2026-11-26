@@ -314,3 +314,24 @@ export interface WorkspaceAuditEntry {
   subject: string | null;
   detail: unknown;
 }
+
+export type { MigrationImportReport } from '@opensight/bundle-parser';
+export interface BundleImportBody {
+  importId: string;
+  bundle: import('@opensight/bundle-parser').QsBundle | import('@opensight/bundle-parser').BundleResource;
+  manifest?: import('@opensight/bundle-parser').ExtractionManifest;
+  previousImportId?: string;
+  bindings?: { asset: number; datasetBindings: CreateAnalysisBody['datasetBindings'] }[];
+}
+export interface BundleImportResult {
+  importId: string;
+  report: import('@opensight/bundle-parser').MigrationImportReport;
+  targets: { asset: number; state: 'staged' | 'imported'; analysisId?: string }[];
+}
+
+export interface MigrationQuestionBody {
+  question: string;
+  migration: { phase: 'before-import'; setup: import('@opensight/o-interpreter').MigrationSetup; manifest?: import('@opensight/bundle-parser').ExtractionManifest }
+    | { phase: 'after-import'; importId: string };
+}
+export interface MigrationQuestionAnswer { migration: import('@opensight/o-interpreter').MigrationGuidance }

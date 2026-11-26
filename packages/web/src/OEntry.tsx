@@ -1,3 +1,4 @@
+import { OMigration } from './OMigration.js';
 import { ORevision } from './ORevision.js';
 import { ODashboardBuilder } from './ODashboardBuilder.js';
 import { OSteps } from './OSteps.js';
@@ -81,6 +82,7 @@ function OEntryContent({ draft, dispatch, client, renderBar, dashboardId, onCanv
     {mode === 'ask' && !renderBar && bar}
     <span className="o-local-label">{(result ? answer?.generated : generative && ai.available) ? 'AI interpretation · Review before use' : ai.state === 'credit-limit' ? 'Standard interpreter · No AI' : 'Local deterministic interpreter · No AI'}</span>
     <OModeNotice available={ai.available} state={ai.state} mode={ai.mode} credits={ai.credits} checked={generative} onChange={value => { revision.current++; setGenerative(value); if (!value) setMode('ask'); setAnswer(undefined); setError(''); }} />
+    {mode === 'ask' && !generative && dispatch && allowed(access, 'build') && <OMigration draft={draft} />}
     {mode === 'ask' && dispatch && allowed(access, 'build') && generative && !extensionsUnavailable && (ai.available || ai.state === 'credit-limit') && selectedVisual && <ORevision visual={selectedVisual} draft={draft} dispatch={dispatch} client={previewClient} ai={ai} onPreview={onRevisionPreview} onUnavailable={() => { setExtensionsUnavailable(true); setError('Ask O tile revision is not configured on this server.'); }} />}
     {mode === 'build' && dispatch && <ODashboardBuilder draft={draft} dispatch={dispatch} client={previewClient} ai={ai} onCanvasPreview={onCanvasPreview} onUnavailable={() => { setExtensionsUnavailable(true); setMode('ask'); setError('Ask O dashboard generation is not configured on this server.'); }} />}
     {pending && <p role="status">Asking configured provider…</p>}{error && <p role="alert">{error}</p>}

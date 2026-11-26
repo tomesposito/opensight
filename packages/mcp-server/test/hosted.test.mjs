@@ -156,3 +156,32 @@ test('documented share target principals work, while definition grants never wid
   assert.equal(direct.body.errorCode, 'RESOURCE_NOT_FOUND');
   error(await call(reader, 'run_dataset_query', { id: 'sales', query }), direct.body.errorCode, direct.status);
 });
+
+test('D-97 MCP migration imports, reads identical report, remaps with existing authoring tools and records the delegating member', async t => {
+  const f = await fixture(t), client = await f.clientFor();
+  const definition = { dataSetIdentifierDeclarations: [{ identifier: 'data', dataSetArn: 'urn:synthetic:source' }], sheets: [{ sheetId: 's', visuals: [] }] };
+  const bundle = { members: [{ path: 'analysis/source.json', resource: { resourceType: 'analysis', analysisId: 'source', name: 'Synthetic import', definition } }] };
+  const imported = await call(client, 'import_bundle', { body: { importId: 'mcp-migration', bundle }, idempotencyKey: 'migration' });
+  assert.equal(imported.isError, undefined, JSON.stringify(imported));
+  assert.equal(imported.structuredContent.targets[0].state, 'staged');
+  const report = await call(client, 'read_import_report', { id: 'mcp-migration' });
+  assert.deepEqual(report.structuredContent, imported.structuredContent.report);
+  assert.ok(report.structuredContent.groups.some(g => g.kind === 'asset:dataSetIdentifierDeclarations'));
+  const datasets = await call(client, 'list_datasets'); assert.ok(datasets.structuredContent.items.some(d => d.id === 'sales'));
+  const remap = await call(client, 'create_analysis', { body: { analysisId: 'reviewed', name: 'Reviewed import', definition,
+    datasetBindings: { data: { kind: 'prepared-dataset', id: 'sales' } } } });
+  assert.equal(remap.isError, undefined, JSON.stringify(remap));
+  assert.equal((await call(client, 'describe_analysis', { id: 'reviewed' })).structuredContent.AnalysisId, 'reviewed');
+  // Remediation never rewrites historical conversion evidence.
+  assert.deepEqual((await call(client, 'read_import_report', { id: 'mcp-migration' })).structuredContent, report.structuredContent);
+  const identity = await f.auth.verify(f.token());
+  const history = (await call(client, 'list_workspace_action_history')).structuredContent.items;
+  for (const operation of ['import_bundle', 'read_import_report', 'create_analysis']) {
+    const entry = history.find(e => e.action === operation || e.action === `v1.${operation}`);
+    assert.ok(entry, JSON.stringify(history)); assert.equal(entry.actor, identity.userId); assert.equal(entry.tenantId, f.tenant.tenantId);
+  }
+  const other = await member(f); await f.renew();
+  error(await call(await f.clientFor(() => other), 'read_import_report', { id: 'mcp-migration' }), 'RESOURCE_NOT_FOUND', 404);
+  const tools = (await client.listTools()).tools;
+  assert.equal(tools.length, 60); assert.ok(tools.every(t => !/extract|aws_credentials/.test(t.name)));
+});

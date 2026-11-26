@@ -1,0 +1,22 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InventoryQuickSightDefinitions",
+      "Effect": "Allow",
+      "Action": ["quicksight:ListAnalyses", "quicksight:ListDashboards", "quicksight:ListDataSets"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ReadQuickSightDefinitions",
+      "Effect": "Allow",
+      "Action": ["quicksight:DescribeAnalysisDefinition", "quicksight:DescribeDashboardDefinition", "quicksight:DescribeDataSet", "quicksight:DescribeDataSource"],
+      "Resource": [
+        "arn:aws:quicksight:*:${aws:PrincipalAccount}:analysis/*",
+        "arn:aws:quicksight:*:${aws:PrincipalAccount}:dashboard/*",
+        "arn:aws:quicksight:*:${aws:PrincipalAccount}:dataset/*",
+        "arn:aws:quicksight:*:${aws:PrincipalAccount}:datasource/*"
+      ]
+    }
+  ]
+}

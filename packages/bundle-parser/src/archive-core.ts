@@ -4,7 +4,7 @@ import { summarizeCalculations, summarizeFilterGroup, summarizeParameter,
   type BundleCalculatedFieldSummary, type BundleFilterGroupSummary, type BundleParameterSummary,
 } from './bundle-features.js';
 import { array, fail, nonempty, object, required, singleVariant } from './validation.js';
-import { memberJsonPath } from './zip-common.js';
+import { memberJsonPath, ZIP_LIMITS } from './zip-common.js';
 import type { ZipMemberInfo } from './zip-common.js';
 
 export function resourceId(resource: BundleResource): string {
@@ -25,6 +25,24 @@ export function parseMember(path: string, raw: unknown): QsBundleMember {
   if (raw.resourceType !== match[1]) fail(`${p}.resourceType`, 'does not match member directory');
   if (resourceId(raw) !== match[2]) fail(p, 'resource ID does not match member filename');
   return { path, resource: raw };
+}
+
+/** JSON transport for a single archive member or the existing QsBundle envelope. */
+export function parseBundleJson(bytes: Uint8Array): QsBundle {
+  if (bytes.length > ZIP_LIMITS.memberBytes) fail('$', 'JSON exceeds member byte limit');
+  let raw: unknown;
+  try { raw = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); }
+  catch { fail('$', 'expected valid UTF-8 JSON'); }
+  const value = object(raw, '$');
+  if (Object.hasOwn(value, 'members')) {
+    if (Object.keys(value).some(k => k !== 'members') || !Array.isArray(value.members)
+      || !value.members.length || value.members.length > ZIP_LIMITS.members) fail('$', 'expected bounded bundle members');
+    const bundle = value as unknown as QsBundle;
+    summarizeQsBundle(bundle);
+    return bundle;
+  }
+  assertBundleResource(raw, '$');
+  return { members: [parseMember(`${raw.resourceType}/${resourceId(raw)}.json`, raw)] };
 }
 
 /** Read a real .qs ZIP; retain camelCase envelopes and unknown JSON verbatim in value. */

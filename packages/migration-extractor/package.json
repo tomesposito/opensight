@@ -1,0 +1,37 @@
+{
+  "name": "@opensight/migration-extractor",
+  "version": "0.0.0",
+  "description": "Customer-run QuickSight definition extractor for OpenSight",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "opensight-extract": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "policy",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "npm run build --workspace @opensight/bundle-parser && tsc && node scripts/build.mjs",
+    "test": "npm run build && node --test --test-isolation=none test/*.test.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-quicksight": "3.1169.0",
+    "@opensight/bundle-parser": "0.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "typescript": "^5.6.0"
+  }
+}

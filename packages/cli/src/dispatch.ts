@@ -22,6 +22,8 @@ const value = async (result: Promise<{ value: unknown; etag: string | null }>): 
 
 /** Explicit SDK adapters only: this module never constructs HTTP requests or paths. */
 export const handlers: Record<string, Handler> = {
+  import_bundle: (c, i) => c.importBundle(body(i, c.importBundle, 0), i.options),
+  read_import_report: (c, i) => c.readImportReport(id(i)),
   list_workspace_action_history: (c, i) => c.listWorkspaceActionHistory(i.options),
   ask_question: (c, i) => c.askQuestion(body(i, c.askQuestion, 0), i.options),
   list_metrics: (c, i) => c.listMetrics(i.options),

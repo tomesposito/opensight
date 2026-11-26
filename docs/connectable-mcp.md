@@ -1,7 +1,7 @@
 # Connectable MCP (#332)
 
 [IDD D-95](idd/D-95-connectable-mcp.md) adds hosted Streamable HTTP and in-app
-OAuth to the existing 58-tool v1 inventory. Local stdio, the CLI and SDKs keep
+OAuth to the existing 60-tool v1 inventory. Local stdio, the CLI and SDKs keep
 their existing behavior. The tool definitions, argument validation, result
 shapes and error handling are shared between transports.
 

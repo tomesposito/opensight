@@ -63,11 +63,11 @@ and generates `src/generated.ts`. Missing/duplicate/non-snake-case IDs,
 unsupported headers, external references and parameter collisions fail the
 build. No network access is used in generation or compilation.
 
-There are **58 tools**, one per implemented OpenAPI operation: 11 dataset/source/
+There are **60 tools**, one per implemented OpenAPI operation: 11 dataset/source/
 query operations, 13 analysis operations, 12 dashboard operations, 17
 asset/folder/share additions and three governed metric reads (#327):
 `list_metrics`, `describe_metric`, and `list_metric_versions`, plus `ask_question`
-and `list_workspace_action_history`.
+and `list_workspace_action_history`, plus the two migration operations (#334).
 The old 11-tool and 40-deferred-tool proposal
 tables are superseded by the shipped REST inventory on master `4989fdc1`.
 The spec-only checkpoint added nine missing IDs and renamed `runDatasetQuery`
@@ -186,3 +186,26 @@ other members retain those members' identities. Request bodies, query rows/text
 and credentials are never added to v1 details. The operator-only `/api/host/audit`
 endpoint remains separate. Local fixture servers return `HOSTED_API_REQUIRED`;
 the static demo has no hosted history. See [audit semantics](operator-audit.md).
+
+
+## QuickSight migration (D-97, #334)
+
+Run the extractor in the customer's AWS environment and upload only the chosen
+bundle and manifest. The MCP inventory adds `import_bundle` (write scope) and
+`read_import_report` (read scope), generated from the same v1 registry as CLI and
+SDK clients. No extraction or AWS credential tool exists.
+
+1. Call `import_bundle` with `{ body: { importId, bundle, manifest }, idempotencyKey }`.
+2. Call `read_import_report` with `{ id: importId }`. Its result is the exact shared
+   report from import; group failures by `kind`, and inspect `newKind` and coverage.
+3. Use `list_sources`, `list_datasets` and existing preparation/authoring operations
+   to resolve connections. The operator creates connections through the normal
+   source UI; MCP does not invent a credential-creation operation. Use
+   `create_analysis` with reviewed definitions and dataset bindings, or re-import
+   under a new ID with `bindings` and `previousImportId`.
+4. Compare results with QuickSight, publish through `publish_analysis`, and move
+   readers one analysis at a time. Staged originals never execute.
+
+Reads and writes use current member authorization; even another administrator
+cannot read the importing member's report. Existing hosted action history records
+both operations under the delegating member, without bundle or report contents.

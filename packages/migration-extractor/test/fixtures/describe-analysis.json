@@ -1,0 +1,24 @@
+{
+  "Status": 200,
+  "AnalysisId": "example-analysis",
+  "Name": "Synthetic analysis",
+  "Definition": {
+    "DataSetIdentifierDeclarations": [{ "Identifier": "orders", "DataSetArn": "arn:aws:quicksight:us-east-1:000000000000:dataset/example-dataset" }],
+    "Sheets": [{
+      "SheetId": "sheet-one",
+      "Name": "Overview",
+      "Visuals": [{ "PieChartVisual": {
+        "VisualId": "pie-one",
+        "Title": { "Visibility": "VISIBLE", "FormatText": { "PlainText": "Synthetic categories" } },
+        "ChartConfiguration": {
+          "FieldWells": { "PieChartAggregatedFieldWells": {
+            "Category": [{ "CategoricalDimensionField": { "FieldId": "category-field", "Column": { "DataSetIdentifier": "orders", "ColumnName": "category" } } }],
+            "Values": [{ "NumericalMeasureField": { "FieldId": "amount-field", "Column": { "DataSetIdentifier": "orders", "ColumnName": "amount" }, "AggregationFunction": { "SimpleNumericalAggregation": "SUM" } } }]
+          } },
+          "DataLabels": { "Visibility": "VISIBLE" }
+        }
+      } }],
+      "Layouts": [{ "Configuration": { "GridLayout": { "Elements": [{ "ElementId": "pie-one", "ElementType": "VISUAL", "ColumnIndex": 0, "ColumnSpan": 18, "RowIndex": 0, "RowSpan": 8 }] } } }]
+    }]
+  }
+}

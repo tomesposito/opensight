@@ -364,6 +364,12 @@ Hand-built and older unstamped tiles use the normal editors.
 
 ![Ask O in Author with field grounding, editable steps and a synthetic sales preview](docs/images/q-side-panel.png)
 
+Ask O also guides QuickSight migrations with customer-run extractor commands and
+an import checklist grouped by construct kind. Each fix requires review and
+confirmation in the normal editor. See the [migration guide](docs/migration-extractor.md).
+
+![Deterministic QuickSight migration guidance in the local static demo](docs/images/migration-guide.png)
+
 ![O answer querying a locally uploaded CSV: North 6 and South 3](docs/images/o-answer.png)
 
 ![Hosted reader Ask O with a grounded result and monthly credits, using local synthetic data and a test-only provider](docs/images/ask-o-managed.png)

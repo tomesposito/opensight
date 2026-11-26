@@ -6,7 +6,7 @@ import { HostedAuth } from '../dist/hosted-auth.js';
 import { digest } from '../dist/auth-crypto.js';
 
 const refresh = (f, g, overrides = {}) => f.form('/api/mcp/oauth/token', { grant_type: 'refresh_token', client_id: g.client.client_id, refresh_token: g.refresh_token, ...overrides });
-test('discovery and standard public-client PKCE flow expose 58 governed tools and one-hour tokens', async t => {
+test('discovery and standard public-client PKCE flow expose 60 governed tools and one-hour tokens', async t => {
   const f = await mcpFixture(t);
   const challenge = await f.http('/api/mcp', { method: 'POST', body: {} }); assert.equal(challenge.status, 401);
   assert.match(challenge.headers['www-authenticate'], /oauth-protected-resource\/api\/mcp/);
@@ -17,7 +17,7 @@ test('discovery and standard public-client PKCE flow expose 58 governed tools an
   assert.equal(metadata.authorization_endpoint, `${f.config.origin}/?mcp_oauth=1`);
   assert.deepEqual(metadata.token_endpoint_auth_methods_supported, ['none']);
   const g = await f.grant(); assert.equal(g.expires_in, 3600); assert.equal(g.token_type, 'Bearer');
-  assert.equal((await f.rpc(g.access_token, 'tools/list')).body.result.tools.length, 58);
+  assert.equal((await f.rpc(g.access_token, 'tools/list')).body.result.tools.length, 60);
   assert.equal((await f.call(g.access_token, 'list_datasets')).isError, undefined);
   const rows = await f.db.transaction(c => c.query('SELECT * FROM h2_mcp_tokens'));
   assert.ok(!JSON.stringify(rows).includes(g.access_token)); assert.ok(!JSON.stringify(rows).includes(g.refresh_token));

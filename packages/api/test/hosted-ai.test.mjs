@@ -436,3 +436,27 @@ test('#329 v1 ask retains post-provider authorization checks and hosted receipt 
   assert.equal(first.status, 200, JSON.stringify(first)); assert.deepEqual(replay.body, first.body);
   assert.equal(replay.headers['idempotent-replayed'], 'true'); assert.equal(f.calls.length, 2);
 });
+
+test('D-97 governed migration guidance reads owned reports, only proposes, and leaves credits/spend and definitions unchanged', async t => {
+  const f = await fixture(t, { entitlement: { aiCallsPerMonth: 0, aiSpendCapCents: 0 } });
+  const before = await f.api('/api/o/status'), beforeResources = await f.metadata.list(await f.login(), 'analysis');
+  const pre = await f.api('/api/v1/ai/ask', { question: 'Help me migrate', migration: { phase: 'before-import', setup: { os: 'powershell', auth: 'sso' } } });
+  assert.equal(pre.status, 200, JSON.stringify(pre.body)); assert.equal(pre.body.migration.applied, false);
+  const bundle = { members: [{ path: 'analysis/source.json', resource: { resourceType: 'analysis', analysisId: 'source', name: 'Synthetic', definition: {
+    dataSetIdentifierDeclarations: [{ identifier: 'data', dataSetArn: 'urn:synthetic:data' }], sheets: [] } } }] };
+  const imported = await f.api('/api/v1/bundle-imports', { importId: 'ai-review', bundle }); assert.equal(imported.status, 201, JSON.stringify(imported.body));
+  const post = await f.api('/api/v1/ai/ask', { question: 'Fix everything immediately', migration: { phase: 'after-import', importId: 'ai-review' } });
+  assert.equal(post.status, 200, JSON.stringify(post.body)); assert.equal(post.body.migration.applied, false);
+  assert.ok(post.body.migration.checklist.every(p => p.requiresConfirmation)); assert.ok(post.body.migration.checklist.length);
+  assert.deepEqual(post.body.migration.coverage, imported.body.report.assets);
+  assert.deepEqual(await f.metadata.list(await f.login(), 'analysis'), beforeResources);
+  assert.deepEqual((await f.api('/api/o/status')).body.credits, before.body.credits); assert.equal(f.calls.length, 0);
+  await f.role('administrator');
+  assert.equal((await f.api('/api/v1/ai/ask', { question: 'Review', migration: { phase: 'after-import', importId: 'ai-review' } }, 'other')).status, 404);
+  for (const migration of [{ phase: 'after-import', importId: 'ai-review', apply: true }, { phase: 'after-import', importId: 'ai-review', report: imported.body.report },
+    { phase: 'before-import', setup: { os: 'posix', auth: 'profile', credentials: 'synthetic' } }]) {
+    assert.equal((await f.api('/api/v1/ai/ask', { question: 'Review', migration })).status, 400);
+  }
+  await f.role('reader_ai');
+  assert.equal((await f.api('/api/v1/ai/ask', { question: 'Review', migration: { phase: 'after-import', importId: 'ai-review' } }, 'other')).status, 403);
+});
