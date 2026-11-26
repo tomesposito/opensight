@@ -93,6 +93,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Customer-run QuickSight definition extractor with a List/Describe-only IAM policy, local credential-free outputs, diff-aware manifests and a shared versioned import-report contract with finding fingerprints and per-asset coverage. Multi-member bundle JSON works with the existing local importer; the v1/MCP/Ask O migration paths remain pending (#334).
+
 - Native planning now admits Insight `TotalAggregation` computations (phase-plan parity slice `parity-insight-total-aggregation-planner`; no GitHub issue). A total binds only its SUM measure and derives no dimension, so a collection containing one takes its single dimension from a sibling computation and a total-only collection still fails closed — completing native planner admission for all eleven web-supported Insight computation kinds.
 
 - Hosted MCP connections now use dynamic public-client OAuth with PKCE and member consent, read/write scopes, one-hour access tokens, rotating refresh tokens, and self-serve revocation under Account. The same 58 tools retain v1 governance and member-attributed action history (#332).
