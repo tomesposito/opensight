@@ -26,7 +26,7 @@ export function defaultEmbedConfig(): TenantEmbedConfig {
   return { enabled: false, allowedParentOrigins: [], embedOriginId: null, maxSessionSeconds: null, appearance: { ...defaultAppearance },
     features: { registeredDashboards: true, registeredVisuals: true, parameterControls: false, filtering: false, anonymous: false, authoring: false, export: false, download: false, persistentReaderState: false } };
 }
-export const embedCapabilities = Object.freeze({ registeredDashboards: true, registeredVisuals: true, parameterControls: false, filtering: false,
+export const embedCapabilities = Object.freeze({ registeredDashboards: true, registeredVisuals: true, parameterControls: true, filtering: true,
   anonymous: true, authoring: true, export: false, download: false, persistentReaderState: false,
   sessionIssuance: true, customDomains: false, appearancePreview: true, brandingRemoval: false });
 function fields(raw: unknown, allowed?: readonly string[]): Record<string, unknown> {

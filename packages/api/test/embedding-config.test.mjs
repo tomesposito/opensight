@@ -52,9 +52,11 @@ async function serving(t, f) {
 
 test('H5 strict configuration, feature capabilities and operator lifetime ceilings', () => {
   const policy = parsePolicy(policyInput());
+  assert.equal(defaultEmbedConfig().features.filtering, false);
+  assert.equal(defaultEmbedConfig().features.parameterControls, false);
   assert.deepEqual(validateEmbedConfig(config(), 'tenant-one', policy), config());
-  for (const name of ['anonymous', 'authoring']) { const input = config(); input.features[name] = true; assert.equal(validateEmbedConfig(input, 'tenant-one', policy).features[name], true); }
-  for (const field of ['export', 'download', 'persistentReaderState', 'filtering', 'parameterControls', 'madeUp']) {
+  for (const name of ['anonymous', 'authoring', 'filtering', 'parameterControls']) { const input = config(); input.features[name] = true; assert.equal(validateEmbedConfig(input, 'tenant-one', policy).features[name], true); }
+  for (const field of ['export', 'download', 'persistentReaderState', 'madeUp']) {
     const input = config(); input.features[field] = true;
     assert.throws(() => validateEmbedConfig(input, 'tenant-one', policy), { code: 'EMBED_FEATURE_UNSUPPORTED', status: 422 });
   }

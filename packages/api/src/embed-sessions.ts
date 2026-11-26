@@ -10,7 +10,9 @@ import { type TenantContext, TenantMetadata, type Revisions } from './metadata.j
 export function embedFailure(code = 'EMBED_REQUEST_INVALID', status = 400): never { throw new MetadataError(code, status); }
 export type EmbedExperience = { kind: 'dashboard' | 'visual'; dashboardId: string; visualId?: string; sheetId?: string }
   | { kind: 'q'; datasetId: string } | { kind: 'console'; analysisId?: string };
+export type EmbedInteractionFeatures = Pick<TenantEmbedConfig['features'], 'filtering' | 'parameterControls'>;
 export interface SessionGrant {
+  interactionFeatures?: EmbedInteractionFeatures;
   tenantId: string; namespaceId: string; issuerId: string; userId: string; anonymous: boolean;
   virtualNamespace?: string; tags: Record<string, string>; authorizedResources: string[];
   experience: EmbedExperience; allowedDomains: string[]; origin: string; configRevision: number;
@@ -124,7 +126,8 @@ export class EmbedSessions {
     if (g.experience.kind === 'console' && (g.anonymous || !hasCapability(user.role as Parameters<typeof hasCapability>[0], 'build'))) embedFailure('EMBED_AUTHOR_REQUIRED', 403);
     if (g.allowedDomains.some(o => !this.policy.tenants.get(g.tenantId)?.allowedParentOrigins.includes(o))) embedFailure('EMBED_ORIGIN_DENIED', 403);
     this.features(current.config, g);
-    return g;
+    // Authority comes from current validated config, including grants issued before #335.
+    return { ...g, interactionFeatures: { filtering: current.config.features.filtering, parameterControls: current.config.features.parameterControls } };
   }
   private async context(g: SessionGrant): Promise<TenantContext> {
     const context = await this.metadata.authenticate(null, async () => ({ namespaceId: g.namespaceId, userId: g.userId }));
