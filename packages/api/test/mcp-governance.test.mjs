@@ -26,7 +26,7 @@ async function member(f, role = 'reader') {
   const session = await f.auth.login(email, password, code(), f.tenant.tenantId, 'local'); f.advance(); return session;
 }
 
-test('J10 HTTP: SDK client discovers 58 tools and executes a real read using a dynamically issued OAuth token', async t => {
+test('J10 HTTP: SDK client discovers 60 tools and executes a real read using a dynamically issued OAuth token', async t => {
   const f = await mcpFixture(t); await dataset(f); const g = await f.grant();
   const client = new Client({ name: 'local-connector-proof', version: '1' });
   const transport = new StreamableHTTPClientTransport(new URL(`${f.config.origin}/api/mcp`), { requestInit: { headers: { Authorization: `Bearer ${g.access_token}` } }, fetch: async (url, init) => {
@@ -35,7 +35,7 @@ test('J10 HTTP: SDK client discovers 58 tools and executes a real read using a d
     return new Response(typeof r.body === 'string' ? r.body : JSON.stringify(r.body), { status: r.status, headers: r.headers });
   } });
   await client.connect(transport); t.after(() => client.close());
-  assert.equal((await client.listTools()).tools.length, 58);
+  assert.equal((await client.listTools()).tools.length, 60);
   const result = await client.callTool({ name: 'run_dataset_query', arguments: { id: 'sales', query } });
   assert.deepEqual(result.structuredContent.rows, [{ region: 'east', total: 40 }, { region: 'west', total: 20 }]);
 });
