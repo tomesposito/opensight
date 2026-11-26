@@ -142,6 +142,11 @@ try {
     await frame().getByRole('button', { name: 'Apply', exact: true }).click();
     assert.deepEqual((await (await updated).json()).visuals[0].rows, [{ amount: 30 }]);
     await frame().locator('.visual-card svg').filter({ hasText: '30' }).waitFor();
+    const revalidated = page.waitForResponse(r => r.url().endsWith('/status'));
+    await frame().evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await revalidated;
+    await frame().locator('.visual-card svg').filter({ hasText: '30' }).waitFor();
+    assert.equal(await frame().getByLabel('Minimum amount', { exact: true }).inputValue(), '25');
     await screenshot(`filtering-${mode}`);
     if (mode === 'registered') {
       await page.setViewportSize({ width: 390, height: 960 }); await screenshot('filtering-mobile');

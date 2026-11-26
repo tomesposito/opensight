@@ -17,7 +17,9 @@ const draftsFor = (content: DashboardContent): Drafts => ({
 });
 
 /** Reader state stays in the frame. Only the server plans and executes changes. */
-export function EmbeddedDashboard({ initial, transport, onState }: { initial: DashboardContent; transport: EmbedTransport; onState: (state: EmbedReaderState) => void }) {
+export function EmbeddedDashboard({ initial, transport, onState, onContent }: {
+  initial: DashboardContent; transport: EmbedTransport; onState: (state: EmbedReaderState) => void; onContent?: (content: DashboardContent) => void;
+}) {
   const [content, setContent] = useState(initial), [drafts, setDrafts] = useState(() => draftsFor(initial));
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [failed, setFailed] = useState(false);
   const flight = useRef(false), generation = useRef(0);
@@ -31,7 +33,7 @@ export function EmbeddedDashboard({ initial, transport, onState }: { initial: Da
     try {
       const result = await transport.request<DashboardContent>('content', state);
       if (current !== generation.current) return;
-      setContent(result); setDrafts(draftsFor(result));
+      setContent(result); setDrafts(draftsFor(result)); onContent?.(result);
     } catch {
       if (current === generation.current) { setFailed(true); setError('Unable to update this view. Reconnect to check access and try again.'); }
     } finally { if (current === generation.current) { flight.current = false; setBusy(false); } }

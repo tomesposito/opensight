@@ -4,6 +4,22 @@ import { randomBytes } from 'node:crypto';
 import { sessionFixture, request, parentOrigin } from './embed-session-helpers.mjs';
 import { readerMember, seedEmbedContent, configureInteractions } from './embed-content-helpers.mjs';
 import { httpStack } from './embed-http-helpers.mjs';
+import { adaptGatewayRequest } from '../dist/runtime-ingress.js';
+import { event, runtimeEnv } from './runtime-helpers.mjs';
+
+test('#335 serverless ingress admits content state POST without widening other embed methods', () => {
+  const state = { filters: { 'region-filter': ['east'] }, parameters: { Minimum: [25] } };
+  for (const method of ['GET', 'POST']) {
+    const input = event('/api/embed/sessions/id/content', method, method === 'POST' ? state : undefined);
+    input.headers.authorization = 'Embed synthetic';
+    const result = adaptGatewayRequest(input, runtimeEnv());
+    assert.equal(result.method, method); assert.equal(result.headers.authorization, 'Embed synthetic');
+    if (method === 'POST') assert.deepEqual(JSON.parse(result.body.toString()), state);
+  }
+  for (const [path, method] of [['content', 'PUT'], ['content', 'DELETE'], ['status', 'POST'], ['redeem', 'GET'], ['save', 'GET']]) {
+    assert.throws(() => adaptGatewayRequest(event(`/api/embed/sessions/id/${path}`, method), runtimeEnv()));
+  }
+});
 
 test('H6 real HTTP issuance/redemption separates bootstrap, frame credential and API authority', async t => {
   const f = await sessionFixture(t), reader = await readerMember(f); await seedEmbedContent(f, reader);

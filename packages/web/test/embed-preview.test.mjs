@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { act, createElement } from 'react';
+import { act, createElement, useState } from 'react';
 import { create } from 'react-test-renderer';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { EmbedFrame, defaultEmbedBrand, embedAsset } from '../build/test/EmbedFrame.js';
@@ -37,7 +37,11 @@ test('#335 frame controls submit complete typed state, hide stale results and re
   const old = globalThis.IS_REACT_ACT_ENVIRONMENT; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   const requests = [], states = [], initial = interactiveContent(); let renderer;
   const transport = { request: (action, body) => new Promise((resolve, reject) => requests.push({ action, body, resolve, reject })) };
-  await act(() => { renderer = create(createElement(EmbeddedDashboard, { initial, transport, onState: state => states.push(state) })); });
+  function Frame({ visible = true }) {
+    const [content, setContent] = useState(initial);
+    return visible && createElement(EmbeddedDashboard, { initial: content, transport, onState: state => states.push(state), onContent: setContent });
+  }
+  await act(() => { renderer = create(createElement(Frame)); });
   t.after(async () => { await act(() => renderer.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = old; });
   const input = label => renderer.root.findAllByType('input').find(i => i.props['aria-label'] === label);
   const applyButton = () => renderer.root.findAllByType('button').find(b => b.children.join('') === 'Apply');
@@ -53,6 +57,11 @@ test('#335 frame controls submit complete typed state, hide stale results and re
   assert.equal(renderer.root.findByType('fieldset').props.disabled, true);
   const result = structuredClone(initial); result.visuals[0].rows = [{ amount: 30 }]; result.controls.parameters[0].values = [25];
   await act(() => requests[0].resolve(result)); assert.deepEqual(renderer.root.findByType(VisualCard).props.visual.rows, [{ amount: 30 }]);
+  await act(() => renderer.update(createElement(Frame, { visible: false })));
+  assert.equal(renderer.root.findAllByType(VisualCard).length, 0);
+  await act(() => renderer.update(createElement(Frame, { visible: true })));
+  assert.deepEqual(renderer.root.findByType(VisualCard).props.visual.rows, [{ amount: 30 }]);
+  assert.equal(input('Minimum amount').props.value, '25');
   await act(() => renderer.root.findAllByType('button').find(b => b.children.join('') === 'Reset all').props.onClick());
   assert.deepEqual(requests[1].body, {}); assert.equal(renderer.root.findAllByType(VisualCard).length, 0);
   await act(() => requests[1].reject(new Error('revoked')));

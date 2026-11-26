@@ -47,7 +47,7 @@ function SessionFrame({ shell }: { shell: Shell }) {
     detail={['idle', 'unavailable'].includes(state) ? 'Connect to check access and load current data. Idle views hide their data after 45 seconds.' : state === 'connecting' ? 'The workspace may take a moment to wake up.' : state === 'revoked' ? 'Access has been revoked. Request a new session from your application.' : state === 'saved' ? 'Analysis saved. Request a new session to continue editing.' : state === 'expired' ? 'This session has expired. Request a new session from your application.' : undefined}>
     {ready && content.kind === 'q' && transport.current && <Question transport={transport.current} columns={content.columns ?? []} />}
     {ready && content.kind === 'console' && transport.current && <EmbeddedAuthor initial={content as ConsoleContent} transport={transport.current} />}
-    {ready && ['dashboard', 'visual'].includes(content.kind) && transport.current && <EmbeddedDashboard initial={content as DashboardContent} transport={transport.current} onState={value => { readerState.current = value; }} />}
+    {ready && ['dashboard', 'visual'].includes(content.kind) && transport.current && <EmbeddedDashboard initial={content as DashboardContent} transport={transport.current} onState={value => { readerState.current = value; }} onContent={setContent} />}
   </EmbedFrame>;
 }
 createRoot(document.getElementById('root')!).render(shell ? <SessionFrame shell={shell} /> : <EmbedFrame state="error" />);
