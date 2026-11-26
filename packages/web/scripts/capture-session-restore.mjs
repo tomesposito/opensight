@@ -52,8 +52,10 @@ try {
   await page.addInitScript(() => {
     window.__gatesSeen = [];
     const watch = () => {
-      const text = document.body?.textContent ?? '';
-      for (const name of ['Connect to OpenSight', 'Sign in to OpenSight']) if (text.includes(name) && !window.__gatesSeen.includes(name)) window.__gatesSeen.push(name);
+      for (const selector of ['#connect-title', '#sign-in-title']) {
+        const title = document.querySelector(selector)?.textContent;
+        if (title && !window.__gatesSeen.includes(title)) window.__gatesSeen.push(title);
+      }
     };
     new MutationObserver(watch).observe(document, { subtree: true, childList: true });
   });

@@ -5,6 +5,7 @@
    accent-dark #2f66d8, ink #1b2740, muted #5b6b8c, line #e2e8f2). */
 .sign-in-page { min-height: 100dvh; display: flex; flex-direction: column; color: #1b2740; background: radial-gradient(1100px 480px at 75% -10%, #24407c 0%, #0e1a33 55%), #0e1a33; font: 14px/1.55 Inter, ui-sans-serif, system-ui, sans-serif; }
 .sign-in-main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; max-width: none; margin: 0; padding: 40px 16px 24px; }
+.sign-in-status { color: #e9f0ff; }
 .sign-in-card { width: 360px; max-width: 100%; padding: 36px; border: 1px solid #e2e8f2; border-radius: 14px; background: #fff; box-shadow: 0 24px 60px rgba(2, 8, 30, .45), 0 4px 16px rgba(2, 8, 30, .35); }
 .sign-in-brand { display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 24px; font-size: 30px; font-weight: 700; letter-spacing: -.02em; color: #0f172a; }
 .sign-in-brand .brand-mark { font-size: 38px; line-height: 1; }

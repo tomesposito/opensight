@@ -243,7 +243,7 @@ export function SessionGate({ client, offline, children, invitation }: { client:
     <AccessProvider access={demoAccess}>{children}</AccessProvider>
   </>;
   if (restoring) return <div className="sign-in-page"><main className="sign-in-main">
-    <p role="status">{client.onDemand ? 'Connecting to your workspace…' : 'Checking your workspace…'}</p>
+    <p className="sign-in-status" role="status">{client.onDemand ? 'Connecting to your workspace…' : 'Checking your workspace…'}</p>
     <nav className="sign-in-links" aria-label="Startup options"><button type="button" onClick={explore}>Explore sample data</button></nav>
   </main></div>;
   if (client.onDemand && !connected) return <div className="sign-in-page"><main className="sign-in-main">
@@ -256,7 +256,7 @@ export function SessionGate({ client, offline, children, invitation }: { client:
     <nav className="sign-in-links" aria-label="Startup options"><button type="button" onClick={() => { connectRequest.current?.abort(); explore(); }}>Explore sample data</button></nav>
   </main></div>;
   if (local) return <AccessProvider access={{ mode: 'local' }}>{children}</AccessProvider>;
-  if (signingOut) return <div className="sign-in-page"><main className="sign-in-main"><p role="status">Signing out…</p></main></div>;
+  if (signingOut) return <div className="sign-in-page"><main className="sign-in-main"><p className="sign-in-status" role="status">Signing out…</p></main></div>;
   if (!session && issue === 'sign-in') {
     if (invitation && invitationSignIn !== invitation.token) return <InvitationEnrollment key={invitation.token} token={invitation.token} client={client}
       onEnrolled={credentials => {
@@ -273,7 +273,7 @@ export function SessionGate({ client, offline, children, invitation }: { client:
   // loading state in the sign-in shell so the landing page never flashes before auth.
   // The sample-data escape hatch stays available for slow checks.
   if (!session && checking && !issue) return <div className="sign-in-page"><main className="sign-in-main">
-    <p role="status">Checking your workspace…</p>
+    <p className="sign-in-status" role="status">Checking your workspace…</p>
     <nav className="sign-in-links" aria-label="Startup options"><button type="button" onClick={explore}>Explore sample data</button></nav>
   </main></div>;
   if (!session) return <FirstRun issue={issue} checking={checking} onRetry={retry} onDemo={explore} />;
