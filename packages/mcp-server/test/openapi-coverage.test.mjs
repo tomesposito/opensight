@@ -34,7 +34,7 @@ function sample(schema) {
 test('tools/list exactly equals all OpenAPI operations, schemas and versions; no invented tools/resources/prompts', async t => {
   const client = await connect(t, { fetch: async () => { throw new Error('Discovery must not access data'); } });
   const { tools } = await client.listTools();
-  assert.equal(entries.length, 58);
+  assert.equal(entries.length, 60);
   assert.ok(tools.some(tool => tool.name === 'ask_question'));
   assert.deepEqual(tools.map(tool => tool.name).sort(), entries.map(e => e.op.operationId).sort());
   assert.equal(new Set(tools.map(tool => tool.name)).size, entries.length);

@@ -38,3 +38,5 @@ export * from './prep.js';
 
 export * from './migration-report.js';
 export { object, convertDefinition, projectDefinition } from './definition-converter.js';
+
+export * from './migration-security.js';

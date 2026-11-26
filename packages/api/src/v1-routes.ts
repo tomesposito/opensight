@@ -1,3 +1,4 @@
+import { MigrationRoutes, migrationPath } from './migration-routes.js';
 import { digestPath, digestRoute } from './digest-routes.js';
 import type { DigestStore } from './digest-store.js';
 import { PrepTemplateRoutes, type TemplateBackend } from './prep-template-routes.js';
@@ -114,6 +115,7 @@ export class V1Routes {
       const gate = this.limiter.take(backend.scope.tenantId);
       if (!gate.allowed) { response.setHeader('Retry-After', String(gate.retryAfter)); v1Fail('RATE_LIMIT_EXCEEDED', 429, 'Rate limit exceeded'); }
       if (path === '/api/v1/ai/ask') { await this.ask(request, response, ask); return; }
+      if (migrationPath(path)) throw new MetadataError('HOSTED_API_REQUIRED', 503);
       if (path === '/api/v1/workspace/action-history') throw new MetadataError('HOSTED_API_REQUIRED', 503);
       if (digestPath(path)) throw new MetadataError('HOSTED_API_REQUIRED', 503);
       if (this.templates.matches(path)) await this.templates.route(request, response, path, assets);
@@ -144,6 +146,10 @@ export class V1Routes {
       }
       if (path === '/api/v1/ai/ask') {
         await this.ask(request, response, this.options.ask ? () => this.options.ask!(request, response, context, recheck) : undefined); return true;
+      }
+      if (migrationPath(path)) {
+        await new MigrationRoutes(durable ?? this.retries).route(request, response, path, context,
+          this.routes.data.sources.metadata, new HostedAnalyses(this.routes, context, recheck), recheck); return true;
       }
       const protocol = { paging: (r: IncomingMessage) => this.paging(r), ifMatch: (r: IncomingMessage) => this.ifMatch(r),
         publishData: async (r: IncomingMessage, res: ServerResponse, status: number, body: unknown, validate: () => Promise<void>) => {

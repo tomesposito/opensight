@@ -36,6 +36,8 @@ const ROUTES = specRoutes();
 
 // The client method that implements each spec route.
 const COVERAGE = {
+  '/bundle-imports|POST': 'importBundle',
+  '/bundle-imports/{id}/report|GET': 'readImportReport',
   '/workspace/action-history|GET': 'listWorkspaceActionHistory',
   '/ai/ask|POST': 'askQuestion',
   '/metrics|GET': 'listMetrics',

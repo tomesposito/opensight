@@ -182,6 +182,12 @@ class OpenSightClient:
     def ask_question(self, body: dict, idempotency_key: str | None = None):
         return self._json("POST", "/v1/ai/ask", _mutation_headers(idempotency_key), body)
 
+    def import_bundle(self, body: dict, idempotency_key: str | None = None):
+        return self._json("POST", "/v1/bundle-imports", _mutation_headers(idempotency_key), body)
+
+    def read_import_report(self, id: str):
+        return self._json("GET", f"/v1/bundle-imports/{_encode(id)}/report")
+
     # ---- governed metrics ----
 
     def list_metrics(self, limit: int | None = None, cursor: str | None = None):

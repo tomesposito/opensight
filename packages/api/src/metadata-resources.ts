@@ -1,3 +1,4 @@
+import { migrationRecord } from './migration-model.js';
 import { storedMaterialization } from './stored-tables.js';
 import { validateTemplateRecord } from './prep-template-model.js';
 import { validateMetricRecord } from './metric-model.js';
@@ -9,7 +10,7 @@ import { executionSettings } from './blaze.js';
 import { isObject, type JsonObject } from './mapping.js';
 import { MetadataError, type SqlConnection } from './metadata-db.js';
 
-export const resourceKinds = ['user', 'group', 'folder', 'analysis', 'dashboard', 'dataset', 'prepared-dataset', 'policy', 'source', 'secret', 'ai-config', 'invitation', 'job', 'metric', 'prep-template'] as const;
+export const resourceKinds = ['user', 'group', 'folder', 'analysis', 'dashboard', 'dataset', 'prepared-dataset', 'policy', 'source', 'secret', 'ai-config', 'invitation', 'job', 'metric', 'prep-template', 'migration-import'] as const;
 export type MetadataKind = typeof resourceKinds[number];
 export interface ResourceKey { kind: MetadataKind; id: string; ownerId?: string }
 export interface MetadataResource extends ResourceKey { body: JsonObject; version: number }
@@ -32,7 +33,7 @@ export function resourceKey(value: ResourceKey): ResourceKey {
   const key = object(value, ['kind', 'id', 'ownerId']);
   if (!resourceKinds.includes(key.kind as MetadataKind)) invalidMetadata();
   const kind = key.kind as MetadataKind, ownerId = key.ownerId === undefined ? undefined : identifier(key.ownerId);
-  if (ownerId && !['prepared-dataset', 'source', 'secret'].includes(kind) || kind === 'prepared-dataset' && !ownerId) invalidMetadata();
+  if (ownerId && !['prepared-dataset', 'source', 'secret', 'migration-import'].includes(kind) || ['prepared-dataset', 'migration-import'].includes(kind) && !ownerId) invalidMetadata();
   return { kind, id: identifier(key.id), ...(ownerId ? { ownerId } : {}) };
 }
 function reference(value: unknown): ResourceKey { return resourceKey(object(value) as unknown as ResourceKey); }
@@ -54,6 +55,7 @@ export function resourceLinks(key: ResourceKey, raw: JsonObject): ResourceKey[] 
   };
   if (key.ownerId) add('user', key.ownerId);
   switch (key.kind) {
+    case 'migration-import': migrationRecord(body); break;
     case 'prep-template': {
       const template = validateTemplateRecord(body); add('user', template.owner); add('user', template.createdBy);
       for (const v of template.versions) add('user', v.actor);

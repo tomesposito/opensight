@@ -43,6 +43,10 @@
     "./exports": {
       "types": "./build/server/visual-export.d.ts",
       "import": "./build/server/visual-export.js"
+    },
+    "./import": {
+      "types": "./build/server/bundle-authoring.d.ts",
+      "import": "./build/server/bundle-authoring.js"
     }
   }
 }

@@ -241,7 +241,7 @@ test('H1 every resource kind isolates identical IDs and all relational edges rej
     await repo.put(b, { kind: 'source', id: 'foreign' }, { binding: {} });
     await assert.rejects(repo.put(a, { kind: 'dataset', id: 'bad' }, { definition: {}, sources: [{ kind: 'source', id: 'foreign' }] }), { code: 'METADATA_REFERENCE_INVALID' });
     // Raw composite constraints, independent of JSON/application validation.
-    for (const kind of resourceKinds) await assert.rejects(db.transaction(c => c.query('INSERT INTO h1_resources VALUES (?,?,?,?,?,?,?)', ['b', 'one', kind, kind === 'prepared-dataset' ? 'admin' : '', 'bypass', '{}', 1])), { code: 'METADATA_REFERENCE_INVALID' });
+    for (const kind of resourceKinds) await assert.rejects(db.transaction(c => c.query('INSERT INTO h1_resources VALUES (?,?,?,?,?,?,?)', ['b', 'one', kind, ['prepared-dataset', 'migration-import'].includes(kind) ? 'admin' : '', 'bypass', '{}', 1])), { code: 'METADATA_REFERENCE_INVALID' });
     await assert.rejects(db.transaction(c => c.query('INSERT INTO h1_links VALUES (?,?,?,?,?,?,?,?)', ['a', 'one', 'dataset', '', 'same', 'source', '', 'foreign'])), { code: 'METADATA_REFERENCE_INVALID' });
   } finally { await db.close(); }
 });

@@ -131,6 +131,11 @@ export const v1AuditOperations = [
     "path": "/folders/{id}/permissions"
   },
   {
+    "operationId": "import_bundle",
+    "method": "POST",
+    "path": "/bundle-imports"
+  },
+  {
     "operationId": "list_analyses",
     "method": "GET",
     "path": "/analyses"
@@ -214,6 +219,11 @@ export const v1AuditOperations = [
     "operationId": "query_dashboard_visual",
     "method": "POST",
     "path": "/dashboards/{id}/versions/{version}/visuals/{visualId}/query"
+  },
+  {
+    "operationId": "read_import_report",
+    "method": "GET",
+    "path": "/bundle-imports/{id}/report"
   },
   {
     "operationId": "refresh_dataset",

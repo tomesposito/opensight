@@ -1492,6 +1492,128 @@ export const operations: Operation[] = [
     }
   },
   {
+    "name": "import_bundle",
+    "method": "POST",
+    "path": "/bundle-imports",
+    "parameters": [
+      {
+        "input": "idempotencyKey",
+        "name": "Idempotency-Key",
+        "location": "header"
+      }
+    ],
+    "bodyInput": "body",
+    "emptyBody": false,
+    "tool": {
+      "name": "import_bundle",
+      "description": "POST /api/v1/bundle-imports — Import a customer-extracted QuickSight bundle and persist its shared report. Hosted only; requires build capability. Accepts local bundle JSON, never AWS credentials or extraction instructions. Originals and shape-only report are stored atomically for the importing member. Unresolved or unsupported assets remain staged and cannot execute. Optional bindings admit supported analyses through normal authoring validation; dashboards become unpublished working analyses. Targets use importId-asset ordinal. Recreate connections and prepared datasets with existing tools, then import with bindings or create an analysis. Report coverage describes conversion, not numerical or visual parity.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "idempotencyKey": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,512}$",
+            "description": "HTTP Idempotency-Key header. Honored on every v1 mutation and query POST (10-minute replay window, single node)"
+          },
+          "body": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "importId",
+              "bundle"
+            ],
+            "properties": {
+              "importId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+              },
+              "bundle": {
+                "type": "object",
+                "description": "Existing QsBundle JSON envelope or single camelCase bundle resource; 16 MiB request limit."
+              },
+              "manifest": {
+                "type": "object",
+                "description": "Strict extraction-manifest v1 from the customer-run extractor; shape only."
+              },
+              "previousImportId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+              },
+              "bindings": {
+                "type": "array",
+                "maxItems": 10000,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "asset",
+                    "datasetBindings"
+                  ],
+                  "properties": {
+                    "asset": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "datasetBindings": {
+                      "type": "object",
+                      "description": "Exact map from every BundleDefinition dataSetIdentifierDeclarations identifier to one typed reference. No extra or missing identifiers. Prepared datasets resolve only under the authenticated user's owner scope; legacy dataset source ownership must also match that user. No caller ownerId, tenantId, userId or ARN is execution authority. dataSetArn remains a definition label and is never used for resolution.",
+                      "propertyNames": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "additionalProperties": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "kind",
+                              "id"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "const": "dataset"
+                              },
+                              "id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,512}$"
+                              }
+                            }
+                          },
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "kind",
+                              "id"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "const": "prepared-dataset"
+                              },
+                              "id": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "body"
+        ]
+      }
+    }
+  },
+  {
     "name": "list_analyses",
     "method": "GET",
     "path": "/analyses",
@@ -2285,6 +2407,37 @@ export const operations: Operation[] = [
           "version",
           "visualId",
           "body"
+        ]
+      }
+    }
+  },
+  {
+    "name": "read_import_report",
+    "method": "GET",
+    "path": "/bundle-imports/{id}/report",
+    "parameters": [
+      {
+        "input": "id",
+        "name": "id",
+        "location": "path"
+      }
+    ],
+    "emptyBody": false,
+    "tool": {
+      "name": "read_import_report",
+      "description": "GET /api/v1/bundle-imports/{id}/report — Read the importing member's unchanged shared migration report. Hosted only; requires build capability. Tenant, namespace and importing-member scoped even for administrators. No definition content or customer rows. The versioned report groups findings by fingerprint kind and distinguishes clean, converted-differently and failed-closed coverage. Extraction is never an operation.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,128}$",
+            "description": ""
+          }
+        },
+        "required": [
+          "id"
         ]
       }
     }

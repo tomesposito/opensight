@@ -181,3 +181,32 @@ Work item 7 is documented for the delivered slice. Work item 8 tests that slice;
 the tenant/member-read, MCP import/remap and Ask O confirmation acceptance tests
 remain with their unimplemented steps. `site/build-docs.mjs` does not consume this
 page, the package README or the IDD; no generated public page changes are required.
+
+## Hosted bundle import and report read
+
+D-97 adds exactly two v1 operations: `POST /api/v1/bundle-imports`
+(`import_bundle`) and `GET /api/v1/bundle-imports/{id}/report`
+(`read_import_report`). Both require build capability. Local servers return
+`HOSTED_API_REQUIRED`; extraction remains customer-side.
+
+The import body has `importId` (1–128 identifier characters), `bundle` (the
+extractor's JSON envelope), and optional `manifest`, `previousImportId`, and
+`bindings: [{ asset, datasetBindings }]`. `asset` is the zero-based bundle member
+ordinal; bindings use the existing analysis `{ kind, id }` dataset references.
+The whole request is limited to 16 MiB. Credential material is rejected.
+
+An import retains the original bundle and the shared report in one member-owned
+metadata resource. Supported, fully bound analyses also enter normal authoring in
+that transaction, with IDs `{importId}-{asset}`. Dashboards become unpublished
+working analyses, recorded as a deliberate difference. Unresolved bindings,
+unsupported constructs, datasets and data sources remain staged and cannot run.
+Existing source/prep tools recreate connections and data; existing analysis tools
+then accept reviewed definitions and bindings, or a new import can use bindings.
+Imported QuickSight permissions never grant OpenSight access.
+
+The response is `{ importId, report, targets }`; each target names its ordinal and
+`staged` or `imported` state, with `analysisId` for imported targets. Report read
+returns that exact `report`, without names, paths, rows or definition content.
+Even another administrator cannot read another member's report. Repeated IDs
+conflict; `Idempotency-Key` follows the existing v1 retry contract. The hosted owner
+metadata migration upgrades the resource-kind constraint before runtime use.

@@ -26,6 +26,68 @@ tags:
   - name: dashboards
   - name: assets
 paths:
+  /bundle-imports:
+    post:
+      operationId: import_bundle
+      tags: [migration]
+      summary: Import a customer-extracted QuickSight bundle and persist its shared report
+      description: >-
+        Hosted only; requires build capability. Accepts local bundle JSON, never AWS
+        credentials or extraction instructions. Originals and shape-only report are
+        stored atomically for the importing member. Unresolved or unsupported assets
+        remain staged and cannot execute. Optional bindings admit supported analyses
+        through normal authoring validation; dashboards become unpublished working
+        analyses. Targets use importId-asset ordinal. Recreate connections and prepared
+        datasets with existing tools, then import with bindings or create an analysis.
+        Report coverage describes conversion, not numerical or visual parity.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BundleImport' }
+      responses:
+        '201':
+          description: Import identity, per-asset targets and exact persisted report
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BundleImportResult' }
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '401': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '409': { $ref: '#/components/responses/AnalysisError' }
+        '413': { $ref: '#/components/responses/AnalysisError' }
+        '422': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/AnalysisError' }
+  /bundle-imports/{id}/report:
+    get:
+      operationId: read_import_report
+      tags: [migration]
+      summary: Read the importing member's unchanged shared migration report
+      description: >-
+        Hosted only; requires build capability. Tenant, namespace and importing-member
+        scoped even for administrators. No definition content or customer rows. The
+        versioned report groups findings by fingerprint kind and distinguishes clean,
+        converted-differently and failed-closed coverage. Extraction is never an operation.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
+      responses:
+        '200':
+          description: Exact shared report returned by import_bundle
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MigrationImportReport' }
+        '401': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/AnalysisError' }
   /workspace/action-history:
     get:
       operationId: list_workspace_action_history
@@ -2558,6 +2620,101 @@ components:
       description: Quoted integer version, e.g. "3" (optimistic concurrency)
       schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
   schemas:
+    BundleImport:
+      type: object
+      additionalProperties: false
+      required: [importId, bundle]
+      properties:
+        importId: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
+        bundle:
+          type: object
+          description: Existing QsBundle JSON envelope or single camelCase bundle resource; 16 MiB request limit.
+        manifest:
+          type: object
+          description: Strict extraction-manifest v1 from the customer-run extractor; shape only.
+        previousImportId: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
+        bindings:
+          type: array
+          maxItems: 10000
+          items:
+            type: object
+            additionalProperties: false
+            required: [asset, datasetBindings]
+            properties:
+              asset: { type: integer, minimum: 0 }
+              datasetBindings: { $ref: '#/components/schemas/DatasetBindings' }
+    BundleImportResult:
+      type: object
+      required: [importId, report, targets]
+      properties:
+        importId: { type: string }
+        report: { $ref: '#/components/schemas/MigrationImportReport' }
+        targets:
+          type: array
+          items:
+            type: object
+            required: [asset, state]
+            properties:
+              asset: { type: integer, minimum: 0 }
+              state: { type: string, enum: [staged, imported] }
+              analysisId: { type: string }
+    MigrationImportReport:
+      type: object
+      description: Shared bundle-parser MigrationImportReport contract. No names, paths, definition values or diagnostics; counts and ordinals only.
+      required: [schemaVersion, producer, artifact, generatedAt, assets, knownLimits, groups]
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        producer: { type: string, const: 'opensight-migration/1' }
+        artifact: { type: string, const: import-report }
+        generatedAt: { type: string, format: date-time }
+        assets:
+          type: array
+          items:
+            type: object
+            required: [asset, resourceType, findings, coverage]
+            properties:
+              asset: { type: integer, minimum: 0 }
+              resourceType: { type: string, enum: [analysis, dashboard, dataset, datasource] }
+              findings:
+                type: array
+                items:
+                  type: object
+                  required: [kind, construct, location, item, outcome, code]
+                  properties:
+                    kind: { type: string }
+                    construct: { type: string }
+                    location: { type: string, enum: [asset, visual, field-well] }
+                    item: { type: integer, minimum: 0 }
+                    sheet: { type: integer, minimum: 0 }
+                    visual: { type: integer, minimum: 0 }
+                    outcome: { type: string, enum: [clean, converted-differently, failed-closed] }
+                    code: { type: string, enum: [CONVERTED, DELIBERATE_PROJECTION, UNSUPPORTED_RETAINED, REMAP_REQUIRED] }
+              coverage:
+                type: object
+                required: [total, clean, convertedDifferently, failedClosed]
+                properties:
+                  total: { type: integer, minimum: 0 }
+                  clean: { $ref: '#/components/schemas/MigrationCoverageBucket' }
+                  convertedDifferently: { $ref: '#/components/schemas/MigrationCoverageBucket' }
+                  failedClosed: { $ref: '#/components/schemas/MigrationCoverageBucket' }
+        groups:
+          type: array
+          items:
+            type: object
+            required: [kind, count, assets, newKind]
+            properties:
+              kind: { type: string }
+              count: { type: integer, minimum: 1 }
+              assets: { type: array, items: { type: integer, minimum: 0 } }
+              newKind: { type: boolean }
+        knownLimits: { type: array, items: { type: object } }
+        manifest: { type: object }
+    MigrationCoverageBucket:
+      type: object
+      required: [count, share]
+      properties:
+        count: { type: integer, minimum: 0 }
+        share: { type: number, minimum: 0, maximum: 1 }
     WorkspaceAuditEntry:
       type: object
       additionalProperties: false

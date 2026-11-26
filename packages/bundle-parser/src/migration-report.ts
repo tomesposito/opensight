@@ -185,3 +185,24 @@ export function parseExtractionManifest(raw: unknown): ExtractionManifest {
   }
   return structuredClone(r) as unknown as ExtractionManifest;
 }
+
+/** Validate a portable report without trusting supplied coverage, groups or kinds. */
+export function parseImportReport(raw: unknown): MigrationImportReport {
+  const fail = (): never => { throw new Error('MIGRATION_REPORT_INVALID'); };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) fail();
+  const r = raw as MigrationImportReport;
+  if (r.schemaVersion !== MIGRATION_VERSION || r.producer !== MIGRATION_PRODUCER || r.artifact !== 'import-report'
+    || !Array.isArray(r.assets) || r.assets.length > 10000 || !Array.isArray(r.groups)) fail();
+  const rebuilt = serializeImportReport(r.assets.map(a => ({ ...a, path: '', name: '', messages: [] })),
+    { generatedAt: r.generatedAt, ...(r.manifest ? { manifest: r.manifest } : {}) });
+  // newKind is historical evidence; every other field is derived or fixed vocabulary.
+  for (const g of rebuilt.groups) {
+    const source = r.groups.find(v => v.kind === g.kind);
+    if (!source || typeof source.newKind !== 'boolean') fail();
+    g.newKind = source!.newKind;
+  }
+  const canonical = (v: unknown): string => Array.isArray(v) ? `[${v.map(canonical).join(',')}]`
+    : v && typeof v === 'object' ? `{${Object.entries(v).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([k, child]) => `${JSON.stringify(k)}:${canonical(child)}`).join(',')}}` : JSON.stringify(v) ?? 'null';
+  if (canonical(raw) !== canonical(rebuilt)) fail();
+  return rebuilt;
+}
