@@ -9,7 +9,7 @@ import { StartupError } from './workspace-startup.js';
 import { InvitationEnrollment, type EnrollmentCredentials } from './InvitationEnrollment.js';
 import { AcceptInvitation } from './UserManagement.js';
 
-type Client = Pick<ReturnType<typeof createApiClient>, 'getSession'> & Partial<Pick<ReturnType<typeof createApiClient>, 'checkout' | 'requestPaidPlan' | 'withdrawPaidRequest' | 'exportWorkspace' | 'closeWorkspace' | 'getLocalData' | 'enroll' | 'acceptEnrollment' | 'acceptInvitation' | 'login' | 'selectWorkspace' | 'logout' | 'clearSession' | 'onDemand' | 'connect' | 'subscribeAvailability'>> & Access['aiClient'];
+type Client = Pick<ReturnType<typeof createApiClient>, 'getSession'> & Partial<Pick<ReturnType<typeof createApiClient>, 'checkout' | 'requestPaidPlan' | 'withdrawPaidRequest' | 'exportWorkspace' | 'closeWorkspace' | 'getLocalData' | 'enroll' | 'acceptEnrollment' | 'acceptInvitation' | 'login' | 'selectWorkspace' | 'restoreSession' | 'logout' | 'clearSession' | 'onDemand' | 'connect' | 'subscribeAvailability'>> & Access['aiClient'];
 export const SESSION_TIMEOUT_MS = 10_000;
 
 function startupIssue(error: unknown): StartupIssue {
@@ -28,6 +28,9 @@ export function SessionGate({ client, offline, children, invitation }: { client:
   const [session, setSession] = useState<Session>();
   const [local, setLocal] = useState(false);
   const [issue, setIssue] = useState<StartupIssue>();
+  const [restoring, setRestoring] = useState(!!client.restoreSession);
+  const restoredClient = useRef<Client | undefined>(undefined);
+  const skipRestoredCheck = useRef(false);
   const [connected, setConnected] = useState(!client.onDemand);
   const [connecting, setConnecting] = useState(false), [connectionError, setConnectionError] = useState('');
   const [checking, setChecking] = useState(!client.onDemand);
@@ -48,6 +51,44 @@ export function SessionGate({ client, offline, children, invitation }: { client:
     setNotice(authNotice(new ApiError('Expired', 401, 'SESSION_EXPIRED')));
   }
   useEffect(() => () => { connectRequest.current?.abort(); authRequest.current?.abort(); client.clearSession?.(); }, [client]);
+  useEffect(() => {
+    if (offline || demo || !client.restoreSession || restoredClient.current === client) { setRestoring(false); return; }
+    let active = true;
+    const controller = new AbortController();
+    let deadline: number | undefined;
+    setRestoring(true);
+    void (async () => {
+      // Let StrictMode's effect cleanup cancel before starting a rotating POST.
+      await Promise.resolve();
+      if (!active) return;
+      try {
+        if (client.onDemand) {
+          if (!client.connect) throw new StartupError('WORKSPACE_UNAVAILABLE');
+          await client.connect(controller.signal);
+        }
+        if (!active || controller.signal.aborted) return;
+        // Wake has its own finite retry window; the exchange gets a fresh deadline.
+        deadline = window.setTimeout(() => controller.abort(), SESSION_TIMEOUT_MS);
+        const value = await client.restoreSession!(controller.signal);
+        if (!active || controller.signal.aborted) return;
+        requireSignIn.current = false; skipRestoredCheck.current = true;
+        setSession(value.session); setExpiresAt(value.expiresAt); setConnected(true);
+        setLocal(false); setIssue(undefined); setNotice(undefined); setChecking(false);
+      } catch (error) {
+        if (!active) return;
+        if (client.onDemand) {
+          setConnected(false);
+          if (error instanceof StartupError) setConnectionError(error.message);
+        }
+        // Missing/invalid cookies and unavailable restore support return to
+        // the existing Connect -> session check -> sign-in/local setup flow.
+      } finally {
+        window.clearTimeout(deadline);
+        if (active) { restoredClient.current = client; setRestoring(false); }
+      }
+    })();
+    return () => { active = false; controller.abort(); window.clearTimeout(deadline); };
+  }, [client, offline, demo]);
   useEffect(() => {
     if (!client.onDemand || offline || demo) return;
     const resumed = () => { if (currentExpiry.current !== undefined && Date.now() >= currentExpiry.current) expire(); };
@@ -71,7 +112,7 @@ export function SessionGate({ client, offline, children, invitation }: { client:
     return () => window.clearTimeout(timer);
   }, [expiresAt, client, offline, demo]);
   useEffect(() => {
-    if (offline || demo || !connected) return;
+    if (offline || demo || restoring || !connected) return;
     let active = true;
     let deadline: number | undefined;
     const refresh = async () => {
@@ -109,7 +150,8 @@ export function SessionGate({ client, offline, children, invitation }: { client:
         if (active && version === revision.current) setChecking(false);
       }
     };
-    void refresh();
+    if (skipRestoredCheck.current) skipRestoredCheck.current = false;
+    else void refresh();
     const timer = client.onDemand ? undefined : window.setInterval(() => void refresh(), 30_000);
     if (!client.onDemand) window.addEventListener('focus', refresh);
     return () => {
@@ -119,7 +161,7 @@ export function SessionGate({ client, offline, children, invitation }: { client:
       window.clearInterval(timer);
       window.removeEventListener('focus', refresh);
     };
-  }, [client, offline, demo, attempt, connected]);
+  }, [client, offline, demo, attempt, connected, restoring]);
 
   async function connect() {
     if (connectRequest.current) return;
@@ -200,6 +242,10 @@ export function SessionGate({ client, offline, children, invitation }: { client:
     </aside>
     <AccessProvider access={demoAccess}>{children}</AccessProvider>
   </>;
+  if (restoring) return <div className="sign-in-page"><main className="sign-in-main">
+    <p role="status">{client.onDemand ? 'Connecting to your workspace…' : 'Checking your workspace…'}</p>
+    <nav className="sign-in-links" aria-label="Startup options"><button type="button" onClick={explore}>Explore sample data</button></nav>
+  </main></div>;
   if (client.onDemand && !connected) return <div className="sign-in-page"><main className="sign-in-main">
     <section className="sign-in-card" aria-labelledby="connect-title">
     <p className="sign-in-kicker">YOUR HOSTED WORKSPACE</p><h1 id="connect-title">Connect to OpenSight</h1><p className="sign-in-description">The workspace sleeps when it is idle. Connecting may take a moment.</p>

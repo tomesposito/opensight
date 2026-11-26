@@ -227,13 +227,12 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     clearSession();
     const current = generation, started = Date.now();
     try {
-      // The login boundary rejects BOTH cookies and Authorization, even stale ones.
-      // No workspace travels with the request: the server either issues the
-      // session directly (single membership) or challenges with a picker.
+      // Credentials establish identity; same-origin accepts the HttpOnly refresh
+      // cookie. No existing bearer or workspace selects the login identity.
       const body = await authResponse(await fetcher(`${base}/api/auth/login`, {
-        method: 'POST', credentials: 'omit', signal,
+        method: 'POST', credentials: 'same-origin', signal,
         headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: input.email, password: input.password, code: input.code }),
+        body: JSON.stringify({ email: input.email, password: input.password, code: input.code, remember }),
       }));
       if (body.selectionRequired === true) {
         if (current !== generation || signal?.aborted) throw new ApiError('Sign-in cancelled.', undefined, 'AUTH_REQUEST_SUPERSEDED');
@@ -249,11 +248,11 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     clearSession();
     const current = generation, started = Date.now();
     try {
-      // Same login boundary as /api/auth/login: no cookies, no Authorization.
+      // Complete the credential challenge and accept the HttpOnly cookie.
       const body = await authResponse(await fetcher(`${base}/api/auth/login/select`, {
-        method: 'POST', credentials: 'omit', signal,
+        method: 'POST', credentials: 'same-origin', signal,
         headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ selectionToken, tenantId }),
+        body: JSON.stringify({ selectionToken, tenantId, remember }),
       }));
       if (body.tenantId !== tenantId) throw new ApiError('Invalid authentication response.', undefined, 'AUTH_RESPONSE_INVALID');
       return await establishSession(body, remember, signal, current, started);
@@ -262,12 +261,28 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
       throw error;
     }
   }
+  async function restoreSession(signal?: AbortSignal): Promise<SignedIn> {
+    clearSession();
+    const current = generation, started = Date.now();
+    try {
+      const body = await authResponse(await fetcher(`${base}/api/auth/restore`, {
+        method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal,
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: '{}',
+      }));
+      // The server preserves the original remember-me deadline; no browser
+      // storage flag is needed to recover it after a page reload.
+      return await establishSession(body, true, signal, current, started);
+    } catch (error) {
+      if (current === generation) clearSession();
+      throw error;
+    }
+  }
   async function logout(signal?: AbortSignal): Promise<void> {
     const current = generation;
     try {
-      const body = await authResponse(await authenticatedFetch(`${base}/api/auth/logout`, {
-        method: 'POST', credentials: 'omit', signal,
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: '{}',
+      const body = await authResponse(await fetcher(`${base}/api/auth/logout`, {
+        method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal,
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(credential ? { Authorization: `Bearer ${credential.token}` } : {}) }, body: '{}',
       }));
       if (body.loggedOut !== true) throw new ApiError('Invalid sign-out response.', undefined, 'AUTH_RESPONSE_INVALID');
     } finally { if (current === generation) clearSession(); }
@@ -635,7 +650,7 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
     listDashboards, getPublishedDashboard, queryDashboardVisual,
     saveHostedAnalysis, publishAnalysis,
     onDemand, connect, subscribeAvailability,
-    checkout, requestPaidPlan, withdrawPaidRequest, exportWorkspace, closeWorkspace, enroll, acceptEnrollment, login, selectWorkspace, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
+    checkout, requestPaidPlan, withdrawPaidRequest, exportWorkspace, closeWorkspace, enroll, acceptEnrollment, login, selectWorkspace, restoreSession, logout, clearSession, getTransportCapabilities, uploadDirectFile, getOperation, getUploadReservation, cancelOperation, cancelUploadReservation,
     listJobs, jobRecipients, jobHistory, jobDeliveries, runJob, retryJobDelivery,
     mcpInteraction, mcpAuthorize, mcpConnections, revokeMcpConnection,
     listPrepTemplates, proposePrepTemplate, publishPrepTemplate, createFromPrepTemplate, promoteCalculation, metricDatasets, listMetrics, saveMetric, publishMetric, metricHistory, getLocalData, publishStoredTable, downloadStoredTable, getDatasetExecution, setDatasetExecution, refreshBlaze, getPreparedRows, listPrepSources, listPrepDatasets, savePrep, deletePrep, previewPrep, joinDiagnostics, uploadFile, validateConnector, listUsers, saveUser, deleteUser, listInvitations, inviteUser, revokeInvitation, acceptInvitation, getAIStatus, generateO, planO, reviseO, generateCalculation, getAnalyticsConfig, saveAnalyticsConfig, getAIConfig, saveAIConfig, saveAIKey, testAIConnection, getSession, queryO, getDatasetRefreshStatus,
