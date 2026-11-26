@@ -147,6 +147,69 @@ Author saves validate source access and every visual before committing. Version
 and revision checks are atomic; clients cannot change grants or folder placement
 through a save. Existing assets need co-owner access where grants are explicit.
 
+## Filtering and parameter controls (#335)
+
+D-102 Q3 enables frame-local reader state for dashboard and visual sessions,
+including authorized anonymous sessions. The tenant must independently enable
+`features.filtering` and/or `features.parameterControls`; both default to false.
+Q and console experiences do not accept this reader-state contract.
+
+`GET /api/embed/sessions/{id}/content` loads the asset's saved defaults.
+`POST` to the same endpoint refreshes the same content with state:
+
+```json
+{
+  "filters": { "region-filter": ["east"] },
+  "parameters": { "Minimum": [25] }
+}
+```
+
+Both methods require the existing `Authorization: Embed ...` credential and
+return `no-store` content. The response includes `controls: {filters, parameters}`
+with each editable binding's `id`, `name`, plain-text `label`, `type`, `multiple`,
+optional `integer`, and current `values`. Disabled features return empty control
+arrays. Controls derive only from filters and calculations reached by the
+authorized visuals; disabled filters, filters outside a visual-only session's
+scope and unused parameters are not editable. Stored control titles supply labels
+where available; otherwise the column or parameter name is used.
+
+The frame renders an input for each selected value, with Add/Remove, Apply and
+Reset all. Apply sends the complete current selection and hides old results while
+the server re-plans. Reset all submits `{}` to restore saved defaults. The frame
+keeps state only in memory and resubmits it after an on-demand reconnect; it never
+writes the dashboard, browser storage or parent messages. Terminal session failure
+clears the state. The v2 parent SDK and v1 snapshot transport are unchanged.
+
+`filters` maps existing static `CategoryFilter` IDs to string arrays. The stored
+filter must use `FilterListConfiguration`, `EQUALS` and `NON_NULLS_ONLY`, as required
+by the existing planner. Parameter-bound category, numeric equality, numeric range
+and time range filters are controlled through their declared parameters, under
+the separate `parameterControls` flag. Parameters also bind to reachable calculated
+fields. This does not add unsupported filter operators or a source-value discovery
+query. Values need not be among the saved defaults; defaults are not access grants.
+
+Every supplied key must resolve to an editable binding in the asset's own
+definition. Unknown fields, IDs, unused parameters, wrong scalar types,
+multiplicity violations, duplicate values, invalid UTC dates or out-of-range
+integers return 422 `EMBED_STATE_INVALID`. Arrays contain at most 1,000 values;
+single-value parameters contain at most one. Strings are at most 10,000 characters
+and cannot contain NUL. Numbers must be finite; integer parameters require safe
+integers. Empty filter/parameter selections match no rows; scalar calculations
+that require a value instead reject an empty parameter through the planner.
+An aggregate over no matching rows retains normal query semantics (for example,
+a KPI sum returns `null`). Omitted keys use saved defaults, never prior requests.
+
+Submitting a `filters` or `parameters` map while its flag is off returns 403
+`EMBED_FEATURE_DISABLED`, even for `{}` or malformed map values. A config change
+revokes old sessions before accepting more queries. No request can supply columns,
+operators, scopes, dataset IDs, security policy or anonymous tags. The server
+validates the saved definition, applies values to a request-local copy, and plans
+again with the same viewer security before source I/O. Both source and dataset RLS
+still intersect; CLS denials include calculated-field dependencies. Denied columns
+retain the planner's concealed `UNRESOLVED_BINDING` diagnostic. A selection for an
+RLS-denied region yields no authorized matching rows and cannot widen access.
+H4 budgets, contained workers, and revision checks before publication still apply.
+
 ## Browser and SDK transport
 
 `createSessionEmbeddingClient({allowedEmbedOrigins, getEmbedUrl, title?})` is the
@@ -187,6 +250,11 @@ its documented proxy query redaction.
 Tests are included in root `npm test`: session replay/races/restart, renewal,
 expiry, revisions, suspension, key rotation, viewer RLS/CLS, anonymous tag rules,
 author permissions, HTTP credential separation and SDK/iframe forgery attempts.
+Issue #335 extends the embed suites with typed state, independent feature flags,
+filter scope, reset/default isolation, frame refresh behavior, RLS intersection,
+anonymous-tag bypass attempts and direct/calculated CLS-denied bindings rejected
+before source I/O. The browser harness also changes live dashboard/visual controls,
+checks resulting totals and flags-off behavior, and captures narrow-screen layouts.
 The live Postgres test uses independent pools to prove atomic consumption and
 revocation across service instances.
 
