@@ -27,7 +27,7 @@ import { PrepError } from '@opensight/bundle-parser/prep';
 import { BlazeError } from './blaze.js';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { hasCapability } from '@opensight/query-engine';
-import { refreshCookieHeader } from './session-cookie.js';
+import { readRefreshCookie, refreshCookieHeader } from './session-cookie.js';
 import { HostedAuth, type BrowserSession } from './hosted-auth.js';
 import { initializeAuth } from './auth-schema.js';
 import { equal } from './auth-crypto.js';
@@ -140,7 +140,7 @@ function sendBrowserSession(response: ServerResponse, session: BrowserSession, o
 }
 function idempotency(request: IncomingMessage): string { return identifier(request.headers['idempotency-key']); }
 function boundary(request: IncomingMessage, origin: string): void {
-  for (const header of ['host', 'authorization', 'origin', 'idempotency-key', 'if-match', 'idea-status', 'idea-tenant', 'content-type', 'mcp-protocol-version', 'mcp-session-id']) {
+  for (const header of ['host', 'authorization', 'cookie', 'origin', 'idempotency-key', 'if-match', 'idea-status', 'idea-tenant', 'content-type', 'mcp-protocol-version', 'mcp-session-id']) {
     let count = 0;
     for (let i = 0; i < request.rawHeaders.length; i += 2) if (request.rawHeaders[i]!.toLowerCase() === header) count++;
     if (count > 1) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
@@ -471,6 +471,19 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
           const input = await body(request, path.endsWith('/enroll') ? ['invitationToken', 'password'] : ['invitationToken', 'password', 'code']);
           send(response, 200, path.endsWith('/enroll') ? await options.builtinAuth.enroll(input.invitationToken, input.password, peer)
             : await options.builtinAuth.accept(input.invitationToken, input.password, code(input.code), peer));
+        }
+        return;
+      }
+      if (path === '/api/auth/restore') {
+        if (!options.builtinAuth) throw new MetadataError('BUILTIN_AUTH_UNAVAILABLE', 503);
+        method(request, response, ['POST']);
+        if (request.headers.authorization) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
+        await body(request, []);
+        try {
+          sendBrowserSession(response, await options.builtinAuth.restore(readRefreshCookie(request)), config.origin, clock());
+        } catch (error) {
+          if (error instanceof MetadataError && error.status === 401) response.setHeader('Set-Cookie', refreshCookieHeader('', 0, config.origin, clock()));
+          throw error;
         }
         return;
       }

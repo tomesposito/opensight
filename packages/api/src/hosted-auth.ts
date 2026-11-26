@@ -304,6 +304,9 @@ export class HostedAuth {
     if (parts.length !== 4 || parts[0] !== 'h2' || parts[1] !== this.config.keyId || !/^[A-Za-z0-9_-]{43}$/.test(parts[2]!) || !equal(parts[3]!, this.signature(parts.slice(0, 3).join('.')))) denied();
     await this.key(c);
     const session = (await c.query('SELECT * FROM h2_sessions WHERE session_id = ?', [digest(parts[2]!)]))[0];
+    return this.admitSession(c, session);
+  }
+  private async admitSession(c: SqlConnection, session: SqlRow | undefined): Promise<{ session: SqlRow; membership: SqlRow }> {
     if (!session || Number(session.revoked) || Number(session.expires_at) <= this.clock() || session.issuer !== this.config.issuer || session.audience !== this.config.audience || session.origin !== this.config.origin || session.key_id !== this.config.keyId) denied();
     const membership = await this.membership(c, String(session.subject), String(session.tenant_id));
     const admitted = await c.query('UPDATE h2_sessions SET revoked = revoked WHERE session_id = ? AND revoked = 0 RETURNING session_id', [String(session.session_id)]);
@@ -315,6 +318,23 @@ export class HostedAuth {
     const identity = (await c.query("SELECT subject FROM h2_identities WHERE subject = ? AND status = 'active'", [String(session.subject)]))[0];
     if (!identity) denied();
     return { session, membership };
+  }
+  /** Cookie-only exchange. Tenant/session locks and compare-and-set make rotation single-use. */
+  async restore(value: unknown): Promise<BrowserSession> {
+    const token = tokenInput(value), hash = digest(token);
+    return this.database.transaction(async c => {
+      await this.key(c);
+      const refresh = (await c.query('SELECT * FROM h2_refresh_tokens WHERE token_hash = ?', [hash]))[0];
+      if (!refresh || Number(refresh.revoked) || Number(refresh.expires_at) <= this.clock()) denied();
+      const { session, membership } = await this.admitSession(c,
+        (await c.query('SELECT * FROM h2_sessions WHERE session_id = ?', [String(refresh.session_id)]))[0]);
+      if (refresh.tenant_id !== session.tenant_id) denied();
+      const consumed = await c.query('UPDATE h2_refresh_tokens SET revoked = 1 WHERE token_hash = ? AND revoked = 0 AND expires_at > ? RETURNING token_hash', [hash, this.clock()]);
+      if (!consumed.length) denied();
+      const result = await this.issueBrowserSession(c, membership, Math.min(Number(refresh.expires_at), Number(session.expires_at)));
+      await c.query('UPDATE h2_sessions SET revoked = 1 WHERE session_id = ?', [String(session.session_id)]);
+      return result;
+    });
   }
   bearer(request: IncomingMessage): string {
     const value = request.headers.authorization;
