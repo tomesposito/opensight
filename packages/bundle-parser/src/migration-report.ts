@@ -95,6 +95,11 @@ export function safeConstruct(value: string): string {
 }
 export function migrationFinding(construct: string, location: FindingLocation, outcome: MigrationOutcome,
   position: Pick<MigrationFinding, 'item' | 'sheet' | 'visual'>, code?: MigrationFinding['code']): MigrationFinding {
+  if (typeof construct !== 'string' || !['asset', 'visual', 'field-well'].includes(location)
+    || !['clean', 'converted-differently', 'failed-closed'].includes(outcome)
+    || code !== undefined && !['CONVERTED', 'DELIBERATE_PROJECTION', 'UNSUPPORTED_RETAINED', 'REMAP_REQUIRED'].includes(code)
+    || !Number.isSafeInteger(position.item) || position.item < 0
+    || [position.sheet, position.visual].some(n => n !== undefined && (!Number.isSafeInteger(n) || n < 0))) throw new Error('MIGRATION_FINDING_INVALID');
   const safe = safeConstruct(construct);
   return { kind: `${location}:${safe}`, construct: safe, location, ...position, outcome,
     code: code ?? (outcome === 'clean' ? 'CONVERTED' : outcome === 'converted-differently' ? 'DELIBERATE_PROJECTION' : 'UNSUPPORTED_RETAINED') };
@@ -110,6 +115,10 @@ export function migrationCoverage(findings: readonly MigrationFinding[]): Migrat
 export function serializeImportReport(results: readonly ImportResult[], options: {
   generatedAt?: string; manifest?: ExtractionManifest; previous?: MigrationImportReport;
 } = {}): MigrationImportReport {
+  const generatedAt = options.generatedAt ?? new Date().toISOString();
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(generatedAt) || !Number.isFinite(Date.parse(generatedAt))
+    || new Set(results.map(r => r.asset)).size !== results.length
+    || results.some(r => !Number.isSafeInteger(r.asset) || r.asset < 0 || !['analysis', 'dashboard', 'dataset', 'datasource'].includes(r.resourceType))) throw new Error('MIGRATION_REPORT_INVALID');
   const assets = results.map(r => ({ asset: r.asset, resourceType: r.resourceType,
     findings: r.findings.map(f => migrationFinding(f.construct, f.location, f.outcome,
       { item: f.item, ...(f.sheet === undefined ? {} : { sheet: f.sheet }), ...(f.visual === undefined ? {} : { visual: f.visual }) }, f.code)),
@@ -122,7 +131,7 @@ export function serializeImportReport(results: readonly ImportResult[], options:
     groups.set(f.kind, group);
   }
   return { schemaVersion: MIGRATION_VERSION, producer: MIGRATION_PRODUCER, artifact: 'import-report',
-    generatedAt: options.generatedAt ?? new Date().toISOString(), assets, knownLimits: MIGRATION_LIMITS,
+    generatedAt, assets, knownLimits: MIGRATION_LIMITS,
     groups: [...groups.values()].sort((a, b) => a.kind.localeCompare(b.kind)),
     ...(options.manifest ? { manifest: parseExtractionManifest(options.manifest) } : {}) };
 }

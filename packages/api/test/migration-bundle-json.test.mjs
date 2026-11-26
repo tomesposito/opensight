@@ -13,6 +13,8 @@ test('local DefinitionStore loads the extractor multi-member JSON envelope atomi
   const store = await DefinitionStore.load(path);
   assert.deepEqual(store.list().map(r => r.kind), ['analysis', 'dashboard']);
   assert.deepEqual(store.get('analysis', 'example').Definition, { DataSetIdentifierDeclarations: [] });
+  await writeFile(join(root, 'summary.json'), JSON.stringify({ memberCount: 1, members: [{ path: 'analysis/example.json', resourceType: 'analysis', name: 'Synthetic' }] }));
+  assert.equal((await DefinitionStore.load(root)).list().length, 2);
   await writeFile(path, JSON.stringify({ members: [...members, members[0]] }));
   await assert.rejects(DefinitionStore.load(path), /duplicate bundle member path/);
 });

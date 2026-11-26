@@ -20,7 +20,8 @@ export interface ExtractionResult { bundle: QsBundle; manifest: ExtractionManife
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex');
 export function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-  if (value && typeof value === 'object') return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`;
+  // Code-unit order is deterministic across customer locales and ICU versions.
+  if (value && typeof value === 'object') return `{${Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([k, v]) => `${JSON.stringify(k)}:${canonical(v)}`).join(',')}}`;
   return JSON.stringify(value) ?? 'null';
 }
 const ids = { analysis: 'AnalysisId', dashboard: 'DashboardId', dataset: 'DataSetId' } as const;

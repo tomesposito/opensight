@@ -103,3 +103,14 @@ test('generator refuses missing/duplicate IDs, external references, unknown head
     s => { s.paths['/analyses'].post.parameters = [{ name: 'body', in: 'path', schema: { type: 'string' } }]; },
   ]) { const changed = structuredClone(spec); alter(changed); assert.throws(() => inventory(changed)); }
 });
+
+test('D-97: extraction and AWS credentials have no MCP operation or transport path', async t => {
+  let requests = 0;
+  const client = await connect(t, { fetch: async () => { requests++; throw new Error('No extraction transport'); } });
+  const { tools } = await client.listTools();
+  assert.ok(tools.every(tool => !/extract|quicksight/i.test(tool.name)));
+  for (const name of ['extract_quicksight', 'extract_bundle', 'quicksight_credentials']) {
+    await assert.rejects(() => call(client, name, { credentials: { accessKeyId: 'synthetic-refused' } }), error => error.code === -32602);
+  }
+  assert.equal(requests, 0);
+});

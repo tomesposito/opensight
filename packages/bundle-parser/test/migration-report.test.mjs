@@ -35,3 +35,12 @@ test('previous manifest or import snapshot is validated, never copied as arbitra
   assert.deepEqual(parseExtractionManifest(serializeImportReport([], { manifest: value })), value);
   for (const bad of [ { ...value, schemaVersion: 2 }, { ...value, producer: 'future' }, { ...value, credentials: 'no' }, { ...value, assets: [...value.assets, ...value.assets] }, { ...value, assets: [{ ...asset(), name: 'private' }] }, { ...value, assets: [{ ...asset(), constructs: { 'private-key': 1 } }] }, { ...value, assets: [{ ...asset(), digest: 'private' }] }, { ...value, diff: { ...value.diff, removed: [hash('a')] } } ]) assert.throws(() => parseExtractionManifest(bad), /MIGRATION_MANIFEST_INVALID/);
 });
+test('portable serializer rejects customer text in runtime enum, ordinal and timestamp slots', () => {
+  const f = migrationFinding('anomaly', 'visual', 'failed-closed', { item: 0 });
+  const r = { asset: 0, resourceType: 'analysis', path: 'local', name: 'local', messages: [], findings: [f] };
+  for (const key of ['location', 'outcome', 'code']) assert.throws(() => serializeImportReport([{ ...r, findings: [{ ...f, [key]: 'private-value' }] }]), /MIGRATION_FINDING_INVALID/);
+  assert.throws(() => serializeImportReport([{ ...r, resourceType: 'private-value' }]), /MIGRATION_REPORT_INVALID/);
+  assert.throws(() => serializeImportReport([{ ...r, asset: 'private-value' }]), /MIGRATION_REPORT_INVALID/);
+  assert.throws(() => serializeImportReport([r], { generatedAt: 'private-value' }), /MIGRATION_REPORT_INVALID/);
+  assert.throws(() => serializeImportReport([r, r]), /MIGRATION_REPORT_INVALID/);
+});

@@ -147,7 +147,9 @@ export class DefinitionStore {
 
   private ingest(raw: unknown): boolean {
     if (!isObject(raw)) return false;
-    if (Object.hasOwn(raw, 'members')) {
+    // Inventories/summary JSON also have a members array. Only resource-bearing
+    // envelopes are bundles; parse the entire envelope before adding any member.
+    if (Array.isArray(raw.members) && raw.members.some(member => isObject(member) && Object.hasOwn(member, 'resource'))) {
       const bundle = parseBundleJson(new TextEncoder().encode(JSON.stringify(raw)));
       for (const { resource } of bundle.members) this.ingest(resource);
       return true;

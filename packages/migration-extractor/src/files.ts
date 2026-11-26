@@ -41,14 +41,14 @@ export async function writeExtraction(path: string, result: ExtractionResult): P
   const target = localPath(path);
   await validateOutput(path);
   assertNoCredentials(result);
-  parseExtractionManifest(result.manifest);
+  const manifest = parseExtractionManifest(result.manifest);
   const bundle = JSON.stringify(result.bundle, null, 2) + '\n';
   if (result.bundle.members.length) parseBundleJson(Buffer.from(bundle));
   else if (Object.keys(result.bundle).length !== 1) throw new Error('DEFINITION_INVALID');
   await noSymlinks(dirname(target));
   await mkdir(target, { mode: 0o700 }); // EEXIST is intentional, including symlinks.
   try {
-    for (const [name, body] of [['bundle.json', bundle], ['manifest.json', JSON.stringify(result.manifest, null, 2) + '\n']]) {
+    for (const [name, body] of [['bundle.json', bundle], ['manifest.json', JSON.stringify(manifest, null, 2) + '\n']]) {
       const file = await open(resolve(target, name!), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
       try { await file.writeFile(body!); await file.sync(); } finally { await file.close(); }
     }

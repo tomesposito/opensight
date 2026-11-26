@@ -42,23 +42,38 @@ export function completeImportResult(result: ImportResult, resource: BundleResou
         const outcome = visualOutcome(raw, visual);
         const position = { sheet: si, visual: vi, item: 0 };
         findings.push(migrationFinding(variant, 'visual', outcome, position));
+        // Include configuration constructs, including unknown schema keys. A
+        // newly unsupported option must create a new kind even if that visual
+        // already had another failure. Values and user-defined field IDs stay out.
+        for (const key of Object.keys(obj(body))) if (!['visualId', 'chartConfiguration', 'insightConfiguration'].includes(key))
+          findings.push(migrationFinding(key, 'visual', outcome, position));
+        for (const key of Object.keys(obj(body?.chartConfiguration))) if (key !== 'fieldWells')
+          findings.push(migrationFinding(key, 'visual', outcome, position));
         // Computation wrappers have their own fingerprints: one unsupported
         // anomaly in many dashboards is a single kind, never generic failure.
         list(obj(body?.insightConfiguration).computations).forEach((computation, item) => {
           for (const key of Object.keys(obj(computation))) findings.push(migrationFinding(key, 'visual', outcome, { ...position, item }));
         });
-        if (obj(body?.insightConfiguration).customNarrative !== undefined)
-          findings.push(migrationFinding('customNarrative', 'visual', outcome, position));
+        for (const key of Object.keys(obj(body?.insightConfiguration))) if (key !== 'computations')
+          findings.push(migrationFinding(key, 'visual', outcome, position));
         let field = 0;
-        const walkFields = (value: unknown): void => {
-          if (Array.isArray(value)) { value.forEach(walkFields); return; }
-          for (const [key, child] of Object.entries(obj(value))) {
-            if (/^(?:categorical|numerical|date|calculated)(?:Dimension|Measure)Field$/.test(key)) {
+        const walkFields = (value: unknown, well = false): void => {
+          if (Array.isArray(value)) {
+            if (well) for (const wrapper of value) for (const key of Object.keys(obj(wrapper)))
               findings.push(migrationFinding(key, 'field-well', outcome, { ...position, item: field++ }));
-            } else walkFields(child);
+            else value.forEach(child => walkFields(child));
+            return;
+          }
+          for (const [key, child] of Object.entries(obj(value))) {
+            if (/Field$/.test(key) || Object.hasOwn(obj(child), 'fieldId')) {
+              findings.push(migrationFinding(key, 'field-well', outcome, { ...position, item: field++ }));
+            } else {
+              if (well) findings.push(migrationFinding(key, 'field-well', outcome, { ...position, item: field++ }));
+              walkFields(child, well);
+            }
           }
         };
-        walkFields(obj(body?.chartConfiguration).fieldWells);
+        walkFields(obj(body?.chartConfiguration).fieldWells, true);
         walkFields(obj(body?.insightConfiguration).computations);
       }
     }

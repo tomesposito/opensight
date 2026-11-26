@@ -1,9 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadQsBundle, serializeImportReport, projectDefinition, convertDefinition } from '@opensight/bundle-parser';
-import { importBundle, exportBundle } from '../build/test/bundle-authoring.js';
+import { importBundle, importBundleFile, exportBundle } from '../build/test/bundle-authoring.js';
 import { buildAuthorQuery } from '../build/test/author-query.js';
 const fixture = new URL('../../../fixtures/real-bundle-sample/TotalDeathByCountry.sanitized.qs', import.meta.url);
+test('the existing file-import path accepts extractor JSON and preserves all members', async () => {
+  const source = await loadQsBundle(fixture), bytes = new TextEncoder().encode(JSON.stringify(source));
+  const draft = await importBundleFile({ name: 'bundle.json', size: bytes.length, arrayBuffer: async () => bytes.buffer });
+  assert.deepEqual(draft.bundle.original, source);
+  assert.equal(draft.bundle.report.length, 4);
+  assert.deepEqual(exportBundle(draft), source);
+});
 test('observed sanitized QuickSight export retains originals and reports structural per-asset coverage', async () => {
   const source = await loadQsBundle(fixture), draft = importBundle(source);
   const report = serializeImportReport(draft.bundle.report);
@@ -31,4 +38,13 @@ test('Describe-shaped anomaly and unsupported narrative stay blocked with stable
   assert.deepEqual(exportBundle(draft), source);
   assert.doesNotMatch(JSON.stringify(report), /private|foreign|arn:/);
   assert.deepEqual(convertDefinition(projectDefinition(resource.definition)), resource.definition);
+});
+test('new unsupported configuration constructs receive new kinds without copying keys or values', () => {
+  const make = extra => ({ members: [{ path: 'analysis/a.json', resource: { resourceType: 'analysis', analysisId: 'a', name: 'Synthetic', definition: { dataSetIdentifierDeclarations: [], sheets: [{ sheetId: 's', visuals: [{ barChartVisual: { visualId: 'v', chartConfiguration: { ...extra } } }] }] } } }] });
+  const before = serializeImportReport(importBundle(make({})).bundle.report);
+  const after = serializeImportReport(importBundle(make({ 'private-option-key': { payload: 'private-value' } })).bundle.report, { previous: before });
+  const fresh = after.groups.filter(g => g.newKind);
+  assert.equal(fresh.length, 1); assert.match(fresh[0].kind, /^visual:unknown-/);
+  assert.equal(after.assets[0].findings.find(f => f.kind === fresh[0].kind).outcome, 'failed-closed');
+  assert.doesNotMatch(JSON.stringify(after), /private-option-key|private-value|payload/);
 });

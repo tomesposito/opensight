@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile, mkdtemp, rm, stat, symlink, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { extractQuickSight, writeExtraction, readPrevious, assetExportFallback } from '../dist/index.js';
+import { extractQuickSight, writeExtraction, readPrevious, assetExportFallback, canonical } from '../dist/index.js';
 import { awsReader } from '../dist/aws.js';
 import { runCli } from '../dist/cli.js';
 import { parseBundleJson, serializeImportReport, parseExtractionManifest } from '@opensight/bundle-parser';
@@ -46,6 +46,7 @@ test('selections include dependencies; missing selections fail rather than silen
   await assert.rejects(extractQuickSight(mock(), { ...options, selection: [{ kind: 'analysis', id: 'absent' }] }), /EXTRACTION_SELECTION_NOT_FOUND/);
 });
 test('repeat extraction diffs canonical content, ignores key order, and accepts previous import snapshot', async () => {
+  assert.equal(canonical({ 'ä': 3, a: 2, Z: 1 }), '{"Z":1,"a":2,"ä":3}');
   const first = await extractQuickSight(mock(), options);
   const same = await extractQuickSight(mock(), { ...options, previous: serializeImportReport([], { manifest: first.manifest }) });
   assert.equal(same.manifest.diff.unchanged.length, 4);
