@@ -134,7 +134,7 @@ export async function restoreServerless(db: Database, snapshot: CloudSnapshot, r
     await c.query('UPDATE h1_revisions SET "authorization"="authorization"+1, policy=policy+1, configuration=configuration+1');
     await c.query("UPDATE h2_memberships SET status='removed', version=version+1");
     await c.query('UPDATE h2_mcp_grants SET revoked=1'); await c.query('UPDATE h2_mcp_tokens SET consumed=1'); await c.query('DELETE FROM h2_mcp_interactions');
-    await c.query('UPDATE h2_login_selections SET consumed=1'); await c.query('UPDATE h2_sessions SET revoked=1'); await c.query('UPDATE h6_sessions SET revoked=1');
+    await c.query('UPDATE h2_login_selections SET consumed=1'); await c.query('UPDATE h2_sessions SET revoked=1'); await c.query('UPDATE h2_refresh_tokens SET revoked = 1'); await c.query('UPDATE h6_sessions SET revoked=1');
     await c.query('DELETE FROM h2_onboarding'); await c.query('DELETE FROM h2_invitations');
     await c.query('UPDATE h7_jobs SET stopped=1, next_run=NULL, version=version+1');
     await c.query("UPDATE h7_occurrences SET state='cancelled', error_code='RESTORE_REVIEW_REQUIRED' WHERE state IN ('queued','running','delivering')");

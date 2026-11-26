@@ -333,6 +333,7 @@ export class HostedAuth {
       if (!consumed.length) denied();
       const result = await this.issueBrowserSession(c, membership, Math.min(Number(refresh.expires_at), Number(session.expires_at)));
       await c.query('UPDATE h2_sessions SET revoked = 1 WHERE session_id = ?', [String(session.session_id)]);
+      await c.query('UPDATE h2_refresh_tokens SET revoked = 1 WHERE session_id = ?', [String(session.session_id)]);
       return result;
     });
   }
@@ -394,20 +395,39 @@ export class HostedAuth {
       return { kind: 'author', id: String(session.session_id), expiresAt: Number(session.expires_at) };
     });
   }
-  async switchTenant(token: string, tenantValue: unknown): Promise<{ token: string; expiresAt: number; tenantId: string }> {
+  async switchTenant(token: string, tenantValue: unknown): Promise<BrowserSession> {
     const tenantId = identifier(tenantValue);
     return this.database.transaction(async c => {
       const { session } = await this.session(c, token);
       const membership = await this.membership(c, String(session.subject), tenantId);
-      const result = await this.issue(c, membership, Number(session.expires_at));
+      const result = await this.issueBrowserSession(c, membership, Number(session.expires_at));
       await c.query('UPDATE h2_sessions SET revoked = 1 WHERE session_id = ?', [String(session.session_id)]);
+      await c.query('UPDATE h2_refresh_tokens SET revoked = 1 WHERE session_id = ?', [String(session.session_id)]);
       return result;
+    });
+  }
+  /** Clear ambient authority even after bearer expiry, revocation or tenant suspension. */
+  async logoutBrowser(refreshToken: string | undefined, bearer?: string): Promise<void> {
+    if (bearer) {
+      try { await this.logout(bearer); }
+      catch (error) { if (!(error instanceof MetadataError && error.status === 401)) throw error; }
+    }
+    if (!refreshToken) return;
+    await this.database.transaction(async c => {
+      const refresh = (await c.query('SELECT * FROM h2_refresh_tokens WHERE token_hash = ?', [digest(refreshToken)]))[0];
+      if (!refresh) return;
+      // Same tenant -> session -> refresh lock order as restore. No active-state
+      // admission is needed to remove authority, including already expired rows.
+      await c.query('UPDATE h1_tenants SET version = version WHERE tenant_id = ?', [String(refresh.tenant_id)]);
+      await c.query('UPDATE h2_sessions SET revoked = 1 WHERE session_id = ?', [String(refresh.session_id)]);
+      await c.query('UPDATE h2_refresh_tokens SET revoked = 1 WHERE session_id = ?', [String(refresh.session_id)]);
     });
   }
   async logout(token: string): Promise<void> {
     await this.database.transaction(async c => {
       const { session } = await this.session(c, token);
       await c.query('UPDATE h2_sessions SET revoked = 1 WHERE session_id = ?', [String(session.session_id)]);
+      await c.query('UPDATE h2_refresh_tokens SET revoked = 1 WHERE session_id = ?', [String(session.session_id)]);
     });
   }
 }
