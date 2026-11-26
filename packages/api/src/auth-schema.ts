@@ -28,6 +28,9 @@ export async function initializeAuth(database: Database, dialect: 'sqlite' | 'po
         key_id TEXT NOT NULL REFERENCES h2_keys(key_id), membership_version INTEGER NOT NULL,
         authorization_revision INTEGER NOT NULL, policy_revision INTEGER NOT NULL, configuration_revision INTEGER NOT NULL,
         revoked INTEGER NOT NULL DEFAULT 0, FOREIGN KEY (subject, tenant_id) REFERENCES h2_memberships(subject, tenant_id))`,
+      `CREATE TABLE IF NOT EXISTS h2_refresh_tokens (
+        token_hash TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES h2_sessions(session_id) ON DELETE CASCADE,
+        tenant_id TEXT NOT NULL, expires_at BIGINT NOT NULL, revoked INTEGER NOT NULL DEFAULT 0)`,
       `CREATE TABLE IF NOT EXISTS h2_attempts (bucket TEXT PRIMARY KEY, window_start BIGINT NOT NULL, attempts INTEGER NOT NULL)`,
       `CREATE TABLE IF NOT EXISTS h2_onboarding (operation_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, tenant_id TEXT NOT NULL,
         invitation_id TEXT NOT NULL REFERENCES h2_invitations(invitation_id))`,

@@ -27,7 +27,8 @@ import { PrepError } from '@opensight/bundle-parser/prep';
 import { BlazeError } from './blaze.js';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { hasCapability } from '@opensight/query-engine';
-import { HostedAuth } from './hosted-auth.js';
+import { refreshCookieHeader } from './session-cookie.js';
+import { HostedAuth, type BrowserSession } from './hosted-auth.js';
 import { initializeAuth } from './auth-schema.js';
 import { equal } from './auth-crypto.js';
 import { hostedConfig } from './hosted-config.js';
@@ -128,6 +129,14 @@ async function body(request: IncomingMessage, allowed: readonly string[]) {
 function code(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{6}$/.test(value)) throw new MetadataError('AUTHENTICATION_FAILED', 401);
   return value;
+}
+function rememberMe(value: unknown): boolean {
+  if (value !== undefined && typeof value !== 'boolean') throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
+  return value === true;
+}
+function sendBrowserSession(response: ServerResponse, session: BrowserSession, origin: string, now: number): void {
+  response.setHeader('Set-Cookie', refreshCookieHeader(session.refreshToken, session.expiresAt, origin, now));
+  send(response, 200, { token: session.token, expiresAt: session.expiresAt, tenantId: session.tenantId });
 }
 function idempotency(request: IncomingMessage): string { return identifier(request.headers['idempotency-key']); }
 function boundary(request: IncomingMessage, origin: string): void {
@@ -449,13 +458,15 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       if (['/api/auth/enroll', '/api/auth/accept', '/api/auth/login', '/api/auth/login/select'].includes(path)) {
         if (!options.builtinAuth) throw new MetadataError('BUILTIN_AUTH_UNAVAILABLE', 503);
         method(request, response, ['POST']);
-        if (request.headers.authorization || request.headers.cookie) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
+        if (request.headers.authorization || !path.startsWith('/api/auth/login') && request.headers.cookie) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
         if (path === '/api/auth/login') {
-          const input = await body(request, ['email', 'password', 'code', 'tenantId']);
-          send(response, 200, await options.builtinAuth.login(input.email, input.password, code(input.code), input.tenantId, peer));
+          const input = await body(request, ['email', 'password', 'code', 'tenantId', 'remember']);
+          const result = await options.builtinAuth.login(input.email, input.password, code(input.code), input.tenantId, peer, rememberMe(input.remember));
+          if ('refreshToken' in result) sendBrowserSession(response, result, config.origin, clock());
+          else send(response, 200, result);
         } else if (path === '/api/auth/login/select') {
-          const input = await body(request, ['selectionToken', 'tenantId']);
-          send(response, 200, await options.builtinAuth.completeLogin(input.selectionToken, input.tenantId, peer));
+          const input = await body(request, ['selectionToken', 'tenantId', 'remember']);
+          sendBrowserSession(response, await options.builtinAuth.completeLogin(input.selectionToken, input.tenantId, peer, rememberMe(input.remember)), config.origin, clock());
         } else {
           const input = await body(request, path.endsWith('/enroll') ? ['invitationToken', 'password'] : ['invitationToken', 'password', 'code']);
           send(response, 200, path.endsWith('/enroll') ? await options.builtinAuth.enroll(input.invitationToken, input.password, peer)
