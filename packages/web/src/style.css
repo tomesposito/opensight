@@ -2755,3 +2755,7 @@ textarea:focus-visible { outline: 3px solid #e5a046; outline-offset: 3px; }
 .prep-join-diagnostics dt { font-size: 12px; }
 .prep-join-diagnostics dd { margin: 4px 0 0; font-size: 16px; font-weight: 600; }
 .prep-join-diagnostics .prep-join-warning { padding: 8px; background: #fff3d6; color: #704900; border-radius: 4px; }
+
+.o-migration { flex-basis: 100%; min-width: 0; }
+.o-migration pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.o-migration summary { cursor: pointer; }

@@ -1,3 +1,4 @@
+import { migrationAnswer } from './o-migration.js';
 import { disabledAnalytics } from './analytics.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { interpretQuestion, withGovernedMetrics, type InterpretationResult, type SchemaField } from '@opensight/o-interpreter';
@@ -70,12 +71,18 @@ export async function askLocalQuestion(request: IncomingMessage, response: Serve
   organization: OrganizationService, ai: AISettings, sales?: SalesQuery, analytics = disabledAnalytics, recheck: () => Promise<void> = async () => {}) {
   security.require(identity, 'ai'); security.require(identity, 'build');
   const body = askQuestionBody(await readBody(request));
+  if (body.migration !== undefined) {
+    const answer = await migrationAnswer(body.migration); await recheck();
+    security.require(identity, 'ai'); security.require(identity, 'build'); send(response, 200, answer); return;
+  }
   if (body.datasetId !== 'sales') throw new RequestError(404, 'Dataset has no resolved local sales binding');
   await localAnswer(request, response, '/api/o/generate', body, identity, security, organization, ai, sales, analytics, recheck);
 }
 export function askQuestionBody(value: unknown): Record<string, unknown> {
-  const body = record(value, ['question', 'datasetId']);
-  id(body.datasetId, '$.datasetId');
+  const body = record(value, ['question', 'datasetId', 'migration']);
+  if (body.migration !== undefined) {
+    if (body.datasetId !== undefined) invalid('$.datasetId', 'migration guidance has no dataset scope');
+  } else id(body.datasetId, '$.datasetId');
   if (typeof body.question !== 'string' || !body.question.trim() || body.question.length > 2000) invalid('$.question', 'expected 1–2000 characters');
   return body;
 }

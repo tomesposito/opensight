@@ -1,3 +1,4 @@
+import { migrationAnswer } from './o-migration.js';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { hasCapability, type MetricDataset, type UploadType } from '@opensight/query-engine';
 import { method, send } from './automation-routes.js';
@@ -98,6 +99,15 @@ export class HostedAI {
   async ask(request: IncomingMessage, response: ServerResponse, context: TenantContext, recheck: () => Promise<void>): Promise<void> {
     await this.require(context, 'ai'); await this.require(context, 'build');
     const body = askQuestionBody(await readBody(request));
+    if (body.migration !== undefined) {
+      const stamp = await this.metadata.revisions(context);
+      const answer = await migrationAnswer(body.migration, this.metadata, context);
+      await recheck(); await this.require(context, 'ai'); await this.require(context, 'build');
+      await this.metadata.assertRevisions(context, stamp);
+      // Standard interpreter guidance has no provider call or managed credit.
+      // Generative answer delivery, spend caps and retry charging remain unchanged.
+      send(response, 200, answer); return;
+    }
     await this.answer(request, response, '/api/o/generate', body, context, recheck);
   }
   private async answer(request: IncomingMessage, response: ServerResponse, path: string, body: Record<string, unknown>, context: TenantContext, recheck: () => Promise<void>): Promise<void> {

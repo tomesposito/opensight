@@ -96,6 +96,9 @@ export async function ensureMetricKind(c: SqlConnection, dialect: 'sqlite' | 'po
       await c.query(`ALTER TABLE h1_resources DROP CONSTRAINT "${name}"`);
       await c.query(`ALTER TABLE h1_resources ADD CONSTRAINT "${name}" ${definition.replaceAll("'job'::text", "'job'::text" + additions.filter(k => !definition.includes(`'${k}'`)).map(k => `, '${k}'::text`).join(''))}`);
     }
+    if (!checks.some(row => String(row.definition).includes("'migration-import'") && String(row.definition).includes('owner_id'))) {
+      await c.query("ALTER TABLE h1_resources ADD CONSTRAINT h1_migration_owner CHECK (kind <> 'migration-import' OR owner_id <> '')");
+    }
     return;
   }
   const rows = await c.query("SELECT sql FROM sqlite_master WHERE name = 'h1_resources'");

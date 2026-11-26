@@ -328,3 +328,10 @@ export interface BundleImportResult {
   report: import('@opensight/bundle-parser').MigrationImportReport;
   targets: { asset: number; state: 'staged' | 'imported'; analysisId?: string }[];
 }
+
+export interface MigrationQuestionBody {
+  question: string;
+  migration: { phase: 'before-import'; setup: import('@opensight/o-interpreter').MigrationSetup; manifest?: import('@opensight/bundle-parser').ExtractionManifest }
+    | { phase: 'after-import'; importId: string };
+}
+export interface MigrationQuestionAnswer { migration: import('@opensight/o-interpreter').MigrationGuidance }

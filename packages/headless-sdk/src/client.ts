@@ -1,6 +1,6 @@
 import { OpenSightApiError } from './errors.js';
 import type {
-  BundleImportBody, BundleImportResult, MigrationImportReport,
+  MigrationQuestionBody, MigrationQuestionAnswer, BundleImportBody, BundleImportResult, MigrationImportReport,
   WorkspaceAuditEntry, AskQuestionBody, QuestionAnswer, MetricView, MetricVersion,
   ApiErrorBody,
   AssetKind, TransferAssetKind, AssetSummary, AssetSearch, AssetMove, AssetCopy, AssetTransfer, AssetPrincipal, AssetRole, AssetShare, AssetGrantWrite, FolderDescribe, FolderPermissions,
@@ -81,7 +81,9 @@ export class OpenSightClient {
     return this.request('GET', '/v1/workspace/action-history', { headers: pageHeaders(opts) });
   }
 
-  askQuestion(body: AskQuestionBody, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<QuestionAnswer> {
+  askQuestion(body: MigrationQuestionBody, opts?: Pick<RequestOptions, 'idempotencyKey'>): Promise<MigrationQuestionAnswer>;
+  askQuestion(body: AskQuestionBody, opts?: Pick<RequestOptions, 'idempotencyKey'>): Promise<QuestionAnswer>;
+  askQuestion(body: AskQuestionBody | MigrationQuestionBody, opts: Pick<RequestOptions, 'idempotencyKey'> = {}): Promise<QuestionAnswer | MigrationQuestionAnswer> {
     return this.request('POST', '/v1/ai/ask', { body, headers: mutationHeaders(opts) });
   }
 

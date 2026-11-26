@@ -188,7 +188,7 @@ export const operations: Operation[] = [
     "emptyBody": false,
     "tool": {
       "name": "ask_question",
-      "description": "POST /api/v1/ai/ask — Generate a grounded question interpretation for a dataset. Requires ai and build capabilities. Uses the existing generative question flow and field-name PII guard. Returns interpretations, errors and question; execute the selected interpretation separately through the query API. Managed completions check the workspace AI spend cap before provider transport. Local/self-hosted serves the configured sales binding; unavailable AI returns AI_NOT_CONFIGURED. Idempotency-Key replays hosted answers with current authorization.",
+      "description": "POST /api/v1/ai/ask — Interpret a dataset question or provide deterministic migration guidance. Requires ai and build capabilities. Migration inputs use the standard deterministic interpreter with no provider calls or AI credits. Post-import guidance reads only the importing member's stored report, groups proposals by fingerprint, and never applies fixes. Dataset questions use the existing generative question flow and field-name PII guard. Returns interpretations, errors and question; execute the selected interpretation separately through the query API. Managed completions check the workspace AI spend cap before provider transport. Local/self-hosted serves the configured sales binding; unavailable AI returns AI_NOT_CONFIGURED. Idempotency-Key replays hosted answers with current authorization.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -200,23 +200,208 @@ export const operations: Operation[] = [
           },
           "body": {
             "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "question",
-              "datasetId"
-            ],
             "properties": {
               "question": {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 2000,
-                "pattern": "\\S"
+                "maxLength": 2000
               },
               "datasetId": {
                 "type": "string",
                 "pattern": "^[A-Za-z0-9_-]{1,512}$"
+              },
+              "migration": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "phase",
+                      "setup"
+                    ],
+                    "properties": {
+                      "phase": {
+                        "type": "string",
+                        "const": "before-import"
+                      },
+                      "setup": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "os",
+                          "auth"
+                        ],
+                        "properties": {
+                          "os": {
+                            "type": "string",
+                            "enum": [
+                              "posix",
+                              "powershell"
+                            ]
+                          },
+                          "auth": {
+                            "type": "string",
+                            "enum": [
+                              "profile",
+                              "sso",
+                              "environment"
+                            ]
+                          },
+                          "profile": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                          },
+                          "region": {
+                            "type": "string"
+                          },
+                          "outputDirectory": {
+                            "type": "string"
+                          },
+                          "previous": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "manifest": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "phase",
+                      "importId"
+                    ],
+                    "properties": {
+                      "phase": {
+                        "type": "string",
+                        "const": "after-import"
+                      },
+                      "importId": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                      }
+                    }
+                  }
+                ]
               }
-            }
+            },
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "question",
+                  "datasetId"
+                ],
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000,
+                    "pattern": "\\S"
+                  },
+                  "datasetId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{1,512}$"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "question",
+                  "migration"
+                ],
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "migration": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "phase",
+                          "setup"
+                        ],
+                        "properties": {
+                          "phase": {
+                            "type": "string",
+                            "const": "before-import"
+                          },
+                          "setup": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "os",
+                              "auth"
+                            ],
+                            "properties": {
+                              "os": {
+                                "type": "string",
+                                "enum": [
+                                  "posix",
+                                  "powershell"
+                                ]
+                              },
+                              "auth": {
+                                "type": "string",
+                                "enum": [
+                                  "profile",
+                                  "sso",
+                                  "environment"
+                                ]
+                              },
+                              "profile": {
+                                "type": "string",
+                                "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                              },
+                              "region": {
+                                "type": "string"
+                              },
+                              "outputDirectory": {
+                                "type": "string"
+                              },
+                              "previous": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "manifest": {
+                            "type": "object"
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "phase",
+                          "importId"
+                        ],
+                        "properties": {
+                          "phase": {
+                            "type": "string",
+                            "const": "after-import"
+                          },
+                          "importId": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
           }
         },
         "required": [

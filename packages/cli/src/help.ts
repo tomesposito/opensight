@@ -2,8 +2,10 @@ import { apiVersion, operations } from './generated.js';
 import type { Operation, Schema } from './types.js';
 
 export const descriptions: Record<string, string> = {
+  import_bundle: 'Import local bundle JSON into a member-owned hosted migration, staging unresolved assets and retaining the shared report. Never accepts AWS credentials.',
+  read_import_report: 'Read the exact shared report for your hosted import. Other members cannot read it.',
   list_workspace_action_history: 'Read this workspace’s audit history with delegating member identities. Hosted only; Limit is 1–200 (default 50).',
-  ask_question: 'Generate a grounded interpretation for a dataset. Requires AI and build capabilities; query separately for rows. Workspace AI spend caps apply.',
+  ask_question: 'Interpret a dataset question or request deterministic migration guidance. Requires AI and build capabilities. Guidance only proposes; generative answers retain workspace spend caps.',
   list_metrics: 'List visible governed metrics with current definitions and publication details.',
   describe_metric: 'Read a governed metric, its current publication and edit/publish permissions.',
   list_metric_versions: 'List stored draft and published metric versions. Requires edit permission.',

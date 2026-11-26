@@ -127,9 +127,12 @@ paths:
     post:
       operationId: ask_question
       tags: [ai]
-      summary: Generate a grounded question interpretation for a dataset
+      summary: Interpret a dataset question or provide deterministic migration guidance
       description: >-
-        Requires ai and build capabilities. Uses the existing generative question
+        Requires ai and build capabilities. Migration inputs use the standard
+        deterministic interpreter with no provider calls or AI credits. Post-import
+        guidance reads only the importing member's stored report, groups proposals by
+        fingerprint, and never applies fixes. Dataset questions use the existing generative question
         flow and field-name PII guard. Returns interpretations, errors and question;
         execute the selected interpretation separately through the query API.
         Managed completions check the workspace AI spend cap before provider transport.
@@ -147,7 +150,10 @@ paths:
           description: Grounded interpretation; no query execution or rows
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/QuestionAnswer' }
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/QuestionAnswer' }
+                  - { $ref: '#/components/schemas/MigrationAnswer' }
         '400': { $ref: '#/components/responses/AIError' }
         '401': { $ref: '#/components/responses/AIError' }
         '403': { $ref: '#/components/responses/AIError' }
@@ -2728,6 +2734,67 @@ components:
         subject: { type: [string, 'null'] }
         detail: {}
     AskQuestion:
+      type: object
+      properties:
+        question: { type: string, minLength: 1, maxLength: 2000 }
+        datasetId: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+        migration: { $ref: '#/components/schemas/MigrationQuestion/properties/migration' }
+      oneOf:
+        - { $ref: '#/components/schemas/DatasetQuestion' }
+        - { $ref: '#/components/schemas/MigrationQuestion' }
+    MigrationQuestion:
+      type: object
+      additionalProperties: false
+      required: [question, migration]
+      properties:
+        question: { type: string, minLength: 1, maxLength: 2000 }
+        migration:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [phase, setup]
+              properties:
+                phase: { type: string, const: before-import }
+                setup:
+                  type: object
+                  additionalProperties: false
+                  required: [os, auth]
+                  properties:
+                    os: { type: string, enum: [posix, powershell] }
+                    auth: { type: string, enum: [profile, sso, environment] }
+                    profile: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
+                    region: { type: string }
+                    outputDirectory: { type: string }
+                    previous: { type: string }
+                manifest: { type: object }
+            - type: object
+              additionalProperties: false
+              required: [phase, importId]
+              properties:
+                phase: { type: string, const: after-import }
+                importId: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
+    MigrationAnswer:
+      type: object
+      additionalProperties: false
+      required: [migration]
+      properties:
+        migration:
+          type: object
+          description: Deterministic interpreter MigrationGuidance; applied is always false. Every checklist proposal requires confirmation through normal authoring.
+          required: [mode, phase, applied, commands, policyExplanation, policyActions, knownLimits, checklist, cutover]
+          properties:
+            mode: { type: string, const: deterministic }
+            phase: { type: string, enum: [before-import, after-import] }
+            applied: { type: boolean, const: false }
+            commands: { type: array, items: { type: string } }
+            policyExplanation: { type: string }
+            policyActions: { type: array, items: { type: string } }
+            knownLimits: { type: array, items: { type: object } }
+            checklist: { type: array, items: { type: object } }
+            cutover: { type: string }
+            coverage: { type: array, items: { type: object } }
+            inventory: { type: object }
+    DatasetQuestion:
       type: object
       additionalProperties: false
       required: [question, datasetId]

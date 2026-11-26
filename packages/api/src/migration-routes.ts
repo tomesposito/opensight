@@ -4,7 +4,7 @@ import { migrationFinding, serializeImportReport, parseExtractionManifest, type 
 import { importBundle } from '@opensight/web/import';
 import { validateAnalysisDefinition } from '@opensight/web/analysis';
 import { QueryEngineError } from '@opensight/query-engine';
-import { datasetBindings, type AnalysisBackend, type AnalysisRecord } from './analysis-model.js';
+import { analysisName, datasetBindings, type AnalysisBackend, type AnalysisRecord } from './analysis-model.js';
 import { migrationBundle, type MigrationReply, type MigrationWrite, type ImportTarget } from './migration-model.js';
 import { MetadataError } from './metadata-db.js';
 import { identifier, object } from './metadata-resources.js';
@@ -79,7 +79,7 @@ export class MigrationRoutes {
         const bound = datasetBindings(bindings.get(asset) ?? {}, r.definition);
         // Binding security failures reject the request; unsupported definitions remain staged.
         const schemas = await backend.resolve(bound);
-        try { validateAnalysisDefinition(r.definition, schemas); }
+        try { analysisName(r.name); validateAnalysisDefinition(r.definition, schemas); }
         catch (error) {
           if (!(error instanceof QueryEngineError) || ['COLUMN_ACCESS_DENIED', 'SECURITY_REJECTED'].includes(error.code)) throw error;
           result.findings.push(migrationFinding(r.resourceType, 'asset', 'failed-closed', { item: 0 })); continue;
