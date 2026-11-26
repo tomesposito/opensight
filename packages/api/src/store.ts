@@ -4,7 +4,7 @@ import { resourceLinks, type MetadataResource } from './metadata-resources.js';
 import { convertDefinition } from '@opensight/web/analysis';
 import { lstat, open, readdir } from 'node:fs/promises';
 import { dirname, extname, join, resolve } from 'node:path';
-import { loadQsBundle, parseBundleResource } from '@opensight/bundle-parser';
+import { loadQsBundle, parseBundleResource, parseBundleJson } from '@opensight/bundle-parser';
 import { fromArchive, isObject, type JsonObject } from './mapping.js';
 import { assertLegacyWritable, legacyWrite } from './metadata-maintenance.js';
 
@@ -147,6 +147,11 @@ export class DefinitionStore {
 
   private ingest(raw: unknown): boolean {
     if (!isObject(raw)) return false;
+    if (Object.hasOwn(raw, 'members')) {
+      const bundle = parseBundleJson(new TextEncoder().encode(JSON.stringify(raw)));
+      for (const { resource } of bundle.members) this.ingest(resource);
+      return true;
+    }
     if (raw.resourceType === 'analysis' || raw.resourceType === 'dashboard') {
       const resource = parseBundleResource(raw);
       if (resource.resourceType === 'analysis' || resource.resourceType === 'dashboard') {

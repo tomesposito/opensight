@@ -3,6 +3,7 @@ export { loadQsBundle, parseQsBundle, summarizeQsBundle } from './archive.js';
 export type { QsBundleSummary, BundleDefinitionSummary } from './archive.js';
 export type { BundleParameterSummary, BundleFilterSummary, BundleFilterGroupSummary, BundleCalculatedFieldSummary } from './bundle-features.js';
 export { parseBundleResource } from './bundle-validate.js';
+export { parseBundleJson } from './archive-core.js';
 export { listZipMembers, ZIP_LIMITS } from './zip.js';
 export type { ZipMemberInfo } from './zip.js';
 export type * from './bundle-types.js';
