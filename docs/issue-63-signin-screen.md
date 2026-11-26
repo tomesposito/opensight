@@ -1,5 +1,9 @@
 # Issue #63 — hosted sign-in screen
 
+Historical implementation record. [D-99 / issue #282](issue-282-session-restore.md)
+supersedes the no-cookie/reload behavior and moves remember-me enforcement to
+the server. Issue #146 subsequently replaced workspace ID input with a picker.
+
 The supplied issue brief is the implementation contract; HQ-3 and HQ-7 are
 settled. `SOLUTION_DESIGN.md` is unchanged. The work stays on
 `work/issue-63-signin-screen` without merging, pushing or opening a PR.

@@ -294,9 +294,11 @@ the configured hosted runtime and is unavailable in the static demo.
 
 ![Synthetic hosted upload showing its explicit expiry and queued ingestion](docs/images/durable-upload.png)
 
-The serverless profile connects on demand. Idle embedded views hide their data
-after 45 seconds and offer **Connect** to check access and reload. Self-hosted
-clients retain their existing connection behavior.
+Hosted app reloads silently restore a valid sign-in from an HttpOnly refresh
+cookie. The serverless profile wakes the workspace first; missing or expired
+cookies return to **Connect** and sign-in. See [session restore](docs/issue-282-session-restore.md).
+Idle embedded views hide their data after 45 seconds and offer **Connect** to
+check access and reload.
 
 ![Synthetic serverless workspace waiting for an explicit connection](docs/images/workspace-connect.png)
 
