@@ -22,5 +22,5 @@ node packages/migration-extractor/dist/cli.js --out ./migration-next \
 The output directory must be new, with an existing local parent. Outputs are
 `bundle.json` and `manifest.json`. Exit 2 means some assets failed closed; inspect
 the manifest before import. Read the [migration guide](../../docs/migration-extractor.md)
-for selections, IAM permissions, contracts, bounds, known limits and remaining
-v1/MCP/Ask O work. Tests use mocks only; no live QuickSight verification is claimed.
+for selections, IAM permissions, contracts, bounds, known limits and the hosted
+v1/MCP/Ask O migration flow. Tests use mocks only; no live QuickSight verification is claimed.

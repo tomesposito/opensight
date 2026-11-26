@@ -1,7 +1,7 @@
 # Headless v1 CLI
 
 `packages/cli` is the Apache-2.0 `@opensight/cli` npm workspace. Its `opensight`
-executable calls `@opensight/headless-sdk` for all 58 operations in
+executable calls `@opensight/headless-sdk` for all 60 operations in
 `docs/api/openapi-v1.yaml`. Node 24 or newer is required. This slice does not
 publish an npm release or enable the hosted Lambda v1 surface.
 
@@ -140,3 +140,9 @@ through the SDK. `SOLUTION_DESIGN.md` and the OpenAPI contract are unchanged.
 `opensight workspace list-action-history --limit 50` reads the current tenant's
 hosted audit history; pass `--cursor` to continue. The page size is 1–200.
 Entries include delegating member identities and successful or denied v1 actions.
+
+
+Migration commands (#334): `opensight migration import-bundle --body '{"importId":"run-1","bundle":{...}}'`
+and `opensight migration read-import-report run-1`. Bundle import and report reads
+require the hosted API and importing member; extraction stays in the separate
+customer-run `opensight-extract` CLI. See [migration guide](migration-extractor.md).

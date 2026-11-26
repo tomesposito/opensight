@@ -1,9 +1,9 @@
 # Customer-run QuickSight migration extractor
 
-Issue #334 implements the first [D-97](idd/D-97-quicksight-migration.md) sequencing
-step: a customer-run CLI and shared manifest/import-report contracts. v1 bundle
-import and report storage, MCP migration tools, and Ask O migration guidance are
-not implemented in this checkpoint. Existing local bundle import remains usable.
+Issue #334 implements all four [D-97](idd/D-97-quicksight-migration.md) sequencing
+steps: the customer-run extractor, shared manifest/report contract, hosted v1
+import and report storage, MCP migration flow, and deterministic Ask O guidance.
+Existing local bundle import remains available; hosted imports require the API.
 
 ## Run in your own environment
 
@@ -149,38 +149,31 @@ compare its numbers side by side with QuickSight, then move its readers. Repeat
 for the next analysis. Rerun extraction against the prior manifest before each
 cutover, and inspect changed assets and new finding kinds.
 
-## Verification and remaining sequence
+## Verification and completed sequence
+
+All four D-97 Q6 steps are implemented:
+
+1. Customer-run extractor and shared manifest/report contract (work items 1–3).
+2. Atomic, member-owned v1 bundle import and unchanged import-report read (item 4).
+3. MCP import/read/remap flow through the same 60-operation registry, with member
+   action history and no extraction operation (item 5).
+4. Deterministic Ask O pre-import commands and post-import proposals, with normal
+   authoring confirmation and unchanged generative governance (item 6).
 
 Tests use synthetic Describe response shapes modeled on the repository's
 sanitized real export, the existing sanitized export itself, and injected SDK
-command mocks. The only new external dependency is
-`@aws-sdk/client-quicksight` 3.1169.0 (Apache-2.0); existing transitive versions are
-unchanged. Live QuickSight verification is a customer/Tom step.
+command mocks. The only new external dependency remains
+`@aws-sdk/client-quicksight` 3.1169.0 (Apache-2.0). The interpreter and SDK reuse
+existing workspace packages. No live AWS requests or spend are part of verification;
+live QuickSight verification remains a customer/Tom step.
 
-Continue in D-97 Q6 order:
-
-1. **Complete:** extractor and shared report contract (build work items 1–3).
-2. **Not implemented:** durable v1 bundle import and report read. Add an atomic,
-   member-owned import/report store with tenant/namespace guards and replay
-   semantics; retain unresolved definitions without granting executable bindings.
-   Current `DefinitionStore` only loads local definitions, while the actual report
-   is in `web/src/bundle-authoring.ts`. Existing v1 authoring requires resolved
-   bindings; it cannot serve as an unguarded raw import route. Verify owner and
-   cross-tenant denial, revocation, atomic failure and identical stored/read reports.
-3. **Not implemented:** exactly two OpenAPI-registry-generated MCP operations over
-   that v1 storage. Update CLI, both SDKs, generated MCP/audit registries and parity
-   tests together; prove import/read/remap with delegating-member action history.
-   Extraction must remain absent from the registry and MCP tools.
-4. **Not implemented:** governed Ask O pre-import commands/policy explanation and
-   post-import remediation grouped by kind. Load only the member's report, retain
-   delivered-answer charging and spend caps, and prove every proposed fix requires
-   confirmation through normal authoring. No new Ask O endpoint or automatic fix
-   is included here.
-
-Work item 7 is documented for the delivered slice. Work item 8 tests that slice;
-the tenant/member-read, MCP import/remap and Ask O confirmation acceptance tests
-remain with their unimplemented steps. `site/build-docs.mjs` does not consume this
-page, the package README or the IDD; no generated public page changes are required.
+Targeted verification passed: 15 import/metadata tests, 86 MCP tests, 41
+API/governance tests, 46 interpreter tests and 80 CLI tests, plus the Ask O UI
+checks. Final root `npm test` verification on 2026-11-26 exited 0:
+**8,660 passed / 0 failed / 38 skipped**. Every skip requires live PostgreSQL.
+The full per-suite counts, corrected verification findings and static-demo
+evidence are recorded in [the gap notes](issue-334-gap-notes.md). Staged assets
+and unsupported constructs remain failed closed; the fixtures do not establish live service or numerical parity.
 
 ## Hosted bundle import and report read
 
@@ -193,7 +186,8 @@ The import body has `importId` (1–128 identifier characters), `bundle` (the
 extractor's JSON envelope), and optional `manifest`, `previousImportId`, and
 `bindings: [{ asset, datasetBindings }]`. `asset` is the zero-based bundle member
 ordinal; bindings use the existing analysis `{ kind, id }` dataset references.
-The whole request is limited to 16 MiB. Credential material is rejected.
+Direct hosted HTTP requests are limited to 16 MiB; existing MCP and serverless
+transport envelope limits still apply, so large migrations should be split into smaller bundles. Credential material is rejected.
 
 An import retains the original bundle and the shared report in one member-owned
 metadata resource. Supported, fully bound analyses also enter normal authoring in
@@ -210,3 +204,42 @@ returns that exact `report`, without names, paths, rows or definition content.
 Even another administrator cannot read another member's report. Repeated IDs
 conflict; `Idempotency-Key` follows the existing v1 retry contract. The hosted owner
 metadata migration upgrades the resource-kind constraint before runtime use.
+
+## Ask O migration guidance
+
+Open **QuickSight migration guide** in the builder's Ask O panel. The standard
+interpreter supplies POSIX/PowerShell commands for SSO, an existing profile or
+existing temporary environment credentials. Keep the account ID and credentials
+local; fill in the account placeholder and adjust profile, region and output
+path before running. IAM explanations are generated from the shipped read-only
+policy and checked for drift at build time.
+
+For a CLI/SDK/MCP import, enter its ID in **Review stored import** in the hosted
+Ask O guide. The request uses the existing governed Ask O operation and only reads
+your own report; switching members discards a pending answer.
+
+After a UI import, the guide reads the same shared report and groups proposed
+remediation by finding kind. It shows counts for clean conversion, deliberate
+differences and failed-closed constructs separately. Opening a proposal changes
+nothing. Review and confirm each fix through Data sources, dataset preparation or
+the normal analysis editor, and save there. Unsupported originals remain retained.
+
+The existing `ask_question` operation also accepts a `migration` input instead of
+`datasetId`, without adding a third v1/MCP operation:
+
+```json
+{"question":"Help me migrate","migration":{"phase":"before-import","setup":{"os":"posix","auth":"sso","profile":"migration-readonly","region":"us-east-1","outputDirectory":"./migration-001"}}}
+```
+
+For a stored import, use
+`{"question":"Review this import","migration":{"phase":"after-import","importId":"migration-001"}}`.
+The server resolves the report using the authenticated importing member; caller-
+supplied reports, credentials, and apply instructions are rejected. The optional
+pre-import manifest supplies inventory and change counts. Every post-import item
+has `requiresConfirmation: true`; the answer has `applied: false`.
+
+This deterministic interpreter path uses no provider, AWS transport, AI credits or
+AI spend. It remains available with AI generation disabled or credits exhausted,
+subject to the existing Ask O/build permissions. Managed generative answers still
+charge on delivery and enforce the existing spend cap. Migration guidance never
+bypasses those generative rules or performs an authoring mutation.

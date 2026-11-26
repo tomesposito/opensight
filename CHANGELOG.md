@@ -93,7 +93,7 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
-- Customer-run QuickSight definition extractor with a List/Describe-only IAM policy, local credential-free outputs, diff-aware manifests and a shared versioned import-report contract with finding fingerprints and per-asset coverage. Multi-member bundle JSON works with the existing local importer; the v1/MCP/Ask O migration paths remain pending (#334).
+- Customer-run QuickSight definition extractor with a List/Describe-only IAM policy, local credential-free outputs, diff-aware manifests and a shared versioned import-report contract with finding fingerprints and per-asset coverage. Multi-member bundle JSON works with the existing local importer. Hosted v1/CLI/SDK/MCP imports atomically retain member-owned reports and stage unresolved assets; Ask O provides deterministic extractor guidance and fingerprint-grouped remediation proposals that require normal authoring confirmation (#334).
 
 - Native planning now admits Insight `TotalAggregation` computations (phase-plan parity slice `parity-insight-total-aggregation-planner`; no GitHub issue). A total binds only its SUM measure and derives no dimension, so a collection containing one takes its single dimension from a sibling computation and a total-only collection still fails closed — completing native planner admission for all eleven web-supported Insight computation kinds.
 
