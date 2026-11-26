@@ -28,6 +28,9 @@ loosening its checks. The source inventory has current retry counters and
 analytics quarantine; the target additionally has `h2_mcp_clients`,
 `h2_mcp_interactions`, `h2_mcp_grants`, `h2_mcp_tokens` and `h2_refresh_tokens`.
 Existing values remain exact and the new tables must be empty after migration.
+The concurrently merged #334 adds `migration-import` to the resource-kind check
+and requires a nonempty owner for that kind. Rehearse this exact constraint
+expansion from the deployed checks; preserve every resource row and old check.
 
 ## IMPLICATIONS
 
@@ -41,6 +44,8 @@ Existing values remain exact and the new tables must be empty after migration.
 - Verify new tables' runtime operator DML grants, tenant denial and absence of
   runtime DDL. Rehearse retained rows/objects, migration replay, unexpected
   writes, partial inventories and rollback on preservation failure.
+- Verify that migration-import records require a member owner after migration;
+  retain the existing global-resource and prepared-dataset ownership constraints.
 - Add only `/.well-known/oauth-protected-resource`,
   `/.well-known/oauth-protected-resource/api/mcp` and
   `/.well-known/oauth-authorization-server` to the API cache behaviors in both

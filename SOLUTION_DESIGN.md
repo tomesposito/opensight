@@ -2227,8 +2227,9 @@ CloudFront does not invoke viewer-response functions for those responses. See
 Deploy the authorized latest release through the registered maintenance bridge
 described in [D-100](docs/itd/D-100-mcp-refresh-maintenance.md). Preserve existing
 rows, retry counters, cleanup schedules, recovery history and the external epoch.
-The only schema additions are the four MCP authorization tables and hosted
-refresh-token table already specified by #332 and #282. Route exactly the three
+The schema additions are the four MCP authorization tables, hosted refresh-token
+table (#332/#282), and #334's `migration-import` resource kind with a required
+member owner. Route exactly the three
 MCP discovery paths through the existing uncached API CloudFront behavior and
 ingress checks, in both infrastructure entry points. Preserve static CSP, SMTP
 configuration and sandbox restrictions. Rehearse the additive migration and
