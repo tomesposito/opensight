@@ -43,7 +43,7 @@ throw new MetadataError('RESOURCE_NOT_FOUND', 404);var unscoped = internal.repla
 && !/^\/api\/(?:o\/(?:status|generate|calculation|query|plan|revise)|admin\/ai(?:\/(?:key|test))?)$/.test(unscoped)
 && !/^\/api\/invitations(?:\/[A-Za-z0-9_-]+)?$/.test(unscoped)
 && !/^\/api\/(?:startup|session|ideas|namespaces|users|groups|connectors|sources|prep-sources|uploads|prep-datasets|automation-status|job-recipients|jobs)$/.test(unscoped)
-&& !/^\/api\/auth\/(?:enroll|accept|login(?:\/select)?|switch|logout)$/.test(unscoped)
+&& !/^\/api\/auth\/(?:enroll|accept|login(?:\/select)?|switch|logout|restore)$/.test(unscoped)
 && unscoped !== '/api/connectors/s3/browse'
 && !/^\/api\/sources\/[A-Za-z0-9_-]+(?:\/(?:bind|rotate|preview|rows|output|query|refresh|policy))?$/.test(unscoped)
 && !/^\/api\/(?:uploads\/[A-Za-z0-9_-]+|ai\/sources(?:\/[A-Za-z0-9_-]+\/schema)?|prep-datasets\/import)$/.test(unscoped)

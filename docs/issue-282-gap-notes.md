@@ -43,7 +43,10 @@ The demo is a local static artifact, not a deployed server.
 
 Full-suite results will be recorded after the retained run completes. The
 27 targeted backup/restore checks passed, including migration and restore of
-registered backups made before refresh cookies existed. `node site/check.mjs`
+registered backups made before refresh cookies existed. The full-suite edge
+freshness check identified a stale generated route allowlist; both checked-in
+edge files were regenerated locally, and dedicated edge/gateway restore
+admission, cookie transport and route-bypass tests were added. `node site/check.mjs`
 passed after regenerating the getting-started page; the public docs manifest
 does not consume `docs/idd`, but it does consume the updated first-run guide.
 

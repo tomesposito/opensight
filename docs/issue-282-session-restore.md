@@ -53,6 +53,8 @@ refresh rows, and backup recovery revokes their authority.
 The auth migration creates the additive table. Serverless migration/grant,
 readiness, backup and initial-state inventories include it; operators must run
 their normal owner migration before using updated serverless runtime code.
+The generated and packaged edge route files also include the restore path and
+must ship with that runtime; no infrastructure change is applied by this build.
 No new environment variables or dependencies are needed.
 
 ## Page load

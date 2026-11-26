@@ -151,3 +151,17 @@ test('#196 plan/revise ingress admits POST only, including namespace scope', () 
     assert.throws(() => adaptGatewayRequest(event(scope + action + '/unknown', 'POST'), runtimeEnv()));
   }
 });
+
+test('#282 gateway restore forwards refresh cookies and restricts the exchange to POST', () => {
+  const cookie = `opensight_refresh=${'a'.repeat(43)}`;
+  for (const gatewayCookies of [true, false]) {
+    const e = event('/api/api/auth/restore', 'POST', {}); delete e.headers.authorization;
+    if (gatewayCookies) e.cookies = [cookie]; else e.headers.cookie = cookie;
+    const input = adaptGatewayRequest(e, runtimeEnv());
+    assert.equal(input.path, '/api/auth/restore'); assert.equal(input.headers.cookie, cookie);
+    assert.equal(input.headers.authorization, undefined);
+  }
+  for (const method of ['GET', 'PUT', 'DELETE']) assert.throws(() => adaptGatewayRequest(event('/api/api/auth/restore', method), runtimeEnv()), { code: 'HOSTED_REQUEST_INVALID' });
+  const ambiguous = event('/api/api/auth/restore', 'POST', {}); ambiguous.cookies = [cookie]; ambiguous.headers.cookie = cookie;
+  assert.throws(() => adaptGatewayRequest(ambiguous, runtimeEnv()), { code: 'HOSTED_REQUEST_INVALID' });
+});
