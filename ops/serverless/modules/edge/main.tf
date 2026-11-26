@@ -384,7 +384,7 @@ resource "aws_cloudfront_distribution" "application" {
     compress = true
   }
   dynamic "ordered_cache_behavior" {
-    for_each = ["/api/*", "/embed/sessions/*", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/api/mcp", "/.well-known/oauth-authorization-server"]
+    for_each = ["/api/*", "/embed/sessions/*", "/.well-known/oauth-*"]
     content {
       path_pattern             = ordered_cache_behavior.value
       target_origin_id         = "api"

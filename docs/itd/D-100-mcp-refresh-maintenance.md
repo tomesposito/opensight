@@ -46,11 +46,20 @@ expansion from the deployed checks; preserve every resource row and old check.
   writes, partial inventories and rollback on preservation failure.
 - Verify that migration-import records require a member owner after migration;
   retain the existing global-resource and prepared-dataset ownership constraints.
-- Add only `/.well-known/oauth-protected-resource`,
+- Route `/.well-known/oauth-*` through one uncached API cache behavior in both
+  infrastructure entry points. The Free plan permits five cache behaviors; four
+  ordered behaviors plus the default fit that limit. The API viewer-request
+  function admits only `/.well-known/oauth-protected-resource`,
   `/.well-known/oauth-protected-resource/api/mcp` and
-  `/.well-known/oauth-authorization-server` to the API cache behaviors in both
-  infrastructure entry points. Preserve exact host/path checks, TLS, disabled
-  caching, existing origin authorization and dynamic response headers.
+  `/.well-known/oauth-authorization-server`; reject every other wildcard match
+  before origin access. Preserve exact host checks, TLS, disabled caching,
+  existing origin authorization and dynamic response headers. Assert the
+  Free-plan behavior budget and exercise unknown suffixes and subpaths.
+- If a failed held promotion has already committed the additive migration, a
+  later attempt captures that actual current inventory in a fresh registered
+  snapshot. Preserve all five authentication tables and prior migration receipts;
+  never relabel a pre-migration snapshot or reuse the closed operation. Rehearse
+  same-inventory preservation and rollback before retrying.
 - Preserve SMTP sender/policy, static CSP, Stripe configuration and SES sandbox.
   Promote the attested image/frontend and reviewed edge under the held operation.
   Verify live discovery, consent/token boundaries, refresh rotation/reload,

@@ -2229,9 +2229,13 @@ described in [D-100](docs/itd/D-100-mcp-refresh-maintenance.md). Preserve existi
 rows, retry counters, cleanup schedules, recovery history and the external epoch.
 The schema additions are the four MCP authorization tables, hosted refresh-token
 table (#332/#282), and #334's `migration-import` resource kind with a required
-member owner. Route exactly the three
-MCP discovery paths through the existing uncached API CloudFront behavior and
-ingress checks, in both infrastructure entry points. Preserve static CSP, SMTP
+member owner. Route `/.well-known/oauth-*` through one uncached API CloudFront
+behavior in both infrastructure entry points, keeping four ordered behaviors
+plus the default within the Free plan budget. The API edge admits exactly the
+three MCP discovery paths and rejects other wildcard matches before origin
+access. A retry after a committed additive migration captures the actual current
+inventory in a fresh registered snapshot and preserves all authentication rows
+and prior migration receipts under a new operation. Preserve static CSP, SMTP
 configuration and sandbox restrictions. Rehearse the additive migration and
 failure rollback, bind the exact release and helper bytes, and require fresh
 backup, held promotion, browser/authentication checks and final readback.

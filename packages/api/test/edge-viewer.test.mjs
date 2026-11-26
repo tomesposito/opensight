@@ -202,3 +202,24 @@ test('#334 generated and packaged edge admit only bundle import and bounded repo
     const e = frame(); e.request.uri = '/api' + path; assert.equal(context.handler(e).statusCode, 403);
   }
 });
+
+
+test('#332 Free-plan OAuth discovery wildcard rejects every unapproved neighbor before origin access', async () => {
+  for (const code of [source, await readFile(new URL('../../../ops/serverless/modules/edge/edge-viewer.js', import.meta.url), 'utf8')]) {
+    const edge = vm.createContext({ Buffer: { byteLength: Buffer.byteLength } });
+    vm.runInContext(code.replaceAll('__OPENSIGHT_ORIGIN__', JSON.stringify(origin)).replaceAll('__OPENSIGHT_HOST__', JSON.stringify(host)), edge);
+    for (const uri of ['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/api/mcp', '/.well-known/oauth-authorization-server']) {
+      const event = frame(); event.request.uri = uri;
+      assert.equal(edge.handler(event).uri, uri);
+    }
+    for (const uri of ['/.well-known/oauth-', '/.well-known/oauth-unknown', '/.well-known/oauth-protected-resource-evil',
+      '/.well-known/oauth-protected-resource/', '/.well-known/oauth-protected-resource/api', '/.well-known/oauth-protected-resource/api/mcp/extra',
+      '/.well-known/oauth-authorization-server/extra', '/.well-known/oauth-authorization-server-evil']) {
+      const event = frame(); event.request.uri = uri;
+      const response = edge.handler(event);
+      assert.equal(response.statusCode, 403, uri);
+      assert.equal(response.headers['cache-control'].value, 'no-store');
+      assert.equal(response.uri, undefined);
+    }
+  }
+});

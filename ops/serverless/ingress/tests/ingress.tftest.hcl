@@ -72,12 +72,12 @@ run "closed_until_acceptance" {
     error_message = "The authorizer must receive only public ingress settings and its exact secret reference."
   }
   assert {
-    condition     = length(aws_cloudfront_distribution.application.ordered_cache_behavior) == 6 && alltrue([for behavior in aws_cloudfront_distribution.application.ordered_cache_behavior : behavior.target_origin_id != "api" || (behavior.cache_policy_id == data.aws_cloudfront_cache_policy.disabled.id && behavior.viewer_protocol_policy == "https-only" && length(behavior.function_association) == 1 && behavior.response_headers_policy_id == null)])
-    error_message = "Dynamic responses must not be cached, exposed over HTTP or assigned a static iframe-blocking policy."
+    condition     = length(aws_cloudfront_distribution.application.ordered_cache_behavior) + 1 <= 5 && alltrue([for behavior in aws_cloudfront_distribution.application.ordered_cache_behavior : behavior.target_origin_id != "api" || (behavior.cache_policy_id == data.aws_cloudfront_cache_policy.disabled.id && behavior.viewer_protocol_policy == "https-only" && length(behavior.function_association) == 1 && behavior.response_headers_policy_id == null)])
+    error_message = "The Free plan must fit five behaviors including default; dynamic responses require uncached HTTPS and the API ingress boundary."
   }
   assert {
-    condition     = toset([for behavior in aws_cloudfront_distribution.application.ordered_cache_behavior : behavior.path_pattern if startswith(behavior.path_pattern, "/.well-known/") && behavior.target_origin_id == "api"]) == toset(["/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/api/mcp", "/.well-known/oauth-authorization-server"])
-    error_message = "Only the three exact MCP discovery paths may use uncached API routing."
+    condition     = toset([for behavior in aws_cloudfront_distribution.application.ordered_cache_behavior : behavior.path_pattern if startswith(behavior.path_pattern, "/.well-known/") && behavior.target_origin_id == "api"]) == toset(["/.well-known/oauth-*"])
+    error_message = "One OAuth discovery behavior must share the exact API ingress boundary."
   }
   assert {
     condition     = aws_s3_bucket_public_access_block.frontend.block_public_acls && aws_s3_bucket_public_access_block.frontend.block_public_policy && !aws_s3_bucket.frontend.force_destroy && aws_s3_bucket_versioning.frontend.versioning_configuration[0].status == "Enabled"
