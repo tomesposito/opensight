@@ -237,6 +237,7 @@ export class HostedProvisioning {
         return;
       }
       await c.query('UPDATE h1_revisions SET "authorization" = "authorization" + 1 WHERE tenant_id = ?', [tenantId]);
+      await c.query('UPDATE h2_refresh_tokens SET revoked = 1 WHERE session_id IN (SELECT session_id FROM h2_sessions WHERE tenant_id = ? AND user_id = ?)', [tenantId, userId]);
       await appendMetadataEvent(c, { tenantId, namespaceId: String(rows[0]!.namespace_id) }, 'membership.removed');
       await appendOperatorAudit(c, { action: 'membership.removed', tenantId, subject: userId, detail: { jobs: choice?.action ?? 'none' } });
     });

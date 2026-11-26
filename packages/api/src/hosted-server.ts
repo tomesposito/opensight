@@ -27,7 +27,8 @@ import { PrepError } from '@opensight/bundle-parser/prep';
 import { BlazeError } from './blaze.js';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { hasCapability } from '@opensight/query-engine';
-import { HostedAuth } from './hosted-auth.js';
+import { readRefreshCookie, refreshCookieHeader } from './session-cookie.js';
+import { HostedAuth, type BrowserSession } from './hosted-auth.js';
 import { initializeAuth } from './auth-schema.js';
 import { equal } from './auth-crypto.js';
 import { hostedConfig } from './hosted-config.js';
@@ -129,9 +130,17 @@ function code(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{6}$/.test(value)) throw new MetadataError('AUTHENTICATION_FAILED', 401);
   return value;
 }
+function rememberMe(value: unknown): boolean {
+  if (value !== undefined && typeof value !== 'boolean') throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
+  return value === true;
+}
+function sendBrowserSession(response: ServerResponse, session: BrowserSession, origin: string, now: number): void {
+  response.setHeader('Set-Cookie', refreshCookieHeader(session.refreshToken, session.expiresAt, origin, now));
+  send(response, 200, { token: session.token, expiresAt: session.expiresAt, tenantId: session.tenantId });
+}
 function idempotency(request: IncomingMessage): string { return identifier(request.headers['idempotency-key']); }
 function boundary(request: IncomingMessage, origin: string): void {
-  for (const header of ['host', 'authorization', 'origin', 'idempotency-key', 'if-match', 'idea-status', 'idea-tenant', 'content-type', 'mcp-protocol-version', 'mcp-session-id']) {
+  for (const header of ['host', 'authorization', 'cookie', 'origin', 'idempotency-key', 'if-match', 'idea-status', 'idea-tenant', 'content-type', 'mcp-protocol-version', 'mcp-session-id']) {
     let count = 0;
     for (let i = 0; i < request.rawHeaders.length; i += 2) if (request.rawHeaders[i]!.toLowerCase() === header) count++;
     if (count > 1) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
@@ -449,19 +458,43 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       if (['/api/auth/enroll', '/api/auth/accept', '/api/auth/login', '/api/auth/login/select'].includes(path)) {
         if (!options.builtinAuth) throw new MetadataError('BUILTIN_AUTH_UNAVAILABLE', 503);
         method(request, response, ['POST']);
-        if (request.headers.authorization || request.headers.cookie) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
+        if (request.headers.authorization || !path.startsWith('/api/auth/login') && request.headers.cookie) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
         if (path === '/api/auth/login') {
-          const input = await body(request, ['email', 'password', 'code', 'tenantId']);
-          send(response, 200, await options.builtinAuth.login(input.email, input.password, code(input.code), input.tenantId, peer));
+          const input = await body(request, ['email', 'password', 'code', 'tenantId', 'remember']);
+          const result = await options.builtinAuth.login(input.email, input.password, code(input.code), input.tenantId, peer, rememberMe(input.remember));
+          if ('refreshToken' in result) sendBrowserSession(response, result, config.origin, clock());
+          else send(response, 200, result);
         } else if (path === '/api/auth/login/select') {
-          const input = await body(request, ['selectionToken', 'tenantId']);
-          send(response, 200, await options.builtinAuth.completeLogin(input.selectionToken, input.tenantId, peer));
+          const input = await body(request, ['selectionToken', 'tenantId', 'remember']);
+          sendBrowserSession(response, await options.builtinAuth.completeLogin(input.selectionToken, input.tenantId, peer, rememberMe(input.remember)), config.origin, clock());
         } else {
           const input = await body(request, path.endsWith('/enroll') ? ['invitationToken', 'password'] : ['invitationToken', 'password', 'code']);
           send(response, 200, path.endsWith('/enroll') ? await options.builtinAuth.enroll(input.invitationToken, input.password, peer)
             : await options.builtinAuth.accept(input.invitationToken, input.password, code(input.code), peer));
         }
         return;
+      }
+      if (path === '/api/auth/restore') {
+        if (!options.builtinAuth) throw new MetadataError('BUILTIN_AUTH_UNAVAILABLE', 503);
+        method(request, response, ['POST']);
+        if (request.headers.authorization) throw new MetadataError('HOSTED_REQUEST_INVALID', 400);
+        await body(request, []);
+        try {
+          sendBrowserSession(response, await options.builtinAuth.restore(readRefreshCookie(request)), config.origin, clock());
+        } catch (error) {
+          if (error instanceof MetadataError && error.status === 401) response.setHeader('Set-Cookie', refreshCookieHeader('', 0, config.origin, clock()));
+          throw error;
+        }
+        return;
+      }
+      if (path === '/api/auth/logout') {
+        if (!options.builtinAuth) throw new MetadataError('BUILTIN_AUTH_UNAVAILABLE', 503);
+        method(request, response, ['POST']);
+        await body(request, []);
+        response.setHeader('Set-Cookie', refreshCookieHeader('', 0, config.origin, clock()));
+        const token = request.headers.authorization ? options.builtinAuth.bearer(request) : undefined;
+        await options.builtinAuth.logoutBrowser(readRefreshCookie(request), token);
+        send(response, 200, { loggedOut: true }); return;
       }
       // SR2/SR3 supply durable admission/artifacts and event claims. Never run
       // the single-node data/job/embedding plane just because Lambda can invoke it.
@@ -591,12 +624,11 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
         const workspaceSlug = typeof tenant?.slug === 'string' ? tenant.slug : null;
         send(response, 200, { id: user.id, namespaceId: context.namespaceId, tenantId: context.tenantId, workspaceName, workspaceSlug, ...user.body, trial: billingService?.trial(context.tenantId) ?? null, billingPaused: billingService?.accessPaused(context.tenantId) ?? false, ...(billingService ? { billing: await billingService.viewState(context.tenantId, hasCapability(user.body.role as Parameters<typeof hasCapability>[0], 'admin')) } : {}), ...(invocation ? { capabilities: invocation.capabilities } : {}) }); return;
       }
-      if (path === '/api/auth/switch' || path === '/api/auth/logout') {
+      if (path === '/api/auth/switch') {
         if (!options.builtinAuth) throw new MetadataError('BUILTIN_AUTH_UNAVAILABLE', 503);
         method(request, response, ['POST']);
-        const input = await body(request, path.endsWith('/switch') ? ['tenantId'] : []), token = options.builtinAuth.bearer(request);
-        if (path.endsWith('/switch')) send(response, 200, await options.builtinAuth.switchTenant(token, input.tenantId));
-        else { await options.builtinAuth.logout(token); send(response, 200, { loggedOut: true }); }
+        const input = await body(request, ['tenantId']), token = options.builtinAuth.bearer(request);
+        sendBrowserSession(response, await options.builtinAuth.switchTenant(token, input.tenantId), config.origin, clock());
         return;
       }
       if (path === '/api/namespaces') {

@@ -52,7 +52,7 @@ test('H2 live Postgres: private credentials, concurrent onboarding/MFA/switch, c
   for (const table of metadataTables.filter(t => t !== 'migrations')) await adminPool.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON h1_${table} TO ${role}`);
   const url = new URL(process.env.DATABASE_URL); url.username = role; url.password = '';
   tenantPool = new Pool({ connectionString: url.href, max: 1, options: `-c search_path=${schema}` });
-  for (const table of ['identities', 'memberships', 'sessions', 'keys', 'invitations', 'attempts', 'onboarding', 'requests', 'control']) await assert.rejects(tenantPool.query(`SELECT * FROM h2_${table}`), { code: '42501' });
+  for (const table of ['identities', 'memberships', 'sessions', 'refresh_tokens', 'keys', 'invitations', 'attempts', 'onboarding', 'requests', 'control']) await assert.rejects(tenantPool.query(`SELECT * FROM h2_${table}`), { code: '42501' });
   const config = hostedConfig(environment()), mail = new StubMailTransport(); let now = 1800000000000;
   const provisioning = new HostedProvisioning(db, config, mail, () => now), auth = await HostedAuth.create(db, config, () => now);
   const second = await HostedAuth.create(new PostgresMetadataDatabase(adminPool), config, () => now);
@@ -73,7 +73,13 @@ test('H2 live Postgres: private credentials, concurrent onboarding/MFA/switch, c
   assert.equal(switches.filter(r => r.status === 'fulfilled').length, 1);
   assert.equal(switches.find(r => r.status === 'rejected').reason.code, 'AUTHENTICATION_FAILED');
   const switched = switches.find(r => r.status === 'fulfilled').value;
-  await second.logout(switched.token); await assert.rejects(auth.verify(switched.token), { code: 'AUTHENTICATION_FAILED' });
+  const restores = await Promise.allSettled([auth, second].map(a => a.restore(switched.refreshToken)));
+  assert.equal(restores.filter(r => r.status === 'fulfilled').length, 1);
+  assert.equal(restores.find(r => r.status === 'rejected').reason.code, 'AUTHENTICATION_FAILED');
+  const restored = restores.find(r => r.status === 'fulfilled').value;
+  await assert.rejects(auth.restore(switched.refreshToken), { code: 'AUTHENTICATION_FAILED' });
+  await second.logout(restored.token); await assert.rejects(auth.restore(restored.refreshToken), { code: 'AUTHENTICATION_FAILED' });
+  await assert.rejects(auth.verify(switched.token), { code: 'AUTHENTICATION_FAILED' });
   // H5 uses operator-owned config metadata and the same tenant lock on Postgres.
   await initializeEmbedding(db);
   await assert.rejects(tenantPool.query('SELECT * FROM h5_embedding_config'), { code: '42501' });

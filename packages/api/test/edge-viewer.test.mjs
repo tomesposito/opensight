@@ -172,3 +172,17 @@ test('#329 generated and packaged edge admit AI ask and reject neighboring paths
     assert.equal(context.handler(e).statusCode, 403);
   }
 });
+
+test('#282 generated and packaged edge admit cookie restore without opening scoped or neighboring auth routes', async () => {
+  for (const code of [source, await readFile(new URL('../../../ops/serverless/modules/edge/edge-viewer.js', import.meta.url), 'utf8')]) {
+    const edge = vm.createContext({ Buffer: { byteLength: Buffer.byteLength } });
+    vm.runInContext(code.replaceAll('__OPENSIGHT_ORIGIN__', JSON.stringify(origin)).replaceAll('__OPENSIGHT_HOST__', JSON.stringify(host)), edge);
+    const event = frame(); event.request.uri = '/api/api/auth/restore'; event.request.method = 'POST';
+    event.request.headers.cookie = { value: `opensight_refresh=${'a'.repeat(43)}` };
+    validateViewerRequest({ ...event.request, protocol: 'https' }, origin);
+    assert.equal(edge.handler(event).uri, '/api/api/auth/restore');
+    for (const uri of ['/api/api/auth/restore/extra', '/api/api/namespaces/foreign/auth/restore']) {
+      const other = frame(); other.request.uri = uri; other.request.method = 'POST'; assert.equal(edge.handler(other).statusCode, 403);
+    }
+  }
+});

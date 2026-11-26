@@ -170,6 +170,7 @@ export class HostedEmbedding {
       // H6 must bind embed grants to this revision; H5 cannot mint such grants.
       await c.query('UPDATE h1_revisions SET configuration = configuration + 1 WHERE tenant_id = ? AND namespace_id = ?', [context.tenantId, context.namespaceId]);
       await c.query('UPDATE h2_sessions SET revoked = 1 WHERE tenant_id = ?', [context.tenantId]);
+      await c.query('UPDATE h2_refresh_tokens SET revoked = 1 WHERE tenant_id = ?', [context.tenantId]);
       await appendMetadataEvent(c, context, 'embedding.config.changed');
       return this.result(config, revision, context.tenantId);
     });

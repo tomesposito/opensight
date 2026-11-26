@@ -25,6 +25,7 @@ re-provision from scratch.
 - It is **local only**. The API binds to 127.0.0.1 and the database is a local file.
 - `.env` holds secrets. It is gitignored; never commit it, never share it.
 - The `http://localhost` origin is accepted under a documented loopback exception in
-  `packages/api/src/hosted-config.ts` (RFC 8252 §7.3: loopback origins cannot be
-  exploited remotely, and sessions are Bearer <redacted> memory, never cookies).
-  Any non-loopback origin still requires https.
+  `packages/api/src/hosted-config.ts`. Bearers stay in memory; the separate
+  HttpOnly refresh cookie omits Secure only on this local HTTP origin. Cookie
+  exchanges require JSON POSTs and reject foreign origins. Any non-loopback
+  origin still requires HTTPS. See [session restore](issue-282-session-restore.md).

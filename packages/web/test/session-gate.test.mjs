@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { act, createElement } from 'react';
+import { act, createElement, StrictMode } from 'react';
 import { create } from 'react-test-renderer';
 import { SessionGate, SESSION_TIMEOUT_MS } from '../build/test/SessionGate.js';
 import { SignIn } from '../build/test/SignIn.js';
@@ -212,4 +212,67 @@ test('on-demand unmount cancels startup and late success cannot perform a sessio
   const ui = await mount(t, gate({ onDemand: true, connect: value => { signal = value; return waiting.promise; }, getSession: async () => { reads++; return registered; } }));
   await act(async () => ui.renderer.root.findAllByType('button').find(b => b.children.includes('Connect')).props.onClick());
   await act(async () => ui.renderer.unmount()); assert.equal(signal.aborted, true); await act(async () => waiting.resolve()); assert.equal(reads, 0);
+});
+
+for (const onDemand of [false, true]) test(`Issue #282: ${onDemand ? 'on-demand wake then' : 'direct'} restore completes before any access gate`, async t => {
+  const wake = deferred(), restore = deferred(), calls = [];
+  const session = { ...registered, tenantId: 'workspace' };
+  const client = { onDemand, connect: async () => { calls.push('wake'); await wake.promise; },
+    restoreSession: async () => { calls.push('restore'); return restore.promise; },
+    getSession: async () => { calls.push('session'); return session; } };
+  const ui = await mount(t, gate(client));
+  const noGate = () => {
+    assert.equal(ui.renderer.root.findAllByType(SignIn).length, 0);
+    assert.equal(ui.renderer.root.findAllByType(FirstRun).length, 0);
+    assert.doesNotMatch(JSON.stringify(ui.renderer.toJSON()), /Connect to OpenSight/);
+    assert.equal(ui.renderer.root.findAllByType(Probe).length, 0);
+  };
+  noGate(); assert.deepEqual(calls, onDemand ? ['wake'] : ['restore']);
+  await act(async () => wake.resolve()); noGate();
+  await act(async () => restore.resolve({ session, expiresAt: Date.now() + 900000 }));
+  assert.equal(ui.renderer.root.findByType('output').props['data-access'].session.tenantId, 'workspace');
+  assert.deepEqual(calls, onDemand ? ['wake', 'restore'] : ['restore']);
+});
+
+test('Issue #282: missing cookie preserves Connect then sign-in; on-demand idle/focus does not restore again', async t => {
+  t.mock.timers.enable({apis:['setTimeout','setInterval']});
+  const calls=[];
+  const ui = await mount(t, gate({ onDemand:true, connect:async()=>{calls.push('wake');}, restoreSession:async()=>{calls.push('restore');throw new ApiError('Missing',401,'AUTHENTICATION_FAILED');},
+    getSession:async()=>{calls.push('session');throw new ApiError('Missing',401,'AUTHENTICATION_FAILED');} }));
+  assert.deepEqual(calls,['wake','restore']); assert.match(JSON.stringify(ui.renderer.toJSON()),/Connect to OpenSight/);
+  assert.equal(ui.renderer.root.findAllByType(SignIn).length,0);
+  await act(async()=>ui.renderer.root.findAllByType('button').find(b=>b.children.includes('Connect')).props.onClick());
+  assert.equal(ui.renderer.root.findAllByType(SignIn).length,1); assert.deepEqual(calls,['wake','restore','wake','session']);
+  await ui.focus(); await act(async()=>t.mock.timers.tick(180000)); assert.deepEqual(calls,['wake','restore','wake','session']);
+});
+
+test('Issue #282: direct restore failure retains existing sign-in and local-setup probes', async t => {
+  const calls=[];
+  const ui = await mount(t, gate({ restoreSession:async()=>{calls.push('restore');throw new ApiError('Missing',401);},
+    getSession:async()=>{calls.push('session');throw new ApiError('Missing',401);} }));
+  assert.deepEqual(calls,['restore','session']); assert.equal(ui.renderer.root.findAllByType(SignIn).length,1);
+});
+
+test('Issue #282: unmount or sample-data navigation cancels restore and ignores late success', async t => {
+  const pending=deferred(); let signal, clears=0;
+  const ui=await mount(t,gate({restoreSession:async s=>{signal=s;return pending.promise;},clearSession(){clears++;},getSession(){assert.fail('no fallback after unmount');}}));
+  await act(async()=>ui.renderer.root.findByType('button').props.onClick());
+  assert.equal(signal.aborted,true); assert.equal(ui.renderer.root.findByType('output').props['data-access'].mode,'demo');
+  await act(async()=>pending.resolve({session:registered,expiresAt:Date.now()+900000}));
+  assert.equal(ui.renderer.root.findByType('output').props['data-access'].mode,'demo'); assert.ok(clears>0);
+});
+
+test('Issue #282: restore timeout returns to Connect without allowing late success', async t => {
+  t.mock.timers.enable({apis:['setTimeout','setInterval']});
+  let signal;
+  const ui=await mount(t,gate({onDemand:true,connect:async()=>{},restoreSession:s=>{signal=s;return new Promise((_,reject)=>s.addEventListener('abort',()=>reject(new Error('aborted'))));},getSession(){assert.fail('wait for Connect');}}));
+  await act(async()=>t.mock.timers.tick(SESSION_TIMEOUT_MS));
+  assert.equal(signal.aborted,true); assert.match(JSON.stringify(ui.renderer.toJSON()),/Connect to OpenSight/);
+});
+
+
+test('Issue #282: React StrictMode starts only one rotating restore request', async t => {
+  let restores=0;
+  const ui=await mount(t,createElement(StrictMode,null,gate({restoreSession:async()=>{restores++;return {session:registered,expiresAt:Date.now()+900000};},clearSession(){},getSession(){assert.fail('restore supplies session');}})));
+  assert.equal(restores,1); assert.equal(ui.renderer.root.findAllByType(Probe).length,1);
 });

@@ -316,7 +316,7 @@ test('#332 MCP inventory recognizes pre-OAuth snapshots and rejects partial OAut
   tables.h8_audit_schema = [{ id: 1, version: AUDIT_SCHEMA_VERSION, checksum: auditSchemaChecksum }];
   assert.equal(snapshotInventory(tables), currentInventory);
   for (const table of mcpTables) delete tables[table];
-  assert.equal(snapshotInventory(tables), currentInventory.replace(/-mcp-v1$/, ''));
+  assert.equal(snapshotInventory(tables), currentInventory.replace('-mcp-v1', ''));
   tables.h2_mcp_clients = []; assert.throws(() => snapshotInventory(tables), { code: 'BACKUP_SCHEMA_INVALID' });
 });
 
@@ -330,4 +330,19 @@ test('#332 registered pre-MCP migration creates empty OAuth stores and restore r
   for (const table of mcpTables) assert.deepEqual(await f.db.transaction(c => c.query(`SELECT * FROM ${table}`)), []);
   await f.target.transaction(c => c.query('INSERT INTO h2_mcp_clients VALUES (?,?,?,?,?)', ['synthetic-client', 'Synthetic', '[]', 'opensight/mcp.read', 0]));
   await assert.rejects(restoreServerless(f.target, f.snapshot, f.registry, 'sqlite'), { code: 'RESTORE_TARGET_NOT_EMPTY' });
+});
+
+
+test('#282 refresh inventory recognizes pre-restore snapshots and migrates without resurrecting authority', async t => {
+  const f = await fixture(t), { migrateRegistered } = await import('../dist/serverless-backup.js');
+  const { snapshotInventory, currentInventory } = await import('../dist/serverless-backup-schema.js');
+  await f.db.transaction(c => c.query('DROP TABLE h2_refresh_tokens'));
+  const snapshot = await snapshotServerless(f.db, 'test', randomUUID(), Date.now() + 3600000, ['a'.repeat(32)], 'sqlite');
+  assert.equal(snapshotInventory(snapshot.tables), currentInventory.replace('-refresh-v1', ''));
+  const registry = { ...f.registry, epoch: 1, backups: { [snapshot.id]: checksum(snapshot) } }, operation = randomUUID();
+  assert.equal((await migrateRegistered(f.db, f.env, snapshot, registry, operation, 'sqlite')).replayed, false);
+  assert.equal((await migrateRegistered(f.db, f.env, snapshot, registry, operation, 'sqlite')).replayed, true);
+  assert.deepEqual(await f.db.transaction(c => c.query('SELECT * FROM h2_refresh_tokens')), []);
+  assert.equal((await restoreServerless(f.target, snapshot, { ...registry, epoch: 2 }, 'sqlite')).state, 'held');
+  assert.deepEqual(await f.target.transaction(c => c.query('SELECT * FROM h2_refresh_tokens')), []);
 });

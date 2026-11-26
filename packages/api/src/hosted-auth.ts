@@ -20,6 +20,7 @@ export interface MemberDelegation {
 /** A workspace picker challenge lives at most five minutes and is single-use. */
 export const LOGIN_SELECTION_MS = 5 * 60 * 1000;
 export interface LoginSession { token: string; expiresAt: number; tenantId: string }
+export interface BrowserSession extends LoginSession { refreshToken: string }
 export interface LoginWorkspace { tenantId: string; name: string; slug: string | null }
 export interface LoginSelection {
   selectionRequired: true; email: string; workspaces: LoginWorkspace[];
@@ -196,7 +197,7 @@ export class HostedAuth {
     this.analytics.track(activated, { name: 'user_activated' });
     return { accepted: true };
   }
-  async login(emailValue: unknown, passwordValue: unknown, code: string, tenantValue: unknown, peer: string): Promise<LoginSession | LoginSelection> {
+  async login(emailValue: unknown, passwordValue: unknown, code: string, tenantValue: unknown, peer: string, remember = false): Promise<BrowserSession | LoginSelection> {
     const email = normalizedEmail(emailValue), password = passwordInput(passwordValue);
     // An omitted workspace selects the picker flow below; an explicitly
     // supplied workspace keeps the exact historical behavior, including
@@ -208,12 +209,12 @@ export class HostedAuth {
     if (!identity?.password_hash) { await hashPassword(password); denied(); }
     const credentials = await this.credentials(String(identity.subject), password);
     if (credentials.status !== 'active') denied();
-    if (tenantId === undefined) return this.challenge(String(identity.subject), email, credentials, code);
+    if (tenantId === undefined) return this.challenge(String(identity.subject), email, credentials, code, remember);
     return this.database.transaction(async c => {
       await this.key(c);
       const membership = await this.membership(c, String(identity.subject), tenantId);
       await this.consumeTotp(c, credentials, code);
-      return this.issue(c, membership);
+      return this.issueBrowserSession(c, membership, this.clock() + (remember ? 36000 : 900) * 1000);
     });
   }
   /**
@@ -222,7 +223,7 @@ export class HostedAuth {
    * issues the session (single membership) or mints the picker challenge.
    * A rollback leaves neither a session nor a reusable challenge.
    */
-  private async challenge(subject: string, email: string, credentials: SqlRow, code: string): Promise<LoginSession | LoginSelection> {
+  private async challenge(subject: string, email: string, credentials: SqlRow, code: string, remember: boolean): Promise<BrowserSession | LoginSelection> {
     return this.database.transaction(async c => {
       await this.key(c);
       const candidates = await c.query("SELECT tenant_id FROM h2_memberships WHERE subject = ? AND status = 'active' ORDER BY tenant_id", [subject]);
@@ -238,7 +239,7 @@ export class HostedAuth {
       // new enumeration signal); one membership never sees a picker.
       if (!admissible.length) denied();
       await this.consumeTotp(c, credentials, code);
-      if (admissible.length === 1) return this.issue(c, admissible[0]!);
+      if (admissible.length === 1) return this.issueBrowserSession(c, admissible[0]!, this.clock() + (remember ? 36000 : 900) * 1000);
       const ids = admissible.map(m => String(m.tenant_id));
       const labels = await c.query(`SELECT tenant_id, display_name, slug FROM h1_tenants WHERE tenant_id IN (${ids.map(() => '?').join(',')})`, ids);
       const byId = new Map(labels.map(row => [String(row.tenant_id), row]));
@@ -257,7 +258,7 @@ export class HostedAuth {
    * AUTHENTICATION_FAILED — never revealing which check failed. Consume and
    * issue happen atomically, so a replayed token always loses the race.
    */
-  async completeLogin(selectionValue: unknown, tenantValue: unknown, peer: string): Promise<LoginSession> {
+  async completeLogin(selectionValue: unknown, tenantValue: unknown, peer: string, remember = false): Promise<BrowserSession> {
     const selectionToken = tokenInput(selectionValue);
     let tenantId: string;
     try { tenantId = identifier(tenantValue); } catch { denied(); }
@@ -276,7 +277,7 @@ export class HostedAuth {
       const consumed = await c.query('UPDATE h2_login_selections SET consumed = 1 WHERE selection_id = ? AND consumed = 0 AND expires_at > ? RETURNING selection_id',
         [digest(selectionToken), this.clock()]);
       if (!consumed.length) denied();
-      return this.issue(c, membership);
+      return this.issueBrowserSession(c, membership, this.clock() + (remember ? 36000 : 900) * 1000);
     });
   }
 
@@ -291,11 +292,21 @@ export class HostedAuth {
         expiresAt, this.config.keyId, Number(membership.version), Number(membership.authorization), Number(membership.policy), Number(membership.configuration)]);
     return { token: `${prefix}.${this.signature(prefix)}`, expiresAt, tenantId };
   }
+  private async issueBrowserSession(c: SqlConnection, membership: SqlRow, expiresAtLimit: number): Promise<BrowserSession> {
+    const session = await this.issue(c, membership, expiresAtLimit);
+    const refreshToken = randomBytes(32).toString('base64url');
+    await c.query('INSERT INTO h2_refresh_tokens (token_hash, session_id, tenant_id, expires_at, revoked) VALUES (?,?,?,?,0)',
+      [digest(refreshToken), digest(session.token.split('.')[2]!), session.tenantId, session.expiresAt]);
+    return { ...session, refreshToken };
+  }
   private async session(c: SqlConnection, token: string): Promise<{ session: SqlRow; membership: SqlRow }> {
     const parts = token.split('.');
     if (parts.length !== 4 || parts[0] !== 'h2' || parts[1] !== this.config.keyId || !/^[A-Za-z0-9_-]{43}$/.test(parts[2]!) || !equal(parts[3]!, this.signature(parts.slice(0, 3).join('.')))) denied();
     await this.key(c);
     const session = (await c.query('SELECT * FROM h2_sessions WHERE session_id = ?', [digest(parts[2]!)]))[0];
+    return this.admitSession(c, session);
+  }
+  private async admitSession(c: SqlConnection, session: SqlRow | undefined): Promise<{ session: SqlRow; membership: SqlRow }> {
     if (!session || Number(session.revoked) || Number(session.expires_at) <= this.clock() || session.issuer !== this.config.issuer || session.audience !== this.config.audience || session.origin !== this.config.origin || session.key_id !== this.config.keyId) denied();
     const membership = await this.membership(c, String(session.subject), String(session.tenant_id));
     const admitted = await c.query('UPDATE h2_sessions SET revoked = revoked WHERE session_id = ? AND revoked = 0 RETURNING session_id', [String(session.session_id)]);
@@ -307,6 +318,24 @@ export class HostedAuth {
     const identity = (await c.query("SELECT subject FROM h2_identities WHERE subject = ? AND status = 'active'", [String(session.subject)]))[0];
     if (!identity) denied();
     return { session, membership };
+  }
+  /** Cookie-only exchange. Tenant/session locks and compare-and-set make rotation single-use. */
+  async restore(value: unknown): Promise<BrowserSession> {
+    const token = tokenInput(value), hash = digest(token);
+    return this.database.transaction(async c => {
+      await this.key(c);
+      const refresh = (await c.query('SELECT * FROM h2_refresh_tokens WHERE token_hash = ?', [hash]))[0];
+      if (!refresh || Number(refresh.revoked) || Number(refresh.expires_at) <= this.clock()) denied();
+      const { session, membership } = await this.admitSession(c,
+        (await c.query('SELECT * FROM h2_sessions WHERE session_id = ?', [String(refresh.session_id)]))[0]);
+      if (refresh.tenant_id !== session.tenant_id) denied();
+      const consumed = await c.query('UPDATE h2_refresh_tokens SET revoked = 1 WHERE token_hash = ? AND revoked = 0 AND expires_at > ? RETURNING token_hash', [hash, this.clock()]);
+      if (!consumed.length) denied();
+      const result = await this.issueBrowserSession(c, membership, Math.min(Number(refresh.expires_at), Number(session.expires_at)));
+      await c.query('UPDATE h2_sessions SET revoked = 1 WHERE session_id = ?', [String(session.session_id)]);
+      await c.query('UPDATE h2_refresh_tokens SET revoked = 1 WHERE session_id = ?', [String(session.session_id)]);
+      return result;
+    });
   }
   bearer(request: IncomingMessage): string {
     const value = request.headers.authorization;
@@ -366,20 +395,39 @@ export class HostedAuth {
       return { kind: 'author', id: String(session.session_id), expiresAt: Number(session.expires_at) };
     });
   }
-  async switchTenant(token: string, tenantValue: unknown): Promise<{ token: string; expiresAt: number; tenantId: string }> {
+  async switchTenant(token: string, tenantValue: unknown): Promise<BrowserSession> {
     const tenantId = identifier(tenantValue);
     return this.database.transaction(async c => {
       const { session } = await this.session(c, token);
       const membership = await this.membership(c, String(session.subject), tenantId);
-      const result = await this.issue(c, membership, Number(session.expires_at));
+      const result = await this.issueBrowserSession(c, membership, Number(session.expires_at));
       await c.query('UPDATE h2_sessions SET revoked = 1 WHERE session_id = ?', [String(session.session_id)]);
+      await c.query('UPDATE h2_refresh_tokens SET revoked = 1 WHERE session_id = ?', [String(session.session_id)]);
       return result;
+    });
+  }
+  /** Clear ambient authority even after bearer expiry, revocation or tenant suspension. */
+  async logoutBrowser(refreshToken: string | undefined, bearer?: string): Promise<void> {
+    if (bearer) {
+      try { await this.logout(bearer); }
+      catch (error) { if (!(error instanceof MetadataError && error.status === 401)) throw error; }
+    }
+    if (!refreshToken) return;
+    await this.database.transaction(async c => {
+      const refresh = (await c.query('SELECT * FROM h2_refresh_tokens WHERE token_hash = ?', [digest(refreshToken)]))[0];
+      if (!refresh) return;
+      // Same tenant -> session -> refresh lock order as restore. No active-state
+      // admission is needed to remove authority, including already expired rows.
+      await c.query('UPDATE h1_tenants SET version = version WHERE tenant_id = ?', [String(refresh.tenant_id)]);
+      await c.query('UPDATE h2_sessions SET revoked = 1 WHERE session_id = ?', [String(refresh.session_id)]);
+      await c.query('UPDATE h2_refresh_tokens SET revoked = 1 WHERE session_id = ?', [String(refresh.session_id)]);
     });
   }
   async logout(token: string): Promise<void> {
     await this.database.transaction(async c => {
       const { session } = await this.session(c, token);
       await c.query('UPDATE h2_sessions SET revoked = 1 WHERE session_id = ?', [String(session.session_id)]);
+      await c.query('UPDATE h2_refresh_tokens SET revoked = 1 WHERE session_id = ?', [String(session.session_id)]);
     });
   }
 }

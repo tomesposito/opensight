@@ -11,7 +11,7 @@ export async function hostedReadiness(membership: Database, tenant: Database): P
     await membership.transaction(async c => {
       await c.query('SELECT subject FROM h2_memberships WHERE 1 = 0');
       for (const table of ['h1_tenants', 'h1_namespaces', 'h1_revisions', 'h1_resources', 'h1_links', 'h1_operations', 'h1_outbox',
-        'h2_control', 'h2_identities', 'h2_invitations', 'h2_keys', 'h2_sessions', 'h2_attempts', 'h2_onboarding', 'h2_requests',
+        'h2_control', 'h2_identities', 'h2_invitations', 'h2_keys', 'h2_sessions', 'h2_refresh_tokens', 'h2_attempts', 'h2_onboarding', 'h2_requests',
         'h5_embedding_config', 'h6_keys', 'h6_sessions', 'h7_jobs', 'h7_occurrences', 'h7_deliveries', 'h7_migrations']) await c.query(`SELECT 1 FROM ${table} WHERE 1 = 0`);
       const migrations = await c.query("SELECT migration_id FROM h1_migrations WHERE state IN ('inventoried','committed')");
       const jobs = await c.query("SELECT resource_id FROM h1_resources j WHERE kind = 'job' AND NOT EXISTS (SELECT 1 FROM h7_migrations m WHERE m.tenant_id = j.tenant_id AND m.namespace_id = j.namespace_id)");

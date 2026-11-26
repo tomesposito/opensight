@@ -773,6 +773,12 @@ for bundled commercial licenses.
 
 ## 7. Open questions
 
+Hosted app session decision:
+
+| ID | Contract | Status / gate |
+| --- | --- | --- |
+| [D-99](idd/D-99-session-restore.md) | Hosted session restore (#282) | ✅ Silent HttpOnly refresh-cookie exchange before access gates; wake first when needed; supersedes HQ-7's no-cookie posture for hosted app sign-in only, embeds unchanged |
+
 Headless API decision register (issue #95):
 
 | ID | Contract | Status / gate |

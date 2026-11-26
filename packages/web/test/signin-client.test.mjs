@@ -12,14 +12,14 @@ test('Issue #63: one credential-free login establishes a verified session, every
   const client = createApiClient('/', async (url, options) => {
     calls.push({url, options});
     if (url === '/api/auth/login') {
-      assert.equal(options.credentials, 'omit');
+      assert.equal(options.credentials, 'same-origin');
       assert.equal(new Headers(options.headers).get('authorization'), null);
       assert.equal(new Headers(options.headers).get('cookie'), null);
-      assert.deepEqual(JSON.parse(options.body), credentials);
+      assert.deepEqual(JSON.parse(options.body), { ...credentials, remember: true });
       return Response.json({ token: bearer, tenantId: 'workspace', expiresAt: Date.now() + 3_600_000 });
     }
     if (calls.length > 2 && url === '/api/session' && !new Headers(options.headers).get('authorization')) return Response.json(identity);
-    assert.equal(options.credentials, 'omit');
+    assert.equal(options.credentials, url.endsWith('/logout') ? 'same-origin' : 'omit');
     assert.equal(new Headers(options.headers).get('authorization'), `Bearer ${bearer}`);
     if (url === '/api/session') return Response.json(identity);
     if (url.endsWith('/logout')) return Response.json({loggedOut: true});
@@ -172,10 +172,10 @@ test('Issue #146: challenge is typed and credential-free; selecting establishes 
   const client=createApiClient('/',async(url,options)=>{
     calls.push(url);
     if(url==='/api/auth/login'||url==='/api/auth/login/select') {
-      assert.equal(options.credentials,'omit');assert.equal(new Headers(options.headers).get('authorization'),null);
+      assert.equal(options.credentials,'same-origin');assert.equal(new Headers(options.headers).get('authorization'),null);
       assert.equal(new Headers(options.headers).get('cookie'),null);
       if(url.endsWith('/login')) {assert.equal('tenantId' in JSON.parse(options.body),false);return Response.json(challenge);}
-      assert.deepEqual(JSON.parse(options.body),{selectionToken:challenge.selectionToken,tenantId:'workspace'});
+      assert.deepEqual(JSON.parse(options.body),{selectionToken:challenge.selectionToken,tenantId:'workspace',remember:false});
       return Response.json({token:token(),tenantId:'workspace',expiresAt:Date.now()+900000});
     }
     assert.ok(options.headers.Authorization);return Response.json({...identity,workspaceName:'Sales team',workspaceSlug:'sales-team'});
@@ -212,4 +212,60 @@ test('Issue #146: null slugs and absent fields support older servers; malformed 
   for(const fields of [{workspaceName:42},{workspaceSlug:{}}]) {
     const client=createApiClient('/',async()=>Response.json({...identity,...fields}));await assert.rejects(client.getSession());
   }
+});
+
+test('Issue #282: restore uses only ambient cookie transport, verifies bearer session and preserves server deadline without browser storage', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_800_000_000_000 });
+  const oldWindow = globalThis.window;
+  globalThis.window = { localStorage: { setItem() { assert.fail('no localStorage'); } }, sessionStorage: { setItem() { assert.fail('no sessionStorage'); } },
+    document: { set cookie(_) { assert.fail('no JavaScript cookie writes'); }, get cookie() { assert.fail('no JavaScript cookie reads'); } } };
+  t.after(() => { globalThis.window = oldWindow; });
+  const bearer = token(), calls = [], expiresAt = Date.now() + MAX_SESSION_MS - 60000;
+  const client = createApiClient('/', async (url, options) => {
+    calls.push({url, options});
+    if (url.endsWith('/restore')) {
+      assert.equal(options.credentials, 'same-origin'); assert.equal(options.method, 'POST'); assert.equal(options.body, '{}');
+      assert.equal(options.cache, 'no-store'); assert.equal(options.redirect, 'error');
+      assert.equal(new Headers(options.headers).get('authorization'), null); assert.equal(new Headers(options.headers).get('cookie'), null);
+      return Response.json({ token: bearer, tenantId: identity.tenantId, expiresAt });
+    }
+    assert.equal(options.headers.Authorization, `Bearer ${bearer}`);
+    return Response.json(identity);
+  });
+  const restored = await client.restoreSession();
+  assert.equal(restored.expiresAt, expiresAt); assert.equal(restored.session.tenantId, identity.tenantId);
+  assert.equal(JSON.stringify(restored).includes(bearer), false);
+  assert.deepEqual(calls.map(c => c.url), ['/api/auth/restore', '/api/session']);
+  const reloaded = createApiClient('/', async (_url, options) => { assert.equal(options.headers.Authorization, undefined); return Response.json(identity); });
+  await reloaded.getSession();
+});
+
+test('Issue #282: rejected, mismatched, cancelled and superseded restore cannot install a bearer', async () => {
+  for (const mode of ['missing', 'malformed', 'mismatch', 'aborted', 'cleared']) {
+    let resolve, seen;
+    const controller = new AbortController();
+    const client = createApiClient('/', async (url, options) => {
+      seen = options;
+      if (url.endsWith('/restore')) return new Promise(r => { resolve = r; });
+      return Response.json(mode === 'mismatch' ? { ...identity, tenantId: 'foreign' } : identity);
+    });
+    const pending = client.restoreSession(controller.signal);
+    if (mode === 'aborted') controller.abort();
+    if (mode === 'cleared') client.clearSession();
+    resolve(mode === 'missing' ? Response.json({errorCode:'AUTHENTICATION_FAILED'}, {status:401}) : Response.json(mode === 'malformed' ? {} : {token:token(),tenantId:'workspace',expiresAt:Date.now()+900000}));
+    await assert.rejects(pending);
+    await client.getSession(); assert.equal(seen.headers.Authorization, undefined);
+  }
+});
+
+test('Issue #282: logout sends cookies even after bearer expiry and after clearing local authority', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_800_000_000_000 });
+  let logouts = 0;
+  const client = createApiClient('/', async (url, options) => {
+    if (url.endsWith('/login')) return Response.json({token:token(),tenantId:'workspace',expiresAt:Date.now()+900000});
+    if (url.endsWith('/logout')) { logouts++; assert.equal(options.credentials,'same-origin'); return Response.json({loggedOut:true}); }
+    return Response.json(identity);
+  });
+  await client.login(input(),false); t.mock.timers.tick(900000);
+  await client.logout(); await client.logout(); assert.equal(logouts,2);
 });

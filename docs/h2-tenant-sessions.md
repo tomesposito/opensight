@@ -121,13 +121,17 @@ See [browser enrollment (#152)](issue-152-browser-enrollment.md) and
 
 ## Sessions, storage and revocation
 
-Tenant requests use `Authorization: Bearer <token>`. H2 sets no cookies and adds
-no browser persistence. Clients must clear their old token and tenant caches on
+Tenant requests use `Authorization: Bearer <token>`, held only in memory. Under
+[D-99](idd/D-99-session-restore.md), hosted sign-in also sets a separate HttpOnly
+refresh cookie. [Session restore](issue-282-session-restore.md) documents its
+rotation, lifetime and request boundary. Clients clear their old token and tenant caches on
 switch/logout and keep tokens out of URLs. `POST /api/auth/switch` with
 `{tenantId}` verifies the target membership and atomically replaces the current
 session; a failed switch preserves it. `POST /api/auth/logout` with `{}` revokes
-the current session. Switching preserves the original expiry, so repeated switches
-cannot extend login lifetime. No implicit renewal or anonymous embedding is provided.
+the current session and refresh credential and expires the cookie, including
+cookie-only logout after bearer expiry. Switching replaces the cookie's workspace
+binding and preserves the original expiry. Restore also preserves that deadline;
+neither operation extends login lifetime. Embed sessions are unchanged.
 
 Passwords use Node's built-in scrypt (`N=131072`, `r=8`, `p=1`), independent
 128-bit salts and a 256-bit result. This memory-hard choice adds no dependencies

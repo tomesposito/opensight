@@ -113,14 +113,17 @@ implemented configuration and API request shapes:
 6. Successful enrollment clears the invitation link and opens sign-in with the
    email and password already entered. Continue to the authenticator step and
    wait for a fresh six-digit code: the enrollment code cannot be reused. Later
-   visits start with email and password. Both
+   visits with no valid refresh cookie start with email and password. Both
    steps are submitted together to `/api/auth/login`; `/api/session` verifies
    the returned identity before the workspace opens. A single workspace opens
    directly; choose by name if you belong to several (no workspace ID input).
    Already-enrolled invitees sign in and accept the invitation with their session.
-   The client sends login
-   without cookies or bearer credentials and holds the resulting bearer only
-   in memory. Route the API prefix correctly at the trusted HTTPS proxy.
+   The client sends login without a bearer and accepts a separate HttpOnly
+   refresh cookie. Bearers stay only in memory. Reloads silently exchange the
+   cookie before any access gate, waking an on-demand workspace first. Missing
+   or expired cookies return to the usual Connect/sign-in flow. See
+   [session restore](issue-282-session-restore.md). Route the API prefix correctly
+   at the trusted HTTPS proxy.
    **Sign out** is in the hosted header. See [the sign-in guide](issue-63-signin-screen.md)
    for session duration, expiry and error behavior, and
    [browser enrollment](issue-152-browser-enrollment.md) for invitation handling.
