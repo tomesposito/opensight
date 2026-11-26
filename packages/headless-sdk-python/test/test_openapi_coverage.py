@@ -38,6 +38,8 @@ ROUTES = spec_routes()
 
 # The client method that implements each spec route.
 COVERAGE = {
+    "/bundle-imports|POST": "import_bundle",
+    "/bundle-imports/{id}/report|GET": "read_import_report",
     "/workspace/action-history|GET": "list_workspace_action_history",
     "/ai/ask|POST": "ask_question",
     "/metrics|GET": "list_metrics",

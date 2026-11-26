@@ -1,0 +1,18 @@
+{
+  "Status": 200,
+  "DataSet": {
+    "DataSetId": "example-dataset",
+    "Name": "Synthetic dataset",
+    "ImportMode": "SPICE",
+    "PhysicalTableMap": {
+      "CaseSensitive_Table_ID": { "RelationalTable": {
+        "DataSourceArn": "arn:aws:quicksight:us-east-1:000000000000:datasource/example-source",
+        "Schema": "public",
+        "Name": "orders",
+        "InputColumns": [{ "Name": "category", "Type": "STRING" }, { "Name": "amount", "Type": "DECIMAL" }]
+      } }
+    },
+    "LogicalTableMap": { "CaseSensitive_Logical_ID": { "Alias": "orders", "Source": { "PhysicalTableId": "CaseSensitive_Table_ID" } } },
+    "RowLevelPermissionDataSet": { "Arn": "arn:aws:quicksight:us-east-1:000000000000:dataset/rules", "PermissionPolicy": "GRANT_ACCESS" }
+  }
+}

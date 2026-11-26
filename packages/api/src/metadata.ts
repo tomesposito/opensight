@@ -1,3 +1,5 @@
+import { migrationRecord, type MigrationWrite } from './migration-model.js';
+import { projectDefinition } from '@opensight/bundle-parser';
 import { checkStoredQuota, type StoredMaterialization } from './stored-tables.js';
 import { AssetCatalog, assetKey } from './asset-model.js';
 import { MetricCatalog, metricRecord } from './metric-model.js';
@@ -253,6 +255,37 @@ export class TenantMetadata {
       await appendMetadataEvent(c, context, replacement ? 'analysis.saved' : 'analysis.deleted');
       await receipt?.persist?.(c);
     }, true);
+  }
+  /** D-97: stage the original bundle/report and admit bound working analyses atomically.
+   * No unresolved metadata links, copied grants, publication or source credentials. */
+  async importBundle(context: TenantContext, write: MigrationWrite, expected: Revisions, receipt?: RetryCommit): Promise<void> {
+    const input = structuredClone(write);
+    await this.checked(context, async (c, revisions, user) => {
+      if (!hasCapability(user.role as Parameters<typeof hasCapability>[0], 'build')) throw new MetadataError('METADATA_WRITE_FORBIDDEN', 403);
+      if (JSON.stringify(revisions) !== JSON.stringify(expected)) throw new MetadataError('METADATA_REVISED', 403);
+      const key = this.key(context, { kind: 'migration-import', id: input.id, ownerId: context.userId });
+      if ((await c.query(`SELECT version FROM h1_resources WHERE ${predicates}`, keyValues(context, key))).length) throw new MetadataError('MIGRATION_IMPORT_CONFLICT', 409);
+      migrationRecord(input.record as unknown as JsonObject);
+      for (const analysis of input.analyses) {
+        const target = resourceKey({ kind: 'analysis', id: analysis.id });
+        if ((await c.query(`SELECT version FROM h1_resources WHERE ${predicates}`, keyValues(context, target))).length) throw new MetadataError('MIGRATION_IMPORT_CONFLICT', 409);
+        const body: JsonObject = { definition: { AnalysisId: analysis.id, Name: analysis.name, Definition: projectDefinition(analysis.definition) },
+          folderId: null, grants: [{ principal: { type: 'user', id: context.userId }, role: 'co-owner' }],
+          hasHadVisual: !!analysis.definition.sheets?.some(s => s.visuals?.length),
+          datasets: analysis.definition.dataSetIdentifierDeclarations.map(d => {
+            const ref = analysis.datasetBindings[d.identifier]!;
+            return { ...ref, ...(ref.kind === 'prepared-dataset' ? { ownerId: context.userId } : {}) };
+          }) };
+        await insertResource(c, context, target, body);
+      }
+      await insertResource(c, context, key, input.record as unknown as JsonObject);
+      await appendMetadataEvent(c, context, 'migration.imported');
+      await receipt?.persist?.(c);
+    }, true);
+  }
+  async importReport(context: TenantContext, id: string) {
+    const record = await this.get(context, { kind: 'migration-import', id, ownerId: context.userId });
+    return migrationRecord(record.body).report;
   }
   /** Publication, latest-version CAS, grants and source checks share one transaction. */
   async mutateDashboard(context: TenantContext, id: string, change: DashboardChange, expected: Revisions, receipt?: (record: DashboardRecord | null) => RetryCommit): Promise<DashboardRecord | null> {

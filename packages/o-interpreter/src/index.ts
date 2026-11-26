@@ -247,3 +247,5 @@ export function suggestCalculation(question: string, schema: readonly SchemaFiel
   const fn = /\b([A-Za-z_]\w*)\s*\(/.exec(question)?.[1];
   return fail('UNSUPPORTED_CALCULATION_TEMPLATE', `${fn ? `Function request ${fn}` : `Request “${question.trim()}”`} is not supported by the local templates. Try year over year sales growth, profit margin, or full name. No generative service is configured.`);
 }
+
+export * from './migration.js';

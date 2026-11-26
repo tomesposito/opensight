@@ -2,6 +2,7 @@ export { OpenSightClient } from './client.js';
 export type { OpenSightClientOptions, RequestOptions, AnalysisMutationOptions } from './client.js';
 export { OpenSightApiError } from './errors.js';
 export type {
+  BundleImportBody, BundleImportResult, MigrationImportReport, MigrationQuestionBody, MigrationQuestionAnswer,
   WorkspaceAuditEntry, AskQuestionBody, QuestionAnswer, QuestionInterpretation,
   MetricView, MetricVersion, MetricDefinition, MetricFormat, PublishedMetric,
   ApiErrorBody,

@@ -26,6 +26,68 @@ tags:
   - name: dashboards
   - name: assets
 paths:
+  /bundle-imports:
+    post:
+      operationId: import_bundle
+      tags: [migration]
+      summary: Import a customer-extracted QuickSight bundle and persist its shared report
+      description: >-
+        Hosted only; requires build capability. Accepts local bundle JSON, never AWS
+        credentials or extraction instructions. Originals and shape-only report are
+        stored atomically for the importing member. Unresolved or unsupported assets
+        remain staged and cannot execute. Optional bindings admit supported analyses
+        through normal authoring validation; dashboards become unpublished working
+        analyses. Targets use importId-asset ordinal. Recreate connections and prepared
+        datasets with existing tools, then import with bindings or create an analysis.
+        Report coverage describes conversion, not numerical or visual parity.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BundleImport' }
+      responses:
+        '201':
+          description: Import identity, per-asset targets and exact persisted report
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BundleImportResult' }
+        '400': { $ref: '#/components/responses/AnalysisError' }
+        '401': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '409': { $ref: '#/components/responses/AnalysisError' }
+        '413': { $ref: '#/components/responses/AnalysisError' }
+        '422': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/AnalysisError' }
+  /bundle-imports/{id}/report:
+    get:
+      operationId: read_import_report
+      tags: [migration]
+      summary: Read the importing member's unchanged shared migration report
+      description: >-
+        Hosted only; requires build capability. Tenant, namespace and importing-member
+        scoped even for administrators. No definition content or customer rows. The
+        versioned report groups findings by fingerprint kind and distinguishes clean,
+        converted-differently and failed-closed coverage. Extraction is never an operation.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
+      responses:
+        '200':
+          description: Exact shared report returned by import_bundle
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MigrationImportReport' }
+        '401': { $ref: '#/components/responses/AnalysisError' }
+        '403': { $ref: '#/components/responses/AnalysisError' }
+        '404': { $ref: '#/components/responses/AnalysisError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/AnalysisError' }
   /workspace/action-history:
     get:
       operationId: list_workspace_action_history
@@ -65,9 +127,12 @@ paths:
     post:
       operationId: ask_question
       tags: [ai]
-      summary: Generate a grounded question interpretation for a dataset
+      summary: Interpret a dataset question or provide deterministic migration guidance
       description: >-
-        Requires ai and build capabilities. Uses the existing generative question
+        Requires ai and build capabilities. Migration inputs use the standard
+        deterministic interpreter with no provider calls or AI credits. Post-import
+        guidance reads only the importing member's stored report, groups proposals by
+        fingerprint, and never applies fixes. Dataset questions use the existing generative question
         flow and field-name PII guard. Returns interpretations, errors and question;
         execute the selected interpretation separately through the query API.
         Managed completions check the workspace AI spend cap before provider transport.
@@ -85,7 +150,10 @@ paths:
           description: Grounded interpretation; no query execution or rows
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/QuestionAnswer' }
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/QuestionAnswer' }
+                  - { $ref: '#/components/schemas/MigrationAnswer' }
         '400': { $ref: '#/components/responses/AIError' }
         '401': { $ref: '#/components/responses/AIError' }
         '403': { $ref: '#/components/responses/AIError' }
@@ -2558,6 +2626,101 @@ components:
       description: Quoted integer version, e.g. "3" (optimistic concurrency)
       schema: { type: string, pattern: '^"(0|[1-9][0-9]*)"$' }
   schemas:
+    BundleImport:
+      type: object
+      additionalProperties: false
+      required: [importId, bundle]
+      properties:
+        importId: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
+        bundle:
+          type: object
+          description: Existing QsBundle JSON envelope or single camelCase bundle resource; 16 MiB request limit.
+        manifest:
+          type: object
+          description: Strict extraction-manifest v1 from the customer-run extractor; shape only.
+        previousImportId: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
+        bindings:
+          type: array
+          maxItems: 10000
+          items:
+            type: object
+            additionalProperties: false
+            required: [asset, datasetBindings]
+            properties:
+              asset: { type: integer, minimum: 0 }
+              datasetBindings: { $ref: '#/components/schemas/DatasetBindings' }
+    BundleImportResult:
+      type: object
+      required: [importId, report, targets]
+      properties:
+        importId: { type: string }
+        report: { $ref: '#/components/schemas/MigrationImportReport' }
+        targets:
+          type: array
+          items:
+            type: object
+            required: [asset, state]
+            properties:
+              asset: { type: integer, minimum: 0 }
+              state: { type: string, enum: [staged, imported] }
+              analysisId: { type: string }
+    MigrationImportReport:
+      type: object
+      description: Shared bundle-parser MigrationImportReport contract. No names, paths, definition values or diagnostics; counts and ordinals only.
+      required: [schemaVersion, producer, artifact, generatedAt, assets, knownLimits, groups]
+      properties:
+        schemaVersion: { type: integer, const: 1 }
+        producer: { type: string, const: 'opensight-migration/1' }
+        artifact: { type: string, const: import-report }
+        generatedAt: { type: string, format: date-time }
+        assets:
+          type: array
+          items:
+            type: object
+            required: [asset, resourceType, findings, coverage]
+            properties:
+              asset: { type: integer, minimum: 0 }
+              resourceType: { type: string, enum: [analysis, dashboard, dataset, datasource] }
+              findings:
+                type: array
+                items:
+                  type: object
+                  required: [kind, construct, location, item, outcome, code]
+                  properties:
+                    kind: { type: string }
+                    construct: { type: string }
+                    location: { type: string, enum: [asset, visual, field-well] }
+                    item: { type: integer, minimum: 0 }
+                    sheet: { type: integer, minimum: 0 }
+                    visual: { type: integer, minimum: 0 }
+                    outcome: { type: string, enum: [clean, converted-differently, failed-closed] }
+                    code: { type: string, enum: [CONVERTED, DELIBERATE_PROJECTION, UNSUPPORTED_RETAINED, REMAP_REQUIRED] }
+              coverage:
+                type: object
+                required: [total, clean, convertedDifferently, failedClosed]
+                properties:
+                  total: { type: integer, minimum: 0 }
+                  clean: { $ref: '#/components/schemas/MigrationCoverageBucket' }
+                  convertedDifferently: { $ref: '#/components/schemas/MigrationCoverageBucket' }
+                  failedClosed: { $ref: '#/components/schemas/MigrationCoverageBucket' }
+        groups:
+          type: array
+          items:
+            type: object
+            required: [kind, count, assets, newKind]
+            properties:
+              kind: { type: string }
+              count: { type: integer, minimum: 1 }
+              assets: { type: array, items: { type: integer, minimum: 0 } }
+              newKind: { type: boolean }
+        knownLimits: { type: array, items: { type: object } }
+        manifest: { type: object }
+    MigrationCoverageBucket:
+      type: object
+      required: [count, share]
+      properties:
+        count: { type: integer, minimum: 0 }
+        share: { type: number, minimum: 0, maximum: 1 }
     WorkspaceAuditEntry:
       type: object
       additionalProperties: false
@@ -2571,6 +2734,67 @@ components:
         subject: { type: [string, 'null'] }
         detail: {}
     AskQuestion:
+      type: object
+      properties:
+        question: { type: string, minLength: 1, maxLength: 2000 }
+        datasetId: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+        migration: { $ref: '#/components/schemas/MigrationQuestion/properties/migration' }
+      oneOf:
+        - { $ref: '#/components/schemas/DatasetQuestion' }
+        - { $ref: '#/components/schemas/MigrationQuestion' }
+    MigrationQuestion:
+      type: object
+      additionalProperties: false
+      required: [question, migration]
+      properties:
+        question: { type: string, minLength: 1, maxLength: 2000 }
+        migration:
+          oneOf:
+            - type: object
+              additionalProperties: false
+              required: [phase, setup]
+              properties:
+                phase: { type: string, const: before-import }
+                setup:
+                  type: object
+                  additionalProperties: false
+                  required: [os, auth]
+                  properties:
+                    os: { type: string, enum: [posix, powershell] }
+                    auth: { type: string, enum: [profile, sso, environment] }
+                    profile: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
+                    region: { type: string }
+                    outputDirectory: { type: string }
+                    previous: { type: string }
+                manifest: { type: object }
+            - type: object
+              additionalProperties: false
+              required: [phase, importId]
+              properties:
+                phase: { type: string, const: after-import }
+                importId: { type: string, pattern: '^[A-Za-z0-9_-]{1,128}$' }
+    MigrationAnswer:
+      type: object
+      additionalProperties: false
+      required: [migration]
+      properties:
+        migration:
+          type: object
+          description: Deterministic interpreter MigrationGuidance; applied is always false. Every checklist proposal requires confirmation through normal authoring.
+          required: [mode, phase, applied, commands, policyExplanation, policyActions, knownLimits, checklist, cutover]
+          properties:
+            mode: { type: string, const: deterministic }
+            phase: { type: string, enum: [before-import, after-import] }
+            applied: { type: boolean, const: false }
+            commands: { type: array, items: { type: string } }
+            policyExplanation: { type: string }
+            policyActions: { type: array, items: { type: string } }
+            knownLimits: { type: array, items: { type: object } }
+            checklist: { type: array, items: { type: object } }
+            cutover: { type: string }
+            coverage: { type: array, items: { type: object } }
+            inventory: { type: object }
+    DatasetQuestion:
       type: object
       additionalProperties: false
       required: [question, datasetId]

@@ -1,4 +1,6 @@
 import { validOProvenance } from './o-provenance.js';
+import { completeImportResult } from './migration-report.js';
+import { migrationCoverage } from '@opensight/bundle-parser/browser';
 import { importObjects, serializeObject, objectElementType, type SheetObject } from './sheet-objects.js';
 import { analysisDescriptionValid, layoutSettingsValid, facetSortValid, pivotFieldSortsValid, pivotRowLabelSortsValid, pivotColumnLabelSortsValid } from './authoring.js';
 import { projectInsightBody } from './insight-configuration.js';
@@ -504,7 +506,7 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
   if (primary && (primary.resource.resourceType === 'analysis' || primary.resource.resourceType === 'dashboard') && themeValid(primary.resource.definition.opensightTheme)) draft.theme = copy(primary.resource.definition.opensightTheme);
   for (const member of original.members) {
     const r = member.resource, messages: string[] = [];
-    report.push({ path: member.path, name: r.name, messages });
+    report.push({ path: member.path, name: r.name, messages, asset: report.length, resourceType: r.resourceType, findings: [], coverage: migrationCoverage([]) });
     if (r.resourceType !== 'analysis' && r.resourceType !== 'dashboard') {
       messages.push(`${r.resourceType}: retained verbatim; remote dataset connections are not resolved or executed.`);
       for (const key of Object.keys(r)) if (!['resourceType', 'dataSetId', 'dataSourceId', 'name'].includes(key)) messages.push(`${r.resourceType}.${key}: retained, read-only; not executed.`);
@@ -614,6 +616,7 @@ export function importBundle(bundle: QsBundle): AuthorDraft {
     }
   }
   if (sheets.length) { draft.sheets = sheets; draft.activeSheetId = sheets[0]!.id; }
+  report.forEach((result, i) => completeImportResult(result, original.members[i]!.resource, draft));
   draft.bundle = { original, primaryPath: primary?.path ?? '', title: draft.title, report, calculations: copy(draft.calculatedFields), ...(!sheets.length ? { emptySheetId: draft.activeSheetId } : {}) };
   validateDraft(draft);
   return draft;

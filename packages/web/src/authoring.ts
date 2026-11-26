@@ -91,7 +91,8 @@ export interface ImportedSheet {
   /** Copies export under sheetId; this identifies their sheet in memberPath. */
   sourceSheetId?: string;
 }
-export interface ImportResult { path: string; name: string; messages: string[] }
+export type { ImportResult } from '@opensight/bundle-parser';
+import type { ImportResult } from '@opensight/bundle-parser';
 export interface BundleOrigin {
   original: QsBundle; primaryPath: string; title: string;
   report: ImportResult[]; calculations: CalculatedField[]; emptySheetId?: string;
