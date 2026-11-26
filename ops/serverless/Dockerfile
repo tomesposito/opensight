@@ -8,6 +8,7 @@ COPY packages/embedding-sdk/package.json packages/embedding-sdk/package.json
 COPY packages/headless-sdk/package.json packages/headless-sdk/package.json
 COPY packages/headless-sdk-python/package.json packages/headless-sdk-python/package.json
 COPY packages/mcp-server/package.json packages/mcp-server/package.json
+COPY packages/migration-extractor/package.json packages/migration-extractor/package.json
 COPY packages/o-interpreter/package.json packages/o-interpreter/package.json
 COPY packages/parity/package.json packages/parity/package.json
 COPY packages/query-engine/package.json packages/query-engine/package.json

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkSource } from '../ops/serverless/ci-check.mjs';
+import { checkSource, checkWorkspaceManifests } from '../ops/serverless/ci-check.mjs';
 import { compatibility, validateManifest } from '../ops/serverless/release-manifest.mjs';
 
 test('SR4c source checks reject credential-shaped material, private config and unsafe paths', () => {
@@ -18,4 +18,15 @@ test('SR4c release manifests bind source, workflow, architecture and every artif
   for (const patch of [{ source: 'master' }, { ref: 'refs/pull/1/merge' }, { platform: 'linux/amd64' }, { artifacts: {} }, { imageDigest: 'latest' }, { licenses: 'zz' }]) assert.throws(() => validateManifest({ ...m, ...patch }));
   assert.equal(compatibility([['b', '2'], ['a', '1']]), compatibility([['a', '1'], ['b', '2']]));
   assert.notEqual(compatibility([['a', '1']]), compatibility([['a', '2']]));
+});
+test('release dependency installation includes every workspace before offline builds', () => {
+  const paths = ['package.json', 'packages/api/package.json', 'packages/new-tool/package.json'];
+  const copy = path => `COPY ${path} ${path}\n`;
+  const start = 'FROM pinned-image AS dependencies\n';
+  const install = 'RUN npm ci --no-audit --no-fund\n';
+  checkWorkspaceManifests(paths, start + paths.slice(1).map(copy).join('') + install);
+  assert.throws(() => checkWorkspaceManifests(paths, start + copy(paths[1]) + install), /WORKSPACE_MANIFEST_MISSING: packages\/new-tool/);
+  assert.throws(() => checkWorkspaceManifests(paths, start + copy(paths[1]) + install + copy(paths[2])), /WORKSPACE_MANIFEST_MISSING/);
+  assert.throws(() => checkWorkspaceManifests(paths, start + copy(paths[1]) + install + 'FROM dependencies AS test\n' + copy(paths[2])), /WORKSPACE_MANIFEST_MISSING/);
+  assert.throws(() => checkWorkspaceManifests(paths, start + paths.slice(1).map(copy).join('')), /DEPENDENCY_INSTALL_REQUIRED/);
 });
