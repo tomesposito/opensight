@@ -8,6 +8,7 @@ import { identifier, object, type MetadataResource } from './metadata-resources.
 import type { TenantContext } from './metadata.js';
 import { boundColumns } from './source-schema.js';
 import type { JsonObject } from './mapping.js';
+import { applyEmbedInteractions, embedInteractionState, type EmbedInteractionState, type EmbedControls } from './embed-interactions.js';
 
 export function embedVisuals(raw: unknown) {
   const definition = object(raw);
@@ -131,10 +132,16 @@ export class EmbedContent {
     });
   }
   async visuals(context: TenantContext, g: Pick<SessionGrant, 'anonymous' | 'tags' | 'experience'>, asset: MetadataResource) {
-    const stored = object(asset.body.definition), definition = object(stored.Definition), e = g.experience;
+    return (await this.renderVisuals(context, g, asset)).visuals;
+  }
+  private async renderVisuals(context: TenantContext, g: Pick<SessionGrant, 'anonymous' | 'tags' | 'experience' | 'interactionFeatures'>, asset: MetadataResource, state: EmbedInteractionState = {}) {
+    const stored = object(asset.body.definition), definition = object(structuredClone(stored.Definition)), e = g.experience;
     const analysis = { ResourceType: 'Analysis', AnalysisId: asset.id, Name: String(stored.Name ?? asset.id), Definition: definition };
     const visuals = embedVisuals(definition).filter(v => e.kind !== 'visual' || v.id === e.visualId && v.sheetId === e.sheetId);
-    if (!visuals.length) return [];
+    if (!visuals.length) {
+      if (Object.values(state).some(values => Object.keys(values).length)) embedFailure('EMBED_STATE_INVALID', 422);
+      return { visuals: [], controls: { filters: [], parameters: [] } as EmbedControls };
+    }
     if (!Array.isArray(definition.DataSetIdentifierDeclarations) || definition.DataSetIdentifierDeclarations.length !== 1 || !Array.isArray(asset.body.datasets) || asset.body.datasets.length !== 1) embedFailure('EMBED_DATASET_UNSUPPORTED', 422);
     const binding = object(asset.body.datasets[0]);
     // A published prepared binding must never alias a same-ID legacy dataset.
@@ -147,8 +154,11 @@ export class EmbedContent {
       if (!Array.isArray(sources) || sources.length !== 1 || object(sources[0]).ownerId !== context.userId) embedFailure('DASHBOARD_DATASET_ACCESS_DENIED', 403);
     }
     const a = await this.admission(context, g, datasetId);
-    const plans = visuals.map(v => planPreparedVisual(a.physical.columns, analysis, v.id, dataSetArn, a.security));
-    return this.data.work(context, false, [a], async () => {
+    const plan = () => visuals.map(v => planPreparedVisual(a.physical.columns, analysis, v.id, dataSetArn, a.security));
+    const initialPlans = plan();
+    const controls = applyEmbedInteractions(definition, initialPlans, g.interactionFeatures, state);
+    const plans = Object.keys(state).length ? plan() : initialPlans;
+    const rendered = await this.data.work(context, false, [a], async () => {
       const table = await this.data.table(context, a, this.data.read(a).columns);
       const wire = await wireTable(this.data.scope(context), table, { ...a.physical, columns: table.columns });
       const result = [];
@@ -161,9 +171,12 @@ export class EmbedContent {
       }
       return result;
     });
+    return { visuals: rendered, controls };
   }
-  async content(context: TenantContext, g: SessionGrant) {
+  async content(context: TenantContext, g: SessionGrant, raw?: unknown) {
     const e = g.experience;
+    if (raw !== undefined && e.kind !== 'dashboard' && e.kind !== 'visual') embedFailure('EMBED_SCOPE_DENIED', 403);
+    const state = embedInteractionState(raw, g.interactionFeatures);
     if (e.kind === 'console') {
       const analyses = [];
       for (const asset of await this.metadata.list(context, 'analysis')) {
@@ -185,7 +198,7 @@ export class EmbedContent {
       return { kind: 'q', title: 'Ask about your data', columns: a.physical.columns.filter(c => !a.deniedColumns.includes(c.name)) };
     }
     const asset = await this.asset(context, 'dashboard', e.dashboardId);
-    return { kind: e.kind, title: String(object(asset.body.definition).Name ?? asset.id), visuals: await this.visuals(context, g, asset) };
+    return { kind: e.kind, title: String(object(asset.body.definition).Name ?? asset.id), ...await this.renderVisuals(context, g, asset, state) };
   }
   async question(context: TenantContext, g: SessionGrant, raw: unknown) {
     if (g.experience.kind !== 'q') embedFailure('EMBED_SCOPE_DENIED', 403);

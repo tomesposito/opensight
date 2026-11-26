@@ -415,6 +415,10 @@ domains remain separate, and the signed-URL SDK keeps its v1 behavior. See
 [embedding configuration](docs/embedding-config.md) and
 [session contracts and limits](docs/embed-sessions.md).
 
+Live dashboard and visual embeds offer filters and typed parameter controls when
+enabled by the tenant. Apply re-plans with the viewer's RLS/CLS; Reset all restores
+saved defaults. Both capabilities remain disabled by default.
+
 ![Registered hosted embed using synthetic viewer-filtered data](docs/images/embed-session.png)
 
 The separate [offline appearance preview](docs/images/embed-preview.png) shows

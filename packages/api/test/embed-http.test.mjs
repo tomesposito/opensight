@@ -2,8 +2,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { sessionFixture, request, parentOrigin } from './embed-session-helpers.mjs';
-import { readerMember, seedEmbedContent } from './embed-content-helpers.mjs';
+import { readerMember, seedEmbedContent, configureInteractions } from './embed-content-helpers.mjs';
 import { httpStack } from './embed-http-helpers.mjs';
+import { adaptGatewayRequest } from '../dist/runtime-ingress.js';
+import { event, runtimeEnv } from './runtime-helpers.mjs';
+
+test('#335 serverless ingress admits content state POST without widening other embed methods', () => {
+  const state = { filters: { 'region-filter': ['east'] }, parameters: { Minimum: [25] } };
+  for (const method of ['GET', 'POST']) {
+    const input = event('/api/embed/sessions/id/content', method, method === 'POST' ? state : undefined);
+    input.headers.authorization = 'Embed synthetic';
+    const result = adaptGatewayRequest(input, runtimeEnv());
+    assert.equal(result.method, method); assert.equal(result.headers.authorization, 'Embed synthetic');
+    if (method === 'POST') assert.deepEqual(JSON.parse(result.body.toString()), state);
+  }
+  for (const [path, method] of [['content', 'PUT'], ['content', 'DELETE'], ['status', 'POST'], ['redeem', 'GET'], ['save', 'GET']]) {
+    assert.throws(() => adaptGatewayRequest(event(`/api/embed/sessions/id/${path}`, method), runtimeEnv()));
+  }
+});
 
 test('H6 real HTTP issuance/redemption separates bootstrap, frame credential and API authority', async t => {
   const f = await sessionFixture(t), reader = await readerMember(f); await seedEmbedContent(f, reader);
@@ -43,5 +59,36 @@ test('H6 HTTP refuses broad browser issuance, forged identities, unconfigured fe
   for (const feature of ['export', 'download', 'persistentReaderState']) {
     const config = structuredClone(f.config); config.features[feature] = true;
     assert.equal((await call('/api/embedding/config', 'PUT', config, api, { 'if-match': '"1"' })).body.errorCode, 'EMBED_FEATURE_UNSUPPORTED');
+  }
+});
+
+test('#335 HTTP content POST enforces current flags, typed state and viewer scope', async t => {
+  const f = await sessionFixture(t), reader = await readerMember(f), seeded = await seedEmbedContent(f, reader);
+  t.after(() => seeded.budgets.close());
+  await configureInteractions(f);
+  const { call } = await httpStack(t, f);
+  const open = async () => {
+    const api = `Bearer ${(await f.login()).token}`;
+    const issued = await call('/api/embedding/sessions', 'POST', request({ UserArn: f.arn('user', reader.identity.userId) }), api);
+    assert.equal(issued.status, 200);
+    const path = `/api/embed/sessions/${issued.body.sessionId}/content`;
+    const redeemed = await f.redeem(issued.body);
+    return { path, auth: `Embed ${redeemed.credential}` };
+  };
+  const active = await open();
+  const result = await call(active.path, 'POST', { filters: { 'region-filter': ['east'] }, parameters: { Minimum: [25] } }, active.auth);
+  assert.equal(result.status, 200); assert.equal(result.headers['cache-control'], 'no-store');
+  assert.deepEqual(result.body.visuals[0].rows, [{ amount: 30 }]);
+  assert.deepEqual((await call(active.path, 'POST', { filters: { 'region-filter': ['west'] } }, active.auth)).body.visuals[0].rows, [{ amount: null }]);
+  assert.equal((await call(active.path, 'POST', { parameters: { Minimum: ['25'] } }, active.auth)).body.errorCode, 'EMBED_STATE_INVALID');
+  assert.equal((await call(active.path, 'POST', { filters: { private: ['hidden'] } }, active.auth)).body.errorCode, 'EMBED_STATE_INVALID');
+  assert.equal((await call(active.path, 'POST', { filters: {} })).body.errorCode, 'INVALID_EMBED_TOKEN');
+  await configureInteractions(f, { filtering: false, parameterControls: false });
+  assert.equal((await call(active.path, 'POST', {}, active.auth)).body.errorCode, 'EMBED_SESSION_REVOKED');
+  const disabled = await open();
+  assert.deepEqual((await call(disabled.path, 'GET', undefined, disabled.auth)).body.controls, { filters: [], parameters: [] });
+  for (const body of [{ filters: {} }, { parameters: {} }]) {
+    const denied = await call(disabled.path, 'POST', body, disabled.auth);
+    assert.equal(denied.status, 403); assert.equal(denied.body.errorCode, 'EMBED_FEATURE_DISABLED');
   }
 });

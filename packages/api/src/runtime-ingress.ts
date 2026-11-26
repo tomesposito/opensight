@@ -80,7 +80,7 @@ function routeMethod(path: string, method: string): void {
   else if (p === '/api/startup' || p.startsWith('/api/auth/') || /^\/api\/embedding\/(?:sessions$|Generate)/.test(p) || p.endsWith('/renew')) allowed = ['POST'];
   else if (p === '/api/embedding/config') allowed = ['GET', 'PUT'];
   else if (/^\/api\/embedding\/sessions\//.test(p)) allowed = ['DELETE'];
-  else if (/^\/api\/embed\/sessions\//.test(p)) allowed = /\/(status|content)$/.test(p) ? ['GET'] : ['POST'];
+  else if (/^\/api\/embed\/sessions\//.test(p)) allowed = p.endsWith('/content') ? ['GET', 'POST'] : p.endsWith('/status') ? ['GET'] : ['POST'];
   else if (p === '/api/uploads' || p === '/api/prep-datasets/import') allowed = ['POST'];
   else if (p === '/api/uploads/reservations' || /^\/api\/uploads\/reservations\/[A-Za-z0-9_-]+\/complete$/.test(p)) allowed = ['POST'];
   else if (/^\/api\/(?:uploads\/reservations|operations)\/[A-Za-z0-9_-]+$/.test(p)) allowed = ['GET', 'DELETE'];

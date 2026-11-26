@@ -121,12 +121,22 @@ text; no HTML insertion or dynamic style parser is used. Asset IDs only referenc
 the validated tenant-owned PNG registry described above.
 
 Features describe consumption capabilities and never grant resource or data
-permissions. Registered dashboard/visual consumption, anonymous embedding and authoring can be
-true; anonymous and authoring still default to false. All
-unsupported true flags and unknown flag names return 422
-`EMBED_FEATURE_UNSUPPORTED`; known unsupported flags must be false. This includes
-parameter controls and filtering: Phase 3c snapshots have no interactive data
-session, so H5 does not display simulated controls.
+permissions. Registered dashboard/visual consumption, anonymous embedding,
+authoring, filtering and parameter controls can be true. Filtering and parameter
+controls remain **false by default**, as do anonymous embedding and authoring.
+Issue #335 (D-102 Q3) enables real controls in live H6 dashboard/visual sessions:
+`filtering` exposes editable category filters; `parameterControls` exposes typed
+parameters used by those visuals, including parameter-bound filters and calculated
+fields. Both use the existing planner with the viewer's RLS/CLS. See the
+[state contract](embed-sessions.md#filtering-and-parameter-controls-335).
+
+A disabled flag hides its controls and rejects even an empty submitted state map
+with 403 `EMBED_FEATURE_DISABLED`. Replacing config invalidates existing sessions,
+including when a flag is turned off. Appearance never changes this authority.
+Unsupported true flags and unknown flag names return 422
+`EMBED_FEATURE_UNSUPPORTED`; export, download and persistent reader state must
+remain false. Phase 3c snapshots and the H5 offline preview have no live data
+session and do not display simulated filtering or parameter controls.
 
 ## Decided scope and remaining boundaries
 

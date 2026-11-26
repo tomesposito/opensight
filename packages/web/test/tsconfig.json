@@ -47,6 +47,7 @@
     "../src/EmbedFrame.tsx",
     "../src/embed-transport.ts",
     "../src/EmbeddedAuthor.tsx",
+    "../src/EmbeddedDashboard.tsx",
     "../src/embed-preview-fixtures.ts",
     "../src/prep-contracts.ts"
   ]

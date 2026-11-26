@@ -1,5 +1,6 @@
 /** Query planning and server-side executors; live connector compatibility requires operator verification. */
 export { planVisual } from './planner.js';
+export { definitionParameters } from './definition-parameters.js';
 export { LiveResultCache, liveDatasetCachePrefix } from './live-performance.js';
 export type { AggregateTableDeclaration, LiveCachePolicy, CachedLiveResult, LiveCacheFillToken } from './live-performance.js';
 export { executeLocal, refreshLocal, streamLocalSource } from './executor.js';

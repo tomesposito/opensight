@@ -38,3 +38,23 @@ html:has(.embed-frame), body:has(.embed-frame) { margin: 0; background: #f7f9fc;
 .embed-state button:hover:not(:disabled),.embed-question button:hover:not(:disabled),.embed-author button:hover:not(:disabled){background:#d7e0ee}
 .embed-question table{border-collapse:collapse;margin-top:20px}.embed-question td,.embed-question th{border:1px solid #bac6d3;padding:10px}
 .embed-author{display:grid;grid-template-columns:240px minmax(0,1fr);gap:24px}.embed-author aside{padding-right:20px;border-right:1px solid #dbe3eb}.embed-author aside>button{display:block}.embed-author h2{font-size:16px}
+
+.embed-dashboard { min-width: 0; }
+.embed-dashboard-controls { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 24px; }
+.embed-reader-controls { padding-right: 16px; border-right: 1px solid #dbe3eb; font: 12px Arial, "Helvetica Neue", Helvetica, sans-serif; }
+.embed-reader-controls fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.embed-reader-controls legend, .embed-reader-controls h2 { font-size: 13px; font-weight: 600; margin: 0 0 12px; }
+.embed-reader-controls h2 { margin-top: 16px; }
+.embed-reader-control { margin-bottom: 16px; }
+.embed-reader-control > span { display: block; font-weight: 600; margin-bottom: 8px; }
+.embed-reader-value { display: flex; align-items: end; gap: 4px; margin-bottom: 8px; }
+.embed-reader-value label { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; }
+.embed-reader-controls input { width: 100%; padding: 8px; border: 1px solid #bac6d3; border-radius: 4px; background: #fff; color: #172c45; font: inherit; }
+.embed-reader-controls button { padding: 8px; margin: 0 4px 0 0; border: 1px solid #bac6d3; border-radius: 4px; background: #eef3f8; color: #172c45; cursor: pointer; font: inherit; }
+.embed-reader-controls button:hover:not(:disabled) { background: #d7e0ee; }
+.embed-reader-controls input:hover:not(:disabled), .embed-reader-controls label:hover { background: #eef3fd; }
+.embed-reader-controls :focus-visible { outline: 2px solid var(--embed-accent); outline-offset: 2px; }
+.embed-reader-controls :disabled { opacity: .65; cursor: wait; }
+.embed-control-help { color: #546176; line-height: 1.5; }
+.embed-dashboard-results { min-width: 0; }
+@media (max-width: 640px) { .embed-dashboard-controls { grid-template-columns: minmax(0, 1fr); } .embed-reader-controls { padding: 0 0 16px; border-right: 0; border-bottom: 1px solid #dbe3eb; } }

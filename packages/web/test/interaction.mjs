@@ -9,10 +9,11 @@ export const styles = Object.fromEntries(await Promise.all(
   ['style.css', 'app-chrome.css', 'data-section.css', 'embed.css', 'sign-in.css']
     .map(async name => [name, await readFile(new URL(`../src/${name}`, import.meta.url), 'utf8')]),
 ));
-// Inline style.css's local imports in place: sign-in and data precede its
-// own rules, then main.tsx loads app-chrome. Loading imports again after the
-// shell would reverse equal-specificity overrides (e.g. connector-submit).
+// Match main.tsx's app stylesheet order: sign-in and data precede style.css,
+// then app-chrome. App-only sheets are now separate from the embed cascade.
+// Loading them after the shell would reverse equal-specificity overrides.
 const stylesheet = [
+  styles['sign-in.css'], styles['data-section.css'],
   styles['style.css'].replace(/^@import '\.\/(.+)';$/gm, (_, name) => {
     assert.ok(styles[name], `Unknown local stylesheet import: ${name}`);
     return styles[name];

@@ -27,7 +27,7 @@ export async function embedSessionRoute(request: IncomingMessage, response: Serv
   const match = /^\/api\/embed\/sessions\/([A-Za-z0-9_-]{32})\/(redeem|status|content|question|analysis|save)$/.exec(path);
   if (!match) return false;
   const id = match[1]!, action = match[2]!;
-  method(request, response, ['status', 'content'].includes(action) ? ['GET'] : ['POST']);
+  method(request, response, action === 'content' ? ['GET', 'POST'] : action === 'status' ? ['GET'] : ['POST']);
   if (action === 'redeem') {
     if (request.headers.authorization !== undefined) embedFailure('INVALID_EMBED_TOKEN', 401);
     send(response, 200, await sessions.redeem(id, await readBody(request))); return true;
@@ -42,7 +42,7 @@ export async function embedSessionRoute(request: IncomingMessage, response: Serv
   content.data.begin(context, controller.signal, recheck);
   let result: unknown;
   if (action === 'status') result = { sessionId: id, expiresAt: session.expiresAt };
-  else if (action === 'content') result = await content.content(context, session);
+  else if (action === 'content') result = await content.content(context, session, request.method === 'POST' ? await readBody(request) : undefined);
   else if (action === 'question') result = await content.question(context, session, await readBody(request));
   else if (action === 'analysis') {
     if (session.experience.kind !== 'console') embedFailure('EMBED_SCOPE_DENIED', 403);

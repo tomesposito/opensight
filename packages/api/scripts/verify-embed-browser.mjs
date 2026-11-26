@@ -16,6 +16,7 @@ import { realEmbedFixture } from '../test/embed-real-fixture.mjs';
 import { httpStack } from '../test/embed-http-helpers.mjs';
 import { organizationApi } from '../test/organization-helpers.mjs';
 import { activateEmbedKey } from '../dist/embed-sessions.js';
+import { configureInteractions } from '../test/embed-content-helpers.mjs';
 const require = createRequire(resolve(process.env.OPENSIGHT_SCREENSHOT_TOOLS, 'package.json'));
 const { chromium } = require('playwright-core');
 assert.ok(process.env.DATABASE_URL, 'Use the local live Postgres DATABASE_URL');
@@ -23,7 +24,7 @@ const output = resolve(process.env.OPENSIGHT_SCREENSHOT_OUTPUT ?? '/tmp/h6-embed
 const directory = await mkdtemp(join(tmpdir(), 'h6-browser-')), cleanup = [], t = { after: fn => cleanup.push(fn) };
 const schema = `h6_browser_${randomUUID().replaceAll('-', '')}`;
 let browser, page, apiServer, legacy, api, apiToken, scenario = 'registered', f;
-const issued = [], credentials = [], messages = [], consoleOutput = [], errors = [];
+const issued = [], credentials = [], messages = [], consoleOutput = [], errors = [], failedRequests = [];
 const evidence = { stack: 'Chromium + HTTPS cross-site parent/iframe + hosted API + live PostgreSQL + contained query workers', checks: [] };
 try {
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', join(directory, 'key.pem'), '-out', join(directory, 'cert.pem'), '-days', '1', '-subj', '/CN=embed.opensight.test'], { stdio: 'ignore' });
@@ -84,6 +85,8 @@ try {
   page = await browser.newPage(); const cdp = await browser.newCDPSession(page);
   await cdp.send('Network.enable'); await cdp.send('Network.setCookieControls', { enableThirdPartyCookieRestriction: true, disableThirdPartyCookieMetadata: true, disableThirdPartyCookieHeuristics: true });
   page.on('pageerror', e => errors.push(e.message)); page.on('console', m => consoleOutput.push(m.text()));
+  page.on('requestfailed', request => failedRequests.push({ action: new URL(request.url()).pathname.split('/').at(-1), failure: request.failure()?.errorText }));
+  page.on('response', response => { if (response.status() >= 400) void response.json().then(r => failedRequests.push({ status: response.status(), code: r.errorCode })).catch(() => {}); });
   page.on('response', response => { if (/\/redeem$/.test(response.url())) void response.json().then(r => { if(r.credential)credentials.push(r.credential); }).catch(() => {}); });
   const waitReady = async before => page.waitForFunction(n => window.readyCount > n, before, { timeout: 30000 });
   const frame = () => page.frames().find(frame => frame.url().startsWith(`${embedOrigin}/embed/sessions/`));
@@ -129,6 +132,42 @@ try {
   assert.equal((await f.metadata.get(await f.context(), { kind:'analysis',id:'analysis' })).version, original.version + 1); await screenshot('saved');
   evidence.checks.push('Embedded author saved a real versioned analysis; frame cleared after revision invalidation');
   apiToken = (await f.login()).token;
+  // #335: real frame inputs refresh through the same authenticated content path.
+  await configureInteractions(f); apiToken = (await f.login()).token;
+  for (const mode of ['registered', 'visual']) {
+    scenario = mode; const before = await page.evaluate(() => readyCount); await page.evaluate(() => start()); await waitReady(before);
+    await frame().getByRole('button', { name: 'Remove Regions 2', exact: true }).click();
+    await frame().getByLabel('Minimum amount', { exact: true }).fill('25');
+    const updated = page.waitForResponse(r => r.url().endsWith('/content') && r.request().method() === 'POST');
+    await frame().getByRole('button', { name: 'Apply', exact: true }).click();
+    assert.deepEqual((await (await updated).json()).visuals[0].rows, [{ amount: 30 }]);
+    await frame().locator('.visual-card svg').filter({ hasText: '30' }).waitFor();
+    const revalidated = page.waitForResponse(r => r.url().endsWith('/status'));
+    await frame().evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await revalidated;
+    await frame().locator('.visual-card svg').filter({ hasText: '30' }).waitFor();
+    assert.equal(await frame().getByLabel('Minimum amount', { exact: true }).inputValue(), '25');
+    await screenshot(`filtering-${mode}`);
+    if (mode === 'registered') {
+      await page.setViewportSize({ width: 390, height: 960 }); await screenshot('filtering-mobile');
+      assert.ok(await frame().evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Controls must fit a narrow frame');
+      await page.setViewportSize({ width: 1280, height: 960 });
+    }
+    await frame().getByLabel('Regions 1', { exact: true }).fill('west');
+    const deniedRows = page.waitForResponse(r => r.url().endsWith('/content') && r.request().method() === 'POST');
+    await frame().getByRole('button', { name: 'Apply', exact: true }).click();
+    assert.deepEqual((await (await deniedRows).json()).visuals[0].rows, [{ amount: null }]);
+    await frame().getByRole('button', { name: 'Apply', exact: true }).waitFor({ state: 'visible' });
+    const reset = page.waitForResponse(r => r.url().endsWith('/content') && r.request().method() === 'POST');
+    await frame().getByRole('button', { name: 'Reset all', exact: true }).click();
+    assert.deepEqual((await (await reset).json()).visuals[0].rows, [{ amount: 40 }]);
+  }
+  await configureInteractions(f, { filtering: false, parameterControls: false }); apiToken = (await f.login()).token;
+  scenario = 'registered'; const disabledBefore = await page.evaluate(() => readyCount); await page.evaluate(() => start()); await waitReady(disabledBefore);
+  assert.equal(await frame().locator('.embed-reader-controls').count(), 0);
+  assert.equal((await api(`/api/embed/sessions/${issued.at(-1).sessionId}/content`, 'POST', { filters: {} }, `Embed ${credentials.at(-1)}`)).body.errorCode, 'EMBED_FEATURE_DISABLED');
+  await screenshot('filtering-disabled');
+  evidence.checks.push('#335 dashboard and visual controls re-plan 40 to 30; west selection cannot escape RLS; reset restores defaults; flags off hide controls and reject state; mobile fits');
   scenario = 'registered'; let before = await page.evaluate(() => readyCount); await page.evaluate(()=>start()); await waitReady(before);
   const revoked = issued.at(-1); const started = Date.now(); assert.equal((await api(`/api/embedding/sessions/${revoked.sessionId}`,'DELETE',{},`Bearer ${apiToken}`)).status,200);
   await page.waitForFunction(()=>revokedCount>=1,undefined,{timeout:55000}); const revocationMs = Date.now()-started; assert.ok(revocationMs < 60000); assert.equal(await frame().locator('.visual-card').count(),0); await screenshot('revoked');
@@ -156,13 +195,13 @@ try {
   const exposed = JSON.stringify({ messages, consoleOutput, errors, parentDom: await page.content() });
   for (const credential of credentials) assert.ok(!exposed.includes(credential), 'Frame credential escaped into parent or logs');
   assert.equal(errors.length,0); evidence.checks.push('No frame credentials in parent messages/DOM, console, errors, cookies or browser storage');
-  evidence.screenshots = ['registered','anonymous','visual','q','empty','author','saved','revoked','expired','v1'].map(s=>`${s}.png`);
+  evidence.screenshots = ['registered','anonymous','visual','q','empty','author','saved','filtering-registered','filtering-visual','filtering-mobile','filtering-disabled','revoked','expired','v1'].map(s=>`${s}.png`);
   await writeFile(join(output,'evidence.json'),JSON.stringify(evidence,null,2)); console.log(JSON.stringify(evidence,null,2));
 } catch (error) {
   if (page) {
     await page.screenshot({path:join(output,'failure.png')}).catch(()=>{});
     const state = await Promise.all(page.frames().map(async frame => ({ path: new URL(frame.url() || 'about:blank').pathname, text: (await frame.locator('body').innerText().catch(()=>'' )).slice(0,900) })));
-    let diagnostic=JSON.stringify({diagnostic:state, errors, console:consoleOutput.slice(-12)},null,2);
+    let diagnostic=JSON.stringify({diagnostic:state, errors, failedRequests, console:consoleOutput.slice(-12)},null,2);
     for(const value of credentials)diagnostic=diagnostic.replaceAll(value,'[redacted]');
     for(const value of issued)diagnostic=diagnostic.replaceAll(new URL(value.EmbedUrl).hash.slice(11),'[redacted]');
     console.log(diagnostic);
