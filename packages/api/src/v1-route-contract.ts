@@ -2,9 +2,8 @@
 export function serverlessV1Methods(path: string): readonly string[] | undefined {
   const id = '[A-Za-z0-9_-]{1,512}';
   if (path === '/api/v1/workspace/action-history') return ['GET'];
-  if (path === '/api/v1/bundle-imports') return ['POST'];
+  if (path === '/api/v1/bundle-imports' || path === '/api/v1/ai/ask') return ['POST'];
   if (/^\/api\/v1\/bundle-imports\/[A-Za-z0-9_-]{1,128}\/report$/.test(path)) return ['GET'];
-  if (path === '/api/v1/ai/ask') return ['POST'];
   if (path === '/api/v1/metrics/promote-calc') return ['GET', 'PUT', 'POST'];
   if (path === '/api/v1/prep-templates') return ['GET', 'POST'];
   if (new RegExp(`^/api/v1/prep-templates/${id}$`).test(path)) return ['GET', 'PUT'];

@@ -186,3 +186,19 @@ test('#282 generated and packaged edge admit cookie restore without opening scop
     }
   }
 });
+
+test('#334 generated and packaged edge admit only bundle import and bounded report identities', async () => {
+  assert.equal(source, await readFile(new URL('../../../ops/serverless/modules/edge/edge-viewer.js', import.meta.url), 'utf8'));
+  for (const path of ['/api/v1/bundle-imports', '/api/v1/bundle-imports/import-1/report', `/api/v1/bundle-imports/${'x'.repeat(128)}/report`]) {
+    assert.equal(JSON.stringify(context.serverlessV1Methods(path)), JSON.stringify(serverlessV1Methods(path)));
+    for (const scope of ['/api', '/api/api/namespaces/one']) {
+      const e = frame(); e.request.uri = scope === '/api' ? scope + path : scope + path.slice(4);
+      assert.equal(context.handler(e).uri, e.request.uri);
+    }
+  }
+  for (const path of ['/api/v1/bundle-imports/', '/api/v1/bundle-imports/import-1', '/api/v1/bundle-imports/import-1/report/extra',
+    `/api/v1/bundle-imports/${'x'.repeat(129)}/report`, '/api/v1/bundle-imports/../report', '/api/v1/bundle-imports/extract', '/api/v1/extract']) {
+    assert.equal(context.serverlessV1Methods(path), undefined);
+    const e = frame(); e.request.uri = '/api' + path; assert.equal(context.handler(e).statusCode, 403);
+  }
+});
