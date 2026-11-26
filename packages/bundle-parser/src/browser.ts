@@ -1,5 +1,5 @@
 /** Browser entry point: no Node built-ins, filesystem, network or result data. */
-import { zipSync } from 'fflate/browser';
+import { zipSync } from 'fflate';
 import { parseArchive, summarizeQsBundle } from './archive-core.js';
 import { parseBundleResource } from './bundle-validate.js';
 import { readZipArchive } from './zip-browser.js';

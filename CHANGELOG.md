@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Restore hosted Lambda startup by resolving ZIP inflation through the dependency's explicit Node module entry point; release images now check startup with Lambda's experimental module features disabled (#332).
+
 - Keep MCP discovery routing within the CloudFront Free plan cache-behavior limit while rejecting unknown OAuth paths at the edge (#332).
 
 - Route the three MCP OAuth discovery endpoints through the uncached hosted API in both AWS infrastructure entry points (#332); discovery previously reached static hosting and returned a missing page.

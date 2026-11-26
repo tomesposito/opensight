@@ -43,5 +43,6 @@ RUN --network=none node ops/serverless/package.mjs runtime /runtime
 FROM public.ecr.aws/lambda/nodejs@sha256:6720580baa6f3dbfb25849f4a3579f0e01b0d1ba836a3cdfc06519c8c0bb71c6 AS runtime
 WORKDIR /var/task
 COPY --from=production /runtime/ ./
+RUN --network=none node --no-experimental-detect-module --no-experimental-require-module --input-type=module -e "await import('./packages/api/dist/aws-lambda.js')"
 # Lambda supplies its unprivileged runtime identity; local acceptance uses --user.
 CMD ["packages/api/dist/aws-lambda.handler"]
