@@ -67,7 +67,7 @@ test('H5 strict configuration, feature capabilities and operator lifetime ceilin
   assert.throws(() => validateEmbedConfig({ ...config(), maxSessionSeconds: null }, 'tenant-one', policy), { code: 'EMBEDDING_NOT_CONFIGURED' });
   for (const input of [{ ...config(), tenantId: 'forged' }, { ...config(), redirectOrigin: parent }, { ...config(), appearance: { ...config().appearance, removeLegalNotices: true } },
     { ...config(), features: { ...config().features, registeredDashboards: 'true' } }]) assert.throws(() => validateEmbedConfig(input, 'tenant-one', policy));
-  for (const key of Object.keys(config())) { const input = config(); delete input[key]; assert.throws(() => validateEmbedConfig(input, 'tenant-one', policy)); }
+  for (const key of Object.keys(config()).filter(key => key !== 'surfaceCeiling')) { const input = config(); delete input[key]; assert.throws(() => validateEmbedConfig(input, 'tenant-one', policy)); }
   assert.equal(validateEmbedConfig(defaultEmbedConfig(), 'no-policy', embeddingPolicy({}, origin)).enabled, false);
 });
 
@@ -197,4 +197,20 @@ test('H5 transaction failure rolls back config, revisions, revocations and outbo
   assert.deepEqual(await f.metadata.revisions(f.context), before);
   assert.deepEqual(await f.auth.verify(f.token), f.identity);
   const events = await f.db.transaction(c => c.query("SELECT * FROM h1_outbox WHERE event_type = 'embedding.config.changed'")); assert.equal(events.length, 0);
+});
+
+test('H5 validates closed surface allowlists and preserves ceilings across legacy config replacements', async t => {
+  const f = await fixture(t), legacy = config();
+  delete legacy.surfaceCeiling;
+  assert.deepEqual(validateEmbedConfig(legacy, f.tenant.tenantId, f.policy).surfaceCeiling, defaultEmbedConfig().surfaceCeiling);
+  const ceiling = { experiences: ['full-app'], menus: [], actions: ['authoring'], chrome: [] };
+  for (const invalid of [null, [], {}, { ...ceiling, extra: [] }, { ...ceiling, menus: 'account' },
+    { ...ceiling, experiences: ['FullApp'] }, { ...ceiling, actions: ['authoring', 'authoring'] },
+    { ...ceiling, chrome: ['notices'] }, { ...ceiling, menus: ['__proto__'] }]) {
+    await assert.rejects(f.service.put(f.context, { ...legacy, surfaceCeiling: invalid }, 0), { code: 'EMBED_SURFACE_INVALID', status: 422 });
+  }
+  assert.equal((await f.service.get(f.context)).revision, 0);
+  await f.service.put(f.context, { ...legacy, surfaceCeiling: ceiling }, 0);
+  assert.deepEqual((await f.service.put(f.context, legacy, 1)).config.surfaceCeiling, ceiling);
+  assert.deepEqual((await f.service.get(f.context)).config.surfaceCeiling, ceiling);
 });

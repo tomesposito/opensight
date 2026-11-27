@@ -1,3 +1,4 @@
+import { surfaceNames } from '@opensight/embedding-sdk/surface';
 import { hasCapability } from '@opensight/query-engine';
 import { embedOrigin } from './embedding.js';
 import { validatedPng } from './embed-assets.js';
@@ -13,9 +14,32 @@ export interface EmbedAppearance {
   palette: 'navy' | 'teal' | 'plum'; font: 'system' | 'sans'; layout: 'comfortable' | 'compact';
   productName: string; iframeTitle: string; logoAssetId: string | null; faviconAssetId: string | null;
 }
+const experienceNames = ['dashboard', 'visual', 'q', 'console', 'full-app'] as const;
+export interface SurfaceCeiling {
+  experiences: typeof experienceNames[number][];
+  menus: typeof surfaceNames.menus[number][];
+  actions: typeof surfaceNames.actions[number][];
+  chrome: typeof surfaceNames.chrome[number][];
+}
+function defaultSurfaceCeiling(): SurfaceCeiling {
+  return { experiences: [...experienceNames], menus: [...surfaceNames.menus], actions: [...surfaceNames.actions], chrome: [...surfaceNames.chrome] };
+}
+function validateSurfaceCeiling(raw: unknown): SurfaceCeiling {
+  const invalid = () => fail('EMBED_SURFACE_INVALID');
+  let ceiling: Record<string, unknown>;
+  try { ceiling = object(raw, ['experiences', 'menus', 'actions', 'chrome']); } catch { return invalid(); }
+  function list<T extends string>(key: string, names: readonly T[]): T[] {
+    const values = ceiling[key];
+    if (!Array.isArray(values) || values.length > names.length || new Set(values).size !== values.length
+      || !Array.from(values).every(v => names.includes(v))) return invalid();
+    return [...values];
+  }
+  return { experiences: list('experiences', experienceNames), menus: list('menus', surfaceNames.menus),
+    actions: list('actions', surfaceNames.actions), chrome: list('chrome', surfaceNames.chrome) };
+}
 export interface TenantEmbedConfig {
   enabled: boolean; allowedParentOrigins: string[]; embedOriginId: string | null; maxSessionSeconds: number | null;
-  appearance: EmbedAppearance; features: Features;
+  appearance: EmbedAppearance; features: Features; surfaceCeiling: SurfaceCeiling;
 }
 interface TenantPolicy { allowedParentOrigins: string[]; embedOriginIds: string[]; maxSessionSeconds: number }
 interface Asset { tenantId: string; kind: 'logo' | 'favicon'; dataUrl: string }
@@ -23,7 +47,7 @@ export interface EmbedPolicy { origins: ReadonlyMap<string, string>; tenants: Re
 function fail(code = 'EMBED_CONFIG_INVALID', status = 422): never { throw new MetadataError(code, status); }
 export const defaultAppearance: EmbedAppearance = { palette: 'navy', font: 'system', layout: 'comfortable', productName: 'OpenSight', iframeTitle: 'OpenSight dashboard', logoAssetId: null, faviconAssetId: null };
 export function defaultEmbedConfig(): TenantEmbedConfig {
-  return { enabled: false, allowedParentOrigins: [], embedOriginId: null, maxSessionSeconds: null, appearance: { ...defaultAppearance },
+  return { surfaceCeiling: defaultSurfaceCeiling(), enabled: false, allowedParentOrigins: [], embedOriginId: null, maxSessionSeconds: null, appearance: { ...defaultAppearance },
     features: { registeredDashboards: true, registeredVisuals: true, parameterControls: false, filtering: false, anonymous: false, authoring: false, export: false, download: false, persistentReaderState: false } };
 }
 export const embedCapabilities = Object.freeze({ registeredDashboards: true, registeredVisuals: true, parameterControls: true, filtering: true,
@@ -59,7 +83,7 @@ function assetId(raw: unknown, kind: Asset['kind'], tenantId: string, policy: Em
   return raw as string;
 }
 export function validateEmbedConfig(raw: unknown, tenantId: string, policy: EmbedPolicy): TenantEmbedConfig {
-  const input = fields(raw, ['enabled', 'allowedParentOrigins', 'embedOriginId', 'maxSessionSeconds', 'appearance', 'features']);
+  const input = fields(raw, ['enabled', 'allowedParentOrigins', 'embedOriginId', 'maxSessionSeconds', 'appearance', 'features', 'surfaceCeiling']);
   if (typeof input.enabled !== 'boolean') fail();
   const parents = origins(input.allowedParentOrigins), tenant = policy.tenants.get(tenantId);
   if (parents.some(o => !tenant?.allowedParentOrigins.includes(o))) fail('EMBED_ORIGIN_DENIED', 403);
@@ -79,7 +103,8 @@ export function validateEmbedConfig(raw: unknown, tenantId: string, policy: Embe
     if (flags[name] && !embedCapabilities[name]) fail('EMBED_FEATURE_UNSUPPORTED');
     features[name] = flags[name];
   }
-  return { enabled: input.enabled, allowedParentOrigins: parents, embedOriginId: originId as string | null, maxSessionSeconds: maximum, appearance, features };
+  return { enabled: input.enabled, allowedParentOrigins: parents, embedOriginId: originId as string | null, maxSessionSeconds: maximum, appearance, features,
+    surfaceCeiling: Object.hasOwn(input, 'surfaceCeiling') ? validateSurfaceCeiling(input.surfaceCeiling) : defaultSurfaceCeiling() };
 }
 
 /** No tenant-controlled host, redirect or URL. H11 routing is intentionally unavailable:
@@ -163,7 +188,13 @@ export class HostedEmbedding {
       const current = await this.current(c, context);
       if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) fail('EMBED_CONFIG_INVALID', 400);
       if (current.revision !== expectedRevision) fail('EMBED_CONFIG_REVISION_CONFLICT', 412);
-      const config = validateEmbedConfig(snapshot, context.tenantId, this.policy), revision = current.revision + 1;
+      // A pre-337 client replacing the six original fields must preserve any ceiling.
+      const replacement = fields(snapshot);
+      if (!Object.hasOwn(replacement, 'surfaceCeiling')) {
+        const stored = fields(current.config);
+        if (Object.hasOwn(stored, 'surfaceCeiling')) replacement.surfaceCeiling = stored.surfaceCeiling;
+      }
+      const config = validateEmbedConfig(replacement, context.tenantId, this.policy), revision = current.revision + 1;
       if (current.revision) await c.query('UPDATE h5_embedding_config SET revision = ?, body = ? WHERE tenant_id = ? AND namespace_id = ?', [revision, JSON.stringify(config), context.tenantId, context.namespaceId]);
       else await c.query('INSERT INTO h5_embedding_config VALUES (?,?,?,?)', [context.tenantId, context.namespaceId, revision, JSON.stringify(config)]);
       // Conservative H2 behavior: all replacements revoke existing tenant API sessions.
