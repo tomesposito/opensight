@@ -64,8 +64,8 @@ ceiling of at least 900 seconds; 36,000 permits the default ten-hour session.
 Existing lower H5 ceilings remain valid configuration but cannot authorize an H6
 session. Set <code>features.anonymous</code> and/or <code>features.authoring</code> explicitly to enable
 those experiences; both default to false. Registered consumption flags retain
-their meaning. Export, download, persistent reader state, filtering and parameter
-controls remain unsupported and true flags are rejected.</p>
+their meaning. Filtering and parameter controls are opt-in. Export, download and persistent
+reader state remain unsupported.</p>
 <p>Two additional environment variables configure the shared embed signing key:</p>
 <ul>
 <li><code>OPENSIGHT_EMBED_SESSION_KEY_ID</code>: a unique immutable version identifier.</li>
@@ -145,7 +145,9 @@ unique exact origins and replaces the static list for this grant, within the
 operator&#39;s tenant allowlist. Omitting it uses the static list. Wildcards,
 normalization tricks and same-origin parent/embed deployments are refused. A
 separate iframe origin is required to preserve the credential boundary.</p>
-<p>The response is <code>{sessionId, EmbedUrl, bootstrapExpiresAt, SessionLifetimeInMinutes, configRevision}</code>. <code>EmbedUrl</code> is
+<p>The response includes <code>sessionId</code>, <code>EmbedUrl</code>, <code>bootstrapExpiresAt</code>,
+<code>SessionLifetimeInMinutes</code> and <code>configRevision</code>. If the request includes
+<code>Surface</code>, the response also echoes the accepted declaration. <code>EmbedUrl</code> is
 <code>https://embed.example/embed/sessions/{id}#bootstrap=...</code>; the fragment never enters
 the HTTP URL or Referer. Unknown fields and unresolved subjects fail closed.</p>
 <p><code>DELETE /api/embedding/sessions/{id}</code> revokes the grant for its issuer or a current
@@ -233,11 +235,82 @@ still intersect; CLS denials include calculated-field dependencies. Denied colum
 retain the planner&#39;s concealed <code>UNRESOLVED_BINDING</code> diagnostic. A selection for an
 RLS-denied region yields no authorized matching rows and cannot widen access.
 H4 budgets, contained workers, and revision checks before publication still apply.</p>
+<h2 id="per-embed-surface-control-337">Per-embed surface control (#337)</h2>
+<p>Both issuance endpoints accept an optional <code>Surface</code> object. A v2 SDK client
+can mount multiple frames for the same tenant and principal with different
+settings. Pass the declaration through the host&#39;s authenticated backend to the
+issuance endpoint, alongside the backend-selected subject and experience.</p>
+<pre><code class="language-ts">const client = createSessionEmbeddingClient({
+  allowedEmbedOrigins: [&#39;https://embed.example&#39;],
+  async getEmbedUrl(signal, surface) {
+    const response = await fetch(&#39;/product/embed-session&#39;, {
+      method: &#39;POST&#39;,
+      headers: { &#39;Content-Type&#39;: &#39;application/json&#39; },
+      body: JSON.stringify({ surface }),
+      signal,
+    });
+    if (!response.ok) throw new Error(&#39;Session issuance failed&#39;);
+    return response.json();
+  },
+});
+await client.mount(portal, { surface: { actions: { authoring: &#39;hidden&#39; } } });
+await client.mount(internalTool, { surface: { actions: { authoring: &#39;visible&#39; } } });
+</code></pre>
+<p>For these two mounts, use the same registered author and enable both
+<code>features.registeredDashboards</code> and <code>features.authoring</code>. The tenant ceiling
+must allow <code>full-app</code> and the <code>authoring</code> action. The product backend sends each
+mount&#39;s declaration with its own H2 credential and returns the issuance response
+to the SDK. This example requests 15 minutes and also sets the account menu and
+header states. It requires <code>maxSessionSeconds</code> of at least 900 and a ceiling
+that includes <code>menus.account</code> and <code>chrome.header</code>.</p>
+<pre><code class="language-json">{
+  &quot;ExperienceConfiguration&quot;: { &quot;FullApp&quot;: { &quot;InitialPath&quot;: &quot;/dashboards&quot; } },
+  &quot;SessionLifetimeInMinutes&quot;: 15,
+  &quot;Surface&quot;: {
+    &quot;actions&quot;: { &quot;authoring&quot;: &quot;hidden&quot; },
+    &quot;menus&quot;: { &quot;account&quot;: &quot;disabled&quot; },
+    &quot;chrome&quot;: { &quot;header&quot;: &quot;visible&quot; }
+  }
+}
+</code></pre>
+<div class="table-scroll" role="region" aria-label="Table" tabindex="0">
+<table>
+<thead><tr><th scope="col">Member</th><th scope="col">Presentation</th></tr></thead>
+<tbody>
+<tr><td><code>menus.navigation</code></td><td>Full-app product navigation, section navigation, and navigation search/shortcuts.</td></tr>
+<tr><td><code>menus.account</code></td><td>Account disclosure in the full-app header.</td></tr>
+<tr><td><code>actions.authoring</code></td><td>Full-app analysis editing, preparation and creation entry points, or the fixed console&#39;s author controls. Requires the tenant authoring flag and a registered builder.</td></tr>
+<tr><td><code>actions.filtering</code></td><td>Category filter controls on fixed dashboard and visual sessions with filtering enabled.</td></tr>
+<tr><td><code>actions.parameterControls</code></td><td>Parameter controls on fixed dashboard and visual sessions and published dashboards in full-app sessions. Requires the parameter-controls flag.</td></tr>
+<tr><td><code>actions.question</code></td><td>Fixed Q search, or full-app Ask O and its Q panel for AI-capable members. Explicitly showing or disabling full-app questions also requires a configured provider.</td></tr>
+<tr><td><code>chrome.header</code></td><td>The product header or the fixed frame&#39;s brand band. Required notices, revocation and expiry feedback stay available.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Each member accepts <code>visible</code>, <code>disabled</code> or <code>hidden</code>. Omitted members inherit
+the intersection of the experience, tenant ceiling, feature flags and subject
+capabilities. A disabled control can appear but cannot be used. A hidden
+container also hides its children. Unknown groups, names and states return
+422 <code>EMBED_SURFACE_INVALID</code>. Both visible and disabled requests outside the
+intersection return 403 <code>EMBED_SURFACE_DENIED</code>. An explicit hidden state is
+valid even when the principal lacks the underlying permission.</p>
+<p>The server binds the request and resolved settings to the session before issuing
+the bootstrap. It rechecks them on shell load, redemption, status, operations
+and protected writes. Renewal reissues the original declaration against current
+authority. Pre-337 grants acquire the applicable defaults on their next check.
+The SDK snapshots each mount&#39;s declaration for refresh and rejects an
+unacknowledged declaration with <code>EMBED_SURFACE_MISMATCH</code>. The frame reads its
+profile from the API-served shell. Parent messages carry handshake metadata only.</p>
+<p>Hiding authoring leaves a direct analysis write available to an authorized
+author. A reader making the same call receives <code>EMBED_AUTHOR_REQUIRED</code>.
+Asset grants, row policies, denied columns and revision checks apply through
+the existing hosted handlers for every presentation.</p>
 <h2 id="browser-and-sdk-transport">Browser and SDK transport</h2>
 <p><code>createSessionEmbeddingClient({allowedEmbedOrigins, getEmbedUrl, title?})</code> is the
 v2 SDK entry point. The trusted application supplies exact embed origins and a
 callback to its own authenticated backend; the SDK does not receive the backend&#39;s
-API credential. <code>mount(container, callbacks)</code> returns <code>{iframe, refresh, destroy}</code>.
+API credential. <code>mount(container, options)</code> accepts lifecycle callbacks and an
+optional surface declaration and returns <code>{iframe, refresh, destroy}</code>.
 The v1 <code>createEmbeddingClient</code> exports and TTL validation are unchanged.</p>
 <p>The iframe removes its fragment immediately, accepts one versioned initialization
 message from its actual parent at an allowed origin, and redeems through
@@ -343,11 +416,10 @@ or revocation clears its drafts and protected content. A reload requires a new
 single-use bootstrap. Fixed dashboard, visual, Q search and console experiences
 retain their existing renderer, scope and save/renewal behavior. In particular,
 the fixed console still requires renewal after saving.</p>
-<p>The v2 SDK transport already mounts an opaque issued URL. Its only extension is
-the registered <code>FullApp</code> request type and typed landing paths; anonymous types
-exclude it. Full-app saves do not emit the fixed console&#39;s terminal <code>saved</code>
-event. New navigation/context events and per-embed visibility/theming controls
-belong to subsequent D-102 steps.</p>
+<p>The v2 SDK accepts typed landing paths for registered full-app sessions and a
+per-mount surface declaration. Anonymous sessions support dashboard and visual
+experiences. The fixed console emits its terminal <code>saved</code> event. Full-app saves
+keep the editor open in the same session.</p>
 <p>The separate full-app HTML bundle is served with the same nonce CSP and
 no-store protections. Runtime ingress forwards <code>Accept-Encoding</code>; gzip keeps
 the bundle within the gateway response envelope. This is an API-served frame,

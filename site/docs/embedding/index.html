@@ -60,7 +60,7 @@ existing signatures, SDK, authorization and exact-origin checks.</p>
 <h2 id="resources-and-concurrency">Resources and concurrency</h2>
 <p><code>GET /api/embedding/config</code> and <code>PUT /api/embedding/config</code> require an active H2
 membership and an H1 tenant administrator. Namespace-prefixed aliases retain H1
-scope checks. The body replaces all six fields below; unknown fields are rejected.
+scope checks. PUT replaces the six original fields and accepts a surface ceiling. Unknown fields are rejected.
 No request can assert a tenant, subject, role or asset owner.</p>
 <pre><code class="language-json">{
   &quot;enabled&quot;: true,
@@ -75,6 +75,12 @@ No request can assert a tenant, subject, role or asset owner.</p>
     &quot;iframeTitle&quot;: &quot;OpenSight dashboard&quot;,
     &quot;logoAssetId&quot;: null,
     &quot;faviconAssetId&quot;: null
+  },
+  &quot;surfaceCeiling&quot;: {
+    &quot;experiences&quot;: [&quot;dashboard&quot;, &quot;visual&quot;, &quot;q&quot;, &quot;console&quot;, &quot;full-app&quot;],
+    &quot;menus&quot;: [&quot;navigation&quot;, &quot;account&quot;],
+    &quot;actions&quot;: [&quot;authoring&quot;, &quot;filtering&quot;, &quot;parameterControls&quot;, &quot;question&quot;],
+    &quot;chrome&quot;: [&quot;header&quot;]
   },
   &quot;features&quot;: {
     &quot;registeredDashboards&quot;: true,
@@ -122,9 +128,22 @@ member and configured provider.</p>
 sessions just as it revokes the fixed experiences. Saving an analysis through
 the full-app editor keeps the session active because content saves follow the
 standalone versioned analysis-write path. See <a href="/docs/embedding-sessions/#full-app-experience-336-d-102-q1">full-app issuance and authority</a>
-for the request shape, allowed routes and session behavior. Per-embed navigation
-visibility and additional theme tokens are subsequent D-102 work; presentation
-choices never grant server authority.</p>
+for the request shape, allowed routes and session behavior.</p>
+<h3 id="surface-ceiling-337">Surface ceiling (#337)</h3>
+<p>Each array above lists the surfaces that may appear in this tenant&#39;s H6 sessions.
+Supply all four arrays when replacing the ceiling. Empty arrays exclude every
+item in that group. Unknown fields, unknown names, duplicates and non-array
+values return 422 <code>EMBED_SURFACE_INVALID</code> before the configuration write.</p>
+<p>New tenants and stored configurations from before #337 use the full vocabulary
+shown above. Existing feature flags and the issued principal and experience
+still bound every mount. A legacy PUT that omits the whole ceiling preserves the
+stored ceiling, including empty arrays. Successful replacements invalidate prior
+sessions through the existing configuration revision.</p>
+<p>An excluded experience cannot be issued. Other excluded controls stay hidden,
+including when a host omits its declaration. Requesting a visible or disabled
+control outside the ceiling or grant returns 403 <code>EMBED_SURFACE_DENIED</code>.
+Required notices remain on fixed frames. See the <a href="/docs/embedding-sessions/#per-embed-surface-control-337">SDK mount contract</a>
+for control names, applicable experiences and examples.</p>
 <h2 id="operator-configuration">Operator configuration</h2>
 <p>Deployment configuration comes only from <code>OPENSIGHT_EMBEDDING_POLICY</code>, a JSON
 environment value with exactly <code>origins</code>, <code>tenants</code> and <code>assets</code> arrays. Missing

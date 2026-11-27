@@ -1,3 +1,4 @@
+import type { EmbedSurface } from '@opensight/embedding-sdk/surface';
 import { useEffect, useRef, useState } from 'react';
 import { parameterValueError, type ParameterDeclaration, type ParameterValue } from '@opensight/query-engine/parameters';
 import { VisualCard } from './VisualCard.js';
@@ -17,7 +18,8 @@ const draftsFor = (content: DashboardContent): Drafts => ({
 });
 
 /** Reader state stays in the frame. Only the server plans and executes changes. */
-export function EmbeddedDashboard({ initial, transport, onState, onContent }: {
+export function EmbeddedDashboard({ initial, transport, onState, onContent, actions }: {
+  actions?: EmbedSurface['actions'];
   initial: DashboardContent; transport: EmbedTransport; onState: (state: EmbedReaderState) => void; onContent?: (content: DashboardContent) => void;
 }) {
   const [content, setContent] = useState(initial), [drafts, setDrafts] = useState(() => draftsFor(initial));
@@ -38,10 +40,15 @@ export function EmbeddedDashboard({ initial, transport, onState, onContent }: {
       if (current === generation.current) { setFailed(true); setError('Unable to update this view. Reconnect to check access and try again.'); }
     } finally { if (current === generation.current) { flight.current = false; setBusy(false); } }
   };
+  const groups = { filters: actions?.filtering ?? 'visible', parameters: actions?.parameterControls ?? 'visible' };
+  const hasControls = (kind: keyof Drafts) => groups[kind] !== 'hidden' && content.controls[kind].length > 0;
+  const editable = (kind: keyof Drafts) => groups[kind] === 'visible' && hasControls(kind);
+  const canApply = editable('filters') || editable('parameters');
   const apply = () => {
+    if (!canApply) return;
     const state: EmbedReaderState = {};
     for (const kind of ['filters', 'parameters'] as const) {
-      if (!content.controls[kind].length) continue;
+      if (!editable(kind)) continue;
       const entries: [string, ParameterValue[]][] = [];
       for (const control of content.controls[kind]) {
         const raw = drafts[kind][control.id] ?? [];
@@ -54,16 +61,16 @@ export function EmbeddedDashboard({ initial, transport, onState, onContent }: {
     }
     void refresh(state);
   };
-  const hasControls = content.controls.filters.length + content.controls.parameters.length > 0;
-  return <section className={`embed-dashboard${hasControls ? ' embed-dashboard-controls' : ''}`} aria-busy={busy}>
-    {hasControls && <form className="embed-reader-controls" onSubmit={event => event.preventDefault()} onKeyDown={event => {
+  const showControls = hasControls('filters') || hasControls('parameters');
+  return <section className={`embed-dashboard${showControls ? ' embed-dashboard-controls' : ''}`} aria-busy={busy}>
+    {showControls && <form className="embed-reader-controls" onSubmit={event => event.preventDefault()} onKeyDown={event => {
       // The embed sandbox intentionally omits allow-forms. Use explicit handlers,
       // as Q does, so neither click nor Enter depends on native form submission.
       if (event.key === 'Enter' && (event.target as HTMLElement).tagName === 'INPUT') { event.preventDefault(); apply(); }
     }}>
-      <fieldset disabled={busy}>
+      <fieldset disabled={busy || !canApply}>
         <legend>View controls</legend>
-        {(['filters', 'parameters'] as const).map(kind => content.controls[kind].length > 0 && <section key={kind} aria-label={kind === 'filters' ? 'Filters' : 'Parameters'}>
+        {(['filters', 'parameters'] as const).map(kind => hasControls(kind) && <section key={kind} aria-disabled={!editable(kind) || undefined} aria-label={kind === 'filters' ? 'Filters' : 'Parameters'}>
           <h2>{kind === 'filters' ? 'Filters' : 'Parameters'}</h2>
           {content.controls[kind].map(control => {
             const values = drafts[kind][control.id] ?? [];
@@ -71,14 +78,14 @@ export function EmbeddedDashboard({ initial, transport, onState, onContent }: {
               {(control.multiple || !values.length) && <span>{control.label}</span>}
               {values.map((value, index) => <div className="embed-reader-value" key={index}>
                 <label>{control.multiple ? `${control.label} ${index + 1}` : control.label}
-                  <input aria-label={control.multiple ? `${control.label} ${index + 1}` : control.label} type={control.type === 'number' ? 'number' : 'text'}
+                  <input disabled={!editable(kind)} aria-label={control.multiple ? `${control.label} ${index + 1}` : control.label} type={control.type === 'number' ? 'number' : 'text'}
                     step={control.integer ? 1 : 'any'} value={value} maxLength={10000} placeholder={control.type === 'datetime' ? 'YYYY-MM-DD or UTC datetime' : undefined}
                     onChange={event => change(kind, control.id, values.map((v, i) => i === index ? event.target.value : v))} />
                 </label>
-                <button type="button" aria-label={`Remove ${control.label} ${index + 1}`} onClick={() => change(kind, control.id, values.filter((_, i) => i !== index))}>Remove</button>
+                <button type="button" disabled={!editable(kind)} aria-label={`Remove ${control.label} ${index + 1}`} onClick={() => change(kind, control.id, values.filter((_, i) => i !== index))}>Remove</button>
               </div>)}
               {!values.length && <p>No values selected</p>}
-              {(control.multiple || !values.length) && <button type="button" disabled={values.length >= 1000} onClick={() => change(kind, control.id, [...values, ''])}>Add {control.label}</button>}
+              {(control.multiple || !values.length) && <button type="button" disabled={!editable(kind) || values.length >= 1000} onClick={() => change(kind, control.id, [...values, ''])}>Add {control.label}</button>}
             </div>;
           })}
         </section>)}

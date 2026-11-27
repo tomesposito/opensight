@@ -29,7 +29,7 @@ import { buildApiPreview } from './api-preview.js';
 import { Analyses } from './Analyses.js';
 import { CreateAnalysisDialog } from './CreateAnalysisDialog.js';
 import { AppLink, AppNavigation, useAppRoute } from './AppNavigation.js';
-import { pages, recordRecentPage, routeProblem, type Page } from './app-navigation.js';
+import { pages, recordRecentPage, routeSurface, routeProblem, type Page } from './app-navigation.js';
 import { browserDraftStorage, createDraftStore, draftStorageKey } from './local-drafts.js';
 import { ToastProvider } from './Toasts.js';
 import { BackToTop } from './BackToTop.js';
@@ -67,9 +67,11 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
   const [visitedPages, setVisitedPages] = useState<Page[]>([]);
   useEffect(() => { setVisitedPages(previous => recordRecentPage(previous, mode, access)); }, [mode, access]);
   const recentPages = visitedPages.filter(page => page !== mode && !routeProblem(access, page)).slice(0, 5);
-  const choosingDataset = !problem && route?.page === 'author' && route.newAnalysis && newAnalysisChoice?.entry !== entry;
+  const activeSurface = route && routeSurface(access, route);
+  const authoring = access.embed?.surface?.actions.authoring ?? 'visible';
+  const choosingDataset = activeSurface === 'visible' && !problem && route?.page === 'author' && route.newAnalysis && newAnalysisChoice?.entry !== entry;
   useEffect(() => { if (typeof document !== 'undefined') document.title = `${route ? pages[route.page].title : 'Page not found'} · OpenSight`; }, [mode]);
-  const editing = mode === 'author' && !choosingDataset && !problem;
+  const editing = activeSurface === 'visible' && mode === 'author' && !choosingDataset && !problem;
   const identity = (title?: ReactNode) => <>
     <AppNavigation route={route} navigate={navigate} recentPages={recentPages}>{title}{!problem && (mode === 'fixtures' || mode === 'api') && <label className="fixture-picker">Definition example<select value={fixtureId} onChange={event => setFixtureId(event.target.value)}>{fixtures.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>}</AppNavigation>
     {access.mode === 'local' && <aside className="fixture-demo-banner workspace-banner" aria-label="Local data workspace"><span><strong>Local workspace</strong> · Files stay on this computer · Uploads survive restarts and expire after 24 hours</span>{sampleLoaded && <><span>Sample sales data loaded · Synthetic data</span><button type="button" onClick={() => setSampleLoaded(false)}>Remove sample data</button></>}</aside>}
@@ -78,6 +80,8 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
     if (routePending && !route) return <p role="status">Checking access…</p>;
     if (routeError) return <RouteNotice problem={routeError} />;
     if (!route) return <section className="not-found-page"><h1>Page not found</h1><p>Choose a section in the navigation to continue.</p><AppLink to={{ page: 'home' }} navigate={navigate}>Go to Home</AppLink></section>;
+    if (activeSurface === 'hidden') return <p role="status">This page is unavailable in this embed.</p>;
+    if (activeSurface === 'disabled') return <button type="button" disabled>{pages[route.page].title}</button>;
     if (problem) return <RouteNotice problem={problem} />;
     switch (route.page) {
       case 'ask-o': return <AskOPage client={api} />;
@@ -109,17 +113,20 @@ function ApplicationWorkspace({ api, fixtures }: { api: ReturnType<typeof create
       case 'fixtures': return fixture ? <Dashboard key={fixture.id} fixture={fixture} /> : <p role="status">No definition examples are included in this build. Use API definition preview to load a definition from a hosted API.</p>;
     }
   };
-  return <CommandPaletteProvider navigate={navigate}><GlobalSearchProvider navigate={navigate}><div className="app-shell" data-workspace={access.mode} data-page={mode}>
+  const workspace = <div className="app-shell" data-embed-navigation={access.embed?.surface?.menus.navigation} data-embed-header={access.embed?.surface?.chrome.header} data-workspace={access.mode} data-page={mode}>
     {!editing && identity()}
     <main className={mode === 'author' && !choosingDataset ? 'author-main' : undefined}>{content()}</main>
     {choosingDataset && <CreateAnalysisDialog client={connected ? api : undefined} sampleAvailable={access.mode === 'demo' || sampleLoaded} offline={!connected}
       onSelect={(dataset, initialDraft) => { setAuthorDataset(dataset); setNewAnalysisChoice({ entry, dataset, initialDraft }); }}
       onCreateDataset={() => navigate({ page: 'data', createDataset: true })}
       onClose={() => navigate({ page: 'analyses' }, true)} />}
-    {!problem && (mode === 'data' || mode === 'data-sources') && (creation || route?.createDataset) && <CreateDatasetDialog client={connected ? api : undefined} start={creation ?? 'dataset'} onClose={() => { setCreation(undefined); if (route?.createDataset) navigate({ page: 'data' }, true); }} onPrep={sourceId => { setCreation(undefined); navigate({ page: 'data-prep', sourceId }); }} />}
+    {authoring === 'visible' && !problem && (mode === 'data' || mode === 'data-sources') && (creation || route?.createDataset) && <CreateDatasetDialog client={connected ? api : undefined} start={creation ?? 'dataset'} onClose={() => { setCreation(undefined); if (route?.createDataset) navigate({ page: 'data' }, true); }} onPrep={sourceId => { setCreation(undefined); navigate({ page: 'data-prep', sourceId }); }} />}
     <footer className="app-footer">OpenSight · Local rendering preview · visual fidelity not measured</footer>
     <BackToTop />
-  </div></GlobalSearchProvider></CommandPaletteProvider>;
+  </div>;
+  if (access.embed?.surface && access.embed.surface.menus.navigation !== 'visible') return workspace;
+  return <CommandPaletteProvider navigate={navigate}>{authoring === 'visible'
+    ? <GlobalSearchProvider navigate={navigate}>{workspace}</GlobalSearchProvider> : workspace}</CommandPaletteProvider>;
 }
 
 function ApiExplorer({ example, api, fixtures }: { example?: Fixture; api: ReturnType<typeof createApiClient>; fixtures: Fixture[] }) {

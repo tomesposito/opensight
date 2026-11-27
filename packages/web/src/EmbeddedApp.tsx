@@ -15,7 +15,7 @@ export function EmbeddedApp({ shell, bootstrap }: { shell: EmbedShell; bootstrap
       client = embedAppClient(transport);
       const session = await client.session();
       window.history.replaceState(null, '', `#${shell.fullApp!.landingRoute}`);
-      setApplication({ api: client.api, session, embed: { loadAnalysis: client.loadAnalysis, authorizeRoute: client.authorizeRoute, storage: client.storage } });
+      setApplication({ api: client.api, session, embed: { surface: shell.surface, loadAnalysis: client.loadAnalysis, authorizeRoute: client.authorizeRoute, storage: client.storage } });
       transport.ready();
     });
     return () => { transport.destroy(); client?.clear(); };

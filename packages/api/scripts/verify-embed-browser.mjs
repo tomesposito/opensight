@@ -40,7 +40,7 @@ try {
   await new Promise(r => proxy.listen(0, '127.0.0.1', r)); t.after(() => new Promise(r => { proxy.close(r); proxy.closeAllConnections(); }));
   const embedOrigin = `https://localhost:${proxy.address().port}`;
   const parentServer = httpsServer(tls, (req, res) => { void (async () => {
-    if (req.url === '/sdk/index.js' || req.url === '/sdk/session.js') { res.writeHead(200, { 'Content-Type': 'text/javascript' }); res.end(await readFile(new URL(`../../embedding-sdk/dist/${req.url.split('/').at(-1)}`, import.meta.url))); return; }
+    if (req.url === '/sdk/index.js' || req.url === '/sdk/session.js' || req.url === '/sdk/surface.js') { res.writeHead(200, { 'Content-Type': 'text/javascript' }); res.end(await readFile(new URL(`../../embedding-sdk/dist/${req.url.split('/').at(-1)}`, import.meta.url))); return; }
     if (req.url === '/embed-url' && req.method === 'POST') {
       let ExperienceConfiguration = { Dashboard: { InitialDashboardId: scenario === 'empty' ? 'empty' : 'dashboard' } };
       if (scenario === 'visual') ExperienceConfiguration = { DashboardVisual: { InitialDashboardVisualId: { DashboardId: 'dashboard', SheetId: 'sheet', VisualId: 'total' } } };

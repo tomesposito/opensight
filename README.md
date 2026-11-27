@@ -424,7 +424,9 @@ saved defaults. Both capabilities remain disabled by default.
 Registered full-app embeds load the real application at a permitted dashboard,
 catalog, editor, preparation or configured Ask O route. Navigation stays in the
 frame, and authors can save repeatedly without restarting the session. The four
-fixed experiences remain available. See the [full-app verification](docs/issue-336-gap-notes.md).
+fixed experiences remain available. A tenant can set a ceiling for its embeds,
+then a host can hide authoring in its customer portal and show it in an internal
+tool for the same authorized member. See the [surface declaration and SDK example](docs/embed-sessions.md#per-embed-surface-control-337).
 
 ![Full-app embedded editor after two saves, using synthetic live data](docs/images/embed-full-app.png)
 

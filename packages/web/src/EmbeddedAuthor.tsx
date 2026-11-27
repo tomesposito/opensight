@@ -1,3 +1,4 @@
+import type { SurfaceState } from '@opensight/embedding-sdk/surface';
 import { useState } from 'react';
 import { VisualCard } from './VisualCard.js';
 import type { FixtureVisual } from './model.js';
@@ -5,7 +6,7 @@ import type { EmbedTransport } from './embed-transport.js';
 interface Column { name: string; type: string }
 interface Analysis { AnalysisId: string; Name: string; Definition: { DataSetIdentifierDeclarations: { Identifier: string; DataSetArn: string }[]; Sheets: { SheetId: string; Name?: string; Visuals: Record<string, unknown>[] }[]; [key: string]: unknown } }
 export interface ConsoleContent { kind: 'console'; title: string; analyses: { id: string; name: string }[]; datasets: { id: string; columns: Column[] }[]; analysis?: Analysis; version?: number; datasetId?: string; visuals?: (FixtureVisual & { id: string })[] }
-export function EmbeddedAuthor({ initial, transport }: { initial: ConsoleContent; transport: EmbedTransport }) {
+export function EmbeddedAuthor({ initial, transport, authoring = 'visible' }: { authoring?: SurfaceState; initial: ConsoleContent; transport: EmbedTransport }) {
   const [content, setContent] = useState(initial), [analysis, setAnalysis] = useState<Analysis | undefined>(initial.analysis), [datasetId, setDatasetId] = useState(initial.datasetId ?? initial.datasets[0]?.id ?? '');
   const [name, setName] = useState(initial.analysis?.Name ?? 'Untitled analysis'), [kind, setKind] = useState('BarChartVisual'), [measure, setMeasure] = useState(''), [dimension, setDimension] = useState(''), [aggregation, setAggregation] = useState('SUM'), [busy, setBusy] = useState(false), [note, setNote] = useState('');
   const dataset = content.datasets.find(d => d.id === datasetId);
@@ -26,7 +27,7 @@ export function EmbeddedAuthor({ initial, transport }: { initial: ConsoleContent
     void transport.request('save', { analysisId: analysis.AnalysisId, definition: { ...analysis, Name: name }, datasetId, expectedVersion: content.analysis?.AnalysisId === analysis.AnalysisId ? content.version : 0 }).then(() => transport.saved()).catch(() => {}).finally(() => setBusy(false));
   };
   return <section className="embed-author">
-    <aside><h2>Analyses</h2>{content.analyses.map(a => <button key={a.id} disabled={busy} onClick={() => open(a.id)}>{a.name}</button>)}
+    {authoring !== 'hidden' && <aside inert={authoring === 'disabled'} aria-disabled={authoring === 'disabled' || undefined}><h2>Analyses</h2>{content.analyses.map(a => <button key={a.id} disabled={busy} onClick={() => open(a.id)}>{a.name}</button>)}
       <label>Analysis name<input value={name} onChange={e => setName(e.target.value)} maxLength={512} /></label>
       <label>Dataset<select value={datasetId} disabled={!!analysis || busy} onChange={e => setDatasetId(e.target.value)}>{content.datasets.map(d => <option key={d.id} value={d.id}>{d.id}</option>)}</select></label>
       <h2>Visuals</h2><label>Visual type<select value={kind} onChange={e => setKind(e.target.value)}><option value="BarChartVisual">Bar chart</option><option value="KPIVisual">KPI</option><option value="TableVisual">Table</option></select></label>
@@ -35,6 +36,6 @@ export function EmbeddedAuthor({ initial, transport }: { initial: ConsoleContent
       <label>Aggregation<select value={aggregation} onChange={e => setAggregation(e.target.value)}>{['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'].map(a => <option key={a}>{a}</option>)}</select></label>
       <button disabled={busy || !measure || kind === 'BarChartVisual' && !dimension} onClick={add}>Add visual</button><button disabled={busy || !analysis || !name.trim()} onClick={save}>Save analysis</button>
       <p role="status">{note}</p>
-    </aside><div><h2>{name}</h2><p>{analysis?.Definition.Sheets.reduce((n, s) => n + s.Visuals.length, 0) ?? 0} visuals</p><div className="dashboard-grid">{content.visuals?.map(v => <VisualCard key={v.id} visual={v} />)}</div></div>
+    </aside>}<div><h2>{name}</h2><p>{analysis?.Definition.Sheets.reduce((n, s) => n + s.Visuals.length, 0) ?? 0} visuals</p><div className="dashboard-grid">{content.visuals?.map(v => <VisualCard key={v.id} visual={v} />)}</div></div>
   </section>;
 }

@@ -1,3 +1,4 @@
+import { isSurfaceDeclaration, type SurfaceDeclaration } from './surface.js';
 import { EmbeddingError } from './index.js';
 
 export type FullAppLandingRoute = '/dashboards' | `/dashboards/${string}` | '/data' | '/analyses/author' | `/analyses/author/${string}` | '/data/preparation' | '/ask-o';
@@ -6,23 +7,26 @@ export type ExperienceConfiguration = { Dashboard: { InitialDashboardId: string 
   | { QSearchBar: { InitialTopicId: string } } | { QuickSightConsole: { InitialPath?: string } }
   | { FullApp: { InitialPath: FullAppLandingRoute } };
 export interface GenerateEmbedUrlForRegisteredUser {
-  UserArn?: string; ExperienceConfiguration: ExperienceConfiguration; SessionLifetimeInMinutes?: number; AllowedDomains?: string[];
+  Surface?: SurfaceDeclaration; UserArn?: string; ExperienceConfiguration: ExperienceConfiguration; SessionLifetimeInMinutes?: number; AllowedDomains?: string[];
 }
 export interface GenerateEmbedUrlForAnonymousUser {
-  Namespace: string; AuthorizedResourceArns: string[]; ExperienceConfiguration: Exclude<ExperienceConfiguration, { FullApp: unknown }>;
+  Surface?: SurfaceDeclaration; Namespace: string; AuthorizedResourceArns: string[]; ExperienceConfiguration: Exclude<ExperienceConfiguration, { FullApp: unknown }>;
   SessionLifetimeInMinutes?: number; SessionTags?: { Key: string; Value: string }[]; AllowedDomains?: string[];
 }
-export interface SessionEmbedUrl { sessionId: string; EmbedUrl: string; bootstrapExpiresAt: string; SessionLifetimeInMinutes: number; configRevision: number }
+export interface SessionEmbedUrl { Surface?: SurfaceDeclaration; sessionId: string; EmbedUrl: string; bootstrapExpiresAt: string; SessionLifetimeInMinutes: number; configRevision: number }
 export interface SessionCallbacks {
   onReady?: () => void; onSessionExpired?: () => void; onAuthorizationRevoked?: () => void;
   onConnectionRequired?: () => void;
   onSaved?: () => void; onError?: (error: EmbeddingError) => void;
 }
+export interface SessionMountOptions extends SessionCallbacks {
+  surface?: SurfaceDeclaration;
+}
 export interface SessionEmbeddingOptions {
   /** Trusted application configuration, never inferred from a returned URL. */
   allowedEmbedOrigins: readonly string[];
   /** Calls your product backend. Broad API credentials do not belong in this SDK. */
-  getEmbedUrl: (signal: AbortSignal) => Promise<SessionEmbedUrl>;
+  getEmbedUrl: (signal: AbortSignal, surface?: SurfaceDeclaration) => Promise<SessionEmbedUrl>;
   title?: string;
 }
 function exactOrigin(raw: string): string {
@@ -36,7 +40,9 @@ export function createSessionEmbeddingClient(options: SessionEmbeddingOptions) {
   if (!options.allowedEmbedOrigins.length || options.allowedEmbedOrigins.length > 64) throw new EmbeddingError('INVALID_ORIGIN', 'Configure trusted embed origins');
   const origins = options.allowedEmbedOrigins.map(exactOrigin);
   return {
-    async mount(container: HTMLElement, callbacks: SessionCallbacks = {}) {
+    async mount(container: HTMLElement, callbacks: SessionMountOptions = {}) {
+      if (callbacks.surface !== undefined && !isSurfaceDeclaration(callbacks.surface)) throw new EmbeddingError('EMBED_SURFACE_INVALID', 'Invalid embed surface');
+      const surface = structuredClone(callbacks.surface);
       const view = container.ownerDocument.defaultView;
       if (!view) throw new EmbeddingError('PARENT_ORIGIN_MISMATCH', 'A browser window is required');
       const parentOrigin = exactOrigin(view.location.origin);
@@ -80,8 +86,18 @@ export function createSessionEmbeddingClient(options: SessionEmbeddingOptions) {
       const refresh = async () => {
         if (destroyed) throw new EmbeddingError('EMBED_DESTROYED', 'The embed has been destroyed');
         const current = ++generation; controller?.abort(); controller = new AbortController(); active = undefined; clear();
-        const result = await options.getEmbedUrl(controller.signal);
+        const result = await options.getEmbedUrl(controller.signal, structuredClone(surface));
         if (destroyed || generation !== current) return;
+        if (surface) {
+          // An older host callback might ignore its second argument. Refuse to
+          // display that session unless issuance acknowledged the requested states.
+          const bound = result.Surface;
+          if (!isSurfaceDeclaration(bound) || !Object.entries(surface).every(([group, entries]) =>
+            Object.entries(entries).every(([key, state]) => {
+              const received: Record<string, unknown> | undefined = bound[group as keyof SurfaceDeclaration];
+              return received?.[key] === state;
+            }))) throw new EmbeddingError('EMBED_SURFACE_MISMATCH', 'The issued session did not acknowledge the requested surface');
+        }
         let url: URL;
         try { url = new URL(result.EmbedUrl); } catch { throw new EmbeddingError('INVALID_RESPONSE', 'Invalid session embed URL'); }
         if (!origins.includes(url.origin) || url.username || url.password || url.search || !/^[A-Za-z0-9_-]{32}$/.test(result.sessionId)

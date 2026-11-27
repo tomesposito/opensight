@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "build": "npm run build --workspace=@opensight/bundle-parser && npm run build --workspace=@opensight/query-engine && npm run build --workspace=@opensight/o-interpreter && npm run build:compiler --workspace=@opensight/web && npm run build --workspace=@opensight/mcp-server && tsc && npm run build:embed --workspace=@opensight/web",
+    "build": "npm run build --workspace=@opensight/embedding-sdk && npm run build --workspace=@opensight/bundle-parser && npm run build --workspace=@opensight/query-engine && npm run build --workspace=@opensight/o-interpreter && npm run build:compiler --workspace=@opensight/web && npm run build --workspace=@opensight/mcp-server && tsc && npm run build:embed --workspace=@opensight/web",
     "start": "node dist/cli.js",
     "start:runtime": "node dist/runtime-cli.js",
     "test": "npm run build && tsc -p test/tsconfig.json && node --test --test-isolation=none test/*.test.mjs",
@@ -45,6 +45,7 @@
   },
   "types": "./dist/index.d.ts",
   "dependencies": {
+    "@opensight/embedding-sdk": "0.0.0",
     "@aws-sdk/client-s3": "3.1169.0",
     "@aws-sdk/client-scheduler": "3.1169.0",
     "@aws-sdk/client-secrets-manager": "3.1169.0",

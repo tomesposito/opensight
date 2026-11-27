@@ -67,3 +67,34 @@ test('on-demand connectionRequired ends readiness timers without requesting a ne
   t.mock.timers.tick(120000); assert.equal(errors, 0); assert.equal(issuedCount, 1); assert.equal(d.messages.length, 1);
   d.emit({ ...event, data: { ...event.data, event: 'ready' } }); d.emit(event); d.emit({ ...event, data: { ...event.data, event: 'ready' } }); assert.equal(ready, 2); assert.equal(issuedCount, 1); handle.destroy();
 });
+
+test('v2 mounts snapshot independent declarations for issuance and refresh, outside frame messages', async () => {
+  const a = dom(), b = dom(), received = [];
+  const client = createSessionEmbeddingClient({ allowedEmbedOrigins: [origin], getEmbedUrl: async (_signal, surface) => {
+    received.push(surface.actions.authoring);
+    const result = { ...issued(), Surface: structuredClone(surface) };
+    surface.actions.authoring = 'disabled';
+    return result;
+  } });
+  const options = { surface: { actions: { authoring: 'hidden' } } };
+  const first = await client.mount(a.container, options);
+  options.surface.actions.authoring = 'visible';
+  const second = await client.mount(b.container, options);
+  await first.refresh(); a.loaded();
+  assert.deepEqual(received, ['hidden', 'visible', 'hidden']);
+  assert.deepEqual(Object.keys(a.messages[0].data).sort(), ['channelId', 'sessionId', 'type', 'version']);
+  first.destroy(); second.destroy();
+});
+
+test('v2 refuses malformed declarations and URLs issued without the requested presentation', async () => {
+  const d = dom();
+  let count = 0;
+  const client = createSessionEmbeddingClient({ allowedEmbedOrigins: [origin], getEmbedUrl: async () => { count++; return issued(); } });
+  await assert.rejects(client.mount(d.container, { surface: { chrome: { notices: 'hidden' } } }), { code: 'EMBED_SURFACE_INVALID' });
+  assert.equal(count, 0);
+  const options = { surface: { actions: { authoring: 'disabled' } } };
+  await assert.rejects(client.mount(d.container, options), { code: 'EMBED_SURFACE_MISMATCH' });
+  const wrong = createSessionEmbeddingClient({ allowedEmbedOrigins: [origin], getEmbedUrl: async () => ({ ...issued(), Surface: { actions: { authoring: 'visible' } } }) });
+  await assert.rejects(wrong.mount(d.container, options), { code: 'EMBED_SURFACE_MISMATCH' });
+  assert.deepEqual(d.frames, []); assert.equal(d.listeners.size, 0);
+});

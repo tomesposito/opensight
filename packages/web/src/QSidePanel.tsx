@@ -10,7 +10,12 @@ type QSidePanelProps = Omit<ComponentProps<typeof OEntry>, 'renderBar'> & {
 export function QSidePanel(props: QSidePanelProps) {
   const access = useAccess();
   // Keep the toolbar available when the current principal cannot ask questions.
-  if (access.mode !== 'local' && !allowed(access, 'ai')) return <>{props.renderTrigger?.(null)}</>;
+  const state = access.embed?.surface?.actions.question;
+  if (state === 'hidden' || access.mode !== 'local' && !allowed(access, 'ai')) return <>{props.renderTrigger?.(null)}</>;
+  if (state === 'disabled') {
+    const trigger = <button className="q-trigger" type="button" disabled>Ask a question</button>;
+    return <>{props.renderTrigger ? props.renderTrigger(trigger) : trigger}</>;
+  }
   return <QSidePanelContent {...props} />;
 }
 

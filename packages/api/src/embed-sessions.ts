@@ -1,3 +1,6 @@
+import { isDeepStrictEqual } from 'node:util';
+import type { EmbedSurface } from '@opensight/embedding-sdk/surface';
+import { resolveEmbedSurface } from './embed-surface.js';
 import { createHmac, randomBytes } from 'node:crypto';
 import { hasCapability } from '@opensight/query-engine';
 import { digest, equal } from './auth-crypto.js';
@@ -14,6 +17,7 @@ export type EmbedExperience = { kind: 'dashboard' | 'visual'; dashboardId: strin
   | { kind: 'full-app'; landingRoute: string };
 export type EmbedInteractionFeatures = Pick<TenantEmbedConfig['features'], 'filtering' | 'parameterControls'>;
 export interface SessionGrant {
+  surface?: EmbedSurface;
   appFeatures?: AppFeatures;
   interactionFeatures?: EmbedInteractionFeatures;
   tenantId: string; namespaceId: string; issuerId: string; userId: string; anonymous: boolean;
@@ -125,7 +129,7 @@ export class EmbedSessions {
     if (g.anonymous && !config.features.anonymous || e.kind === 'console' && !config.features.authoring
       || !g.anonymous && (e.kind === 'dashboard' && !config.features.registeredDashboards || e.kind === 'visual' && !config.features.registeredVisuals)) embedFailure('EMBED_FEATURE_UNSUPPORTED', 422);
   }
-  private async check(c: SqlConnection, row: SqlRow, lockTenant = true): Promise<SessionGrant> {
+  private async check(c: SqlConnection, row: SqlRow, lockTenant = true): Promise<SessionGrant & { surface: EmbedSurface }> {
     await this.checkKey(c, String(row.key_id));
     if (Number(row.revoked)) embedFailure('EMBED_SESSION_REVOKED', 401);
     const g = JSON.parse(String(row.grant_body)) as SessionGrant, current = await this.configuration(c, g, lockTenant);
@@ -136,8 +140,11 @@ export class EmbedSessions {
     if (g.experience.kind === 'console' && (g.anonymous || !hasCapability(user.role as Parameters<typeof hasCapability>[0], 'build'))) embedFailure('EMBED_AUTHOR_REQUIRED', 403);
     if (g.allowedDomains.some(o => !this.policy.tenants.get(g.tenantId)?.allowedParentOrigins.includes(o))) embedFailure('EMBED_ORIGIN_DENIED', 403);
     this.features(current.config, g);
+    const surface = resolveEmbedSurface(current.config, g.experience, user.role, g.request.Surface);
+    // Pre-337 grants have neither field. New grants must match the bound profile.
+    if ((g.surface !== undefined || g.request.Surface !== undefined) && !isDeepStrictEqual(g.surface, surface)) embedFailure('EMBED_SESSION_REVOKED', 401);
     // Authority comes from current validated config, including grants issued before #335.
-    return { ...g, ...(g.experience.kind === 'full-app' ? { appFeatures: { authoring: current.config.features.authoring, registeredDashboards: current.config.features.registeredDashboards } } : {}), interactionFeatures: { filtering: current.config.features.filtering, parameterControls: current.config.features.parameterControls } };
+    return { ...g, surface, ...(g.experience.kind === 'full-app' ? { appFeatures: { authoring: current.config.features.authoring, registeredDashboards: current.config.features.registeredDashboards } } : {}), interactionFeatures: { filtering: current.config.features.filtering, parameterControls: current.config.features.parameterControls } };
   }
   private async context(g: SessionGrant): Promise<TenantContext> {
     const context = await this.metadata.authenticate(null, async () => ({ namespaceId: g.namespaceId, userId: g.userId }));
@@ -151,8 +158,8 @@ export class EmbedSessions {
   async issue(context: TenantContext, raw: unknown, anonymous = false) {
     this.metadata.assertContext(context); this.configured();
     const input = object(structuredClone(raw), anonymous
-      ? ['Namespace', 'AuthorizedResourceArns', 'ExperienceConfiguration', 'SessionLifetimeInMinutes', 'SessionTags', 'AllowedDomains']
-      : ['UserArn', 'ExperienceConfiguration', 'SessionLifetimeInMinutes', 'AllowedDomains']);
+      ? ['Namespace', 'AuthorizedResourceArns', 'ExperienceConfiguration', 'SessionLifetimeInMinutes', 'SessionTags', 'AllowedDomains', 'Surface']
+      : ['UserArn', 'ExperienceConfiguration', 'SessionLifetimeInMinutes', 'AllowedDomains', 'Surface']);
     const experience = parseExperience(input.ExperienceConfiguration);
     if (anonymous && experience.kind === 'full-app') embedFailure('EMBED_FEATURE_UNSUPPORTED', 422);
     const minutes = input.SessionLifetimeInMinutes === undefined ? 600 : input.SessionLifetimeInMinutes;
@@ -190,7 +197,8 @@ export class EmbedSessions {
         ...(virtualNamespace ? { virtualNamespace } : {}), tags, authorizedResources, experience, allowedDomains: domains,
         origin: this.policy.origins.get(current.config.embedOriginId!)!, configRevision: current.revision, revisions: current.revisions, durationMinutes: Number(minutes), request: input };
       if (domains.includes(grant.origin)) embedFailure('EMBED_ORIGIN_DENIED', 403);
-      this.features(current.config, grant); return grant;
+      this.features(current.config, grant);
+      return { ...grant, surface: resolveEmbedSurface(current.config, experience, user.role, input.Surface) };
     });
     await this.authorize(await this.context(snapshot), snapshot);
     const id = randomBytes(24).toString('base64url'), nonce = randomBytes(32).toString('base64url'), key = this.configured();
@@ -203,7 +211,8 @@ export class EmbedSessions {
         [id, snapshot.tenantId, snapshot.namespaceId, snapshot.issuerId, key.id, JSON.stringify(snapshot), digest(bootstrap), bootstrapExpiresAt]);
     });
     return { sessionId: id, EmbedUrl: `${snapshot.origin}/embed/sessions/${id}#bootstrap=${bootstrap}`, bootstrapExpiresAt: new Date(bootstrapExpiresAt).toISOString(),
-      SessionLifetimeInMinutes: snapshot.durationMinutes, configRevision: snapshot.configRevision };
+      SessionLifetimeInMinutes: snapshot.durationMinutes, configRevision: snapshot.configRevision,
+      ...(input.Surface === undefined ? {} : { Surface: input.Surface }) };
   }
   async shell(id: string) {
     return this.database.transaction(async c => {
@@ -211,7 +220,7 @@ export class EmbedSessions {
       if (Number(row.redeemed)) embedFailure('EMBED_BOOTSTRAP_REPLAY', 401);
       if (Number(row.bootstrap_expires_at) <= this.clock()) embedFailure('EMBED_BOOTSTRAP_EXPIRED', 401);
       const config = (await this.configuration(c, grant)).config;
-      return { sessionId: id, allowedDomains: grant.allowedDomains, appearance: config.appearance,
+      return { sessionId: id, surface: grant.surface, allowedDomains: grant.allowedDomains, appearance: config.appearance,
         ...(grant.experience.kind === 'full-app' ? { fullApp: { landingRoute: grant.experience.landingRoute } } : {}),
         assets: Object.fromEntries([...this.policy.assets].filter(([, a]) => a.tenantId === grant.tenantId).map(([id, a]) => [id, a.dataUrl])) };
     });

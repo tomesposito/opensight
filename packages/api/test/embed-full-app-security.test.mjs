@@ -64,3 +64,35 @@ test('full-app shell loads the real app with nonce CSP and fits the gateway enve
   const input = event(new URL(issued.EmbedUrl).pathname, 'GET'); input.headers['accept-encoding'] = 'gzip, br';
   assert.equal(adaptGatewayRequest(input, runtimeEnv()).headers['accept-encoding'], 'gzip, br');
 });
+
+test('hidden authoring leaves direct analysis writes subject to the member grant', async t => {
+  const f = await fixture(t), hidden = { actions: { authoring: 'hidden' } };
+  const subject = { UserArn: f.arn('user', f.reader.identity.userId) };
+  for (const authoring of ['visible', 'disabled']) {
+    const response = await f.call('/api/embedding/sessions', 'POST', {
+      ...request('/dashboards'), ...subject, Surface: { actions: { authoring } },
+    }, `Bearer ${(await f.login()).token}`);
+    assert.equal(response.status, 403);
+    assert.equal(response.body.errorCode, 'EMBED_SURFACE_DENIED');
+  }
+  const author = await f.open('/dashboards', { Surface: hidden });
+  const reader = await f.open('/dashboards', { Surface: hidden, ...subject });
+  const current = await author.app('/analysis/analysis');
+  assert.equal(current.status, 200);
+  const change = { name: 'Updated through the API', definition: current.body.definition, datasetBindings: current.body.datasetBindings };
+  const headers = { 'if-match': `"${current.body.version}"` };
+  const denied = await reader.app('/api/v1/analyses/analysis', 'PUT', change, headers);
+  assert.equal(denied.status, 403); assert.equal(denied.body.errorCode, 'EMBED_AUTHOR_REQUIRED');
+  const saved = await author.app('/api/v1/analyses/analysis', 'PUT', change, headers);
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.equal((await author.app('/analysis/analysis')).body.name, change.name);
+});
+
+test('explicit full-app question controls require the AI capability and a configured provider', async t => {
+  const f = await fixture(t);
+  for (const [user, code] of [[{}, 'AI_NOT_CONFIGURED'], [{ UserArn: f.arn('user', f.reader.identity.userId) }, 'EMBED_SURFACE_DENIED']]) {
+    const result = await f.call('/api/embedding/sessions', 'POST', { ...request('/data'), ...user,
+      Surface: { actions: { question: 'disabled' } } }, `Bearer ${(await f.login()).token}`);
+    assert.equal(result.body.errorCode, code);
+  }
+});

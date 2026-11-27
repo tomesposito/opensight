@@ -1,3 +1,4 @@
+import { isEmbedSurface } from '@opensight/embedding-sdk/surface';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { useEffect, useRef, useState } from 'react';
@@ -14,11 +15,11 @@ const shell = JSON.parse(document.getElementById('opensight-embed-data')?.textCo
 let bootstrap = new URLSearchParams(window.location.hash.slice(1)).get('bootstrap') ?? '';
 window.history.replaceState(null, '', window.location.pathname);
 document.getElementById('opensight-embed-data')?.remove();
-function Question({ transport, columns }: { transport: EmbedTransport; columns: { name: string; type: string }[] }) {
+function Question({ transport, columns, disabled }: { disabled: boolean; transport: EmbedTransport; columns: { name: string; type: string }[] }) {
   const [question, setQuestion] = useState(''), [rows, setRows] = useState<Record<string, unknown>[]>([]), [busy, setBusy] = useState(false);
-  const ask = () => { if (busy || !question.trim()) return; setBusy(true); void transport.request<{ rows: Record<string, unknown>[] }>('question', { Question: question }).then(r => setRows(r.rows)).catch(() => {}).finally(() => setBusy(false)); };
+  const ask = () => { if (disabled || busy || !question.trim()) return; setBusy(true); void transport.request<{ rows: Record<string, unknown>[] }>('question', { Question: question }).then(r => setRows(r.rows)).catch(() => {}).finally(() => setBusy(false)); };
   return <section className="embed-question"><div role="search">
-    <label>Question<input value={question} onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); ask(); } }} placeholder="total amount by region" maxLength={1000} /></label><button type="button" onClick={ask} disabled={busy || !question.trim()}>Ask</button>
+    <label>Question<input disabled={disabled} value={question} onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); ask(); } }} placeholder="total amount by region" maxLength={1000} /></label><button type="button" onClick={ask} disabled={disabled || busy || !question.trim()}>Ask</button>
     <p>Use sum, total, average, min, max, or count followed by a field, optionally “by” another field.</p><p>Available fields: {columns.map(c => c.name).join(', ')}</p>
   </div>{rows.length > 0 && <table><thead><tr>{Object.keys(rows[0]!).map(k => <th key={k}>{k}</th>)}</tr></thead><tbody>{rows.map((row, i) => <tr key={i}>{Object.values(row).map((value, j) => <td key={j}>{String(value ?? '')}</td>)}</tr>)}</tbody></table>}</section>;
 }
@@ -42,12 +43,12 @@ function SessionFrame({ shell }: { shell: Shell }) {
   const ready = state === 'ready' && content, empty = ready && ['dashboard', 'visual'].includes(content.kind) && !content.visuals?.length;
   const frameState = ready ? empty ? 'empty' : 'ready' : state === 'expired' || state === 'saved' ? 'expired' : state === 'revoked' || state === 'error' ? 'error' : 'loading';
   const statusTitle = state === 'idle' ? 'Connect to view' : state === 'connecting' ? 'Connecting…' : state === 'unavailable' ? 'Connection unavailable' : state === 'saved' ? 'Analysis saved' : state === 'expired' ? 'Session expired' : state === 'revoked' ? 'Access revoked' : state === 'error' ? 'Embedded content unavailable' : state === 'loading' ? 'Loading embedded content' : undefined;
-  return <EmbedFrame state={frameState} statusTitle={statusTitle} appearance={shell.appearance} assets={shell.assets} title={content?.title} viewLabel={content?.kind === 'console' ? 'Analysis editor' : content?.kind === 'q' ? 'Q search' : 'Embedded view'} description="Session view · using your current data permissions"
+  return <EmbedFrame state={frameState} header={shell.surface.chrome.header} statusTitle={statusTitle} appearance={shell.appearance} assets={shell.assets} title={content?.title} viewLabel={content?.kind === 'console' ? 'Analysis editor' : content?.kind === 'q' ? 'Q search' : 'Embedded view'} description="Session view · using your current data permissions"
     statusAction={['idle', 'unavailable'].includes(state) ? <button type="button" onClick={() => { void transport.current?.connect?.().catch(() => {}); }}>Connect</button> : undefined}
     detail={['idle', 'unavailable'].includes(state) ? 'Connect to check access and load current data. Idle views hide their data after 45 seconds.' : state === 'connecting' ? 'The workspace may take a moment to wake up.' : state === 'revoked' ? 'Access has been revoked. Request a new session from your application.' : state === 'saved' ? 'Analysis saved. Request a new session to continue editing.' : state === 'expired' ? 'This session has expired. Request a new session from your application.' : undefined}>
-    {ready && content.kind === 'q' && transport.current && <Question transport={transport.current} columns={content.columns ?? []} />}
-    {ready && content.kind === 'console' && transport.current && <EmbeddedAuthor initial={content as ConsoleContent} transport={transport.current} />}
-    {ready && ['dashboard', 'visual'].includes(content.kind) && transport.current && <EmbeddedDashboard initial={content as DashboardContent} transport={transport.current} onState={value => { readerState.current = value; }} onContent={setContent} />}
+    {ready && content.kind === 'q' && shell.surface.actions.question !== 'hidden' && transport.current && <Question disabled={shell.surface.actions.question === 'disabled'} transport={transport.current} columns={content.columns ?? []} />}
+    {ready && content.kind === 'console' && transport.current && <EmbeddedAuthor authoring={shell.surface.actions.authoring} initial={content as ConsoleContent} transport={transport.current} />}
+    {ready && ['dashboard', 'visual'].includes(content.kind) && transport.current && <EmbeddedDashboard actions={shell.surface.actions} initial={content as DashboardContent} transport={transport.current} onState={value => { readerState.current = value; }} onContent={setContent} />}
   </EmbedFrame>;
 }
-createRoot(document.getElementById('root')!).render(shell ? <SessionFrame shell={shell} /> : <EmbedFrame state="error" />);
+createRoot(document.getElementById('root')!).render(shell && isEmbedSurface(shell.surface) ? <SessionFrame shell={shell} /> : <EmbedFrame state="error" />);
