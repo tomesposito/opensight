@@ -35,7 +35,7 @@ try {
       import { createSessionEmbeddingClient } from '/sdk/index.js'; window.events=[];
       window.handle=await createSessionEmbeddingClient({allowedEmbedOrigins:[${JSON.stringify(embed)}],getEmbedUrl:async()=>(${JSON.stringify(issued)})}).mount(document.querySelector('#app'),{onReady:()=>events.push('ready'),onSaved:()=>events.push('saved'),onAuthorizationRevoked:()=>events.push('revoked')});
       </script></body></html>` });
-    if (url.origin === host && /^\/sdk\/(index|session)\.js$/.test(url.pathname)) return route.fulfill({ contentType: 'text/javascript', body: await readFile(new URL(`../../embedding-sdk/dist/${url.pathname.split('/').at(-1)}`, import.meta.url), 'utf8') });
+    if (url.origin === host && /^\/sdk\/(index|session|surface)\.js$/.test(url.pathname)) return route.fulfill({ contentType: 'text/javascript', body: await readFile(new URL(`../../embedding-sdk/dist/${url.pathname.split('/').at(-1)}`, import.meta.url), 'utf8') });
     if (url.origin !== embed) { errors.push(`Unexpected external request: ${url.origin}`); return route.abort(); }
     requests.push(url.pathname);
     const headers = await req.allHeaders(), body = req.postData();
