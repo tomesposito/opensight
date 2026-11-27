@@ -1333,6 +1333,15 @@ large headers for requests that cannot be routed. Verify malformed paths,
 large headers, every supported route family and forbidden provenance in the
 actual CloudFront engine before deployment.
 
+**Authenticated viewer budget (frozen 2026-11-27):** Generate route-family
+dispatch and constant-time header-policy lookup from the same shared ingress
+contract. Preserve exact method/path acceptance, UTF-8 ceilings, duplicate and
+forged-principal rejection; do not replace the shared grammar with a second
+allowlist. Verify realistic browser headers, bounded authentication values and
+late-matching dashboard queries in the actual CloudFront engine with compute
+headroom, then repeat live browser acceptance. A local pass alone is not edge
+budget evidence.
+
 **SR4c compatible release automation (frozen 2026-10-11):** The operator approved
 public isolated CI, immutable release artifacts, private manual deployment via
 dedicated OIDC roles, and an independently tested access shutoff. Implement
