@@ -102,7 +102,9 @@ try {
     assert.equal(await analyses.count(), authoring === 'hidden' ? 0 : 1);
     if (authoring !== 'hidden') assert.equal(await analyses.isEnabled(), authoring === 'visible');
     assert.equal(await frame.getByLabel('Account', { exact: true }).count(), 0);
-    await page.screenshot({ path: `${output}/authoring-${authoring}.png` });
+    // Let the cross-origin compositor present the checked dashboard before capture.
+    await frame.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await page.screenshot({ path: `${output}/authoring-${authoring}.png`, animations: 'disabled' });
     checks.push(`Same tenant mounts ${authoring} authoring with no account menu`);
   }
   assert.deepEqual(errors, []);
