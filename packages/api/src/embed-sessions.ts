@@ -211,6 +211,7 @@ export class EmbedSessions {
       if (Number(row.bootstrap_expires_at) <= this.clock()) embedFailure('EMBED_BOOTSTRAP_EXPIRED', 401);
       const config = (await this.configuration(c, grant)).config;
       return { sessionId: id, allowedDomains: grant.allowedDomains, appearance: config.appearance,
+        ...(grant.experience.kind === 'full-app' ? { fullApp: { landingRoute: grant.experience.landingRoute } } : {}),
         assets: Object.fromEntries([...this.policy.assets].filter(([, a]) => a.tenantId === grant.tenantId).map(([id, a]) => [id, a.dataUrl])) };
     });
   }
@@ -240,6 +241,17 @@ export class EmbedSessions {
       return { ...g, id, expiresAt: Number(row.expires_at), parentOrigin: String(row.parent_origin), channelId: String(row.channel_id) };
     });
     const context = await this.context(session); await this.authorize(context, session); return { session, context };
+  }
+  /** Full-app author writes use the standalone CAS path (no security revision
+   * bump). Still check embed revocation/config/key/expiry in the commit transaction;
+   * a request admitted before revocation cannot commit afterwards. */
+  protectAppWrites(context: TenantContext, id: string, credential: string): void {
+    this.metadata.guardWrites(context, async c => {
+      const row = await this.load(c, id), grant = await this.check(c, row);
+      if (grant.experience.kind !== 'full-app' || grant.anonymous || grant.tenantId !== context.tenantId || grant.namespaceId !== context.namespaceId || grant.userId !== context.userId) embedFailure('EMBED_SCOPE_DENIED', 403);
+      if (!/^[A-Za-z0-9_-]{43}$/.test(credential) || !row.credential_hash || !equal(digest(credential), String(row.credential_hash))) embedFailure('INVALID_EMBED_TOKEN', 401);
+      if (!Number(row.redeemed) || Number(row.expires_at) <= this.clock()) embedFailure('EMBED_SESSION_EXPIRED', 401);
+    });
   }
   async revoke(context: TenantContext, id: string): Promise<void> {
     this.metadata.assertContext(context);

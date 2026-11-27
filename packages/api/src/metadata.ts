@@ -28,6 +28,7 @@ function resource(row: SqlRow): MetadataResource {
  * Operator access is a separate object/pool, never a tenant capability or HTTP field. */
 export class TenantMetadata {
   readonly #contexts = new WeakSet<TenantContext>();
+  readonly #writeGuards = new WeakMap<TenantContext, (connection: SqlConnection) => Promise<void>>();
   constructor(private readonly tenantDatabase: Database, private readonly membershipDatabase: Database, readonly usage?: HostedUsage) {}
 
   async authenticate<T>(credential: T, verify: (credential: T) => Promise<{ namespaceId: string; userId: string } | undefined>): Promise<TenantContext> {
@@ -48,6 +49,12 @@ export class TenantMetadata {
   assertContext(context: TenantContext): void {
     if (!context || !this.#contexts.has(context)) throw new MetadataError('TENANT_CONTEXT_REQUIRED', 401);
   }
+  /** Additional server-owned authority, checked inside the durable write lock. */
+  guardWrites(context: TenantContext, guard: (connection: SqlConnection) => Promise<void>): void {
+    this.assertContext(context);
+    if (this.#writeGuards.has(context)) throw new MetadataError('TENANT_CONTEXT_REQUIRED', 401);
+    this.#writeGuards.set(context, guard);
+  }
   private key(context: TenantContext, key: ResourceKey): ResourceKey {
     const normalized = resourceKey(key);
     if (normalized.ownerId && normalized.ownerId !== context.userId) missing();
@@ -59,6 +66,7 @@ export class TenantMetadata {
       // Serialize admission with tenant edits and lifecycle transitions on both engines.
       const tenants = await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING version", [context.tenantId]);
       if (!tenants.length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
+      if (writes) await this.#writeGuards.get(context)?.(c);
       const rows = await c.query('SELECT "authorization", policy, configuration FROM h1_revisions WHERE tenant_id = ? AND namespace_id = ?', scopeValues(context));
       const rev = rows[0];
       if (!rev || Number(rev.authorization) !== context.authorizationRevision) throw new MetadataError('AUTHORIZATION_REVISED', 403);

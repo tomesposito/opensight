@@ -13,6 +13,7 @@ import { Analytics, analyticsFromEnvironment } from './analytics.js';
 import { AnalyticsStore, initializeAnalytics } from './analytics-store.js';
 import { EmbedSessions, embedSessionKey } from './embed-sessions.js';
 import { EmbedContent } from './embed-content.js';
+import { EmbedApp } from './embed-app.js';
 import { EmbedSources } from './embed-sources.js';
 import { embedSessionRoute, type EmbedResult } from './embed-session-routes.js';
 import { loadBudgets } from './budget-store.js';
@@ -240,7 +241,8 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
   const digests = new DigestStore(jobs, renderer);
   const v1 = new V1Routes(data, options.env ?? process.env, { invocation: !!options.invocation, analytics, durable: invocation?.v1, digests, auditDatabase: options.membershipDatabase, ask: (request, response, context, recheck) => ai.ask(request, response, context, recheck) });
   const ownership = new JobOwnership(jobs, renderer), scheduler = new Scheduler(() => runner.tick());
-  const sessions = new EmbedSessions(options.membershipDatabase, metadata, policy, embedSessionKey(options.env ?? process.env), async (context, grant) => { await billingService?.expireTrials(); billingService?.assertAccess(context.tenantId); await embedContent.authorize(context, grant); });
+  const embedApp = new EmbedApp(embedContent, data, ai, v1, invocation?.embedResult);
+  const sessions = new EmbedSessions(options.membershipDatabase, metadata, policy, embedSessionKey(options.env ?? process.env), async (context, grant) => { await billingService?.expireTrials(); billingService?.assertAccess(context.tenantId); await embedContent.authorize(context, grant); if (grant.experience.kind === 'full-app') await embedApp.authorize(context, grant); });
   await sessions.initialize(!options.invocation);
   const provisioning = new HostedProvisioning(options.membershipDatabase, config, tenantMail, clock, ownership, analytics, invocation?.invitations);
   if (signupCfg.enabled && (!billingService || !billingService.trialConfigured || !mail.configured)) throw new MetadataError('SIGNUP_CONFIG_INVALID', 503);
@@ -502,6 +504,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       if (options.invocation && !['/api/session', '/api/auth/switch', '/api/auth/logout', '/api/namespaces', '/api/users', '/api/groups'].includes(path) && !invitationPath.test(path) && !/^\/api\/(?:namespaces\/[A-Za-z0-9_-]+\/)?ideas$/.test(path) && !invocation?.allows(path)) throw new MetadataError('SERVERLESS_STORAGE_REQUIRED', 503);
       if (await unsubscribeRoute(request, response, path, digests)) return;
       if (await invocation?.embedOperation?.(request, response, path, sessions)) return;
+      if (await embedApp.route(request, response, path, sessions)) return;
       if (await embedSessionRoute(request, response, path, sessions, embedContent, invocation?.embedResult, invocation?.resultMaxBytes, invocation?.idleReconnect)) return;
       // Every other request, including unknown and legacy routes, must verify first.
       const verified = async (req: IncomingMessage) => {
