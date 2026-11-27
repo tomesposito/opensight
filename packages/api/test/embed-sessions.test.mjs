@@ -131,3 +131,17 @@ test('H6 resolves each session surface within the tenant, experience, feature an
   const narrowed = await f.issue(app);
   assert.equal((await f.sessions.shell(narrowed.sessionId)).surface.chrome.header, 'hidden');
 });
+
+test('H6 rechecks the persisted surface and derives defaults for grants issued before #337', async t => {
+  const f = await sessionFixture(t), old = await f.issue(), r = await f.redeem(old);
+  const editStored = (id, change) => f.db.transaction(async c => {
+    const [row] = await c.query('SELECT grant_body FROM h6_sessions WHERE session_id = ?', [id]);
+    const grant = JSON.parse(row.grant_body); change(grant);
+    await c.query('UPDATE h6_sessions SET grant_body = ? WHERE session_id = ?', [JSON.stringify(grant), id]);
+  });
+  await editStored(old.sessionId, grant => { delete grant.surface; });
+  assert.equal((await f.sessions.verify(old.sessionId, r.credential)).session.surface.actions.authoring, 'hidden');
+  const bound = await f.issue(request({ Surface: { chrome: { header: 'disabled' } } })), active = await f.redeem(bound);
+  await editStored(bound.sessionId, grant => { grant.surface.chrome.header = 'visible'; });
+  await assert.rejects(f.sessions.verify(bound.sessionId, active.credential), { code: 'EMBED_SESSION_REVOKED' });
+});

@@ -1,3 +1,4 @@
+import { isSurfaceDeclaration } from '@opensight/embedding-sdk/surface';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { method, send } from './automation-routes.js';
 import { readBody } from './query.js';
@@ -28,7 +29,10 @@ export class EmbedApp {
       if (route.path.includes('/source/')) await this.data.data.schema(context, route.id);
       else await this.data.prep.describe(context, route.id);
     }
-    if (route.area === 'ask' && !(await this.ai.settings.status(context)).configured) embedFailure('AI_NOT_CONFIGURED', 503);
+    const declaration = grant.request.Surface;
+    const declaresQuestions = !location && isSurfaceDeclaration(declaration)
+      && (declaration.actions?.question === 'visible' || declaration.actions?.question === 'disabled');
+    if ((route.area === 'ask' || declaresQuestions) && !(await this.ai.settings.status(context)).configured) embedFailure('AI_NOT_CONFIGURED', 503);
   }
   async route(request: IncomingMessage, response: ServerResponse, path: string, sessions: EmbedSessions): Promise<boolean> {
     const match = /^\/api\/embed\/sessions\/([A-Za-z0-9_-]{32})\/app(\/.*)$/.exec(path);

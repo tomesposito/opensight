@@ -28,8 +28,8 @@ export function resolveEmbedSurface(config: TenantEmbedConfig, experience: Embed
     actions: {
       authoring: state(declaration.actions?.authoring, author && ceiling.actions.includes('authoring')),
       filtering: state(declaration.actions?.filtering, reader && config.features.filtering && ceiling.actions.includes('filtering')),
-      parameterControls: state(declaration.actions?.parameterControls, reader && config.features.parameterControls && ceiling.actions.includes('parameterControls')),
-      question: state(declaration.actions?.question, experience.kind === 'q' && ceiling.actions.includes('question')),
+      parameterControls: state(declaration.actions?.parameterControls, (reader || app && config.features.registeredDashboards) && config.features.parameterControls && ceiling.actions.includes('parameterControls')),
+      question: state(declaration.actions?.question, (experience.kind === 'q' || app && hasCapability(role, 'ai')) && ceiling.actions.includes('question')),
     },
     chrome: { header: state(declaration.chrome?.header, ceiling.chrome.includes('header')) },
   };
