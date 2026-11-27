@@ -7,6 +7,9 @@ import { Author } from '../build/test/Author.js';
 import { AppNavigation } from '../build/test/AppNavigation.js';
 import { fixture, prepared, input } from '../../api/test/embed-full-app-helpers.mjs';
 import { embedAppClient } from '../build/test/embed-app-client.js';
+import { AskOPage } from '../build/test/AskOPage.js';
+import { AccessProvider } from '../build/test/access.js';
+import { OEntry } from '../build/test/OEntry.js';
 
 test('full-app App opens real Author, edits and saves twice, then navigates under the same HTTP session', async t => {
   const f = await fixture(t); await prepared(f); const active = await f.open('/analyses/author');
@@ -43,4 +46,29 @@ test('full-app App opens real Author, edits and saves twice, then navigates unde
   await act(() => ui.root.findByType(AppNavigation).props.navigate({ page: 'data' }));
   await until(() => location.hash === '#/data');
   assert.equal((await f.call(`${active.root}/status`, 'GET', undefined, active.auth)).status, 200);
+});
+
+test('full-app Ask O gives AI readers dashboard-scoped questions without authoring requests', async t => {
+  const calls = [], definition = { dataSetIdentifierDeclarations: [{ identifier: 'data', dataSetArn: 'urn:opensight:dataset' }], sheets: [{ sheetId: 'sheet', visuals: [{ kpiVisual: {
+    visualId: 'total', chartConfiguration: { fieldWells: { values: [{ numericalMeasureField: { fieldId: 'amount', column: { dataSetIdentifier: 'data', columnName: 'amount' }, aggregationFunction: { simpleNumericalAggregation: 'SUM' } } }] } },
+  } }] }] };
+  const client = {
+    listDashboards: async () => [{ id: 'shared', name: 'Shared dashboard', version: 1 }],
+    getPublishedDashboard: async id => ({ id, name: 'Shared dashboard', version: 1, definition, errors: [] }),
+    listPrepSources: async () => { throw Error('Reader must not request authoring resources'); },
+    queryO: async (query, id) => { calls.push({ query, id }); return { rows: [Object.fromEntries(query.measures.map(m => [m.fieldId, 3]))] }; },
+  };
+  const previousAct = globalThis.IS_REACT_ACT_ENVIRONMENT; globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let ui;
+  t.after(async () => { if (ui) await act(() => ui.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = previousAct; });
+  await act(() => { ui = create(h(AccessProvider, { access: { mode: 'hosted', session: { id: 'reader', namespaceId: 'space', role: 'reader_ai', name: 'Reader' } } }, h(AskOPage, { client }))); });
+  assert.equal(ui.root.findAllByType('select').length, 1);
+  await act(() => ui.root.findByType('select').props.onChange({ target: { value: 'shared' } }));
+  const entry = ui.root.findByType(OEntry);
+  assert.equal(entry.props.dashboardId, 'shared');
+  await assert.rejects(entry.props.client.queryDataset('foreign', {}), /DASHBOARD_QUERY_REQUIRED/);
+  await act(() => ui.root.findByProps({ id: 'o-question' }).props.onChange({ target: { value: 'total amount' } }));
+  await act(() => ui.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+  assert.equal(calls.length, 1); assert.equal(calls[0].id, 'shared');
+  assert.equal(ui.root.findAllByProps({ role: 'alert' }).length, 0, JSON.stringify(ui.toJSON()));
 });

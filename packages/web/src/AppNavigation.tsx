@@ -135,6 +135,7 @@ export function AppNavigation({ route, navigate, recentPages = [], children }: {
       <nav className="app-nav" aria-label="Product">
         {(search || palette) && <button type="button" className="rail-search" aria-label="Search" onClick={() => { closeNavigation(); if (search) search.open(); else palette?.open(); }}><NavigationIcon name="Search" />Search</button>}
         {productSections.filter(item => visiblePage(access, item.page)).map(item => <AppLink key={item.title} to={{ page: item.page }} navigate={navigate} current={section === item.title}><NavigationIcon name={item.title} />{item.title}</AppLink>)}
+        {access.embed && visiblePage(access, 'ask-o') && link('ask-o')}
         <AppLink to={{ page: 'ideas' }} navigate={navigate} current={section === 'Ideas'}><NavigationIcon name="Ideas" />Ideas</AppLink>
       </nav>
       {section === 'Analyses' && visiblePage(access, 'analyses') && <nav className="section-nav" aria-label="Analyses"><AppLink to={{ page: 'analyses' }} navigate={navigate} current={route?.page === 'analyses'}>My analyses</AppLink><AppLink to={{ page: 'author' }} navigate={navigate} current={route?.page === 'author'}>Author</AppLink></nav>}
