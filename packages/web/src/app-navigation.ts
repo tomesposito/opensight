@@ -84,7 +84,7 @@ export function resetRouteScroll(scope?: { scrollTo?: (x: number, y: number) => 
 }
 export function parseRoute(hash: string): AppRoute | undefined {
   const analysis = /^#\/analyses\/author\/([A-Za-z0-9_-]{1,512})$/.exec(hash);
-  if (analysis) return { page: 'author', analysisId: analysis[1] }; 
+  if (analysis) return { page: 'author', analysisId: analysis[1] };
   const notebook = /^#\/notebooks\/([A-Za-z0-9_-]{1,128})$/.exec(hash);
   if (notebook) return { page: 'notebooks', notebookId: notebook[1] };
   const metric = /^#\/metrics\/([A-Za-z0-9_-]{1,512})$/.exec(hash);

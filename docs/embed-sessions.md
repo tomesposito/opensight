@@ -359,4 +359,3 @@ foreign credentials, RLS/CLS and compressed runtime delivery. Existing fixed
 experience tests remain unchanged.
 See [issue #336 verification and visual review](issue-336-gap-notes.md) for the
 local browser harness, implementation choices and screenshot comparison.
-

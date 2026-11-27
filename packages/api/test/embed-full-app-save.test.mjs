@@ -79,4 +79,3 @@ test('full-app commit guard catches revocation after request admission without c
   await assert.rejects(f.metadata.mutateAnalysis(verified.context, 'late-save', { definition: { AnalysisId: 'late-save', Name: 'Late', Definition: { Sheets: [] } }, datasets: [{ kind: 'prepared-dataset', id: 'prepared', ownerId: f.identity.userId }] }, 0, stamp), { code: 'EMBED_SESSION_REVOKED' });
   await assert.rejects(f.metadata.get(await f.context(), { kind: 'analysis', id: 'late-save' }), { code: 'RESOURCE_NOT_FOUND' });
 });
-

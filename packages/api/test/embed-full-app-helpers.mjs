@@ -31,4 +31,3 @@ export async function prepared(f) {
 }
 const definition = () => ({ dataSetIdentifierDeclarations: [{ identifier: 'data', dataSetArn: 'opensight:dataset:prepared' }], sheets: [{ sheetId: 'sheet', visuals: [] }] });
 export const input = () => ({ analysisId: 'working', name: 'Original', definition: definition(), datasetBindings: { data: { kind: 'prepared-dataset', id: 'prepared' } } });
-
