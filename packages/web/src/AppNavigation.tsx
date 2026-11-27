@@ -6,21 +6,34 @@ import { useGlobalSearch } from './GlobalSearch.js';
 import { BrandMark } from './BrandMark.js';
 
 export function useAppRoute() {
-  const [route, setRoute] = useState(() => parseRoute(typeof window === 'undefined' ? '' : window.location?.hash ?? ''));
+  const authorize = useAccess().embed?.authorizeRoute;
+  const [route, setRoute] = useState(() => authorize ? undefined : parseRoute(typeof window === 'undefined' ? '' : window.location?.hash ?? ''));
   const [entry, setEntry] = useState(0);
+  const [routeError, setRouteError] = useState<string>();
+  const [routePending, setRoutePending] = useState(!!authorize);
+  const epoch = useRef(0);
+  const check = (hash: string, commit: () => void) => {
+    const current = ++epoch.current;
+    if (!authorize) { commit(); return; }
+    setRoutePending(true); setRouteError(undefined);
+    void authorize(hash.slice(1)).then(() => { if (current === epoch.current) { setRoutePending(false); commit(); } }).catch((error: unknown) => {
+      if (current === epoch.current) { setRoutePending(false); setRoute(undefined); setRouteError(error instanceof Error ? error.message : 'EMBED_SCOPE_DENIED'); }
+    });
+  };
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const changed = () => {
-      setRoute(parseRoute(window.location.hash));
-      setEntry(value => value + 1);
-      // Browser back/forward lands on a new page: start at the top.
-      resetRouteScroll(window);
+      const hash = window.location.hash;
+      check(hash, () => { setRoute(parseRoute(hash)); setEntry(value => value + 1); resetRouteScroll(window); });
     };
+    if (authorize) changed();
     window.addEventListener('hashchange', changed);
-    return () => window.removeEventListener('hashchange', changed);
-  }, []);
+    return () => { epoch.current++; window.removeEventListener('hashchange', changed); };
+  }, [authorize]);
   const navigate = (next: AppRoute, replace = false) => {
     const hash = routeHash(next);
+    if (route && routeHash(route) === hash) return;
+    check(hash, () => {
     if (!replace && (!route || routeHash(route) !== hash)) setEntry(value => value + 1);
     if (typeof window !== 'undefined' && window.location?.hash !== hash) {
       // History changes do not reload either Vite or the file:// demo.
@@ -30,8 +43,9 @@ export function useAppRoute() {
       if (!replace) resetRouteScroll(window);
     }
     setRoute(next);
+    });
   };
-  return { route, navigate, entry };
+  return { route, navigate, entry, routePending, routeError };
 }
 export type Navigate = (route: AppRoute, replace?: boolean) => void;
 export function AppLink({ to, navigate, children, current, className }: { to: AppRoute; navigate: Navigate; children: ReactNode; current?: boolean; className?: string }) {
@@ -121,6 +135,7 @@ export function AppNavigation({ route, navigate, recentPages = [], children }: {
       <nav className="app-nav" aria-label="Product">
         {(search || palette) && <button type="button" className="rail-search" aria-label="Search" onClick={() => { closeNavigation(); if (search) search.open(); else palette?.open(); }}><NavigationIcon name="Search" />Search</button>}
         {productSections.filter(item => visiblePage(access, item.page)).map(item => <AppLink key={item.title} to={{ page: item.page }} navigate={navigate} current={section === item.title}><NavigationIcon name={item.title} />{item.title}</AppLink>)}
+        {access.embed && visiblePage(access, 'ask-o') && link('ask-o')}
         <AppLink to={{ page: 'ideas' }} navigate={navigate} current={section === 'Ideas'}><NavigationIcon name="Ideas" />Ideas</AppLink>
       </nav>
       {section === 'Analyses' && visiblePage(access, 'analyses') && <nav className="section-nav" aria-label="Analyses"><AppLink to={{ page: 'analyses' }} navigate={navigate} current={route?.page === 'analyses'}>My analyses</AppLink><AppLink to={{ page: 'author' }} navigate={navigate} current={route?.page === 'author'}>Author</AppLink></nav>}

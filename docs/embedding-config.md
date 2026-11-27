@@ -64,6 +64,25 @@ in force for data execution; config does not execute queries or add a data path.
 H6 embed grants bind to this config revision and are invalidated by replacements.
 This makes no claim of recalling an already delivered v1 snapshot.
 
+### Full-app sessions (#336)
+
+Registered `FullApp` sessions use these same tenant settings, exact parent
+origins and lifetime ceilings; there is no additional product flag. Enable
+`features.authoring` for analysis editing and preparation, and
+`features.registeredDashboards` for dashboard access. Both the landing route and
+each later operation check the relevant flag and the member's current
+capabilities/resource grants. Anonymous full-app issuance is unsupported even
+when `features.anonymous` is enabled. Ask O additionally requires an AI-capable
+member and configured provider.
+
+Changing any embedding configuration revision revokes existing full-app
+sessions just as it revokes the fixed experiences. Saving an analysis through
+the full-app editor keeps the session active because content saves follow the
+standalone versioned analysis-write path. See [full-app issuance and authority](embed-sessions.md#full-app-experience-336-d-102-q1)
+for the request shape, allowed routes and session behavior. Per-embed navigation
+visibility and additional theme tokens are subsequent D-102 work; presentation
+choices never grant server authority.
+
 ## Operator configuration
 
 Deployment configuration comes only from `OPENSIGHT_EMBEDDING_POLICY`, a JSON

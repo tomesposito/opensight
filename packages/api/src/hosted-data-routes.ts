@@ -11,12 +11,17 @@ import { sourceError } from './source-schema.js';
 import type { JobStore } from './job-store.js';
 
 export class HostedDataRoutes {
+  private readonly scopedOutput = new WeakMap<IncomingMessage, (context: TenantContext, status: number, body: unknown, recheck: () => Promise<void>) => Promise<{ status: number; body: unknown }>>();
   readonly prep: HostedPrep;
   constructor(readonly data: HostedData, jobs?: JobStore,
     private readonly result?: (request: IncomingMessage, context: TenantContext, status: number, body: unknown, recheck: () => Promise<void>) => Promise<{ status: number; body: unknown }>) { this.prep = new HostedPrep(data, jobs); }
   output(request: IncomingMessage, context: TenantContext, status: number, body: unknown, recheck: () => Promise<void>): Promise<{ status: number; body: unknown }> {
+    const scoped = this.scopedOutput.get(request);
+    if (scoped) return scoped(context, status, body, recheck);
     return this.result ? this.result(request, context, status, body, recheck) : Promise.resolve({ status, body });
   }
+  /** A verified embed publishes chunks to its own session, never a bearer reader. */
+  bindOutput(request: IncomingMessage, publish: NonNullable<ReturnType<typeof this.scopedOutput.get>>): void { this.scopedOutput.set(request, publish); }
   async route(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, recheck: () => Promise<void>): Promise<boolean> {
     this.data.begin(context, undefined, recheck);
     const revisions = await this.data.sources.metadata.revisions(context);

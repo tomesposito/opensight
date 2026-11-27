@@ -1390,7 +1390,7 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
   // datasets and removed datasets persist hygienic unresolved names; the built-in sample stays strict.
   const unresolvedAllowed = value.dataset !== undefined || value.noDataset === true;
   if (dataset !== undefined) {
-    if (!isObject(dataset) || !onlyKeys(dataset, ['id', 'name', 'columns', 'metrics']) || typeof dataset.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(dataset.id) || dataset.id === 'sales' || typeof dataset.name !== 'string' || !dataset.name.trim() || !Array.isArray(dataset.columns) || !dataset.columns.length || dataset.columns.length > 256 || value.bundle !== undefined) return fail();
+    if (!isObject(dataset) || !onlyKeys(dataset, ['id', 'name', 'columns', 'metrics']) || typeof dataset.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(dataset.id) || dataset.id === 'sales' || typeof dataset.name !== 'string' || !dataset.name.trim() || !Array.isArray(dataset.columns) || !dataset.columns.length || dataset.columns.length > 256) return fail();
     if (dataset.metrics !== undefined && (!Array.isArray(dataset.metrics) || dataset.metrics.some(m => !m || typeof m.id !== 'string' || !/^[A-Za-z0-9_-]{1,512}$/.test(m.id) || typeof m.name !== 'string' || typeof m.expression !== 'string' || !Number.isSafeInteger(m.version) || m.version < 1 || !validMetricFormat(m.format) || !['SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'DISTINCT_COUNT'].includes(m.defaultAggregation) || !Array.isArray(m.synonyms) || m.synonyms.some((s: unknown) => typeof s !== 'string')))) return fail();
     const names = new Set<string>();
     for (const c of dataset.columns) {
@@ -1403,6 +1403,13 @@ export function validateDraft(value: unknown): asserts value is AuthorDraft {
     const b = value.bundle;
     if (!isObject(b) || !onlyKeys(b, ['original', 'primaryPath', 'title', 'report', 'calculations', 'emptySheetId']) || typeof b.primaryPath !== 'string' || typeof b.title !== 'string' || (b.emptySheetId !== undefined && typeof b.emptySheetId !== 'string') || !Array.isArray(b.report) || !Array.isArray(b.calculations)) return fail();
     const summary = summarizeQsBundle(b.original as QsBundle);
+    if (dataset) {
+      // Hosted reopen retains the exact definition while binding its one prepared
+      // dataset. Imported multi-resource bundles cannot acquire a data binding.
+      const members = (b.original as QsBundle).members, resource = members[0]?.resource;
+      if (members.length !== 1 || resource?.resourceType !== 'analysis' || resource.definition.dataSetIdentifierDeclarations.length !== 1
+        || resource.definition.dataSetIdentifierDeclarations[0]!.dataSetArn !== `opensight:dataset:${dataset.id}`) return fail();
+    }
     if (!summary.memberCount || (b.primaryPath && !summary.members.some(m => m.path === b.primaryPath && (m.resourceType === 'analysis' || m.resourceType === 'dashboard'))) || !b.report.every(r => isObject(r) && typeof r.path === 'string' && typeof r.name === 'string' && Array.isArray(r.messages) && r.messages.every(m => typeof m === 'string')) || !b.calculations.every(c => isObject(c) && typeof c.name === 'string' && typeof c.expression === 'string' && (c.role === 'measure' || c.role === 'dimension'))) return fail();
   }
   // Retain calculations after removal without treating sample columns as active

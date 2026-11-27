@@ -1,8 +1,9 @@
 import { assembleResult } from './object-transfers.js';
 import { startOnDemandEmbed } from './embed-on-demand.js';
-export interface EmbedShell { sessionId: string; allowedDomains: string[]; resultMaxBytes?: number; idleReconnect?: boolean }
+export interface EmbedShell { sessionId: string; allowedDomains: string[]; resultMaxBytes?: number; idleReconnect?: boolean; fullApp?: { landingRoute: string } }
 export type SessionState = 'loading' | 'ready' | 'error' | 'expired' | 'revoked' | 'saved' | 'idle' | 'connecting' | 'unavailable';
 export interface EmbedTransport {
+  app?(path: string, init?: RequestInit): Promise<Response>;
   request<T>(action: 'content' | 'question' | 'analysis' | 'save', body?: unknown): Promise<T>;
   ready(): void; saved(): void; destroy(): void;
   connect?(): Promise<void>;
@@ -10,7 +11,7 @@ export interface EmbedTransport {
 /** No storage, cookies, URL credentials, or credential-bearing parent messages. */
 export function startEmbedTransport(shell: EmbedShell, bootstrapValue: string, changed: (state: SessionState) => void,
   connected: (transport: EmbedTransport) => Promise<void>, view: Window = window, fetcher: typeof fetch = fetch): EmbedTransport {
-  if (shell.idleReconnect) return startOnDemandEmbed(shell, bootstrapValue, changed, connected, view, fetcher);
+  if (shell.idleReconnect && !shell.fullApp) return startOnDemandEmbed(shell, bootstrapValue, changed, connected, view, fetcher);
   let bootstrap = bootstrapValue, credential = '', parentOrigin = '', channelId = '', expiresAt = 0, deadline = 0;
   let destroyed = false, terminal = false, initialized = false;
   let pendingStatus: Promise<void> | undefined;
@@ -86,6 +87,29 @@ export function startEmbedTransport(shell: EmbedShell, bootstrapValue: string, c
     })().catch(() => stop('error'));
   };
   const transport: EmbedTransport = {
+    ...(shell.fullApp ? { async app(path: string, init: RequestInit = {}): Promise<Response> {
+      if (!/^\/(?:api\/[A-Za-z0-9_/-]+|analysis\/[A-Za-z0-9_-]+|route|session)$/.test(path) || path.includes('//')) throw new Error('EMBED_SCOPE_DENIED');
+      if (destroyed || terminal || !credential || Date.now() >= expiresAt || Date.now() >= deadline) { stop('revoked'); throw new Error('EMBED_UNAVAILABLE'); }
+      const controller = new AbortController(); controllers.add(controller);
+      const timeout = view.setTimeout(() => controller.abort(), 30000);
+      try {
+        const headers = new Headers(init.headers); headers.set('Authorization', `Embed ${credential}`);
+        const response = await fetcher(`/api/embed/sessions/${shell.sessionId}/app${path}`, { ...init, headers, credentials: 'omit', cache: 'no-store', redirect: 'error', signal: init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal });
+        if (destroyed || terminal) throw new Error('EMBED_UNAVAILABLE');
+        if (!response.ok) {
+          const body = await response.clone().json().catch(() => ({})) as { errorCode?: string };
+          if (['EMBED_SESSION_EXPIRED', 'EMBED_SESSION_REVOKED', 'EMBED_KEY_REVOKED', 'INVALID_EMBED_TOKEN', 'AUTHORIZATION_REVISED', 'TENANT_UNAVAILABLE', 'EMBED_SUBJECT_UNRESOLVED'].includes(body.errorCode ?? '')) failure(body.errorCode);
+        }
+        if (response.status === 202) {
+          if (!shell.resultMaxBytes) throw new Error('RESULT_TRANSPORT_REQUIRED');
+          const body = await assembleResult(await response.json(), shell.resultMaxBytes, path => call(path), () => {
+            if (destroyed || terminal || Date.now() >= expiresAt || Date.now() >= deadline) throw new Error('EMBED_UNAVAILABLE');
+          });
+          return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        return response;
+      } finally { view.clearTimeout(timeout); controllers.delete(controller); }
+    } } : {}),
     async request<T>(action: 'content' | 'question' | 'analysis' | 'save', body?: unknown): Promise<T> {
       if (!credential || Date.now() >= expiresAt || Date.now() >= deadline) { stop('revoked'); throw new Error('EMBED_UNAVAILABLE'); }
       return call<T>(action, body);

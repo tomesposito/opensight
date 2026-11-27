@@ -85,4 +85,4 @@ export function createEmbeddingClient(options: EmbeddingClientOptions) {
 }
 
 export { createSessionEmbeddingClient } from './session.js';
-export type { GenerateEmbedUrlForRegisteredUser, GenerateEmbedUrlForAnonymousUser, ExperienceConfiguration, SessionEmbedUrl, SessionEmbeddingOptions, SessionCallbacks } from './session.js';
+export type { GenerateEmbedUrlForRegisteredUser, GenerateEmbedUrlForAnonymousUser, ExperienceConfiguration, FullAppLandingRoute, SessionEmbedUrl, SessionEmbeddingOptions, SessionCallbacks } from './session.js';

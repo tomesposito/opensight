@@ -1,7 +1,6 @@
 import { metricFormatting } from './governed-metrics.js';
 import { QSidePanel } from './QSidePanel.js';
-import { emptyDraft } from './authoring.js';
-import { normalizeVisual } from './compiler.js';
+import { publishedQuestionDraft } from './published-question.js';
 import { allowed, useAccess, type Session } from './access.js';
 import { useEffect, useMemo, useState } from 'react';
 import type { createApiClient } from './api-client.js';
@@ -35,17 +34,7 @@ export function PublishedDashboard({ id, client, navigate }: { id: string; clien
 }
 function PublishedContent({ value, client }: { value: Definition; client: ReaderClient }) {
   const preview = useMemo(() => buildApiPreview(value, 'dashboard', []), [value]);
-  const questionDraft = useMemo(() => {
-    const columns = new Map<string, { name: string; type: 'STRING' | 'DATETIME' | 'DECIMAL' }>();
-    for (const sheet of preview.sheets) for (const visual of sheet.visuals) {
-      try {
-        const model = normalizeVisual(visual.source, visual.definition, visual.path);
-        for (const field of [...model.dimensions, ...(model.trendDimension ? [model.trendDimension] : [])]) columns.set(field.column, { name: field.column, type: field.dateGranularity ? 'DATETIME' : 'STRING' });
-        for (const field of [...model.measures, ...(model.targetMeasure ? [model.targetMeasure] : [])]) columns.set(field.column, { name: field.column, type: 'DECIMAL' });
-      } catch { /* Unsupported visuals retain their published diagnostics. */ }
-    }
-    return { ...emptyDraft(), title: value.name, dataset: { id: value.id, name: value.name, columns: [...columns.values()].filter(c => !c.name.startsWith('__metric_')), metrics: value.metrics } };
-  }, [preview, value]);
+  const questionDraft = useMemo(() => publishedQuestionDraft(value), [value]);
   const questionClient = useMemo(() => ({ dataset: questionDraft.dataset, queryO: client.queryO,
     queryDataset: () => Promise.reject(new Error('DASHBOARD_QUERY_REQUIRED: Reader questions must use the dashboard-scoped O endpoint.')),
   }), [client, questionDraft]);

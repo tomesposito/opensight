@@ -6,12 +6,15 @@ import { defaultEmbedConfig, validateEmbedConfig, type EmbedPolicy, type TenantE
 import { MetadataError, type Database, type SqlConnection, type SqlRow } from './metadata-db.js';
 import { identifier, object } from './metadata-resources.js';
 import { type TenantContext, TenantMetadata, type Revisions } from './metadata.js';
+import { fullAppLocation, appFeature, appRole, type AppFeatures } from './embed-app-profile.js';
 
 export function embedFailure(code = 'EMBED_REQUEST_INVALID', status = 400): never { throw new MetadataError(code, status); }
 export type EmbedExperience = { kind: 'dashboard' | 'visual'; dashboardId: string; visualId?: string; sheetId?: string }
-  | { kind: 'q'; datasetId: string } | { kind: 'console'; analysisId?: string };
+  | { kind: 'q'; datasetId: string } | { kind: 'console'; analysisId?: string }
+  | { kind: 'full-app'; landingRoute: string };
 export type EmbedInteractionFeatures = Pick<TenantEmbedConfig['features'], 'filtering' | 'parameterControls'>;
 export interface SessionGrant {
+  appFeatures?: AppFeatures;
   interactionFeatures?: EmbedInteractionFeatures;
   tenantId: string; namespaceId: string; issuerId: string; userId: string; anonymous: boolean;
   virtualNamespace?: string; tags: Record<string, string>; authorizedResources: string[];
@@ -63,8 +66,9 @@ function arn(value: unknown, namespaceId: string, kind: string): string {
   return identifier(value.slice(prefix.length));
 }
 export function parseExperience(value: unknown): EmbedExperience {
-  const r = object(value, ['Dashboard', 'DashboardVisual', 'QSearchBar', 'QuickSightConsole']);
+  const r = object(value, ['Dashboard', 'DashboardVisual', 'QSearchBar', 'QuickSightConsole', 'FullApp']);
   if (Object.keys(r).length !== 1) embedFailure();
+  if (r.FullApp) return { kind: 'full-app', landingRoute: fullAppLocation(object(r.FullApp, ['InitialPath']).InitialPath, true).path };
   if (r.Dashboard) return { kind: 'dashboard', dashboardId: identifier(object(r.Dashboard, ['InitialDashboardId']).InitialDashboardId) };
   if (r.DashboardVisual) {
     const v = object(object(r.DashboardVisual, ['InitialDashboardVisualId']).InitialDashboardVisualId, ['DashboardId', 'SheetId', 'VisualId']);
@@ -102,8 +106,9 @@ export class EmbedSessions {
     if (!row) embedFailure('EMBED_SUBJECT_UNRESOLVED', 403);
     return object(JSON.parse(String(row.body)));
   }
-  private async configuration(c: SqlConnection, context: Pick<TenantContext, 'tenantId' | 'namespaceId'>) {
-    const active = await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING version", [context.tenantId]);
+  private async configuration(c: SqlConnection, context: Pick<TenantContext, 'tenantId' | 'namespaceId'>, lockTenant = true) {
+    const active = await c.query(lockTenant ? "UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING version"
+      : "SELECT version FROM h1_tenants WHERE tenant_id = ? AND state = 'active'", [context.tenantId]);
     if (!active.length) embedFailure('EMBED_SESSION_REVOKED', 401);
     const row = (await c.query('SELECT * FROM h5_embedding_config WHERE tenant_id = ? AND namespace_id = ?', [context.tenantId, context.namespaceId]))[0];
     const config = validateEmbedConfig(row ? JSON.parse(String(row.body)) : defaultEmbedConfig(), context.tenantId, this.policy);
@@ -113,21 +118,26 @@ export class EmbedSessions {
   }
   private features(config: TenantEmbedConfig, g: SessionGrant): void {
     const e = g.experience;
+    if (e.kind === 'full-app') {
+      if (g.anonymous) embedFailure('EMBED_FEATURE_UNSUPPORTED', 422);
+      appFeature(config.features, fullAppLocation(e.landingRoute, true).area);
+    }
     if (g.anonymous && !config.features.anonymous || e.kind === 'console' && !config.features.authoring
       || !g.anonymous && (e.kind === 'dashboard' && !config.features.registeredDashboards || e.kind === 'visual' && !config.features.registeredVisuals)) embedFailure('EMBED_FEATURE_UNSUPPORTED', 422);
   }
-  private async check(c: SqlConnection, row: SqlRow): Promise<SessionGrant> {
+  private async check(c: SqlConnection, row: SqlRow, lockTenant = true): Promise<SessionGrant> {
     await this.checkKey(c, String(row.key_id));
     if (Number(row.revoked)) embedFailure('EMBED_SESSION_REVOKED', 401);
-    const g = JSON.parse(String(row.grant_body)) as SessionGrant, current = await this.configuration(c, g);
+    const g = JSON.parse(String(row.grant_body)) as SessionGrant, current = await this.configuration(c, g, lockTenant);
     if (current.revision !== g.configRevision || JSON.stringify(current.revisions) !== JSON.stringify(g.revisions)) embedFailure('EMBED_SESSION_REVOKED', 401);
     await this.membership(c, g.tenantId, g.namespaceId, g.issuerId);
     const user = await this.membership(c, g.tenantId, g.namespaceId, g.userId);
+    if (g.experience.kind === 'full-app') appRole(user.role, fullAppLocation(g.experience.landingRoute, true).area);
     if (g.experience.kind === 'console' && (g.anonymous || !hasCapability(user.role as Parameters<typeof hasCapability>[0], 'build'))) embedFailure('EMBED_AUTHOR_REQUIRED', 403);
     if (g.allowedDomains.some(o => !this.policy.tenants.get(g.tenantId)?.allowedParentOrigins.includes(o))) embedFailure('EMBED_ORIGIN_DENIED', 403);
     this.features(current.config, g);
     // Authority comes from current validated config, including grants issued before #335.
-    return { ...g, interactionFeatures: { filtering: current.config.features.filtering, parameterControls: current.config.features.parameterControls } };
+    return { ...g, ...(g.experience.kind === 'full-app' ? { appFeatures: { authoring: current.config.features.authoring, registeredDashboards: current.config.features.registeredDashboards } } : {}), interactionFeatures: { filtering: current.config.features.filtering, parameterControls: current.config.features.parameterControls } };
   }
   private async context(g: SessionGrant): Promise<TenantContext> {
     const context = await this.metadata.authenticate(null, async () => ({ namespaceId: g.namespaceId, userId: g.userId }));
@@ -144,6 +154,7 @@ export class EmbedSessions {
       ? ['Namespace', 'AuthorizedResourceArns', 'ExperienceConfiguration', 'SessionLifetimeInMinutes', 'SessionTags', 'AllowedDomains']
       : ['UserArn', 'ExperienceConfiguration', 'SessionLifetimeInMinutes', 'AllowedDomains']);
     const experience = parseExperience(input.ExperienceConfiguration);
+    if (anonymous && experience.kind === 'full-app') embedFailure('EMBED_FEATURE_UNSUPPORTED', 422);
     const minutes = input.SessionLifetimeInMinutes === undefined ? 600 : input.SessionLifetimeInMinutes;
     if (!Number.isSafeInteger(minutes) || Number(minutes) < 15 || Number(minutes) > 600) embedFailure('EMBED_SESSION_LIMIT_EXCEEDED', 422);
     const userId = anonymous ? context.userId : input.UserArn === undefined ? context.userId : arn(input.UserArn, context.namespaceId, 'user');
@@ -153,7 +164,7 @@ export class EmbedSessions {
       virtualNamespace = identifier(input.Namespace);
       if (!Array.isArray(input.AuthorizedResourceArns) || !input.AuthorizedResourceArns.length || input.AuthorizedResourceArns.length > 25) embedFailure();
       authorizedResources = input.AuthorizedResourceArns.map(v => resourceArn(context.namespaceId, 'dashboard', arn(v, context.namespaceId, 'dashboard')));
-      if (experience.kind === 'console' || experience.kind === 'q') embedFailure('EMBED_FEATURE_UNSUPPORTED', 422);
+      if (experience.kind === 'console' || experience.kind === 'q' || experience.kind === 'full-app') embedFailure('EMBED_FEATURE_UNSUPPORTED', 422);
       if (!authorizedResources.includes(resourceArn(context.namespaceId, 'dashboard', experience.dashboardId))) embedFailure('EMBED_SCOPE_DENIED', 403);
       if (input.SessionTags !== undefined) {
         if (!Array.isArray(input.SessionTags) || input.SessionTags.length > 50) embedFailure();
@@ -166,6 +177,7 @@ export class EmbedSessions {
       const issuer = await this.membership(c, context.tenantId, context.namespaceId, context.userId);
       if ((anonymous || userId !== context.userId) && !hasCapability(issuer.role as Parameters<typeof hasCapability>[0], 'admin')) embedFailure('SECURITY_ADMIN_REQUIRED', 403);
       const user = await this.membership(c, context.tenantId, context.namespaceId, userId);
+      if (experience.kind === 'full-app') appRole(user.role, fullAppLocation(experience.landingRoute, true).area);
       if (experience.kind === 'console' && !hasCapability(user.role as Parameters<typeof hasCapability>[0], 'build')) embedFailure('EMBED_AUTHOR_REQUIRED', 403);
       if (Number(minutes) * 60 > current.config.maxSessionSeconds!) embedFailure('EMBED_SESSION_LIMIT_EXCEEDED', 422);
       let domains = current.config.allowedParentOrigins;
@@ -200,6 +212,7 @@ export class EmbedSessions {
       if (Number(row.bootstrap_expires_at) <= this.clock()) embedFailure('EMBED_BOOTSTRAP_EXPIRED', 401);
       const config = (await this.configuration(c, grant)).config;
       return { sessionId: id, allowedDomains: grant.allowedDomains, appearance: config.appearance,
+        ...(grant.experience.kind === 'full-app' ? { fullApp: { landingRoute: grant.experience.landingRoute } } : {}),
         assets: Object.fromEntries([...this.policy.assets].filter(([, a]) => a.tenantId === grant.tenantId).map(([id, a]) => [id, a.dataUrl])) };
     });
   }
@@ -229,6 +242,28 @@ export class EmbedSessions {
       return { ...g, id, expiresAt: Number(row.expires_at), parentOrigin: String(row.parent_origin), channelId: String(row.channel_id) };
     });
     const context = await this.context(session); await this.authorize(context, session); return { session, context };
+  }
+  /** Full-app author writes use the standalone CAS path (no security revision
+   * bump). Still check embed revocation/config/key/expiry in the commit transaction;
+   * a request admitted before revocation cannot commit afterwards. */
+  protectAppWrites(context: TenantContext, id: string, credential: string): void {
+    this.metadata.guardWrites(context, write => this.database.transaction(async c => {
+      // Hold the operator-owned key/session rows until the tenant write commits.
+      // The real metadata mutation still uses the restricted tenant pool on PG.
+      await c.query(this.database.dialect === 'postgres' ? 'SELECT key_id FROM h6_keys WHERE key_id = ? FOR SHARE'
+        : 'UPDATE h6_keys SET active = active WHERE key_id = ?', [this.configured().id]);
+      await c.query('UPDATE h6_sessions SET revoked = revoked WHERE session_id = ?', [id]);
+      const validate = async () => {
+        // checked() already holds the tenant row lock. Reacquiring it through the
+        // operator pool would deadlock; all validation predicates remain identical.
+        const row = await this.load(c, id), grant = await this.check(c, row, false);
+        if (grant.experience.kind !== 'full-app' || grant.anonymous || grant.tenantId !== context.tenantId || grant.namespaceId !== context.namespaceId || grant.userId !== context.userId) embedFailure('EMBED_SCOPE_DENIED', 403);
+        if (!/^[A-Za-z0-9_-]{43}$/.test(credential) || !row.credential_hash || !equal(digest(credential), String(row.credential_hash))) embedFailure('INVALID_EMBED_TOKEN', 401);
+        if (!Number(row.redeemed) || Number(row.expires_at) <= this.clock()) embedFailure('EMBED_SESSION_EXPIRED', 401);
+      };
+      // SQLite has one serialized connection and no SQL role boundary.
+      return write(validate, this.database.dialect === 'sqlite' ? c : undefined);
+    }));
   }
   async revoke(context: TenantContext, id: string): Promise<void> {
     this.metadata.assertContext(context);

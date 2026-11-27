@@ -1,5 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
+import { gzip } from 'node:zlib';
+import { promisify } from 'node:util';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { method, send } from './automation-routes.js';
 import { readBody } from './query.js';
@@ -15,14 +17,19 @@ export async function embedSessionRoute(request: IncomingMessage, response: Serv
     method(request, response, ['GET']);
     const payload = { ...await sessions.shell(shell[1]!), ...(resultMaxBytes === undefined ? {} : { resultMaxBytes }), ...(idleReconnect ? { idleReconnect: true } : {}) };
     let template: string;
-    try { template = await readFile(new URL('../../web/dist/opensight-embed-session.html', import.meta.url), 'utf8'); }
+    try { template = await readFile(new URL(payload.fullApp ? '../../web/dist/opensight-embed-app.html' : '../../web/dist/opensight-embed-session.html', import.meta.url), 'utf8'); }
     catch { return embedFailure('EMBED_RENDERER_NOT_BUILT', 503); }
     const data = JSON.stringify(payload).replaceAll('<', '\\u003c').replaceAll('&', '\\u0026').replaceAll('\u2028', '\\u2028').replaceAll('\u2029', '\\u2029');
     const nonce = randomBytes(24).toString('base64');
     const html = template.replace('<!--OPENSIGHT_EMBED_DATA-->', () => `<script type="application/json" id="opensight-embed-data">${data}</script>`).replaceAll('<script', `<script nonce="${nonce}"`);
+    // The complete app exceeds the gateway's inline envelope uncompressed.
+    // Compress only this new surface, preserving fixed-frame bytes and headers.
+    const compressed = payload.fullApp && /(?:^|,)\s*gzip\s*(?:,|$)/i.test(request.headers['accept-encoding'] ?? '');
+    const document = compressed ? await promisify(gzip)(html) : html;
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff',
+      ...(payload.fullApp ? { Vary: 'Accept-Encoding' } : {}), ...(compressed ? { 'Content-Encoding': 'gzip' } : {}),
       'Content-Security-Policy': `default-src 'none'; connect-src 'self'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors ${payload.allowedDomains.join(' ')}` });
-    response.end(html); return true;
+    response.end(document); return true;
   }
   const match = /^\/api\/embed\/sessions\/([A-Za-z0-9_-]{32})\/(redeem|status|content|question|analysis|save)$/.exec(path);
   if (!match) return false;

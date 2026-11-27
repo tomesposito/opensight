@@ -17,7 +17,7 @@ import { importParameter, serializeParameter, type AuthorParameter } from './par
 import { assembleQsBundle, parseBundleJson, parseQsBundle, summarizeQsBundle, ZIP_LIMITS } from '@opensight/bundle-parser/browser';
 import type { BundleDefinition, BundleSheet, BundleVisual, QsBundle } from '@opensight/bundle-parser';
 import { defaults, emptyDraft, serializeDraft, serializeVisual, grouped, noDimensions, singleMeasure, validateDraft, dataFields, calculationError, sheetParameters, multiplesOptionsValid } from './authoring.js';
-import type { AuthorDraft, AuthorSheet, AuthorVisual, CalculatedField, CategoryFilter, ImportResult, ImportedVisual, Placement, TooltipExtraField } from './authoring.js';
+import type { AuthorDataset, AuthorDraft, AuthorSheet, AuthorVisual, CalculatedField, CategoryFilter, ImportResult, ImportedVisual, Placement, TooltipExtraField } from './authoring.js';
 import { forecastConfigValid, type ForecastConfig } from './forecast.js';
 
 type Obj = Record<string, unknown>;
@@ -660,8 +660,8 @@ function rebind(value: unknown, identifier: string): void {
   Object.values(o).forEach(v => { if (v && typeof v === 'object') rebind(v, identifier); });
 }
 /** Match the original well wrapper and dataset identifiers when projecting edits. */
-function projectVisual(visual: AuthorVisual, raw: BundleVisual, calculations: readonly CalculatedField[] = []): BundleVisual {
-  const projected = serializeVisual(visual, false, calculations), body = obj(Object.values(projected)[0]), original = obj(Object.values(raw)[0]);
+function projectVisual(visual: AuthorVisual, raw: BundleVisual, calculations: readonly CalculatedField[] = [], dataset?: AuthorDataset): BundleVisual {
+  const projected = serializeVisual(visual, false, calculations, dataset), body = obj(Object.values(projected)[0]), original = obj(Object.values(raw)[0]);
   const originalWells = obj(obj(original.chartConfiguration).fieldWells), config = obj(body.chartConfiguration);
   const identifiers = new Map<string, string>();
   const collect = (value: unknown): void => {
@@ -705,20 +705,20 @@ function projectVisual(visual: AuthorVisual, raw: BundleVisual, calculations: re
   if (visual.kind === 'kpi' && Object.hasOwn(originalWells, 'kpiFieldWells')) config.fieldWells = { kpiFieldWells: config.fieldWells };
   return projected;
 }
-const usesRemappedDataset = (meta: ImportedVisual): boolean => meta.local && (!!meta.remapped || !meta.dataSets.every(d => d.arn === LOCAL_SALES_ARN));
-function exportVisual(v: AuthorVisual, raw: BundleVisual | undefined, calculations: readonly CalculatedField[]): BundleVisual {
+const usesRemappedDataset = (meta: ImportedVisual): boolean => meta.local && (!!meta.remapped || !meta.dataSets.every(d => d.arn === LOCAL_SALES_ARN || d.arn?.startsWith('opensight:dataset:')));
+function exportVisual(v: AuthorVisual, raw: BundleVisual | undefined, calculations: readonly CalculatedField[], dataset?: AuthorDataset, localIdentifier = LOCAL_IDENTIFIER): BundleVisual {
   if (!v.imported || !raw) {
-    const generated = serializeVisual(v, false, calculations);
+    const generated = serializeVisual(v, false, calculations, dataset);
     // Copies have no raw definition under their new identity. Keep their
     // dataset binding instead of inheriting the local serializer's default.
-    if (v.imported) rebind(generated, usesRemappedDataset(v.imported) ? LOCAL_IDENTIFIER : v.imported.dataSets[0]?.identifier ?? LOCAL_IDENTIFIER);
+    if (v.imported) rebind(generated, usesRemappedDataset(v.imported) ? localIdentifier : v.imported.dataSets[0]?.identifier ?? localIdentifier);
     return generated;
   }
   const meta = v.imported, baseline = meta.baseline;
-  const before = obj(Object.values(projectVisual(baseline, raw, calculations))[0]), after = obj(Object.values(projectVisual(v, raw, calculations))[0]);
+  const before = obj(Object.values(projectVisual(baseline, raw, calculations, dataset))[0]), after = obj(Object.values(projectVisual(v, raw, calculations, dataset))[0]);
   const originalBody = Object.values(raw)[0]!;
   const changedKind = !!meta.replaced;
-  const body = changedKind ? Object.values(serializeVisual(v, false, calculations))[0]! : patch(originalBody, before, after) as typeof originalBody;
+  const body = changedKind ? Object.values(serializeVisual(v, false, calculations, dataset))[0]! : patch(originalBody, before, after) as typeof originalBody;
   body.visualId = meta.visualId;
   if (!changedKind && v.title !== baseline.title && v.title.trim()) {
     // Rich/plain text are a union; a plain-title edit replaces that union, not its unknown siblings.
@@ -729,19 +729,19 @@ function exportVisual(v: AuthorVisual, raw: BundleVisual | undefined, calculatio
   }
   if (usesRemappedDataset(meta)) {
     // A remap intentionally replaces editable wells. The complete original resource is archived on export.
-    const generated = obj(Object.values(changedKind ? serializeVisual(v, true, calculations) : projectVisual(v, raw, calculations))[0]).chartConfiguration;
+    const generated = obj(Object.values(changedKind ? serializeVisual(v, true, calculations, dataset) : projectVisual(v, raw, calculations, dataset))[0]).chartConfiguration;
     const config = obj(body.chartConfiguration);
     config.fieldWells = copy(obj(generated).fieldWells); body.chartConfiguration = config;
-    rebind(config.fieldWells, LOCAL_IDENTIFIER);
-    if (v.pivotColumnSort) rebind(obj(config.sortConfiguration).columnSort, LOCAL_IDENTIFIER);
-    if (v.pivotRowSort) rebind(obj(config.sortConfiguration).rowSort, LOCAL_IDENTIFIER);
-    if (v.kpiTrendSort?.aggregation) rebind(obj(config.sortConfiguration).trendGroupSort, LOCAL_IDENTIFIER);
+    rebind(config.fieldWells, localIdentifier);
+    if (v.pivotColumnSort) rebind(obj(config.sortConfiguration).columnSort, localIdentifier);
+    if (v.pivotRowSort) rebind(obj(config.sortConfiguration).rowSort, localIdentifier);
+    if (v.kpiTrendSort?.aggregation) rebind(obj(config.sortConfiguration).trendGroupSort, localIdentifier);
     for (const wrapper of list(obj(config.sortConfiguration).categorySort)) {
-      if (obj(wrapper).aggregationSort !== undefined) rebind(obj(wrapper).aggregationSort, LOCAL_IDENTIFIER);
+      if (obj(wrapper).aggregationSort !== undefined) rebind(obj(wrapper).aggregationSort, localIdentifier);
     }
   }
   if (changedKind && !usesRemappedDataset(meta)) rebind(obj(body.chartConfiguration).fieldWells, meta.dataSets[0]?.identifier ?? 'sales_data');
-  return { [changedKind ? Object.keys(serializeVisual(v, true, calculations))[0]! : meta.variant]: body };
+  return { [changedKind ? Object.keys(serializeVisual(v, true, calculations, dataset))[0]! : meta.variant]: body };
 }
 function exportLayout(sheet: AuthorSheet, raw: BundleSheet): void {
   if (sheet.imported && !sheet.imported.sourceSheetId && equal(sheet.layout, sheet.imported.layout)) return;
@@ -784,6 +784,8 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
     const r = member.resource;
     if (r.resourceType !== 'analysis' && r.resourceType !== 'dashboard') continue;
     const d = r.definition, primary = member.path === origin.primaryPath;
+    const localIdentifier = draft.dataset ? d.dataSetIdentifierDeclarations[0]!.identifier : LOCAL_IDENTIFIER;
+    const localArn = draft.dataset ? `opensight:dataset:${draft.dataset.id}` : LOCAL_SALES_ARN;
     if (primary && draft.description !== undefined && draft.description !== d.opensightDescription) d.opensightDescription = draft.description;
     if (primary && draft.theme && !equal(draft.theme, d.opensightTheme)) d.opensightTheme = copy(draft.theme);
     const parameters = draft.parameters.filter(p => !p.memberPath || p.memberPath === member.path);
@@ -822,8 +824,8 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
         raw.parameterControls = [...projected, ...originals.filter(r => !baselineControls.some(c => c.importedId === obj(Object.values(obj(r))[0]).parameterControlId))];
       }
       if (raw.visuals !== undefined || sheet.visuals.length) raw.visuals = sheet.visuals.map(v => {
-        const result = exportVisual(v, raw.visuals?.find(r => Object.values(r)[0]?.visualId === v.imported?.visualId), draft.calculatedFields);
-        const identifier = v.imported ? usesRemappedDataset(v.imported) ? LOCAL_IDENTIFIER : v.imported.dataSets[0]?.identifier ?? LOCAL_IDENTIFIER : LOCAL_IDENTIFIER;
+        const result = exportVisual(v, raw.visuals?.find(r => Object.values(r)[0]?.visualId === v.imported?.visualId), draft.calculatedFields, draft.dataset, localIdentifier);
+        const identifier = v.imported ? usesRemappedDataset(v.imported) ? localIdentifier : v.imported.dataSets[0]?.identifier ?? localIdentifier : localIdentifier;
         exportInteractions(obj(Object.values(result)[0]), v, id => { const target = sheet.visuals.find(t => t.id === id); return target?.imported?.visualId ?? (id.startsWith('unresolved:') ? id.slice(11) : id); }, identifier, id => { const target = sheets.find(s => s.id === id); return target?.imported?.sheetId ?? (id.startsWith('unresolved:') ? id.slice(11) : id); });
         return result;
       });
@@ -862,18 +864,18 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
         return next.length ? [value] : [];
       });
     }
-    const needsLocal = sheets.some(s => s.controls.some(c => c.source?.local && c.source.dataSetIdentifier === LOCAL_IDENTIFIER) || s.visuals.some(v => !v.imported || usesRemappedDataset(v.imported)));
+    const needsLocal = sheets.some(s => s.controls.some(c => c.source?.local && c.source.dataSetIdentifier === localIdentifier) || s.visuals.some(v => !v.imported || usesRemappedDataset(v.imported)));
     if (needsLocal) {
-      if (d.dataSetIdentifierDeclarations.some(ds => ds.identifier === LOCAL_IDENTIFIER && ds.dataSetArn !== LOCAL_SALES_ARN)) throw new Error(`Cannot export: ${LOCAL_IDENTIFIER} is already bound to another dataset.`);
-      if (!d.dataSetIdentifierDeclarations.some(ds => ds.identifier === LOCAL_IDENTIFIER)) d.dataSetIdentifierDeclarations.push({ identifier: LOCAL_IDENTIFIER, dataSetArn: LOCAL_SALES_ARN });
+      if (d.dataSetIdentifierDeclarations.some(ds => ds.identifier === localIdentifier && ds.dataSetArn !== localArn)) throw new Error(`Cannot export: ${localIdentifier} is already bound to another dataset.`);
+      if (!d.dataSetIdentifierDeclarations.some(ds => ds.identifier === localIdentifier)) d.dataSetIdentifierDeclarations.push({ identifier: localIdentifier, dataSetArn: localArn });
       for (const sheet of d.sheets ?? []) for (const visual of sheet.visuals ?? []) {
         const authorSheet = sheets.find(s => (s.imported?.sheetId ?? s.id) === sheet.sheetId);
         const authorVisual = authorSheet?.visuals.find(v => (v.imported?.visualId ?? v.id) === Object.values(visual)[0]?.visualId);
-        if (authorVisual && !authorVisual.imported) rebind(visual, LOCAL_IDENTIFIER);
+        if (authorVisual && !authorVisual.imported) rebind(visual, localIdentifier);
       }
     }
     for (const sheet of sheets) for (const v of sheet.visuals) {
-      const meta = v.imported, identifier = meta?.local ? usesRemappedDataset(meta) ? LOCAL_IDENTIFIER : meta.dataSets[0]?.identifier ?? LOCAL_IDENTIFIER : meta?.dataSets[0]?.identifier ?? LOCAL_IDENTIFIER;
+      const meta = v.imported, identifier = meta?.local ? usesRemappedDataset(meta) ? localIdentifier : meta.dataSets[0]?.identifier ?? localIdentifier : meta?.dataSets[0]?.identifier ?? localIdentifier;
       const before = meta?.baseline.filters ?? [];
       if (!meta?.sourceVisualId && equal(before, v.filters) && !(meta && usesRemappedDataset(meta))) continue;
       const existing = d.filterGroups ?? [];
@@ -908,10 +910,10 @@ export function exportBundle(draft: AuthorDraft): QsBundle {
     if ((primary || sheets.some(s => s.visuals.some(v => !v.imported || v.imported.local))) && !equal(draft.calculatedFields, origin.calculations)) {
       const added = draft.calculatedFields.filter(f => !origin.calculations.some(c => c.name === f.name));
       if (added.length) {
-        let localIds = d.dataSetIdentifierDeclarations.filter(ds => ds.dataSetArn === LOCAL_SALES_ARN).map(ds => ds.identifier);
+        let localIds = d.dataSetIdentifierDeclarations.filter(ds => ds.dataSetArn === localArn).map(ds => ds.identifier);
         if (!localIds.length) {
-          if (d.dataSetIdentifierDeclarations.some(ds => ds.identifier === LOCAL_IDENTIFIER)) throw new Error(`Cannot export: ${LOCAL_IDENTIFIER} is already bound to another dataset.`);
-          d.dataSetIdentifierDeclarations.push({ identifier: LOCAL_IDENTIFIER, dataSetArn: LOCAL_SALES_ARN }); localIds = [LOCAL_IDENTIFIER];
+          if (d.dataSetIdentifierDeclarations.some(ds => ds.identifier === localIdentifier)) throw new Error(`Cannot export: ${localIdentifier} is already bound to another dataset.`);
+          d.dataSetIdentifierDeclarations.push({ identifier: localIdentifier, dataSetArn: localArn }); localIds = [localIdentifier];
         }
         d.calculatedFields = [...(d.calculatedFields ?? []), ...localIds.flatMap(dataSetIdentifier => added.map(({ name, expression }) => ({ name, expression, dataSetIdentifier })))];
       }
