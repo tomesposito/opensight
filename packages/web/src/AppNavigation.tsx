@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { useAccess } from './access.js';
-import { adminPages, dataPages, developerPages, pages, parseRoute, productSections, resetRouteScroll, routeHash, visiblePage, type AppRoute, type Page } from './app-navigation.js';
+import { adminPages, dataPages, developerPages, pages, parseRoute, productSections, resetRouteScroll, routeSurface, routeHash, visiblePage, type AppRoute, type Page } from './app-navigation.js';
 import { useCommandPalette } from './CommandPalette.js';
 import { useGlobalSearch } from './GlobalSearch.js';
 import { BrandMark } from './BrandMark.js';
@@ -49,6 +49,9 @@ export function useAppRoute() {
 }
 export type Navigate = (route: AppRoute, replace?: boolean) => void;
 export function AppLink({ to, navigate, children, current, className }: { to: AppRoute; navigate: Navigate; children: ReactNode; current?: boolean; className?: string }) {
+  const surface = routeSurface(useAccess(), to);
+  if (surface === 'hidden') return null;
+  if (surface === 'disabled') return <a role="link" aria-disabled="true" className={className}>{children}</a>;
   const click = (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     event.preventDefault(); navigate(to);
@@ -78,6 +81,10 @@ function NavigationIcon({ name }: { name: string }) {
 
 export function AppNavigation({ route, navigate, recentPages = [], children }: { route?: AppRoute; navigate: Navigate; recentPages?: readonly Page[]; children?: ReactNode }) {
   const access = useAccess(), section = route && pages[route.page].section;
+  const surface = access.embed?.surface;
+  const navigation = surface?.menus.navigation ?? 'visible';
+  const account = surface?.menus.account ?? 'visible';
+  const headerState = surface?.chrome.header ?? 'visible';
   const palette = useCommandPalette();
   const search = useGlobalSearch();
   const [navigationOpen, setNavigationOpen] = useState(false);
@@ -107,19 +114,19 @@ export function AppNavigation({ route, navigate, recentPages = [], children }: {
     : <AppLink key={page} to={{ page }} navigate={navigate} current={route?.page === page}>{pages[page].title}</AppLink>;
   const sectionPage = section === 'Admin' ? 'security' : productSections.find(item => item.title === section)?.page;
   return <>
-    <header ref={header} className="app-header product-header">
-      <button ref={toggle} className="navigation-toggle" type="button" aria-label="Toggle navigation" aria-expanded={navigationOpen} aria-controls="product-navigation" onClick={() => setNavigationOpen(open => !open)} onKeyDown={event => { if (navigationOpen && event.key === 'Escape') { event.preventDefault(); closeNavigation(); } }}><VectorIcon path="M4 7h16M4 12h16M4 17h16" size={18} /></button>
+    {headerState !== 'hidden' && <header inert={headerState === 'disabled'} aria-disabled={headerState === 'disabled' || undefined} ref={header} className="app-header product-header">
+      {navigation !== 'hidden' && <button disabled={navigation === 'disabled'} ref={toggle} className="navigation-toggle" type="button" aria-label="Toggle navigation" aria-expanded={navigationOpen} aria-controls="product-navigation" onClick={() => setNavigationOpen(open => !open)} onKeyDown={event => { if (navigationOpen && event.key === 'Escape') { event.preventDefault(); closeNavigation(); } }}><VectorIcon path="M4 7h16M4 12h16M4 17h16" size={18} /></button>}
       <AppLink className="brand" to={{ page: 'home' }} navigate={navigate}><span className="brand-mark" aria-hidden="true"><BrandMark size={22} /></span><span className="brand-wordmark">opensight</span></AppLink>
-      <nav className="breadcrumbs" aria-label="Breadcrumb">
+      {navigation !== 'hidden' && <nav inert={navigation === 'disabled'} aria-disabled={navigation === 'disabled' || undefined} className="breadcrumbs" aria-label="Breadcrumb">
         <AppLink to={{ page: 'home' }} navigate={navigate} current={route?.page === 'home'}>Home</AppLink>
         {route?.page !== 'home' && <>
           <span aria-hidden="true">/</span>
           {route && sectionPage && section !== pages[route.page].title && <><AppLink to={{ page: sectionPage }} navigate={navigate}>{section}</AppLink><span aria-hidden="true">/</span></>}
           <span className="header-caption" aria-current="page">{route ? pages[route.page].title : 'Page not found'}</span>
         </>}
-      </nav>
+      </nav>}
       {children}
-      <details className="account-menu hosted-account" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }} onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); } }}>
+      {account !== 'hidden' && <details inert={account === 'disabled'} aria-disabled={account === 'disabled' || undefined} className="account-menu hosted-account" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }} onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); } }}>
         <summary aria-label="Account"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M4 22v-2a8 8 0 0 1 16 0v2" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg><span className="account-label">Account</span></summary>
         <div className="account-panel">
           <strong>{access.mode === 'hosted' ? access.session?.name ?? 'Hosted workspace' : access.mode === 'local' ? 'Local workspace' : 'Public sample preview'}</strong>
@@ -128,10 +135,10 @@ export function AppNavigation({ route, navigate, recentPages = [], children }: {
           {access.mode === 'hosted' && <AppLink to={{ page: 'mcp-connections' }} navigate={navigate} current={route?.page === 'mcp-connections'}>MCP connections</AppLink>}
           {access.mode === 'hosted' && access.signOut && <button type="button" onClick={() => void access.signOut?.()}>Sign out</button>}
         </div>
-      </details>
-    </header>
+      </details>}
+    </header>}
     {navigationOpen && <button type="button" className="navigation-scrim" aria-label="Close navigation" onClick={closeNavigation} />}
-    <div id="product-navigation" className="product-navigation" data-open={navigationOpen} onKeyDown={event => { if (navigationOpen && event.key === 'Escape') { event.preventDefault(); closeNavigation(); } }}>
+    {navigation !== 'hidden' && <div inert={navigation === 'disabled'} aria-disabled={navigation === 'disabled' || undefined} id="product-navigation" className="product-navigation" data-open={navigationOpen} onKeyDown={event => { if (navigationOpen && event.key === 'Escape') { event.preventDefault(); closeNavigation(); } }}>
       <nav className="app-nav" aria-label="Product">
         {(search || palette) && <button type="button" className="rail-search" aria-label="Search" onClick={() => { closeNavigation(); if (search) search.open(); else palette?.open(); }}><NavigationIcon name="Search" />Search</button>}
         {productSections.filter(item => visiblePage(access, item.page)).map(item => <AppLink key={item.title} to={{ page: item.page }} navigate={navigate} current={section === item.title}><NavigationIcon name={item.title} />{item.title}</AppLink>)}
@@ -148,7 +155,7 @@ export function AppNavigation({ route, navigate, recentPages = [], children }: {
         <h2>Recents</h2><p className="recents-caption">Pages visited this session</p>
         {recentPages.length ? <nav aria-label="Recent pages">{recentPages.map(link)}</nav> : <p className="recents-empty">No recent pages yet.</p>}
       </section>
-    </div>
-    {section === 'Data' && <nav className="section-nav" aria-label="Data">{dataPages.filter(page => visiblePage(access, page)).map(link)}</nav>}
+    </div>}
+    {navigation !== 'hidden' && section === 'Data' && <nav inert={navigation === 'disabled'} aria-disabled={navigation === 'disabled' || undefined} className="section-nav" aria-label="Data">{dataPages.filter(page => visiblePage(access, page)).map(link)}</nav>}
   </>;
 }

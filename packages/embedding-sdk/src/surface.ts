@@ -22,3 +22,12 @@ export function isSurfaceDeclaration(value: unknown): value is SurfaceDeclaratio
       names.includes(key) && (state === 'visible' || state === 'hidden' || state === 'disabled'));
   });
 }
+
+/** Shells carry the full resolved profile. An incomplete shell cannot render. */
+export function isEmbedSurface(value: unknown): value is EmbedSurface {
+  if (!isSurfaceDeclaration(value)) return false;
+  return (Object.keys(surfaceNames) as (keyof EmbedSurface)[]).every(group => {
+    const entries = value[group];
+    return entries !== undefined && surfaceNames[group].every(key => Object.hasOwn(entries, key));
+  });
+}

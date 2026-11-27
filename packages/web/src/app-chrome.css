@@ -526,3 +526,7 @@
 .o-migration { flex-basis: 100%; min-width: 0; }
 .o-migration pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .o-migration summary { cursor: pointer; }
+
+.app-shell[data-embed-navigation="hidden"] { --app-rail: 0px; }
+.app-shell[data-embed-header="hidden"] { --app-band: 0px; }
+.app-shell[data-embed-navigation] [aria-disabled="true"] { opacity: .65; }

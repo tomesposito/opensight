@@ -112,3 +112,34 @@ test('full-app Ask O gives AI readers dashboard-scoped questions without authori
   assert.equal(calls.length, 1); assert.equal(calls[0].id, 'shared');
   assert.equal(ui.root.findAllByProps({ role: 'alert' }).length, 0, JSON.stringify(ui.toJSON()));
 });
+
+test('same tenant and author see independent navigation, editing and chrome from two bound shells', async t => {
+  const f = await fixture(t);
+  testWindow(t, '#/analyses/author');
+  for (const state of ['hidden', 'disabled', 'visible']) {
+    const active = await f.open('/analyses/author', { Surface: {
+      actions: { authoring: state }, menus: { account: state, navigation: state }, chrome: { header: state === 'hidden' ? 'hidden' : 'visible' },
+    } });
+    const { surface } = (await f.sessions.verify(active.issued.sessionId, active.auth.slice(6))).session;
+    const client = embedAppClient({ app: async (path, init = {}) => {
+      const result = await active.app(path, init.method, init.body ? JSON.parse(init.body) : undefined);
+      return Response.json(result.body, { status: result.status });
+    } });
+    let ui;
+    try {
+      const embedded = { api: client.api, session: await client.session(), embed: { surface, storage: client.storage, loadAnalysis: client.loadAnalysis, authorizeRoute: client.authorizeRoute } };
+      await act(() => { ui = create(h(App, { embedded })); });
+      const text = () => JSON.stringify(ui.toJSON());
+      for (let i = 0; i < 100 && text().includes('Checking access…'); i++) await act(() => new Promise(resolve => setTimeout(resolve, 20)));
+      assert.equal(ui.root.findAllByType(Author).length, state === 'visible' ? 1 : 0);
+      assert.equal(ui.root.findAllByProps({ id: 'product-navigation' }).length, state === 'hidden' ? 0 : 1);
+      assert.equal(ui.root.findAllByProps({ className: 'account-menu hosted-account' }).length, state === 'hidden' ? 0 : 1);
+      if (state === 'hidden') assert.ok(!text().includes('product-header') && text().includes('This page is unavailable in this embed.'));
+      if (state === 'disabled') {
+        assert.equal(ui.root.findByProps({ id: 'product-navigation' }).props.inert, true);
+        assert.equal(ui.root.findByProps({ className: 'account-menu hosted-account' }).props.inert, true);
+        assert.ok(ui.root.findAllByType('button').some(b => b.props.disabled && b.props.children === 'Author'));
+      }
+    } finally { if (ui) await act(() => ui.unmount()); client.clear(); }
+  }
+});

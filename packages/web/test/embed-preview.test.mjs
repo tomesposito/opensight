@@ -77,3 +77,23 @@ test('#335 flags-off frame has no controls and labels are escaped', () => {
   const escaped = renderToStaticMarkup(createElement(EmbeddedDashboard, { initial, transport, onState() {} }));
   assert.doesNotMatch(escaped, /<script>|<img src=x>/); assert.match(escaped, /&lt;script&gt;/);
 });
+
+test('bound frame surfaces independently hide or disable reader controls and keep required notices', () => {
+  const initial = interactiveContent();
+  const render = (filtering, parameterControls) => renderToStaticMarkup(createElement(EmbeddedDashboard, {
+    initial, actions: { filtering, parameterControls }, transport: {}, onState() {},
+  }));
+  assert.doesNotMatch(render('hidden', 'hidden'), /<form|View controls/);
+  const mixed = render('hidden', 'disabled');
+  assert.doesNotMatch(mixed, /region-filter|Regions/);
+  assert.match(mixed, /<fieldset disabled/);
+  assert.match(mixed, /Minimum amount/);
+  const editable = render('disabled', 'visible');
+  assert.match(editable, /<input disabled="" aria-label="Regions 1"/);
+  assert.match(editable, /<input aria-label="Minimum amount"/);
+  for (const state of ['loading', 'ready', 'error', 'expired']) {
+    const frame = renderToStaticMarkup(createElement(EmbedFrame, { state, header: 'hidden' }));
+    assert.doesNotMatch(frame, /<header/);
+    assert.match(frame, /OpenSight · Apache-2.0/);
+  }
+});

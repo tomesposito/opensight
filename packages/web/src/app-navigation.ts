@@ -44,6 +44,13 @@ export function recordRecentPage(recents: readonly Page[], page: Page | undefine
   return [page, ...permitted.filter(item => item !== page)].slice(0, 6);
 }
 
+/** Analysis editing and data preparation share the tenant authoring capability. */
+export function routeSurface(access: Access, route: AppRoute) {
+  if (route.page === 'ask-o') return access.embed?.surface?.actions.question ?? 'visible';
+  if (route.page === 'analyses' || route.page === 'author' || route.page === 'data-prep' || route.page === 'data-sources' || route.createDataset)
+    return access.embed?.surface?.actions.authoring ?? 'visible';
+  return 'visible';
+}
 export function visiblePage(access: Access, page: Page): boolean {
   if (page === 'ask-o') return access.mode === 'hosted' && allowed(access, 'ai');
   if (page === 'billing') return access.mode === 'hosted' && allowed(access, 'admin') && !!access.session?.billing;

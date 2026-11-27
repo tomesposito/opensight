@@ -1,4 +1,4 @@
-import { pages, productSections, routeProblem, type Page } from './app-navigation.js';
+import { pages, productSections, routeSurface, routeProblem, type Page } from './app-navigation.js';
 import type { Navigate } from './AppNavigation.js';
 import type { Access } from './access.js';
 
@@ -41,6 +41,6 @@ export function navigationCommands(access: Access, navigate: Navigate): Command[
   const secondary = (Object.keys(pages) as Page[]).filter(page => !primary.some(item => item.page === page))
     .map(page => ({ title: pages[page].title, page }));
   return [...primary, ...secondary]
-    .filter(item => !routeProblem(access, item.page))
+    .filter(item => !routeProblem(access, item.page) && routeSurface(access, item) === 'visible')
     .map(item => ({ id: `go-${item.page}`, label: `Go to ${item.title}`, run: () => navigate({ page: item.page }) }));
 }

@@ -1,3 +1,4 @@
+import { SurfaceControl } from './SurfaceControl.js';
 import { Tables } from './Tables.js';
 import { GovernedMetrics } from './GovernedMetrics.js';
 import { InputTablesPanel } from './InputTables.js';
@@ -31,6 +32,7 @@ export function DataLanding({ client, initialTab = 'Datasets', onCreate, onCreat
   onOpen: (dataset: BundleDataSet) => void; onEdit: (dataset: BundleDataSet) => void; onPrep: (source: PrepSourceSummary) => void;
 }) {
   const access = useAccess(), catalog = useDataCatalog(client);
+  const authoring = access.embed?.surface?.actions.authoring;
   const [tab, setTab] = useState<'Datasets' | 'Topics' | 'Data sources' | 'Metrics' | 'Tables' | 'Input tables'>(initialTab);
   const [search, setSearch] = useState(''), [filter, setFilter] = useState<DatasetFilter>('all');
   const data = catalog.data ?? { datasets: [], sources: [] };
@@ -38,8 +40,8 @@ export function DataLanding({ client, initialTab = 'Datasets', onCreate, onCreat
   const sources = rawSources(data.sources).filter(source => (source.name ?? source.id).toLowerCase().includes(search.trim().toLowerCase()));
   const suggestion = access.mode === 'hosted' && access.session?.tenantId && client && onSuggestIdea ? <button onClick={onSuggestIdea}>Suggest an idea</button> : null;
   return <section className="data-page" aria-labelledby="data-title"><h1 id="data-title">Data</h1>
-    <div className="data-card"><div className="data-toolbar"><DataTabs label="Data" tabs={['Datasets', 'Topics', 'Data sources', 'Metrics', 'Tables', 'Input tables']} selected={tab} select={next => { setTab(next); setSearch(''); }} />
-      {tab !== 'Tables' && <div className="data-split"><button className="data-primary" onClick={onCreate}>Create dataset</button><details className="data-menu"><summary aria-label="More create options"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg></summary><div className="data-menu-items"><button onClick={onCreateSource}>Create data source</button></div></details></div>}</div>
+    <div className="data-card"><div className="data-toolbar"><DataTabs label="Data" tabs={['Datasets', 'Topics', 'Data sources', 'Metrics', 'Tables', 'Input tables']} state={tab => tab === 'Datasets' || tab === 'Topics' ? 'visible' : authoring} selected={tab} select={next => { setTab(next); setSearch(''); }} />
+      {tab !== 'Tables' && <SurfaceControl state={authoring}><div className="data-split"><button className="data-primary" onClick={onCreate}>Create dataset</button><details className="data-menu"><summary aria-label="More create options"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg></summary><div className="data-menu-items"><button onClick={onCreateSource}>Create data source</button></div></details></div></SurfaceControl>}</div>
       <section role="tabpanel" aria-label={tab}>
       {tab === 'Tables' ? <Tables client={client} catalog={data} loading={catalog.loading} catalogError={catalog.error} onCreate={onCreate} onEdit={onEdit} onChanged={catalog.reload} /> : tab === 'Metrics' ? <GovernedMetrics client={client} /> : tab === 'Input tables' ? <InputTablesPanel client={client} /> : tab === 'Topics' ? <div className="data-empty"><h2>No topics available</h2><p>Topics need a hosted API with topic support.</p>{suggestion}</div> : <>
         <div className="data-tools"><label><span className="sr-only">{tab === 'Datasets' ? 'Search datasets by name' : 'Search data sources'}</span><input type="search" placeholder={tab === 'Datasets' ? 'Search datasets by name' : 'Search data sources'} value={search} onChange={event => setSearch(event.target.value)} /></label>
@@ -49,9 +51,9 @@ export function DataLanding({ client, initialTab = 'Datasets', onCreate, onCreat
           <DataTable headings={['Name', 'Owner', 'Last Modified', 'Action']}>{rows.map(dataset => <tr key={dataset.dataSetId}>
             <td><button className="data-name" onClick={() => onOpen(dataset)}>{dataset.name}</button><span className="data-badges">{datasetBadges(dataset, datasetSource(dataset, data.sources)).map(badge => <span className="data-badge" key={badge}>{badge}</span>)}</span></td>
             <td>{access.mode === 'hosted' ? 'Me' : 'Local workspace'}</td><td><span title="Modification time is not supplied by the dataset API">Not available</span></td>
-            <td><DataMenu label={`Actions for ${dataset.name}`}><button onClick={() => onOpen(dataset)}>View dataset</button><button onClick={() => onEdit(dataset)}>Edit dataset</button></DataMenu></td>
+            <td><DataMenu label={`Actions for ${dataset.name}`}><button onClick={() => onOpen(dataset)}>View dataset</button><SurfaceControl state={authoring}><button onClick={() => onEdit(dataset)}>Edit dataset</button></SurfaceControl></DataMenu></td>
           </tr>)}</DataTable>
-          {!rows.length && <div className="data-empty"><span aria-hidden="true"><svg width="36" height="36" viewBox="0 0 24 24" focusable="false"><rect x="4" y="5" width="16" height="14" rx="1" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M4 9.5h16M4 14h16" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg></span><h2>{data.datasets.length ? 'No datasets match your filters' : 'No datasets yet'}</h2><p>{data.datasets.length ? 'Try another name or dataset type.' : 'Create a dataset to prepare data for your analyses.'}</p>{!data.datasets.length && <button onClick={onCreate}>Create dataset</button>}{suggestion}</div>}
+          {!rows.length && <div className="data-empty"><span aria-hidden="true"><svg width="36" height="36" viewBox="0 0 24 24" focusable="false"><rect x="4" y="5" width="16" height="14" rx="1" fill="none" stroke="currentColor" strokeWidth="1.5" /><path d="M4 9.5h16M4 14h16" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg></span><h2>{data.datasets.length ? 'No datasets match your filters' : 'No datasets yet'}</h2><p>{data.datasets.length ? 'Try another name or dataset type.' : 'Create a dataset to prepare data for your analyses.'}</p>{!data.datasets.length && <SurfaceControl state={authoring}><button onClick={onCreate}>Create dataset</button></SurfaceControl>}{suggestion}</div>}
         </> : <DataTable headings={['Name', 'Type', 'Action']} empty={!sources.length ? search ? 'No data sources match your search.' : 'No data sources yet. Upload a file or configure a data source to get started.' : undefined}>{sources.map(source => <tr key={source.id}><td>{source.name ?? source.id}</td><td>{source.connectorId === 'file' ? 'File' : source.connectorId}</td><td><button disabled={!source.available} onClick={() => onPrep(source)}>Create dataset</button>{!source.available && <span>{source.errorCode ?? 'SOURCE_UNAVAILABLE'}</span>}</td></tr>)}</DataTable>}
       </>}
       {tab === 'Data sources' && !catalog.loading && !catalog.error && !sources.length && <div className="data-empty">{suggestion}</div>}

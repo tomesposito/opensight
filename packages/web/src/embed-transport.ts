@@ -1,6 +1,7 @@
 import { assembleResult } from './object-transfers.js';
 import { startOnDemandEmbed } from './embed-on-demand.js';
-export interface EmbedShell { sessionId: string; allowedDomains: string[]; resultMaxBytes?: number; idleReconnect?: boolean; fullApp?: { landingRoute: string } }
+import type { EmbedSurface } from '@opensight/embedding-sdk/surface';
+export interface EmbedShell { surface: EmbedSurface; sessionId: string; allowedDomains: string[]; resultMaxBytes?: number; idleReconnect?: boolean; fullApp?: { landingRoute: string } }
 export type SessionState = 'loading' | 'ready' | 'error' | 'expired' | 'revoked' | 'saved' | 'idle' | 'connecting' | 'unavailable';
 export interface EmbedTransport {
   app?(path: string, init?: RequestInit): Promise<Response>;

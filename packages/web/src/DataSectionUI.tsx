@@ -1,11 +1,14 @@
+import type { SurfaceState } from '@opensight/embedding-sdk/surface';
 import { useId, useLayoutEffect, useRef, type ReactNode } from 'react';
 
-export function DataTabs<T extends string>({ label, tabs, selected, select }: { label: string; tabs: readonly T[]; selected: T; select: (tab: T) => void }) {
+export function DataTabs<T extends string>({ label, tabs, selected, select, state }: { state?: (tab: T) => SurfaceState | undefined; label: string; tabs: readonly T[]; selected: T; select: (tab: T) => void }) {
   const id = useId();
-  return <div className="data-tabs" role="tablist" aria-label={label}>{tabs.map((tab, index) => <button type="button" key={tab} id={`${id}-${index}`} role="tab" aria-selected={selected === tab} tabIndex={selected === tab ? 0 : -1} onClick={() => select(tab)} onKeyDown={event => {
-    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length : undefined;
+  const available = tabs.filter(tab => (state?.(tab) ?? 'visible') === 'visible');
+  return <div className="data-tabs" role="tablist" aria-label={label}>{tabs.map((tab, index) => state?.(tab) !== 'hidden' && <button disabled={state?.(tab) === 'disabled'} type="button" key={tab} id={`${id}-${index}`} role="tab" aria-selected={selected === tab} tabIndex={selected === tab ? 0 : -1} onClick={() => select(tab)} onKeyDown={event => {
+    const position = available.indexOf(tab);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? available.length - 1 : event.key === 'ArrowRight' ? (position + 1) % available.length : event.key === 'ArrowLeft' ? (position + available.length - 1) % available.length : undefined;
     if (next === undefined) return;
-    event.preventDefault(); select(tabs[next]!); event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+    event.preventDefault(); select(available[next]!); event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)')[next]?.focus();
   }}>{tab}</button>)}</div>;
 }
 export function DataMenu({ label, children }: { label: string; children: ReactNode }) {
