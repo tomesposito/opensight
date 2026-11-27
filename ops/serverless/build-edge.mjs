@@ -42,7 +42,9 @@ export async function edgeSource() {
       if (!variables.includes(name)) continue;
       if (name === 'singleton') {
         if (!ts.isNewExpression(declaration.initializer) || declaration.initializer.expression.getText(file) !== 'Set' || declaration.initializer.arguments?.length !== 1) throw Error('EDGE_SOURCE_CHANGED');
-        selected.push(`const singleton = ${declaration.initializer.arguments[0].getText(file)};`);
+        const entries = declaration.initializer.arguments[0];
+        if (!ts.isArrayLiteralExpression(entries) || entries.elements.some(e => !ts.isStringLiteral(e))) throw Error('EDGE_SOURCE_CHANGED');
+        selected.push(`const singleton = {${entries.elements.map(e => `${JSON.stringify(e.text)}:1`).join(',')}};`);
       } else selected.push(`const ${declaration.getText(file)};`);
     }
   }
@@ -72,13 +74,75 @@ export async function edgeSource() {
   };
   visit(contract);
   if (!folded || grammar.includes('new RegExp')) throw Error('EDGE_SOURCE_CHANGED');
-  grammar = grammar.replace('{', "{\nif (path.indexOf('/api/v1/') !== 0) return undefined;");
+  // Dispatch by the first literal path component. Derive each bucket from the
+  // folded contract, retaining the original order within every bucket.
+  const foldedFile = ts.createSourceFile('folded.ts', grammar, ts.ScriptTarget.Latest, true);
+  const foldedFunction = foldedFile.statements[0], buckets = new Map();
+  function firstComponents(pattern) {
+    if (!pattern.startsWith('^/api/v1/')) throw Error('EDGE_SOURCE_CHANGED');
+    const tail = pattern.slice(9);
+    if (!tail.startsWith('(?:')) {
+      const m = /^([a-z-]+)(?:\/|\$)/.exec(tail);
+      if (!m) throw Error('EDGE_SOURCE_CHANGED');
+      return [m[1]];
+    }
+    let depth = 1, start = 3; const parts = [];
+    for (let i = start; i < tail.length; i++) {
+      if (tail[i] === '\\') { i++; continue; }
+      if (tail[i] === '(') depth++;
+      if (tail[i] === ')') depth--;
+      if (depth === 0 || depth === 1 && tail[i] === '|') {
+        const m = /^([a-z-]+)(?:\/|$)/.exec(tail.slice(start, i));
+        if (!m) throw Error('EDGE_SOURCE_CHANGED');
+        parts.push(m[1]); start = i + 1;
+        if (depth === 0) return parts;
+      }
+    }
+    throw Error('EDGE_SOURCE_CHANGED');
+  }
+  for (const statement of foldedFunction.body.statements) {
+    if (ts.isReturnStatement(statement) && statement.expression?.getText(foldedFile) === 'undefined') continue;
+    if (!ts.isIfStatement(statement) || statement.elseStatement) throw Error('EDGE_SOURCE_CHANGED');
+    const families = new Set();
+    const inspect = node => {
+      if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
+        inspect(node.left); inspect(node.right); return;
+      }
+      if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken
+        && node.left.getText(foldedFile) === 'path' && ts.isStringLiteral(node.right)) {
+        const m = /^\/api\/v1\/([a-z-]+)(?:\/|$)/.exec(node.right.text);
+        if (!m) throw Error('EDGE_SOURCE_CHANGED');
+        families.add(m[1]); return;
+      }
+      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
+        && node.expression.name.text === 'test' && ts.isRegularExpressionLiteral(node.expression.expression)
+        && node.arguments.length === 1 && node.arguments[0].getText(foldedFile) === 'path') {
+        const literal = node.expression.expression.getText(foldedFile);
+        if (!literal.endsWith('/')) throw Error('EDGE_SOURCE_CHANGED');
+        for (const family of firstComponents(literal.slice(1, -1).replaceAll('\\/', '/'))) families.add(family);
+        return;
+      }
+      throw Error('EDGE_SOURCE_CHANGED');
+    };
+    inspect(statement.expression);
+    if (!families.size) throw Error('EDGE_SOURCE_CHANGED');
+    for (const family of families) {
+      if (!buckets.has(family)) buckets.set(family, []);
+      buckets.get(family).push(statement.getText(foldedFile));
+    }
+  }
+  grammar = `function serverlessV1Methods(path) {
+    if (path.indexOf('/api/v1/') !== 0) return undefined;
+    switch (path.slice(8).split('/')[0]) {
+      ${[...buckets].map(([family, statements]) => `case ${JSON.stringify(family)}: ${statements.join('\n')} return;`).join('\n')}
+    }
+  }`;
   const mcp = await readFile(new URL('../../packages/api/src/mcp/paths.ts', import.meta.url), 'utf8');
   const mcpFile = ts.createSourceFile('mcp-paths.ts', mcp, ts.ScriptTarget.Latest, true);
   const mcpPath = mcpFile.statements.find(s => ts.isFunctionDeclaration(s) && s.name?.text === 'isMcpPublicPath');
   if (!mcpPath) throw Error('EDGE_SOURCE_CHANGED');
   selected.unshift(mcpPath.getText(mcpFile).replace(/^export /, ''), grammar);
-  const adapted = selected.join('\n').replaceAll('singleton.has(name)', 'singleton.includes(name)').replaceAll('Object.hasOwn(', 'Object.prototype.hasOwnProperty.call(')
+  const adapted = selected.join('\n').replaceAll('singleton.has(name)', '(singleton[name] === 1)').replaceAll('Object.hasOwn(', 'Object.prototype.hasOwnProperty.call(')
     .replaceAll('new URL(origin).host', '__OPENSIGHT_HOST__');
   // Runtime 2.0 provides native Buffer.byteLength. URI encoding plus regex
   // replacement exhausted live edge CPU for ordinary browser header sets.
@@ -100,7 +164,21 @@ function handler(event) {
 }`;
   // The TypeScript printer emits explicit semicolons and removes comments.
   // Compact punctuation whitespace while preserving keyword boundaries (for example throw/new).
-  const output = ts.transpileModule(`${adapted}\n${wrapper}`, { compilerOptions: { target: ts.ScriptTarget.ES5, module: ts.ModuleKind.None, removeComments: true } }).outputText.replace(/\n[ \t]+/g, '\n').replace(/;\n/g, ';').replace(/([{}])\n/g, '$1').replace(/\b(if|return) (?=[([])/g, '$1');
+  // Shorten private identifiers through the parser, never inside strings,
+  // regexes or property names. Keep the tested public function entry points.
+  const names = ['isMcpPublicPath','invalid','denied','record','singleton','forgedPrincipalHeaders','publicPath','validMetricDataset','headers','request','result','value','name','key','bytes','path','raw','internal','unscoped','parsed','origin','field','MetadataError','idOk'];
+  const aliases = new Map(names.map((name, i) => [name, '$' + i.toString(36)]));
+  const shorten = context => {
+    const visit = node => {
+      if (ts.isShorthandPropertyAssignment(node) && aliases.has(node.name.text)) return ts.factory.createPropertyAssignment(node.name, ts.factory.createIdentifier(aliases.get(node.name.text)));
+      if (ts.isIdentifier(node) && aliases.has(node.text)
+        && !(ts.isPropertyAccessExpression(node.parent) && node.parent.name === node)
+        && !(ts.isPropertyAssignment(node.parent) && node.parent.name === node)) return ts.factory.createIdentifier(aliases.get(node.text));
+      return ts.visitEachChild(node, visit, context);
+    };
+    return node => ts.visitNode(node, visit);
+  };
+  const output = ts.transpileModule(`${adapted}\n${wrapper}`, { compilerOptions: { target: ts.ScriptTarget.ES5, module: ts.ModuleKind.None, removeComments: true }, transformers: { before: [shorten] } }).outputText.replace(/\n[ \t]+/g, '\n').replace(/;\n/g, ';').replace(/([{}])\n/g, '$1').replace(/\b(if|return) (?=[([])/g, '$1');
   if (Buffer.byteLength(output) > 9900 || /\b(?:require|URL|Set)\s*\(|(?:^|\n)\s*(?:import|export)\s|\bexports\.|\bBuffer\.(?!byteLength\()|Object\.hasOwn/.test(output)) throw Error(`EDGE_RUNTIME_UNSUPPORTED (${Buffer.byteLength(output)} bytes)`);
   return '// Generated by build-edge.mjs from the shared ingress boundary. No secrets.\n' + output;
 }

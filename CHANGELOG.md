@@ -13,6 +13,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Fixed
 
+- Reduce authenticated dashboard request work in the CloudFront viewer by dispatching through the relevant shared route family and using constant-time header-policy lookup (#347).
+
 - Restore hosted Lambda startup by resolving ZIP inflation through the dependency's explicit Node module entry point; release images now check startup with Lambda's experimental module features disabled (#332).
 
 - Keep MCP discovery routing within the CloudFront Free plan cache-behavior limit while rejecting unknown OAuth paths at the edge (#332).
