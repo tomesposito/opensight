@@ -10,7 +10,7 @@ existing signatures, SDK, authorization and exact-origin checks.
 
 `GET /api/embedding/config` and `PUT /api/embedding/config` require an active H2
 membership and an H1 tenant administrator. Namespace-prefixed aliases retain H1
-scope checks. The body replaces all six fields below; unknown fields are rejected.
+scope checks. PUT replaces the six original fields and accepts a surface ceiling. Unknown fields are rejected.
 No request can assert a tenant, subject, role or asset owner.
 
 ```json
@@ -27,6 +27,12 @@ No request can assert a tenant, subject, role or asset owner.
     "iframeTitle": "OpenSight dashboard",
     "logoAssetId": null,
     "faviconAssetId": null
+  },
+  "surfaceCeiling": {
+    "experiences": ["dashboard", "visual", "q", "console", "full-app"],
+    "menus": ["navigation", "account"],
+    "actions": ["authoring", "filtering", "parameterControls", "question"],
+    "chrome": ["header"]
   },
   "features": {
     "registeredDashboards": true,
@@ -79,9 +85,26 @@ Changing any embedding configuration revision revokes existing full-app
 sessions just as it revokes the fixed experiences. Saving an analysis through
 the full-app editor keeps the session active because content saves follow the
 standalone versioned analysis-write path. See [full-app issuance and authority](embed-sessions.md#full-app-experience-336-d-102-q1)
-for the request shape, allowed routes and session behavior. Per-embed navigation
-visibility and additional theme tokens are subsequent D-102 work; presentation
-choices never grant server authority.
+for the request shape, allowed routes and session behavior.
+
+### Surface ceiling (#337)
+
+Each array above lists the surfaces that may appear in this tenant's H6 sessions.
+Supply all four arrays when replacing the ceiling. Empty arrays exclude every
+item in that group. Unknown fields, unknown names, duplicates and non-array
+values return 422 `EMBED_SURFACE_INVALID` before the configuration write.
+
+New tenants and stored configurations from before #337 use the full vocabulary
+shown above. Existing feature flags and the issued principal and experience
+still bound every mount. A legacy PUT that omits the whole ceiling preserves the
+stored ceiling, including empty arrays. Successful replacements invalidate prior
+sessions through the existing configuration revision.
+
+An excluded experience cannot be issued. Other excluded controls stay hidden,
+including when a host omits its declaration. Requesting a visible or disabled
+control outside the ceiling or grant returns 403 `EMBED_SURFACE_DENIED`.
+Required notices remain on fixed frames. See the [SDK mount contract](embed-sessions.md#per-embed-surface-control-337)
+for control names, applicable experiences and examples.
 
 ## Operator configuration
 

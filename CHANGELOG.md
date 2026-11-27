@@ -101,6 +101,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Tenant administrators can limit embed experiences and controls. Hosts can hide or disable menus, authoring and other actions, and the header for each SDK mount within the session grant (#337).
+
 - Registered full-app embeds can land on dashboards, the data catalog, the real analysis editor, preparation or configured Ask O, navigate in-frame, and keep editing after repeated saves in the same session. Existing resource permissions, RLS/CLS and revocation remain enforced; the four fixed embed experiences retain their behavior (#336).
 
 - Live dashboard and visual embeds now offer working filters and parameter controls when enabled by the tenant, with typed frame-local state, reset to saved defaults, and viewer RLS/CLS enforced on every refresh; both capabilities remain off by default (#335).

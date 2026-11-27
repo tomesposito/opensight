@@ -1,6 +1,7 @@
 // Local full-app acceptance: existing Chromium, real hosted API, synthetic metadata.
 // All browser HTTP requests are intercepted; only the loopback fixture does I/O.
 import assert from 'node:assert/strict';
+import { mock } from 'node:test';
 import { createRequire } from 'node:module';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -12,9 +13,11 @@ const { chromium } = require('playwright-core');
 const output = resolve(process.env.OPENSIGHT_SCREENSHOT_OUTPUT ?? '/tmp/issue336-browser');
 await mkdir(output, { recursive: true });
 const cleanups = [], checks = [], requests = [], errors = [];
-let browser;
+let browser, page;
 try {
-  const f = await fixture({ after: fn => cleanups.unshift(fn) }); await prepared(f);
+  const f = await fixture({ mock, after: fn => cleanups.unshift(fn) });
+  mock.timers.reset();
+  await prepared(f);
   const initial = input();
   initial.definition.sheets[0].visuals = [{ kpiVisual: { visualId: 'total', title: { visibility: 'VISIBLE', formatText: { plainText: 'Total amount' } },
     chartConfiguration: { fieldWells: { values: [{ numericalMeasureField: { fieldId: 'amount', column: { dataSetIdentifier: 'data', columnName: 'amount' }, aggregationFunction: { simpleNumericalAggregation: 'SUM' } } }] } } } }];
@@ -24,7 +27,8 @@ try {
   const settings = new HostedAISettings(f.metadata, f.hostedConfig.encryptionKey.toString('base64'), {});
   await settings.save(await f.context(), { provider: 'openai', model: 'synthetic-model' });
   await settings.saveKey(await f.context(), { key: 'synthetic-test-only-not-a-credential' });
-  let issued;
+  const backendAuthorization = await token();
+  let issued, landing, surface;
   const host = 'https://product.example', embed = f.hostedConfig.origin;
   browser = await chromium.launch({ executablePath: process.env.OPENSIGHT_CHROMIUM ?? '/opt/meta-chromium/chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
@@ -33,8 +37,17 @@ try {
     const req = route.request(), url = new URL(req.url());
     if (url.origin === host && url.pathname === '/') return route.fulfill({ contentType: 'text/html', body: `<!doctype html><html><head><title>Full-app embed acceptance</title><style>body{margin:0}#app{height:100vh}iframe{border:0}</style></head><body><div id="app"></div><script type="module">
       import { createSessionEmbeddingClient } from '/sdk/index.js'; window.events=[];
-      window.handle=await createSessionEmbeddingClient({allowedEmbedOrigins:[${JSON.stringify(embed)}],getEmbedUrl:async()=>(${JSON.stringify(issued)})}).mount(document.querySelector('#app'),{onReady:()=>events.push('ready'),onSaved:()=>events.push('saved'),onAuthorizationRevoked:()=>events.push('revoked')});
+      window.handle=await createSessionEmbeddingClient({allowedEmbedOrigins:[${JSON.stringify(embed)}],getEmbedUrl:async(signal,surface)=>{
+        const response=await fetch('/issue',{method:'POST',body:JSON.stringify({surface}),signal});
+        if(!response.ok)throw Error('Issuance failed');return response.json();
+      }}).mount(document.querySelector('#app'),{surface:${JSON.stringify(surface)},onReady:()=>events.push('ready'),onSaved:()=>events.push('saved'),onAuthorizationRevoked:()=>events.push('revoked')});
       </script></body></html>` });
+    if (url.origin === host && url.pathname === '/issue' && req.method() === 'POST') {
+      const body = req.postDataJSON();
+      const result = await f.call('/api/embedding/sessions', 'POST', { ...request(landing), Surface: body.surface }, backendAuthorization);
+      issued = result.body;
+      return route.fulfill({ status: result.status, json: result.body });
+    }
     if (url.origin === host && /^\/sdk\/(index|session|surface)\.js$/.test(url.pathname)) return route.fulfill({ contentType: 'text/javascript', body: await readFile(new URL(`../../embedding-sdk/dist/${url.pathname.split('/').at(-1)}`, import.meta.url), 'utf8') });
     if (url.origin !== embed) { errors.push(`Unexpected external request: ${url.origin}`); return route.abort(); }
     requests.push(url.pathname);
@@ -46,9 +59,9 @@ try {
     return route.fulfill({ status: result.status, headers: responseHeaders, body: typeof result.body === 'string' ? result.body : JSON.stringify(result.body) });
     } catch (error) { errors.push(error.message); await route.abort().catch(() => {}); }
   });
-  const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
-  const mount = async path => {
-    const result = await f.call('/api/embedding/sessions', 'POST', request(path), await token()); assert.equal(result.status, 200, JSON.stringify(result.body)); issued = result.body;
+  page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
+  const mount = async (path, declaration) => {
+    landing = path; surface = declaration;
     await page.goto(host); await page.waitForFunction(() => window.events?.includes('ready'));
     return page.frames().find(frame => frame.url().startsWith(embed));
   };
@@ -81,10 +94,25 @@ try {
     await page.screenshot({ path: `${output}/${path.replaceAll('/', '-').slice(1)}.png` });
     checks.push(`Allowed landing ${path}`);
   }
+  for (const authoring of ['hidden', 'disabled', 'visible']) {
+    frame = await mount('/dashboards', { actions: { authoring }, menus: { account: 'hidden' } });
+    await frame.getByText('Original', { exact: true }).waitFor();
+    const rail = frame.getByRole('navigation', { name: 'Product' });
+    const analyses = rail.getByRole('link', { name: 'Analyses' });
+    assert.equal(await analyses.count(), authoring === 'hidden' ? 0 : 1);
+    if (authoring !== 'hidden') assert.equal(await analyses.isEnabled(), authoring === 'visible');
+    assert.equal(await frame.getByLabel('Account', { exact: true }).count(), 0);
+    await page.screenshot({ path: `${output}/authoring-${authoring}.png` });
+    checks.push(`Same tenant mounts ${authoring} authoring with no account menu`);
+  }
   assert.deepEqual(errors, []);
   await writeFile(`${output}/evidence.json`, JSON.stringify({ checks, externalRequests: 0, pageErrors: errors }, null, 2));
   console.log(JSON.stringify({ passed: checks.length, failed: 0, output }));
 } catch (error) {
+  if (page) {
+    await page.screenshot({ path: `${output}/failure.png` }).catch(() => {});
+    await writeFile(`${output}/failure.txt`, (await Promise.all(page.frames().map(f => f.locator('body').innerText().catch(() => '')))).join('\n'));
+  }
   console.error('Browser acceptance failed:', error.message, JSON.stringify({ checks, errors, lastPaths: requests.slice(-8) }));
   throw error;
 } finally {
