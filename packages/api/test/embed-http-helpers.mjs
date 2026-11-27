@@ -8,6 +8,9 @@ export function serverEnvironment(f, overrides = {}) {
     OPENSIGHT_EMBED_SESSION_KEY_ID: f.key.id, OPENSIGHT_EMBED_SESSION_KEY: f.key.secret.toString('base64'), ...overrides };
 }
 export async function httpStack(t, f, analytics) {
+  // HTTP assertions own the state transitions. Keep background scheduler ticks
+  // under test control so a wall-clock tick cannot consume a just-retried job.
+  t.mock.timers.enable({ apis: ['setInterval'] });
   const server = await createHostedApiServer({ membershipDatabase: f.db, tenantDatabase: f.db, security: { authenticate: f.auth.authenticate }, builtinAuth: f.auth, env: serverEnvironment(f), analytics, mailTransport: f.mail });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
