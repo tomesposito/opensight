@@ -8,7 +8,7 @@ import { browserDraftStorage, createDraftStore, draftStorageError, draftStorageK
 
 export function Analyses({ navigate }: { navigate: Navigate }) {
   const access = useAccess(), key = draftStorageKey(access);
-  const store = useMemo(() => createDraftStore(browserDraftStorage, access), [key]);
+  const store = useMemo(() => createDraftStore(access.embed?.storage ?? browserDraftStorage, access), [key]);
   const read = () => {
     try { return { entries: store.list(), message: '' }; }
     catch (error) { return { entries: [], message: draftStorageError(error) }; }

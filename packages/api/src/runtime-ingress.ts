@@ -42,8 +42,7 @@ export function publicPath(path: unknown): string {
   let internal: string;
   if (path === '/api/access-requests' || isMcpPublicPath(path)) internal = path;
   else if (path.startsWith('/api/api/')) internal = path.slice(4);
-  else if (fullAppMethods(path).length) internal = path;
-  else if (/^\/api\/embed\/sessions\/[A-Za-z0-9_-]+\/(redeem|status|content|question|analysis|save)$/.test(path) || /^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(path)) internal = path;
+  else if (/^\/api\/embed\/sessions\/[A-Za-z0-9_-]+\/(redeem|status|content|question|analysis|save|app\/[A-Za-z0-9_/-]+)$/.test(path) || /^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(path)) internal = path;
   else throw new MetadataError('RESOURCE_NOT_FOUND', 404);
   if (path.startsWith('/api/api/embed/') || /^\/api\/namespaces\/[^/]+\/(startup|auth|embed)(?:\/|$)/.test(internal)) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
   if (/^\/api\/(?:host|api|healthz|readyz|metrics|migrate|migration|drain)(?:\/|$)/.test(internal)) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
@@ -51,7 +50,6 @@ export function publicPath(path: unknown): string {
   if (!/^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test(unscoped)
     && internal !== '/api/access-requests'
     && !isMcpPublicPath(internal)
-    && !fullAppMethods(unscoped).length
     && !serverlessV1Methods(unscoped)
     && !/^\/api\/(?:o\/(?:status|generate|calculation|query|plan|revise)|admin\/ai(?:\/(?:key|test))?)$/.test(unscoped)
     && !/^\/api\/invitations(?:\/[A-Za-z0-9_-]+)?$/.test(unscoped)
@@ -64,7 +62,7 @@ export function publicPath(path: unknown): string {
     && !/^\/api\/datasets\/[A-Za-z0-9_-]+\/(?:prep(?:\/(?:preview|join-diagnostics))?|execution|refresh|rows|query|share|permissions|embed)$/.test(unscoped)
     && !/^\/api\/jobs\/[A-Za-z0-9_-]+(?:\/(?:runs|deliveries))?$/.test(unscoped)
     && !/^\/api\/embedding\/(?:config|sessions(?:\/[A-Za-z0-9_-]+(?:\/renew)?)?|GenerateEmbedUrlForRegisteredUser|GenerateEmbedUrlForAnonymousUser)$/.test(unscoped)
-    && !/^\/api\/embed\/sessions\/[A-Za-z0-9_-]+\/(?:redeem|status|content|question|analysis|save)$/.test(unscoped)) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
+    && !/^\/api\/embed\/sessions\/[A-Za-z0-9_-]+\/(?:redeem|status|content|question|analysis|save|app\/[A-Za-z0-9_/-]+)$/.test(unscoped)) throw new MetadataError('RESOURCE_NOT_FOUND', 404);
   return internal;
 }
 
@@ -72,7 +70,7 @@ function routeMethod(path: string, method: string): void {
   const p = path.replace(/^\/api\/namespaces\/[A-Za-z0-9_-]+\//, '/api/');
   let allowed: readonly string[] = ['GET'];
   if (isMcpPublicPath(path)) allowed = path.startsWith('/.well-known/') ? ['GET'] : path.endsWith('/connections') ? ['GET', 'POST'] : path === '/api/mcp' ? ['POST', 'GET', 'DELETE'] : ['POST'];
-  else if (fullAppMethods(p).length) allowed = fullAppMethods(p);
+  else if (/^\/api\/embed\/sessions\/[^/]+\/app\//.test(p)) allowed = fullAppMethods(p);
   else if (serverlessV1Methods(p)) allowed = serverlessV1Methods(p)!;
   else if (p === '/api/connectors/s3/browse') allowed = ['POST'];
   else if (path === '/api/access-requests') allowed = ['POST', 'OPTIONS'];
@@ -196,7 +194,7 @@ export function adaptGatewayRequest(raw: unknown, env: NodeJS.ProcessEnv): Runti
   if (['GET', 'HEAD'].includes(method) && body.length || h['content-length'] !== undefined && (!/^\d+$/.test(h['content-length']) || Number(h['content-length']) !== body.length)) invalid();
   routeMethod(path, method);
   const forwarded: Record<string, string> = { host: new URL(config.origin).host, 'content-length': String(body.length) };
-  for (const name of ['authorization', 'content-type', 'origin', 'idempotency-key', 'if-match', 'if-none-match', 'if-modified-since', 'if-unmodified-since', 'range', 'accept', 'limit', 'cursor', 'metric-dataset', 'mcp-protocol-version', 'mcp-session-id']) if (h[name] !== undefined) forwarded[name] = h[name];
+  for (const name of ['authorization', 'content-type', 'origin', 'idempotency-key', 'if-match', 'if-none-match', 'if-modified-since', 'if-unmodified-since', 'range', 'accept', 'accept-encoding', 'limit', 'cursor', 'metric-dataset', 'mcp-protocol-version', 'mcp-session-id']) if (h[name] !== undefined) forwarded[name] = h[name];
   if (event.cookies !== undefined) {
     if (h.cookie !== undefined) invalid();
     if (!Array.isArray(event.cookies) || event.cookies.some(c => typeof c !== 'string' || /[\r\n\x00]/.test(c)) || Buffer.byteLength(event.cookies.join('; ')) > 8192) invalid();

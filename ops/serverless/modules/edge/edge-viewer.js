@@ -46,7 +46,7 @@ return['PUT', 'DELETE'];if(/^\/api\/v1\/(?:analyses|dashboards)\/[A-Za-z0-9_-]{1
 return['GET', 'PUT', 'DELETE'];return;}}function $1() { throw new $m('HOSTED_REQUEST_INVALID', 400); }function $2() { throw new $m('UNTRUSTED_INGRESS', 403); }var $3 = function (v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : $1(); };var $4 = { "host": 1, "authorization": 1, "origin": 1, "content-type": 1, "content-length": 1, "idempotency-key": 1, "if-match": 1, "if-none-match": 1, "if-modified-since": 1, "if-unmodified-since": 1, "range": 1, "limit": 1, "cursor": 1, "mcp-protocol-version": 1, "mcp-session-id": 1, "x-opensight-ingress-key-id": 1, "x-opensight-ingress-secret": 1, "x-opensight-ingress-origin": 1, "x-opensight-ingress-peer": 1, "cloudfront-viewer-address": 1 };var $5 = ['x-user', 'x-user-id', 'x-principal', 'x-groups', 'x-group-ids', 'x-namespace', 'x-namespace-id', 'x-tenant', 'x-tenant-id', 'x-subject', 'x-role', 'x-roles', 'x-capabilities'];function $6($f) {if(typeof $f !== 'string' || $f.length > 4096 || !/^\/[A-Za-z0-9_./-]*$/.test($f) || $f.includes('//') || $f.split('/').some(function (p) { return p === '.' || p === '..'; }))
 $1();var $h;if($f === '/api/access-requests' || $0($f))
 $h = $f;else if($f.startsWith('/api/api/'))
-$h = $f.slice(4);else if(/^\/api\/embed\/sessions\/[A-Za-z0-9_-]+\/(redeem|status|content|question|analysis|save)$/.test($f) || /^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test($f))
+$h = $f.slice(4);else if(/^\/api\/embed\/sessions\/[A-Za-z0-9_-]+\/(redeem|status|content|question|analysis|save|app\/[A-Za-z0-9_/-]+)$/.test($f) || /^\/embed\/sessions\/[A-Za-z0-9_-]+$/.test($f))
 $h = $f;else
 throw new $m('RESOURCE_NOT_FOUND', 404);if($f.startsWith('/api/api/embed/') || /^\/api\/namespaces\/[^/]+\/(startup|auth|embed)(?:\/|$)/.test($h))
 throw new $m('RESOURCE_NOT_FOUND', 404);if(/^\/api\/(?:host|api|healthz|readyz|metrics|migrate|migration|drain)(?:\/|$)/.test($h))
@@ -65,7 +65,7 @@ throw new $m('RESOURCE_NOT_FOUND', 404);var $i = $h.replace(/^\/api\/namespaces\
 && !/^\/api\/datasets\/[A-Za-z0-9_-]+\/(?:prep(?:\/(?:preview|join-diagnostics))?|execution|refresh|rows|query|share|permissions|embed)$/.test($i)
 && !/^\/api\/jobs\/[A-Za-z0-9_-]+(?:\/(?:runs|deliveries))?$/.test($i)
 && !/^\/api\/embedding\/(?:config|sessions(?:\/[A-Za-z0-9_-]+(?:\/renew)?)?|GenerateEmbedUrlForRegisteredUser|GenerateEmbedUrlForAnonymousUser)$/.test($i)
-&& !/^\/api\/embed\/sessions\/[A-Za-z0-9_-]+\/(?:redeem|status|content|question|analysis|save)$/.test($i))
+&& !/^\/api\/embed\/sessions\/[A-Za-z0-9_-]+\/(?:redeem|status|content|question|analysis|save|app\/[A-Za-z0-9_/-]+)$/.test($i))
 throw new $m('RESOURCE_NOT_FOUND', 404);return $h;}function $7($b) {if(Buffer.byteLength($b) > 2048)
 $1();var $j;try {$j = JSON.parse($b);}catch (_a) {$1();}var ref = $3($j);var $n = function (v) { return typeof v === 'string' && /^[A-Za-z0-9_-]{1,512}$/.test(v); };if(Object.keys(ref).some(function (k) { return !['kind', 'id', 'ownerId'].includes(k); }) || !$n(ref.id))
 $1();if(ref.kind === 'dataset') {if(ref.ownerId !== undefined)

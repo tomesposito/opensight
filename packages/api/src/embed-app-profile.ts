@@ -38,15 +38,18 @@ export function fullAppOperation(path: string, verb: string): AppLocation['area'
   if (verb === 'GET' && /^\/api\/v1\/dashboards(?:\/[A-Za-z0-9_-]{1,512})?$/.test(path)
     || verb === 'POST' && /^\/api\/v1\/dashboards\/[A-Za-z0-9_-]{1,512}\/versions\/[1-9]\d*\/visuals\/[A-Za-z0-9_-]{1,512}\/query$/.test(path)) return 'dashboard';
   if (verb === 'GET' && ['/api/prep-datasets', '/api/prep-sources', '/api/sources'].includes(path)) return 'catalog';
-  if (verb === 'GET' && /^\/api\/datasets\/[A-Za-z0-9_-]{1,128}\/(?:schema|prep|execution|rows)$/.test(path)) return 'catalog';
+  if (verb === 'GET' && /^\/api\/datasets\/[A-Za-z0-9_-]{1,128}\/(?:prep|execution|rows)$/.test(path)) return 'catalog';
   if (['GET', 'POST', 'PUT'].includes(verb) && /^\/api\/v1\/analyses(?:\/[A-Za-z0-9_-]{1,512})?$/.test(path)
     || verb === 'POST' && /^\/api\/v1\/analyses\/[A-Za-z0-9_-]{1,512}\/publish$/.test(path)
     || verb === 'GET' && /^\/api\/v1\/(?:metrics|prep-templates)(?:\/[A-Za-z0-9_-]{1,512})?$/.test(path)) return 'author';
   if (verb === 'GET' && (path === '/api/connectors' || /^\/api\/sources\/[A-Za-z0-9_-]{1,128}(?:\/policy)?$/.test(path))
-    || verb === 'POST' && path === '/api/uploads'
+    || ['PUT', 'DELETE'].includes(verb) && /^\/api\/sources\/[A-Za-z0-9_-]{1,128}$/.test(path)
+    || verb === 'POST' && ['/api/uploads', '/api/prep-datasets/import', '/api/connectors/s3/browse'].includes(path)
+    || verb === 'POST' && /^\/api\/sources\/[A-Za-z0-9_-]{1,128}\/(?:bind|rotate|refresh)$/.test(path)
     || ['GET', 'POST'].includes(verb) && /^\/api\/sources\/[A-Za-z0-9_-]{1,128}\/(?:preview|rows|output|query)$/.test(path)
     || ['PUT', 'DELETE'].includes(verb) && /^\/api\/datasets\/[A-Za-z0-9_-]{1,128}\/prep$/.test(path)
-    || verb === 'POST' && /^\/api\/datasets\/[A-Za-z0-9_-]{1,128}\/(?:query|prep\/(?:preview|join-diagnostics))$/.test(path)) return 'prep';
+    || verb === 'PUT' && /^\/api\/datasets\/[A-Za-z0-9_-]{1,128}\/execution$/.test(path)
+    || verb === 'POST' && /^\/api\/datasets\/[A-Za-z0-9_-]{1,128}\/(?:query|refresh|prep\/(?:preview|join-diagnostics))$/.test(path)) return 'prep';
   if (verb === 'GET' && path === '/api/o/status' || verb === 'POST' && /^\/api\/o\/(?:generate|calculation|query|plan|revise)$/.test(path)
     || verb === 'POST' && /^\/api\/v1\/dashboards\/[A-Za-z0-9_-]{1,512}\/question$/.test(path)) return 'ask';
   return undefined;

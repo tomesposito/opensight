@@ -11,7 +11,7 @@ const recoveryTime = (entry?: SaveMetadata) => entry?.autoSavedAt && (!entry.man
 
 export function useLocalDrafts(access: Access, dataset?: AuthorDataset, opening?: { draftId?: string; newAnalysis?: boolean; initialDraft?: AuthorDraft }) {
   const key = draftStorageKey(access);
-  const store = useMemo(() => createDraftStore(browserDraftStorage, access), [key]);
+  const store = useMemo(() => createDraftStore(access.embed?.storage ?? browserDraftStorage, access), [key]);
   const [initial] = useState<SaveMetadata & { id?: string; draft: AuthorDraft; saved?: string; message: string; openingError?: string }>(() => {
     const fresh = () => opening?.newAnalysis && opening.initialDraft ? opening.initialDraft : { ...emptyDraft(), ...(dataset ? { dataset } : {}) };
     try {

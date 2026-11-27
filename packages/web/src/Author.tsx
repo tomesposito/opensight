@@ -82,7 +82,7 @@ function AuthorWorkspace({ initialDraft, renderIdentity, sampleLoaded = false, o
     refresh(); window.addEventListener('focus', refresh); const timer = setInterval(refresh, 30000);
     return () => { abort.abort(); clearInterval(timer); window.removeEventListener('focus', refresh); };
   }, [metricList, metricDatasetId, dispatch]);
-  const noData = draft.noDataset === true || (access.mode === 'local' && !draft.dataset && !draft.bundle && !sampleLoaded);
+  const noData = draft.noDataset === true || ((access.mode === 'local' || access.embed) && !draft.dataset && !draft.bundle && !sampleLoaded);
   const workspace = useRef<HTMLDivElement>(null);
   const [hostedStatus, setHostedStatus] = useState('');
   const [publishing, setPublishing] = useState(false);
@@ -95,7 +95,7 @@ function AuthorWorkspace({ initialDraft, renderIdentity, sampleLoaded = false, o
       const input = hostedAnalysisInput(draft);
       const id = drafts.save(); if (!id) throw new Error('DRAFT_SAVE_FAILED: Save the recovery draft before publishing.');
       const key = `${draftStorageKey(access)}:hosted:${id}`;
-      const storage = window.localStorage;
+      const storage = access.embed?.storage() ?? window.localStorage;
       const raw = storage.getItem(key);
       const link: HostedDraftLink = raw ? JSON.parse(raw) as HostedDraftLink : { analysisId: `editor-${id}` };
       const persist = (next: HostedDraftLink) => storage.setItem(key, JSON.stringify(next));

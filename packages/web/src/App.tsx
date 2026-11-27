@@ -1,3 +1,4 @@
+import { AccessProvider, type Session, type Access } from './access.js';
 import { McpConsent } from './McpConsent.js';
 import { mcpAuthorization } from './mcp-oauth.js';
 import { SignupVerification } from './SignupVerification.js';
@@ -19,7 +20,12 @@ const api = createApiClient(import.meta.env?.VITE_OPENSIGHT_API_URL, globalThis.
 // Hosted built-in invitations use base64url; legacy namespace invitations use hex.
 export const invitationToken = (hash: string): string | undefined => /^#invite=([A-Za-z0-9_-]{43}|[a-f0-9]{64})$/.exec(hash)?.[1];
 
-export default function App() {
+export interface EmbeddedAppProps { api: ReturnType<typeof createApiClient>; session: Session; embed: NonNullable<Access['embed']> }
+export default function App({ embedded }: { embedded?: EmbeddedAppProps } = {}) {
+  if (embedded) return <AccessProvider access={{ mode: 'hosted', session: embedded.session, aiClient: embedded.api, embed: embedded.embed }}><Application api={embedded.api} fixtures={[]} /></AccessProvider>;
+  return <StandaloneApp />;
+}
+function StandaloneApp() {
   const offline = import.meta.env?.VITE_OPENSIGHT_OFFLINE_DEMO === 'true';
   const [mcp] = useState(() => mcpAuthorization(window.location.search));
   useEffect(() => { if (mcp) window.history.replaceState(null, '', window.location.pathname + window.location.hash); }, [mcp]);
