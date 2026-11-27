@@ -1,13 +1,15 @@
 import { EmbeddingError } from './index.js';
 
+export type FullAppLandingRoute = '/dashboards' | `/dashboards/${string}` | '/data' | '/analyses/author' | `/analyses/author/${string}` | '/data/preparation' | '/ask-o';
 export type ExperienceConfiguration = { Dashboard: { InitialDashboardId: string } }
   | { DashboardVisual: { InitialDashboardVisualId: { DashboardId: string; SheetId: string; VisualId: string } } }
-  | { QSearchBar: { InitialTopicId: string } } | { QuickSightConsole: { InitialPath?: string } };
+  | { QSearchBar: { InitialTopicId: string } } | { QuickSightConsole: { InitialPath?: string } }
+  | { FullApp: { InitialPath: FullAppLandingRoute } };
 export interface GenerateEmbedUrlForRegisteredUser {
   UserArn?: string; ExperienceConfiguration: ExperienceConfiguration; SessionLifetimeInMinutes?: number; AllowedDomains?: string[];
 }
 export interface GenerateEmbedUrlForAnonymousUser {
-  Namespace: string; AuthorizedResourceArns: string[]; ExperienceConfiguration: ExperienceConfiguration;
+  Namespace: string; AuthorizedResourceArns: string[]; ExperienceConfiguration: Exclude<ExperienceConfiguration, { FullApp: unknown }>;
   SessionLifetimeInMinutes?: number; SessionTags?: { Key: string; Value: string }[]; AllowedDomains?: string[];
 }
 export interface SessionEmbedUrl { sessionId: string; EmbedUrl: string; bootstrapExpiresAt: string; SessionLifetimeInMinutes: number; configRevision: number }

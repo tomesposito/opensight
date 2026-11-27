@@ -1,1 +1,1 @@
-{ "extends": "../tsconfig.json", "compilerOptions": { "noEmit": true, "rootDir": "." }, "include": ["public-api.ts"] }
+{ "extends": "../tsconfig.json", "compilerOptions": { "noEmit": true, "rootDir": "." }, "include": ["public-api.ts", "full-app-api.ts"] }
