@@ -11,7 +11,7 @@ export const request = InitialPath => ({ ExperienceConfiguration: { FullApp: { I
 export async function fixture(t) {
   const f = await sessionFixture(t), reader = await readerMember(f), seeded = await seedEmbedContent(f, reader);
   t.after(() => seeded.budgets.close());
-  const { call } = await httpStack(t, f);
+  const { server, call } = await httpStack(t, f);
   const open = async (path = '/data', extra = {}) => {
     const issued = await call('/api/embedding/sessions', 'POST', { ...request(path), ...extra }, `Bearer ${(await f.login()).token}`);
     assert.equal(issued.status, 200, JSON.stringify(issued.body));
@@ -21,7 +21,7 @@ export async function fixture(t) {
     const auth = `Embed ${redeemed.body.credential}`;
     return { root, auth, issued: issued.body, app: (path, method = 'GET', body, headers) => call(`${root}/app${path}`, method, body, auth, headers) };
   };
-  return { ...f, ...seeded, reader, call, open };
+  return { ...f, ...seeded, reader, server, call, open };
 }
 
 export async function prepared(f) {

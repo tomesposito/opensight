@@ -10,6 +10,46 @@ import { embedAppClient } from '../build/test/embed-app-client.js';
 import { AskOPage } from '../build/test/AskOPage.js';
 import { AccessProvider } from '../build/test/access.js';
 import { OEntry } from '../build/test/OEntry.js';
+import { HostedAISettings } from '../../api/dist/hosted-ai-settings.js';
+
+function testWindow(t, hash) {
+  const previousWindow = globalThis.window, previousAct = globalThis.IS_REACT_ACT_ENVIRONMENT;
+  const events = new EventTarget(), location = { hash };
+  globalThis.window = { location, get localStorage() { throw Error('Embed must not use browser storage'); },
+    history: { pushState: (_s, _t, hash) => { location.hash = hash; }, replaceState: (_s, _t, hash) => { location.hash = hash; } },
+    addEventListener: (...args) => events.addEventListener(...args), removeEventListener: (...args) => events.removeEventListener(...args),
+    matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) };
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  t.after(() => { globalThis.window = previousWindow; globalThis.IS_REACT_ACT_ENVIRONMENT = previousAct; });
+  return location;
+}
+
+test('full-app real App mounts every allowed landing class through the scoped HTTP client', async t => {
+  const f = await fixture(t); await prepared(f);
+  const settings = new HostedAISettings(f.metadata, f.hostedConfig.encryptionKey.toString('base64'), {});
+  await settings.save(await f.context(), { provider: 'openai', model: 'synthetic-model' });
+  await settings.saveKey(await f.context(), { key: 'synthetic-test-only-not-a-credential' });
+  const active = await f.open('/data');
+  assert.equal((await active.app('/api/v1/analyses', 'POST', input())).status, 201);
+  const published = await active.app('/api/v1/analyses/working/publish', 'POST', {}); assert.equal(published.status, 201);
+  const client = embedAppClient({ app: async (path, init = {}) => {
+    const result = await active.app(path, init.method, init.body ? JSON.parse(init.body) : undefined, Object.fromEntries(new Headers(init.headers)));
+    return Response.json(result.body, { status: result.status, headers: result.headers });
+  } });
+  const location = testWindow(t, '#/data');
+  const embedded = { api: client.api, session: await client.session(), embed: { storage: client.storage, loadAnalysis: client.loadAnalysis, authorizeRoute: client.authorizeRoute } };
+  for (const [path, title] of [['/dashboards', 'Dashboards'], [`/dashboards/${published.body.DashboardId}`, 'Original'], ['/data', 'Data'], ['/analyses/author', null], ['/analyses/author/working', null], ['/data/preparation', 'Transformation pipeline'], ['/ask-o', 'Ask O']]) {
+    location.hash = `#${path}`; let ui;
+    try {
+      await act(() => { ui = create(h(App, { embedded })); });
+      const loaded = () => title ? ui.root.findAllByType('h1').some(node => node.props.children === title) : ui.root.findAllByType(Author).length === 1;
+      for (let i = 0; i < 100 && !loaded(); i++) await act(() => new Promise(resolve => setTimeout(resolve, 20)));
+      assert.ok(loaded(), `${path}: ${JSON.stringify(ui.toJSON()).slice(0, 1500)}`);
+      assert.ok(!JSON.stringify(ui.toJSON()).includes('EMBED_SCOPE_DENIED'), path);
+    } finally { if (ui) await act(() => ui.unmount()); }
+  }
+  client.clear();
+});
 
 test('full-app App opens real Author, edits and saves twice, then navigates under the same HTTP session', async t => {
   const f = await fixture(t); await prepared(f); const active = await f.open('/analyses/author');
