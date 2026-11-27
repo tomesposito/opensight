@@ -9,6 +9,7 @@ import type { TenantContext } from './metadata.js';
 import { boundColumns } from './source-schema.js';
 import type { JsonObject } from './mapping.js';
 import { applyEmbedInteractions, embedInteractionState, type EmbedInteractionState, type EmbedControls } from './embed-interactions.js';
+import { fullAppLocation, appRole } from './embed-app-profile.js';
 
 export function embedVisuals(raw: unknown) {
   const definition = object(raw);
@@ -97,6 +98,14 @@ export class EmbedContent {
   }
   async authorize(context: TenantContext, g: SessionGrant): Promise<void> {
     const e = g.experience;
+    if (e.kind === 'full-app') {
+      if (g.anonymous) embedFailure('EMBED_FEATURE_UNSUPPORTED', 422);
+      const route = fullAppLocation(e.landingRoute, true);
+      appRole((await this.metadata.get(context, { kind: 'user', id: context.userId })).body.role, route.area);
+      if (route.area === 'dashboard' && route.id) await this.asset(context, 'dashboard', route.id);
+      if (route.area === 'author' && route.id) await this.asset(context, 'analysis', route.id);
+      return;
+    }
     if (e.kind === 'console') {
       const user = await this.metadata.get(context, { kind: 'user', id: context.userId });
       if (g.anonymous || !hasCapability(user.body.role as Role, 'build')) embedFailure('EMBED_AUTHOR_REQUIRED', 403);
@@ -175,6 +184,7 @@ export class EmbedContent {
   }
   async content(context: TenantContext, g: SessionGrant, raw?: unknown) {
     const e = g.experience;
+    if (e.kind === 'full-app') embedFailure('EMBED_SCOPE_DENIED', 403);
     if (raw !== undefined && e.kind !== 'dashboard' && e.kind !== 'visual') embedFailure('EMBED_SCOPE_DENIED', 403);
     const state = embedInteractionState(raw, g.interactionFeatures);
     if (e.kind === 'console') {

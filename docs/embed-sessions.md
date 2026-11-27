@@ -274,3 +274,15 @@ checks revocation/expiry/suspension. Screenshots and non-secret evidence go to
 certificate, browser profile and isolated Postgres schema are removed on exit.
 No new runtime dependency, browser download, AWS call or deployment is involved.
 See [verification and visual review](issue-26-gap-notes.md) for measured results.
+# Full-app experience (#336)
+
+Registered issuance accepts `ExperienceConfiguration: { "FullApp": { "InitialPath": "/data" } }`.
+`InitialPath` is required and is exactly one of `/dashboards`, `/dashboards/<id>`,
+`/data`, `/analyses/author`, `/analyses/author/<id>`, `/data/preparation`, or `/ask-o`.
+IDs use letters, digits, underscores and hyphens (1–512 characters). URLs, query
+strings, fragments, escaped paths and unknown routes fail issuance. Anonymous
+full-app requests fail with `EMBED_FEATURE_UNSUPPORTED`. Editor and prep landings
+require `build` (`EMBED_AUTHOR_REQUIRED`) and `features.authoring`; dashboard
+landings require `features.registeredDashboards`. The landing route is part of
+the grant and is revalidated on every operation. Ask O requires configured AI.
+
