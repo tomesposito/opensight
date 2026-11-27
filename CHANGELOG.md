@@ -101,6 +101,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Registered full-app embeds can land on dashboards, the data catalog, the real analysis editor, preparation or configured Ask O, navigate in-frame, and keep editing after repeated saves in the same session. Existing resource permissions, RLS/CLS and revocation remain enforced; the four fixed embed experiences retain their behavior (#336).
+
 - Live dashboard and visual embeds now offer working filters and parameter controls when enabled by the tenant, with typed frame-local state, reset to saved defaults, and viewer RLS/CLS enforced on every refresh; both capabilities remain off by default (#335).
 
 - Customer-run QuickSight definition extractor with a List/Describe-only IAM policy, local credential-free outputs, diff-aware manifests and a shared versioned import-report contract with finding fingerprints and per-asset coverage. Multi-member bundle JSON works with the existing local importer. Hosted v1/CLI/SDK/MCP imports atomically retain member-owned reports and stage unresolved assets; Ask O provides deterministic extractor guidance and fingerprint-grouped remediation proposals that require normal authoring confirmation (#334).

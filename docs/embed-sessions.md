@@ -66,6 +66,7 @@ inferred from browser input.
 | Visual | `DashboardVisual: {InitialDashboardVisualId: {DashboardId, SheetId, VisualId}}` | Same, restricted to the named sheet/visual |
 | Q search | `QSearchBar: {InitialTopicId}` | Topic ID resolves to a tenant dataset with current RLS/CLS |
 | Console | `QuickSightConsole: {InitialPath?}` | Administrator/author/author_ai; `/start` or `/start/analyses/{id}` |
+| Full app | `FullApp: {InitialPath}` | Registered member's current app capabilities and resource grants; allowed landings below |
 
 Q uses a bounded local grammar: `sum|total|average|avg|min|max|count FIELD [by FIELD]`.
 It queries real authorized data and rejects unsupported questions. It does not
@@ -274,7 +275,7 @@ checks revocation/expiry/suspension. Screenshots and non-secret evidence go to
 certificate, browser profile and isolated Postgres schema are removed on exit.
 No new runtime dependency, browser download, AWS call or deployment is involved.
 See [verification and visual review](issue-26-gap-notes.md) for measured results.
-# Full-app experience (#336)
+## Full-app experience (#336, D-102 Q1)
 
 Registered issuance accepts `ExperienceConfiguration: { "FullApp": { "InitialPath": "/data" } }`.
 `InitialPath` is required and is exactly one of `/dashboards`, `/dashboards/<id>`,
@@ -284,5 +285,78 @@ strings, fragments, escaped paths and unknown routes fail issuance. Anonymous
 full-app requests fail with `EMBED_FEATURE_UNSUPPORTED`. Editor and prep landings
 require `build` (`EMBED_AUTHOR_REQUIRED`) and `features.authoring`; dashboard
 landings require `features.registeredDashboards`. The landing route is part of
-the grant and is revalidated on every operation. Ask O requires configured AI.
+the grant and is revalidated on every operation. Ask O requires the `ai`
+capability and a configured provider (`SECURITY_AI_REQUIRED` or
+`AI_NOT_CONFIGURED` otherwise). AI readers ask against permitted published
+dashboards; authors can also select their prepared datasets.
+
+For example, the product backend issues:
+
+```json
+{
+  "SessionLifetimeInMinutes": 60,
+  "AllowedDomains": ["https://product.example"],
+  "ExperienceConfiguration": {
+    "FullApp": { "InitialPath": "/analyses/author/quarterly" }
+  }
+}
+```
+
+The frame mounts the real web `App`, analysis editor and data-preparation UI.
+The initial route selects the starting page; it does not give access to its
+resources or restrict the session to that single asset. In-frame navigation can
+visit the supported dashboard, catalog, analysis, preparation and Ask O routes,
+including their detail and draft pages, under the same registered user and
+namespace. Each destination is authorized before mounting. Unsupported paths
+fail with `EMBED_SCOPE_DENIED`; inaccessible assets retain `RESOURCE_NOT_FOUND`.
+Authoring destinations and operations always recheck `features.authoring` and
+the current `build` capability. Dashboard destinations and operations recheck
+`features.registeredDashboards`. No new full-app feature flag is introduced.
+
+An embed-only bridge at `/api/embed/sessions/{id}/app/...` accepts the redeemed
+credential and a closed list of app operations. It calls the existing hosted
+data, AI and v1 handlers for permitted reads, queries, prep and analysis writes.
+It does not accept hosted bearer tokens, change the hosted authentication path,
+or expose account, billing, user administration or sharing endpoints. A fixed
+experience credential cannot enter this bridge. Owner/resource checks, source
+and dataset RLS intersection, CLS, query admission and result-publication checks
+remain in the existing handlers and planners. Runtime result chunks use the
+same embed-session credential and revocation checks.
+
+Full-app saves use the standalone analysis create/update path with versioned
+`If-Match` concurrency. That path changes analysis content without changing the
+authorization revision, so two saves and subsequent navigation work under one
+redeem. A stale save returns `METADATA_CONFLICT` and leaves the editor open.
+There is no global relaxation of session validation or rebinding to a new
+authorization revision. The bridge additionally checks session validity inside
+metadata write transactions. Revocation, tenant suspension, config replacement,
+policy changes and authorization changes by other actors still deny writes,
+including a revocation between initial admission and commit.
+
+The full-app frame keeps drafts and hosted analysis links in frame-local memory;
+it does not write them or its credential to browser storage. Visibility/status
+checks preserve the mounted editor when authority remains valid. Terminal expiry
+or revocation clears its drafts and protected content. A reload requires a new
+single-use bootstrap. Fixed dashboard, visual, Q search and console experiences
+retain their existing renderer, scope and save/renewal behavior. In particular,
+the fixed console still requires renewal after saving.
+
+The v2 SDK transport already mounts an opaque issued URL. Its only extension is
+the registered `FullApp` request type and typed landing paths; anonymous types
+exclude it. Full-app saves do not emit the fixed console's terminal `saved`
+event. New navigation/context events and per-embed visibility/theming controls
+belong to subsequent D-102 steps.
+
+The separate full-app HTML bundle is served with the same nonce CSP and
+no-store protections. Runtime ingress forwards `Accept-Encoding`; gzip keeps
+the bundle within the gateway response envelope. This is an API-served frame,
+not a deployed static demo.
+
+Root tests cover issuance/landing validation, single-redeem transport, real App
+editing and repeated saves, reader Ask O, stale writes, transaction-time
+revocation, tenant/config/policy changes, route and asset bypasses, forged or
+foreign credentials, RLS/CLS and compressed runtime delivery. Existing fixed
+experience tests remain unchanged.
+See [issue #336 verification and visual review](issue-336-gap-notes.md) for the
+local browser harness, implementation choices and screenshot comparison.
 

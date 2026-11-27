@@ -109,6 +109,22 @@ therefore also reject stale data publication. H4 admission/worker budgets remain
 in force for data execution; config does not execute queries or add a data path.
 H6 embed grants bind to this config revision and are invalidated by replacements.
 This makes no claim of recalling an already delivered v1 snapshot.</p>
+<h3 id="full-app-sessions-336">Full-app sessions (#336)</h3>
+<p>Registered <code>FullApp</code> sessions use these same tenant settings, exact parent
+origins and lifetime ceilings; there is no additional product flag. Enable
+<code>features.authoring</code> for analysis editing and preparation, and
+<code>features.registeredDashboards</code> for dashboard access. Both the landing route and
+each later operation check the relevant flag and the member&#39;s current
+capabilities/resource grants. Anonymous full-app issuance is unsupported even
+when <code>features.anonymous</code> is enabled. Ask O additionally requires an AI-capable
+member and configured provider.</p>
+<p>Changing any embedding configuration revision revokes existing full-app
+sessions just as it revokes the fixed experiences. Saving an analysis through
+the full-app editor keeps the session active because content saves follow the
+standalone versioned analysis-write path. See <a href="/docs/embedding-sessions/#full-app-experience-336-d-102-q1">full-app issuance and authority</a>
+for the request shape, allowed routes and session behavior. Per-embed navigation
+visibility and additional theme tokens are subsequent D-102 work; presentation
+choices never grant server authority.</p>
 <h2 id="operator-configuration">Operator configuration</h2>
 <p>Deployment configuration comes only from <code>OPENSIGHT_EMBEDDING_POLICY</code>, a JSON
 environment value with exactly <code>origins</code>, <code>tenants</code> and <code>assets</code> arrays. Missing

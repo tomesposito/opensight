@@ -421,6 +421,13 @@ saved defaults. Both capabilities remain disabled by default.
 
 ![Registered hosted embed using synthetic viewer-filtered data](docs/images/embed-session.png)
 
+Registered full-app embeds load the real application at a permitted dashboard,
+catalog, editor, preparation or configured Ask O route. Navigation stays in the
+frame, and authors can save repeatedly without restarting the session. The four
+fixed experiences remain available. See the [full-app verification](docs/issue-336-gap-notes.md).
+
+![Full-app embedded editor after two saves, using synthetic live data](docs/images/embed-full-app.png)
+
 The separate [offline appearance preview](docs/images/embed-preview.png) shows
 loading, empty, permission-error and expiry states.
 
