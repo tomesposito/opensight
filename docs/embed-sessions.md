@@ -105,8 +105,9 @@ operator's tenant allowlist. Omitting it uses the static list. Wildcards,
 normalization tricks and same-origin parent/embed deployments are refused. A
 separate iframe origin is required to preserve the credential boundary.
 
-The response is `{sessionId, EmbedUrl, bootstrapExpiresAt,
-SessionLifetimeInMinutes, configRevision}`. `EmbedUrl` is
+The response includes `sessionId`, `EmbedUrl`, `bootstrapExpiresAt`,
+`SessionLifetimeInMinutes` and `configRevision`. If the request includes
+`Surface`, the response also echoes the accepted declaration. `EmbedUrl` is
 `https://embed.example/embed/sessions/{id}#bootstrap=...`; the fragment never enters
 the HTTP URL or Referer. Unknown fields and unresolved subjects fail closed.
 
@@ -236,13 +237,18 @@ await client.mount(portal, { surface: { actions: { authoring: 'hidden' } } });
 await client.mount(internalTool, { surface: { actions: { authoring: 'visible' } } });
 ```
 
-For example, the product backend can issue both sessions for the same registered
-author with the following body, using its own H2 credential. Forward the issuance
-response to the SDK, including the acknowledged `Surface` when one was requested.
+For these two mounts, use the same registered author and enable both
+`features.registeredDashboards` and `features.authoring`. The tenant ceiling
+must allow `full-app` and the `authoring` action. The product backend sends each
+mount's declaration with its own H2 credential and returns the issuance response
+to the SDK. This example requests 15 minutes and also sets the account menu and
+header states. It requires `maxSessionSeconds` of at least 900 and a ceiling
+that includes `menus.account` and `chrome.header`.
 
 ```json
 {
   "ExperienceConfiguration": { "FullApp": { "InitialPath": "/dashboards" } },
+  "SessionLifetimeInMinutes": 15,
   "Surface": {
     "actions": { "authoring": "hidden" },
     "menus": { "account": "disabled" },

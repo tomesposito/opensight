@@ -145,7 +145,9 @@ unique exact origins and replaces the static list for this grant, within the
 operator&#39;s tenant allowlist. Omitting it uses the static list. Wildcards,
 normalization tricks and same-origin parent/embed deployments are refused. A
 separate iframe origin is required to preserve the credential boundary.</p>
-<p>The response is <code>{sessionId, EmbedUrl, bootstrapExpiresAt, SessionLifetimeInMinutes, configRevision}</code>. <code>EmbedUrl</code> is
+<p>The response includes <code>sessionId</code>, <code>EmbedUrl</code>, <code>bootstrapExpiresAt</code>,
+<code>SessionLifetimeInMinutes</code> and <code>configRevision</code>. If the request includes
+<code>Surface</code>, the response also echoes the accepted declaration. <code>EmbedUrl</code> is
 <code>https://embed.example/embed/sessions/{id}#bootstrap=...</code>; the fragment never enters
 the HTTP URL or Referer. Unknown fields and unresolved subjects fail closed.</p>
 <p><code>DELETE /api/embedding/sessions/{id}</code> revokes the grant for its issuer or a current
@@ -254,11 +256,16 @@ issuance endpoint, alongside the backend-selected subject and experience.</p>
 await client.mount(portal, { surface: { actions: { authoring: &#39;hidden&#39; } } });
 await client.mount(internalTool, { surface: { actions: { authoring: &#39;visible&#39; } } });
 </code></pre>
-<p>For example, the product backend can issue both sessions for the same registered
-author with the following body, using its own H2 credential. Forward the issuance
-response to the SDK, including the acknowledged <code>Surface</code> when one was requested.</p>
+<p>For these two mounts, use the same registered author and enable both
+<code>features.registeredDashboards</code> and <code>features.authoring</code>. The tenant ceiling
+must allow <code>full-app</code> and the <code>authoring</code> action. The product backend sends each
+mount&#39;s declaration with its own H2 credential and returns the issuance response
+to the SDK. This example requests 15 minutes and also sets the account menu and
+header states. It requires <code>maxSessionSeconds</code> of at least 900 and a ceiling
+that includes <code>menus.account</code> and <code>chrome.header</code>.</p>
 <pre><code class="language-json">{
   &quot;ExperienceConfiguration&quot;: { &quot;FullApp&quot;: { &quot;InitialPath&quot;: &quot;/dashboards&quot; } },
+  &quot;SessionLifetimeInMinutes&quot;: 15,
   &quot;Surface&quot;: {
     &quot;actions&quot;: { &quot;authoring&quot;: &quot;hidden&quot; },
     &quot;menus&quot;: { &quot;account&quot;: &quot;disabled&quot; },
