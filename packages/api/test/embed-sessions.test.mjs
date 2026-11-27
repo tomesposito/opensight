@@ -100,3 +100,34 @@ test('H6 cross-tenant handles and reduced operator origins cannot revoke, renew 
   const reduced = new EmbedSessions(f.db, f.metadata, { ...f.policy, tenants: new Map() }, f.key, async () => {}, f.clock);
   await assert.rejects(reduced.redeem(issued.sessionId, { bootstrap: new URL(issued.EmbedUrl).hash.slice(11), parentOrigin, channelId: randomBytes(24).toString('base64url') }), { code: 'EMBED_ORIGIN_DENIED' });
 });
+
+test('H6 resolves each session surface within the tenant, experience, feature and member grant', async t => {
+  const f = await sessionFixture(t);
+  const app = { ExperienceConfiguration: { FullApp: { InitialPath: '/data' } } };
+  const hidden = await f.issue({ ...app, Surface: { actions: { authoring: 'hidden' } } });
+  const shown = await f.issue({ ...app, Surface: { actions: { authoring: 'visible' } } });
+  assert.deepEqual(hidden.Surface, { actions: { authoring: 'hidden' } });
+  const bound = (await f.sessions.shell(hidden.sessionId)).surface;
+  assert.equal(bound.actions.authoring, 'hidden');
+  assert.equal((await f.sessions.shell(shown.sessionId)).surface.actions.authoring, 'visible');
+  const active = await f.redeem(hidden);
+  assert.equal((await f.sessions.verify(hidden.sessionId, active.credential)).session.surface.actions.authoring, 'hidden');
+  const renewed = await f.sessions.renew(await f.context(), hidden.sessionId);
+  assert.deepEqual((await f.sessions.shell(renewed.sessionId)).surface, bound);
+  for (const Surface of [null, [], { menu: {} }, { actions: [] }, { actions: { authoring: true } },
+    { menus: { navigation: 'open' } }, JSON.parse('{"chrome":{"__proto__":"hidden"}}')]) {
+    await assert.rejects(f.issue({ ...app, Surface }), { code: 'EMBED_SURFACE_INVALID' });
+  }
+  for (const Surface of [{ actions: { authoring: 'visible' } }, { actions: { filtering: 'disabled' } }, { menus: { account: 'visible' } }]) {
+    await assert.rejects(f.issue(request({ Surface })), { code: 'EMBED_SURFACE_DENIED' });
+  }
+  const ceiling = { ...f.config.surfaceCeiling, experiences: ['full-app'], actions: [], menus: [], chrome: [] };
+  await f.embedding.put(await f.context(), { ...f.config, surfaceCeiling: ceiling }, 1);
+  await assert.rejects(f.sessions.shell(shown.sessionId), { code: 'EMBED_SESSION_REVOKED' });
+  await assert.rejects(f.issue(), { code: 'EMBED_SURFACE_DENIED' });
+  for (const Surface of [{ actions: { authoring: 'visible' } }, { menus: { account: 'disabled' } }, { chrome: { header: 'visible' } }]) {
+    await assert.rejects(f.issue({ ...app, Surface }), { code: 'EMBED_SURFACE_DENIED' });
+  }
+  const narrowed = await f.issue(app);
+  assert.equal((await f.sessions.shell(narrowed.sessionId)).surface.chrome.header, 'hidden');
+});
