@@ -17,6 +17,7 @@ import type { RetryCommit } from './retry-store.js';
 export interface TenantContext extends Scope { readonly userId: string; readonly authorizationRevision: number }
 export interface Revisions { authorization: number; policy: number; configuration: number }
 export type MetadataEdit = { key: ResourceKey; expectedVersion: number; body: JsonObject | null };
+export type MetadataWriteGuard = <T>(write: (validate: () => Promise<void>, connection?: SqlConnection) => Promise<T>) => Promise<T>;
 const predicates = 'tenant_id = ? AND namespace_id = ? AND kind = ? AND owner_id = ? AND resource_id = ?';
 const scopeValues = (context: Scope) => [context.tenantId, context.namespaceId];
 const keyValues = (context: Scope, key: ResourceKey) => [...scopeValues(context), key.kind, key.ownerId ?? '', key.id];
@@ -28,7 +29,7 @@ function resource(row: SqlRow): MetadataResource {
  * Operator access is a separate object/pool, never a tenant capability or HTTP field. */
 export class TenantMetadata {
   readonly #contexts = new WeakSet<TenantContext>();
-  readonly #writeGuards = new WeakMap<TenantContext, (connection: SqlConnection) => Promise<void>>();
+  readonly #writeGuards = new WeakMap<TenantContext, MetadataWriteGuard>();
   constructor(private readonly tenantDatabase: Database, private readonly membershipDatabase: Database, readonly usage?: HostedUsage) {}
 
   async authenticate<T>(credential: T, verify: (credential: T) => Promise<{ namespaceId: string; userId: string } | undefined>): Promise<TenantContext> {
@@ -50,7 +51,7 @@ export class TenantMetadata {
     if (!context || !this.#contexts.has(context)) throw new MetadataError('TENANT_CONTEXT_REQUIRED', 401);
   }
   /** Additional server-owned authority, checked inside the durable write lock. */
-  guardWrites(context: TenantContext, guard: (connection: SqlConnection) => Promise<void>): void {
+  guardWrites(context: TenantContext, guard: MetadataWriteGuard): void {
     this.assertContext(context);
     if (this.#writeGuards.has(context)) throw new MetadataError('TENANT_CONTEXT_REQUIRED', 401);
     this.#writeGuards.set(context, guard);
@@ -62,21 +63,26 @@ export class TenantMetadata {
   }
   private async checked<T>(context: TenantContext, work: (c: SqlConnection, revisions: Revisions, user: JsonObject) => Promise<T>, writes = false): Promise<T> {
     this.assertContext(context);
-    return this.tenantDatabase.transaction(async c => {
-      // Serialize admission with tenant edits and lifecycle transitions on both engines.
-      const tenants = await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING version", [context.tenantId]);
-      if (!tenants.length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
-      if (writes) await this.#writeGuards.get(context)?.(c);
-      const rows = await c.query('SELECT "authorization", policy, configuration FROM h1_revisions WHERE tenant_id = ? AND namespace_id = ?', scopeValues(context));
-      const rev = rows[0];
-      if (!rev || Number(rev.authorization) !== context.authorizationRevision) throw new MetadataError('AUTHORIZATION_REVISED', 403);
-      const users = await c.query(`SELECT body FROM h1_resources WHERE ${predicates}`, keyValues(context, { kind: 'user', id: context.userId }));
-      if (!users[0]) throw new MetadataError('UNKNOWN_PRINCIPAL', 403);
-      const before = writes && this.usage ? await this.usage.storageBytes(c, context) : 0;
-      const result = await work(c, { authorization: Number(rev.authorization), policy: Number(rev.policy), configuration: Number(rev.configuration) }, JSON.parse(String(users[0].body)) as JsonObject);
-      if (writes) await this.usage?.storage(c, context, before);
-      return result;
-    }, context);
+    const transaction = async (validate?: () => Promise<void>, connection?: SqlConnection): Promise<T> => {
+      const checkedWork = async (c: SqlConnection): Promise<T> => {
+        // Serialize admission with tenant edits and lifecycle transitions on both engines.
+        const tenants = await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING version", [context.tenantId]);
+        if (!tenants.length) throw new MetadataError('TENANT_UNAVAILABLE', 403);
+        await validate?.();
+        const rows = await c.query('SELECT "authorization", policy, configuration FROM h1_revisions WHERE tenant_id = ? AND namespace_id = ?', scopeValues(context));
+        const rev = rows[0];
+        if (!rev || Number(rev.authorization) !== context.authorizationRevision) throw new MetadataError('AUTHORIZATION_REVISED', 403);
+        const users = await c.query(`SELECT body FROM h1_resources WHERE ${predicates}`, keyValues(context, { kind: 'user', id: context.userId }));
+        if (!users[0]) throw new MetadataError('UNKNOWN_PRINCIPAL', 403);
+        const before = writes && this.usage ? await this.usage.storageBytes(c, context) : 0;
+        const result = await work(c, { authorization: Number(rev.authorization), policy: Number(rev.policy), configuration: Number(rev.configuration) }, JSON.parse(String(users[0].body)) as JsonObject);
+        if (writes) await this.usage?.storage(c, context, before);
+        return result;
+      };
+      return connection ? checkedWork(connection) : this.tenantDatabase.transaction(checkedWork, context);
+    };
+    const guard = writes ? this.#writeGuards.get(context) : undefined;
+    return guard ? guard(transaction) : transaction();
   }
   async get(context: TenantContext, key: ResourceKey): Promise<MetadataResource> {
     return this.checked(context, async c => {

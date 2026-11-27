@@ -41,7 +41,8 @@ export function fullAppOperation(path: string, verb: string): AppLocation['area'
   if (verb === 'GET' && /^\/api\/datasets\/[A-Za-z0-9_-]{1,128}\/(?:prep|execution|rows)$/.test(path)) return 'catalog';
   if (['GET', 'POST', 'PUT'].includes(verb) && /^\/api\/v1\/analyses(?:\/[A-Za-z0-9_-]{1,512})?$/.test(path)
     || verb === 'POST' && /^\/api\/v1\/analyses\/[A-Za-z0-9_-]{1,512}\/publish$/.test(path)
-    || verb === 'GET' && /^\/api\/v1\/(?:metrics|prep-templates)(?:\/[A-Za-z0-9_-]{1,512})?$/.test(path)) return 'author';
+    || verb === 'GET' && (/^\/api\/v1\/(?:metrics|prep-templates)(?:\/[A-Za-z0-9_-]{1,512})?$/.test(path)
+      || /^\/api\/v1\/datasets\/[A-Za-z0-9_-]{1,128}\/metrics$/.test(path))) return 'author';
   if (verb === 'GET' && (path === '/api/connectors' || /^\/api\/sources\/[A-Za-z0-9_-]{1,128}(?:\/policy)?$/.test(path))
     || ['PUT', 'DELETE'].includes(verb) && /^\/api\/sources\/[A-Za-z0-9_-]{1,128}$/.test(path)
     || verb === 'POST' && ['/api/uploads', '/api/prep-datasets/import', '/api/connectors/s3/browse'].includes(path)

@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture, request, prepared, input } from './embed-full-app-helpers.mjs';
+import { TenantMetadata } from '../dist/metadata.js';
+import { EmbedSessions } from '../dist/embed-sessions.js';
 test('full-app real editor API saves repeatedly in the same session, preserves CAS and can reopen', async t => {
   const f = await fixture(t); await prepared(f);
   const active = await f.open('/analyses/author');
@@ -16,6 +18,34 @@ test('full-app real editor API saves repeatedly in the same session, preserves C
   assert.equal((await f.call(`${active.root}/status`, 'GET', undefined, active.auth)).status, 200);
   assert.deepEqual(await f.metadata.revisions(await f.context()), before);
   assert.equal((await active.app('/api/v1/analyses/working', 'PUT', { ...edit, name: 'Keep working' }, { 'if-match': '"2"' })).headers.etag, '"3"');
+});
+
+test('full-app PostgreSQL guard keeps session tables on the operator connection and writes on the tenant connection', async t => {
+  const f = await fixture(t); await prepared(f); const active = await f.open('/analyses/author');
+  // Exercise the two-connection protocol deterministically using one SQLite
+  // transaction as a scheduler. The restricted facade refuses operator tables.
+  let held, writes = 0, guards = 0;
+  const operator = { durable: true, dialect: 'postgres', transaction: work => f.db.transaction(async c => {
+    held = c; try { return await work({ query: (sql, values) => c.query(sql.replace(/ FOR SHARE$/, ''), values) }); } finally { held = undefined; }
+  }) };
+  const tenant = { durable: true, dialect: 'postgres', transaction: async (work, context) => {
+    assert.equal(context.tenantId, f.tenant.tenantId);
+    const restricted = c => ({ query: async (sql, values) => {
+      assert.doesNotMatch(sql, /h[256]_/); if (/^(INSERT|UPDATE).*h1_resources/.test(sql)) writes++;
+      return c.query(sql, values);
+    } });
+    if (held) { guards++; return work(restricted(held)); }
+    return f.db.transaction(c => work(restricted(c)));
+  } };
+  const metadata = new TenantMetadata(tenant, operator);
+  const sessions = new EmbedSessions(operator, metadata, f.policy, f.key, async () => {}, f.clock);
+  const verified = await sessions.verify(active.issued.sessionId, active.auth.slice(6));
+  sessions.protectAppWrites(verified.context, active.issued.sessionId, active.auth.slice(6));
+  const stamp = await metadata.revisions(verified.context);
+  await metadata.mutateAnalysis(verified.context, 'restricted-save', { definition: { AnalysisId: 'restricted-save', Name: 'Restricted', Definition: { DataSetIdentifierDeclarations: [{ Identifier: 'data', DataSetArn: 'opensight:dataset:prepared' }], Sheets: [] } }, datasets: [{ kind: 'prepared-dataset', id: 'prepared', ownerId: f.identity.userId }] }, 0, stamp);
+  assert.ok(writes > 0); assert.equal(guards, 1);
+  await sessions.revoke(await metadata.authenticate(null, async () => f.identity), active.issued.sessionId);
+  await assert.rejects(metadata.mutateAnalysis(verified.context, 'restricted-save', { definition: { AnalysisId: 'restricted-save', Definition: { Sheets: [] } }, datasets: [] }, 1, stamp), { code: 'EMBED_SESSION_REVOKED' });
 });
 
 for (const change of ['revocation', 'config', 'authorization', 'policy', 'suspension']) {

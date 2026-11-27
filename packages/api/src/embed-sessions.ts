@@ -106,8 +106,9 @@ export class EmbedSessions {
     if (!row) embedFailure('EMBED_SUBJECT_UNRESOLVED', 403);
     return object(JSON.parse(String(row.body)));
   }
-  private async configuration(c: SqlConnection, context: Pick<TenantContext, 'tenantId' | 'namespaceId'>) {
-    const active = await c.query("UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING version", [context.tenantId]);
+  private async configuration(c: SqlConnection, context: Pick<TenantContext, 'tenantId' | 'namespaceId'>, lockTenant = true) {
+    const active = await c.query(lockTenant ? "UPDATE h1_tenants SET version = version WHERE tenant_id = ? AND state = 'active' RETURNING version"
+      : "SELECT version FROM h1_tenants WHERE tenant_id = ? AND state = 'active'", [context.tenantId]);
     if (!active.length) embedFailure('EMBED_SESSION_REVOKED', 401);
     const row = (await c.query('SELECT * FROM h5_embedding_config WHERE tenant_id = ? AND namespace_id = ?', [context.tenantId, context.namespaceId]))[0];
     const config = validateEmbedConfig(row ? JSON.parse(String(row.body)) : defaultEmbedConfig(), context.tenantId, this.policy);
@@ -124,10 +125,10 @@ export class EmbedSessions {
     if (g.anonymous && !config.features.anonymous || e.kind === 'console' && !config.features.authoring
       || !g.anonymous && (e.kind === 'dashboard' && !config.features.registeredDashboards || e.kind === 'visual' && !config.features.registeredVisuals)) embedFailure('EMBED_FEATURE_UNSUPPORTED', 422);
   }
-  private async check(c: SqlConnection, row: SqlRow): Promise<SessionGrant> {
+  private async check(c: SqlConnection, row: SqlRow, lockTenant = true): Promise<SessionGrant> {
     await this.checkKey(c, String(row.key_id));
     if (Number(row.revoked)) embedFailure('EMBED_SESSION_REVOKED', 401);
-    const g = JSON.parse(String(row.grant_body)) as SessionGrant, current = await this.configuration(c, g);
+    const g = JSON.parse(String(row.grant_body)) as SessionGrant, current = await this.configuration(c, g, lockTenant);
     if (current.revision !== g.configRevision || JSON.stringify(current.revisions) !== JSON.stringify(g.revisions)) embedFailure('EMBED_SESSION_REVOKED', 401);
     await this.membership(c, g.tenantId, g.namespaceId, g.issuerId);
     const user = await this.membership(c, g.tenantId, g.namespaceId, g.userId);
@@ -246,12 +247,23 @@ export class EmbedSessions {
    * bump). Still check embed revocation/config/key/expiry in the commit transaction;
    * a request admitted before revocation cannot commit afterwards. */
   protectAppWrites(context: TenantContext, id: string, credential: string): void {
-    this.metadata.guardWrites(context, async c => {
-      const row = await this.load(c, id), grant = await this.check(c, row);
-      if (grant.experience.kind !== 'full-app' || grant.anonymous || grant.tenantId !== context.tenantId || grant.namespaceId !== context.namespaceId || grant.userId !== context.userId) embedFailure('EMBED_SCOPE_DENIED', 403);
-      if (!/^[A-Za-z0-9_-]{43}$/.test(credential) || !row.credential_hash || !equal(digest(credential), String(row.credential_hash))) embedFailure('INVALID_EMBED_TOKEN', 401);
-      if (!Number(row.redeemed) || Number(row.expires_at) <= this.clock()) embedFailure('EMBED_SESSION_EXPIRED', 401);
-    });
+    this.metadata.guardWrites(context, write => this.database.transaction(async c => {
+      // Hold the operator-owned key/session rows until the tenant write commits.
+      // The real metadata mutation still uses the restricted tenant pool on PG.
+      await c.query(this.database.dialect === 'postgres' ? 'SELECT key_id FROM h6_keys WHERE key_id = ? FOR SHARE'
+        : 'UPDATE h6_keys SET active = active WHERE key_id = ?', [this.configured().id]);
+      await c.query('UPDATE h6_sessions SET revoked = revoked WHERE session_id = ?', [id]);
+      const validate = async () => {
+        // checked() already holds the tenant row lock. Reacquiring it through the
+        // operator pool would deadlock; all validation predicates remain identical.
+        const row = await this.load(c, id), grant = await this.check(c, row, false);
+        if (grant.experience.kind !== 'full-app' || grant.anonymous || grant.tenantId !== context.tenantId || grant.namespaceId !== context.namespaceId || grant.userId !== context.userId) embedFailure('EMBED_SCOPE_DENIED', 403);
+        if (!/^[A-Za-z0-9_-]{43}$/.test(credential) || !row.credential_hash || !equal(digest(credential), String(row.credential_hash))) embedFailure('INVALID_EMBED_TOKEN', 401);
+        if (!Number(row.redeemed) || Number(row.expires_at) <= this.clock()) embedFailure('EMBED_SESSION_EXPIRED', 401);
+      };
+      // SQLite has one serialized connection and no SQL role boundary.
+      return write(validate, this.database.dialect === 'sqlite' ? c : undefined);
+    }));
   }
   async revoke(context: TenantContext, id: string): Promise<void> {
     this.metadata.assertContext(context);
