@@ -36,7 +36,7 @@ test('D-86 folded edge grammar matches shared routes without per-request regex c
   assert.ok(!source.includes('new RegExp'));
   for (const id of ['a', 'a-b_c', 'x'.repeat(512), 'x'.repeat(513), '', '%2f', '.', 'a/b']) {
     for (const suffix of ['', '/publish', '/calculated-fields', '/filter-groups', '/filter-groups/f', '/sheets/s/layouts', '/sheets/s/visuals', '/sheets/s/visuals/v', '/shares/user/u', '/versions', '/versions/1', '/versions/0', '/versions/1/visuals/v/query', '/exports', '/export', '/metrics', '/question', '/unknown']) {
-      for (const kind of ['analyses', 'dashboards', 'datasets', 'metrics']) {
+      for (const kind of ['analyses', 'dashboards', 'datasets', 'metrics', 'prep-templates', 'metric-subscriptions', 'metric-unsubscribe', 'bundle-imports', 'workspace', 'ai']) {
         const path = `/api/v1/${kind}/${id}${suffix}`;
         assert.equal(JSON.stringify(context.serverlessV1Methods(path)), JSON.stringify(serverlessV1Methods(path)), path);
       }
@@ -44,6 +44,27 @@ test('D-86 folded edge grammar matches shared routes without per-request regex c
   }
   for (const path of ['/api/v1/workspace/action-history', '/api/v1/ai/ask', '/api/v1/analyses', '/api/v1/dashboards', '/api/v1/metrics', '/api/v1/metric-datasets', '/api/uploads/reservations/a/complete', '/api/session'])
     assert.equal(JSON.stringify(context.serverlessV1Methods(path)), JSON.stringify(serverlessV1Methods(path)), path);
+});
+test('#347 authenticated browser routes skip unrelated route families without weakening header validation', () => {
+  const isolated = vm.createContext({ Buffer: { byteLength: Buffer.byteLength } });
+  vm.runInContext(source.replaceAll('__OPENSIGHT_ORIGIN__', JSON.stringify(origin)).replaceAll('__OPENSIGHT_HOST__', JSON.stringify(host)), isolated);
+  vm.runInContext('var regexCalls = 0; var originalTest = RegExp.prototype.test; RegExp.prototype.test = function(value) { regexCalls++; return originalTest.call(this, value); };', isolated);
+  const path = '/api/v1/dashboards/' + 'd'.repeat(512) + '/versions/1/visuals/' + 'v'.repeat(512) + '/query';
+  assert.equal(JSON.stringify(isolated.serverlessV1Methods(path)), JSON.stringify(serverlessV1Methods(path)));
+  assert.ok(isolated.regexCalls <= 6, `Unrelated route regexes ran: ${isolated.regexCalls}`);
+  const e = frame(); e.request.uri = '/api' + path; e.request.method = 'POST';
+  for (const [name, value] of Object.entries({ authorization: 'Bearer ' + 'x'.repeat(3000), origin,
+    'user-agent': 'Synthetic browser release verification', 'sec-ch-ua': '"Chromium";v="141", "Synthetic";v="1"',
+    'sec-fetch-mode': 'cors', 'sec-fetch-site': 'same-origin', 'accept-language': 'en-US,en;q=0.9',
+    'accept-encoding': 'gzip, deflate, br', 'content-type': 'application/json', 'content-length': '2',
+    constructor: 'ordinary-header', toString: 'ordinary-header' })) e.request.headers[name] = { value };
+  validateViewerRequest({ ...e.request, protocol: 'https' }, origin);
+  assert.equal(isolated.handler(structuredClone(e)).uri, e.request.uri);
+  for (const [name, value] of [['authorization', 'one,two'], ['x-tenant-id', 'forged'], ['x-extra', 'é'.repeat(9000)]]) {
+    const rejected = structuredClone(e); rejected.request.headers[name] = { value };
+    assert.throws(() => validateViewerRequest({ ...rejected.request, protocol: 'https' }, origin));
+    assert.equal(isolated.handler(rejected).statusCode, 403);
+  }
 });
 test('edge rejects unsupported paths before reading a large header map', () => {
   const e = frame(); e.request.uri = '/api/api/v1/datasets';
