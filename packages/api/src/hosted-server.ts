@@ -17,7 +17,7 @@ import { EmbedApp } from './embed-app.js';
 import { EmbedSources } from './embed-sources.js';
 import { embedSessionRoute, type EmbedResult } from './embed-session-routes.js';
 import { loadBudgets } from './budget-store.js';
-import { embeddingPolicy, expectedEmbedRevision, HostedEmbedding, initializeEmbedding } from './embedding-config.js';
+import { embedConfigFields, embeddingPolicy, expectedEmbedRevision, HostedEmbedding, initializeEmbedding } from './embedding-config.js';
 import { assertHostedSourcesReady, expireUploads } from './source-maintenance.js';
 import { HostedSources } from './hosted-sources.js';
 import { HostedData } from './hosted-data.js';
@@ -675,7 +675,7 @@ export async function createHostedApiServer(options: HostedServerOptions): Promi
       if (path === '/api/embedding/config') {
         method(request, response, ['GET', 'PUT']);
         const result = request.method === 'GET' ? await embedding.get(context)
-          : await embedding.put(context, await body(request, ['enabled', 'allowedParentOrigins', 'embedOriginId', 'maxSessionSeconds', 'appearance', 'features']), expectedEmbedRevision(request.headers['if-match']));
+          : await embedding.put(context, await body(request, embedConfigFields), expectedEmbedRevision(request.headers['if-match']));
         response.setHeader('ETag', `"${result.revision}"`);
         send(response, 200, result); return;
       }

@@ -160,7 +160,11 @@ test('H5 HTTP config enforces If-Match, admin scope, exact browser origin and na
   assert.equal((await request('/api/namespaces/foreign/embedding/config')).status, 404);
   assert.equal((await request(undefined, { headers: { authorization: 'Bearer invalid' } })).status, 401);
   const forged = await request(undefined, { method: 'PUT', headers: { 'if-match': '"0"' }, body: { ...config(), userId: 'forged' } }); assert.equal(forged.body.errorCode, 'FORGED_PRINCIPAL');
-  const saved = await request(undefined, { method: 'PUT', headers: { 'if-match': '"0"', origin }, body: config() }); assert.equal(saved.status, 200); assert.equal(saved.headers.etag, '"1"');
+  const ceiling = { experiences: ['full-app'], menus: ['account'], actions: [], chrome: [] };
+  const invalid = await request(undefined, { method: 'PUT', headers: { 'if-match': '"0"' }, body: { ...config(), surfaceCeiling: { ...ceiling, chrome: ['notices'] } } });
+  assert.equal(invalid.status, 422); assert.equal(invalid.body.errorCode, 'EMBED_SURFACE_INVALID');
+  const saved = await request(undefined, { method: 'PUT', headers: { 'if-match': '"0"', origin }, body: { ...config(), surfaceCeiling: ceiling } });
+  assert.equal(saved.status, 200); assert.equal(saved.headers.etag, '"1"'); assert.deepEqual(saved.body.config.surfaceCeiling, ceiling);
   assert.equal((await request()).status, 401);
   const fresh = await f.login(), headers = { authorization: `Bearer ${fresh.token}` };
   assert.equal((await request(undefined, { headers })).body.revision, 1);

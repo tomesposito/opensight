@@ -7,6 +7,7 @@ import { identifier, object } from './metadata-resources.js';
 import type { TenantContext, TenantMetadata } from './metadata.js';
 import { appendMetadataEvent } from './metadata-outbox.js';
 
+export const embedConfigFields = ['enabled', 'allowedParentOrigins', 'embedOriginId', 'maxSessionSeconds', 'appearance', 'features', 'surfaceCeiling'] as const;
 const appearanceFields = ['palette', 'font', 'layout', 'productName', 'iframeTitle', 'logoAssetId', 'faviconAssetId'] as const;
 const featureNames = ['registeredDashboards', 'registeredVisuals', 'parameterControls', 'filtering', 'anonymous', 'authoring', 'export', 'download', 'persistentReaderState'] as const;
 type Features = Record<typeof featureNames[number], boolean>;
@@ -83,7 +84,7 @@ function assetId(raw: unknown, kind: Asset['kind'], tenantId: string, policy: Em
   return raw as string;
 }
 export function validateEmbedConfig(raw: unknown, tenantId: string, policy: EmbedPolicy): TenantEmbedConfig {
-  const input = fields(raw, ['enabled', 'allowedParentOrigins', 'embedOriginId', 'maxSessionSeconds', 'appearance', 'features', 'surfaceCeiling']);
+  const input = fields(raw, embedConfigFields);
   if (typeof input.enabled !== 'boolean') fail();
   const parents = origins(input.allowedParentOrigins), tenant = policy.tenants.get(tenantId);
   if (parents.some(o => !tenant?.allowedParentOrigins.includes(o))) fail('EMBED_ORIGIN_DENIED', 403);
