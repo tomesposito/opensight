@@ -1,3 +1,4 @@
+import { upload } from './source-helpers.mjs';
 import assert from 'node:assert/strict';
 import { sessionFixture, parentOrigin } from './embed-session-helpers.mjs';
 import { readerMember, seedEmbedContent } from './embed-content-helpers.mjs';
@@ -25,7 +26,8 @@ export async function fixture(t) {
 
 export async function prepared(f) {
   const prep = new HostedPrep(new HostedData(f.sources, undefined, f.budgets));
-  await prep.save(await f.context(), 'prepared', { name: 'Prepared', pipeline: { version: 1, input: f.source.id, steps: [] }, expectedVersion: 0 });
+  const source = await f.sources.upload(await f.context(), upload());
+  await prep.save(await f.context(), 'prepared', { name: 'Prepared', pipeline: { version: 1, input: source.id, steps: [] }, expectedVersion: 0 });
 }
 const definition = () => ({ dataSetIdentifierDeclarations: [{ identifier: 'data', dataSetArn: 'opensight:dataset:prepared' }], sheets: [{ sheetId: 'sheet', visuals: [] }] });
 export const input = () => ({ analysisId: 'working', name: 'Original', definition: definition(), datasetBindings: { data: { kind: 'prepared-dataset', id: 'prepared' } } });
