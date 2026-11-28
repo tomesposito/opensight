@@ -35,7 +35,7 @@ export interface DashboardBackend {
   change(id: string, change: DashboardChange, stamp: unknown, receipt?: (record: DashboardRecord | null) => RetryCommit): Promise<DashboardRecord | null>;
   metricVocabulary?(version: DashboardVersion): Promise<readonly import('@opensight/query-engine').PublishedMetric[]>;
   authorizeQuestion?(id: string): Promise<void>;
-  query(version: DashboardVersion, definition: JsonObject, visualId: string): Promise<DashboardQuery>;
+  query(version: DashboardVersion, definition: JsonObject, visualId: string, includeContext?: boolean): Promise<DashboardQuery>;
 }
 export interface DashboardQuery {
   metrics?: readonly import('@opensight/query-engine').PublishedMetric[];

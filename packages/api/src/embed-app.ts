@@ -74,7 +74,7 @@ export class EmbedApp {
     else await this.authorize(context, session, { path: target, area });
     if (await this.ai.route(request, response, target, context, recheck)) return true;
     if (await this.data.route(request, response, target, context, recheck)) return true;
-    if (await this.v1.route(request, response, target, context, recheck)) return true;
+    if (await this.v1.route(request, response, target, context, recheck, true)) return true;
     return embedFailure('EMBED_SCOPE_DENIED', 403);
   }
 }

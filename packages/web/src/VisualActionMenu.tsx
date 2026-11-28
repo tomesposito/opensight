@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import type { FilterAction, NavigationAction, Selection, UrlAction } from './interactions.js';
 
 /**
  * QuickSight-style ⋯ overflow menu for menu-option actions. Shared by the
@@ -7,7 +6,7 @@ import type { FilterAction, NavigationAction, Selection, UrlAction } from './int
  * visual's current selection and stay disabled until a data point is
  * selected.
  */
-export function VisualActionMenu({ items, selection, onInvoke }: { items: (FilterAction | UrlAction | NavigationAction)[]; selection?: Selection; onInvoke: (action: FilterAction | UrlAction | NavigationAction) => void }) {
+export function VisualActionMenu<T extends { id: string; name: string }>({ items, selection, onInvoke }: { items: T[]; selection?: object; onInvoke: (action: T) => void }) {
   const [open, setOpen] = useState(false);
   return <div className="visual-action-menu">
     <button type="button" aria-haspopup="menu" aria-expanded={open} aria-label="Run action" onClick={e => { e.stopPropagation(); setOpen(value => !value); }}>⋯</button>

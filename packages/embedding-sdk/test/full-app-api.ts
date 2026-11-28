@@ -30,3 +30,14 @@ void client.mount(document.createElement('div'), { onDataEvent(event) {
   // @ts-expect-error The version belongs only to a save receipt.
   void event.version;
 } });
+
+async function readerCommands() {
+  const reader = await client.mount(document.createElement('div'), {
+    customActions: [{ id: 'open', label: 'Open account', columns: ['account'] }],
+    onDataEvent(event) { if (event.type === 'customAction') void event.values.account; },
+  });
+  reader.sendAction({ type: 'setFilter', filterId: 'regions', values: ['east'] });
+  // @ts-expect-error Refresh cannot choose another resource.
+  reader.sendAction({ type: 'refresh', path: '/dashboards/other' });
+}
+void readerCommands;

@@ -140,3 +140,25 @@ test('#340 SDK addresses actions to the ready generation and rejects malformed c
   assert.throws(() => handle.sendAction({ ...payload, sessionId: 'other' }), { code: 'EMBED_ACTION_INVALID' });
   await handle.refresh(); handle.sendAction(payload); assert.equal(d.messages.length, 2);
 });
+
+test('#340 registration is snapshotted per mount and unknown, partial or enlarged custom payloads are dropped', async t => {
+  const d = dom(), received = [], action = { id: 'open', label: 'Open record', columns: ['region', 'account'] };
+  const client = createSessionEmbeddingClient({ allowedEmbedOrigins: [origin], getEmbedUrl: async () => issued() });
+  for (const customActions of [null, {}, [action, action], [{ ...action, columns: [] }], [{ ...action, columns: ['a', 'a'] }], [{ ...action, token: 'extra' }]]) {
+    await assert.rejects(client.mount(d.container, { customActions }), { code: 'EMBED_CUSTOM_ACTION_INVALID' });
+  }
+  const handle = await client.mount(d.container, { customActions: [action], onDataEvent: e => received.push(e) });
+  t.after(() => handle.destroy());
+  action.columns.push('extra');
+  d.loaded(); const { customActions, ...init } = d.messages[0].data;
+  assert.deepEqual(customActions[0].columns, ['region', 'account']);
+  const frame = { origin, source: handle.iframe.contentWindow };
+  d.emit({ ...frame, data: { ...init, type: 'opensight:session', event: 'ready' } });
+  const payload = { type: 'customAction', actionId: 'open', visualId: 'sales', values: { account: 42, region: 'east' } };
+  for (const override of [{ actionId: 'unknown' }, { values: { region: 'east' } }, { values: { ...payload.values, extra: true } }]) {
+    d.emit({ ...frame, data: { ...init, type: 'opensight:data', payload: { ...payload, ...override } } });
+  }
+  assert.deepEqual(received, []);
+  d.emit({ ...frame, data: { ...init, type: 'opensight:data', payload } });
+  assert.deepEqual(received, [payload]);
+});

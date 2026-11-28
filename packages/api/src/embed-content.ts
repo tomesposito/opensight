@@ -1,3 +1,4 @@
+import { visualBindings } from './visual-bindings.js';
 import { hasCapability, planPreparedVisual, resolveSecurity, type BoundColumn, type RowPredicate, type SecurityContext, type InteractiveQuery, type Role } from '@opensight/query-engine';
 import { compileVisual } from '@opensight/web/compiler';
 import { containedWork, wireTable, type QueryResult } from './contained-work.js';
@@ -154,7 +155,7 @@ export class EmbedContent {
   async visuals(context: TenantContext, g: Pick<SessionGrant, 'anonymous' | 'tags' | 'experience'>, asset: MetadataResource) {
     return (await this.renderVisuals(context, g, asset)).visuals;
   }
-  private async renderVisuals(context: TenantContext, g: Pick<SessionGrant, 'anonymous' | 'tags' | 'experience' | 'interactionFeatures'>, asset: MetadataResource, state: EmbedInteractionState = {}) {
+  private async renderVisuals(context: TenantContext, g: Pick<SessionGrant, 'anonymous' | 'tags' | 'experience' | 'interactionFeatures'>, asset: MetadataResource, state: EmbedInteractionState = {}, includeContext = false) {
     const stored = object(asset.body.definition), definition = object(structuredClone(stored.Definition)), e = g.experience;
     const analysis = { ResourceType: 'Analysis', AnalysisId: asset.id, Name: String(stored.Name ?? asset.id), Definition: definition };
     const visuals = embedVisuals(definition).filter(v => e.kind !== 'visual' || v.id === e.visualId && v.sheetId === e.sheetId);
@@ -185,7 +186,7 @@ export class EmbedContent {
       for (const [index, v] of visuals.entries()) {
         const computed = await containedWork<QueryResult>(this.data.scope(context), { kind: 'visual', table: wire, analysis, visualId: v.id, dataSetArn }, this.data.limits(context));
         const plan = plans[index]!;
-        const input = { source: 'api' as const, definition: v.definition, rows: computed.rows, bindings: Object.fromEntries([...plan.dimensions, ...plan.measures].map(f => [f.fieldId, f.outputName])), path: v.path };
+        const input = { source: 'api' as const, definition: v.definition, rows: computed.rows, ...visualBindings(plan, includeContext), path: v.path };
         compileVisual(input);
         result.push({ ...input, id: v.id, sheet: v.sheet, placement: { column: 0, columns: 36, row: index * 6, rows: 6 } });
       }
@@ -212,14 +213,14 @@ export class EmbedContent {
         datasets.push({ id: d.id, columns: a.physical.columns.filter(c => !a.deniedColumns.includes(c.name)) });
       }
       const asset = e.analysisId ? await this.asset(context, 'analysis', e.analysisId) : undefined;
-      return { kind: 'console', title: 'Analysis editor', analyses, datasets, ...(asset ? { analysis: asset.body.definition, version: asset.version, datasetId: identifier(object((asset.body.datasets as unknown[])[0]).id), visuals: await this.visuals(context, g, asset) } : {}) };
+      return { kind: 'console', title: 'Analysis editor', analyses, datasets, ...(asset ? { analysis: asset.body.definition, version: asset.version, datasetId: identifier(object((asset.body.datasets as unknown[])[0]).id), visuals: (await this.renderVisuals(context, g, asset, {}, true)).visuals } : {}) };
     }
     if (e.kind === 'q') {
       const a = await this.admission(context, g, e.datasetId);
       return { kind: 'q', title: 'Ask about your data', columns: a.physical.columns.filter(c => !a.deniedColumns.includes(c.name)) };
     }
     const asset = await this.asset(context, 'dashboard', e.dashboardId);
-    return { kind: e.kind, title: String(object(asset.body.definition).Name ?? asset.id), ...await this.renderVisuals(context, g, asset, state) };
+    return { kind: e.kind, title: String(object(asset.body.definition).Name ?? asset.id), ...await this.renderVisuals(context, g, asset, state, true) };
   }
   async question(context: TenantContext, g: SessionGrant, raw: unknown) {
     if (g.experience.kind !== 'q') embedFailure('EMBED_SCOPE_DENIED', 403);

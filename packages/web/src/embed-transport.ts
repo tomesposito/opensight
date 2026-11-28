@@ -9,7 +9,7 @@ export type SessionState = 'loading' | 'ready' | 'error' | 'expired' | 'revoked'
 export interface EmbedTransport {
   app?(path: string, init?: RequestInit): Promise<Response>;
   request<T>(action: 'content' | 'question' | 'analysis' | 'save', body?: unknown): Promise<T>;
-  events: Pick<ReturnType<typeof createEmbedChannel>, 'emit' | 'onAction' | 'live'>;
+  events: Pick<ReturnType<typeof createEmbedChannel>, 'emit' | 'onAction' | 'live' | 'customActions'>;
   ready(): void; saved(): void; destroy(): void;
   connect?(): Promise<void>;
 }

@@ -118,3 +118,20 @@ test('#340 host actions require a live session, bound parent, exact shape and ex
   unsubscribe(); b.emit(action);
   assert.deepEqual(actions, [payload, navigate, { type: 'refresh' }]);
 });
+
+test('#340 malformed initialization cannot bind custom actions and later messages cannot replace them', async t => {
+  const b = browser(), expiresAt = Date.now() + 900000, init = event(b), states = [];
+  const transport = startEmbedTransport({ sessionId: id, allowedDomains: [parentOrigin], surface }, bootstrap, state => states.push(state), async t => t.ready(), b.view,
+    async url => Response.json(url.endsWith('/redeem') ? { credential, expiresAt } : { expiresAt }));
+  t.after(() => transport.destroy());
+  const action = { id: 'open', label: 'Open', columns: ['region'] };
+  const register = customActions => b.emit({ ...init, data: { ...init.data, customActions } });
+  for (const invalid of [null, [action, action], [{ ...action, label: [] }], [{ ...action, token: 'extra' }]]) register(invalid);
+  await settle(); assert.deepEqual(states, []);
+  register([action]); await settle();
+  register([{ ...action, columns: ['private'] }]);
+  const payload = { type: 'customAction', actionId: 'open', visualId: 'sales', values: { region: 'west' } };
+  for (const invalid of [{ ...payload, actionId: 'forged' }, { ...payload, values: { private: 1 } }, { ...payload, values: {} }]) transport.events.emit(invalid);
+  transport.events.emit(payload);
+  assert.deepEqual(b.events.filter(e => e.data.payload).map(e => e.data.payload), [payload]);
+});

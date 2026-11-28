@@ -126,7 +126,7 @@ export class V1Routes {
     } catch (error) { request.resume(); this.sendError(response, error); }
   }
 
-  async route(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, recheck: () => Promise<void>): Promise<boolean> {
+  async route(request: IncomingMessage, response: ServerResponse, path: string, context: TenantContext, recheck: () => Promise<void>, embedded = false): Promise<boolean> {
     if (!path.startsWith('/api/v1/')) return false;
     try {
       if (this.options.invocation && (!this.options.durable || !serverlessV1Methods(path)?.includes(request.method ?? ''))) throw new MetadataError('SERVERLESS_STORAGE_REQUIRED', 503);
@@ -179,7 +179,7 @@ export class V1Routes {
         } }); return true;
       }
       if (/^\/api\/v1\/dashboards(?:\/|$)/.test(path) || /^\/api\/v1\/analyses\/[^/]+\/publish$/.test(path)) {
-        await dashboards.route(request, response, path, new HostedDashboards(this.routes, context, recheck)); return true;
+        await dashboards.route(request, response, path, new HostedDashboards(this.routes, context, recheck), embedded); return true;
       }
       if (/^\/api\/v1\/analyses(?:\/|$)/.test(path)) {
         await analyses.route(request, response, path, new HostedAnalyses(this.routes, context, recheck)); return true;

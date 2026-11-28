@@ -250,3 +250,19 @@ test('#335 anonymous filtering intersects immutable tags and dataset RLS remains
   const reader = await f.open(request({ UserArn: f.arn('user', f.reader.identity.userId) }));
   assert.deepEqual((await f.content.content(reader.context, reader.session, { parameters: { Minimum: [0] }, filters: { 'region-filter': ['east', 'west'] } })).visuals[0].rows, [{ amount: 30 }]);
 });
+
+test('#340 context maps physical columns from the viewer plan even when a result alias names a denied column', async t => {
+  const f = await fixture(t), definition = interactiveDefinition(), kpi = definition.Definition.Sheets[0].Visuals[0].KPIVisual;
+  kpi.ChartConfiguration.FieldWells.Values[0].NumericalMeasureField.FieldId = 'private';
+  await configureInteractions(f, { definition });
+  const viewer = await f.open(request({ UserArn: f.arn('user', f.reader.identity.userId) }));
+  const { visuals: [visual] } = await f.content.content(viewer.context, viewer.session);
+  assert.deepEqual(visual.contextColumns, { amount: 'private' });
+  assert.deepEqual(visual.rows, [{ private: 40 }]);
+  assert.ok(!Object.hasOwn(visual.contextColumns, 'private'));
+  kpi.ChartConfiguration.FieldWells.Values[0].NumericalMeasureField.Column.ColumnName = 'private';
+  await configureInteractions(f, { definition });
+  const denied = await f.open(request({ UserArn: f.arn('user', f.reader.identity.userId) }));
+  f.content.data.table = () => assert.fail('CLS must deny the plan before source I/O');
+  await assert.rejects(f.content.content(denied.context, denied.session), { code: 'UNRESOLVED_BINDING' });
+});

@@ -9,6 +9,7 @@ import type { PublishedDashboard as Definition, ControlValues } from './publishe
 import { publishedBindings, readerControls } from './published-dashboard.js';
 import { buildApiPreview } from './api-preview.js';
 import { viewVisualId } from './dashboard-interactions.js';
+import { EmbedVisualCard } from './EmbedVisualCard.js';
 import { VisualCard } from './VisualCard.js';
 import { ControlInput } from './ControlInput.js';
 import type { FixtureVisual } from './model.js';
@@ -66,12 +67,13 @@ function PublishedContent({ value, client }: { value: Definition; client: Reader
   </>;
 }
 function PublishedVisual({ visual, value, controls, client }: { visual: FixtureVisual; value: Definition; controls: ControlValues; client: ReaderClient }) {
+  const events = useAccess().embed?.events;
   const key = JSON.stringify([value.id, value.version, viewVisualId(visual), controls]);
-  const [state, setState] = useState<{ key: string; rows: FixtureVisual['rows']; metrics?: import('./api-client.js').QueryResponse['metrics']; error?: string; provenance?: import('./api-client.js').QueryResponse['provenance'] }>();
+  const [state, setState] = useState<{ key: string; rows: FixtureVisual['rows']; contextColumns?: Record<string, string>; metrics?: import('./api-client.js').QueryResponse['metrics']; error?: string; provenance?: import('./api-client.js').QueryResponse['provenance'] }>();
   useEffect(() => {
     const abort = new AbortController();
     void client.queryDashboardVisual(value.id, value.version, viewVisualId(visual), controls, abort.signal)
-      .then(result => { if (!abort.signal.aborted) setState({ key, rows: result.rows, metrics: result.metrics, provenance: result.provenance }); })
+      .then(result => { if (!abort.signal.aborted) setState({ key, rows: result.rows, contextColumns: result.contextColumns, metrics: result.metrics, provenance: result.provenance }); })
       .catch((error: unknown) => { if (!abort.signal.aborted) setState({ key, rows: null, error: error instanceof Error ? error.message : String(error) }); });
     return () => abort.abort();
   }, [client, key]);
@@ -84,7 +86,10 @@ function PublishedVisual({ visual, value, controls, client }: { visual: FixtureV
     if (body) body.OpenSightFormatting = metricFormatting(body.OpenSightFormatting as import('./formatting.js').VisualFormatting | undefined, current.metrics);
     return wire as FixtureVisual['definition'];
   }, [visual.definition, current?.metrics]);
-  return <VisualCard visual={{ ...visual, definition, bindings, metrics: current?.metrics, rows: current?.rows ?? null }} loading={!current} dataMessage={current?.error} provenance={current?.provenance} />;
+  const source = { ...visual, definition, bindings, metrics: current?.metrics, rows: current?.rows ?? null };
+  const card = { loading: !current, dataMessage: current?.error, provenance: current?.provenance };
+  return events ? <EmbedVisualCard visual={{ ...source, id: viewVisualId(visual), contextColumns: current?.contextColumns }} events={events} {...card} />
+    : <VisualCard visual={source} {...card} />;
 }
 
 function DashboardAccess({ id, client }: { id: string; client: ReaderClient }) {

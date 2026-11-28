@@ -1,4 +1,4 @@
-import { isDataMessage, isHostAction, type EmbedHostAction, type EmbedDataEvent } from './events.js';
+import { isCustomActions, isDataMessage, isHostAction, type EmbedCustomAction, type EmbedHostAction, type EmbedDataEvent } from './events.js';
 import { isSurfaceDeclaration, type SurfaceDeclaration } from './surface.js';
 import { EmbeddingError } from './index.js';
 
@@ -23,6 +23,7 @@ export interface SessionCallbacks {
   onSaved?: () => void; onError?: (error: EmbeddingError) => void;
 }
 export interface SessionMountOptions extends SessionCallbacks {
+  customActions?: EmbedCustomAction[];
   surface?: SurfaceDeclaration;
 }
 export interface SessionEmbeddingOptions {
@@ -45,6 +46,8 @@ export function createSessionEmbeddingClient(options: SessionEmbeddingOptions) {
   return {
     async mount(container: HTMLElement, callbacks: SessionMountOptions = {}) {
       if (callbacks.surface !== undefined && !isSurfaceDeclaration(callbacks.surface)) throw new EmbeddingError('EMBED_SURFACE_INVALID', 'Invalid embed surface');
+      if (callbacks.customActions !== undefined && !isCustomActions(callbacks.customActions)) throw new EmbeddingError('EMBED_CUSTOM_ACTION_INVALID', 'Invalid custom actions');
+      const customActions = structuredClone(callbacks.customActions ?? []);
       const surface = structuredClone(callbacks.surface);
       const view = container.ownerDocument.defaultView;
       if (!view) throw new EmbeddingError('PARENT_ORIGIN_MISMATCH', 'A browser window is required');
@@ -60,7 +63,7 @@ export function createSessionEmbeddingClient(options: SessionEmbeddingOptions) {
       const failed = () => { clear(); callbacks.onError?.(new EmbeddingError('FRAME_LOAD_FAILED', 'Unable to load the hosted embed')); };
       const initialize = () => {
         if (!active || destroyed) return;
-        iframe.contentWindow?.postMessage({ version: 2, type: 'opensight:initialize', sessionId: active.id, channelId: active.channelId }, active.origin);
+        iframe.contentWindow?.postMessage({ version: 2, type: 'opensight:initialize', ...(customActions.length ? { customActions } : {}), sessionId: active.id, channelId: active.channelId }, active.origin);
       };
       const loaded = () => {
         if (handshakeTimer !== undefined) clearInterval(handshakeTimer);
@@ -72,7 +75,7 @@ export function createSessionEmbeddingClient(options: SessionEmbeddingOptions) {
       let ready = false, terminal = false;
       const message = (event: MessageEvent<unknown>) => {
         if (destroyed || !active || event.source !== iframe.contentWindow || event.origin !== active.origin || !event.data || typeof event.data !== 'object') return;
-        if (isDataMessage(event.data, active.id, active.channelId)) {
+        if (isDataMessage(event.data, active.id, active.channelId, customActions)) {
           if (ready && !terminal) callbacks.onDataEvent?.(event.data.payload);
           return;
         }

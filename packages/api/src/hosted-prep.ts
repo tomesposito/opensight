@@ -1,3 +1,4 @@
+import { visualBindings } from './visual-bindings.js';
 import { compilePrepJoinSample, PrepJoinBudget, PREP_JOIN_SAMPLE_LIMIT, type PrepJoinDiagnostics } from '@opensight/query-engine';
 import { prepFail } from '@opensight/bundle-parser/prep';
 import { tableDownload, tableDownloadFormat, type TableDownload } from './table-download.js';
@@ -299,11 +300,11 @@ export class HostedPrep {
     else await this.data.sources.metadata.batch(context, [{ key: this.key(context, id), body: { resource: stored.resource, execution: settings, ...(stored.materialization ? { materialization: JSON.parse(JSON.stringify(stored.materialization)) } : {}) }, expectedVersion: raw.expectedVersion as number }], graph.revisions);
     await this.data.cache?.invalidate(this.cacheKey(context, id)); return settings;
   }
-  async dashboardVisual(context: TenantContext, id: string, analysis: unknown, visualId: string, dataSetArn: string) {
+  async dashboardVisual(context: TenantContext, id: string, analysis: unknown, visualId: string, dataSetArn: string, includeContext = false) {
     const columns = (await this.describe(context, id)).columns;
     const plan = planPreparedVisual(columns, analysis, visualId, dataSetArn);
     const result = await this.execute(context, id, 'rows', {}, { analysis, visualId, dataSetArn }) as QueryResult;
-    return { ...result, bindings: Object.fromEntries([...plan.dimensions, ...plan.measures].map(f => [f.fieldId, f.outputName])) };
+    return { ...result, ...visualBindings(plan, includeContext) };
   }
   /** D-85: only the authorized published-dashboard backend supplies recipeOwner.
    * Recompute even BLAZE/nested BLAZE recipes in request-local memory. No prepared
@@ -313,7 +314,7 @@ export class HostedPrep {
     await this.data.finish(context, graph.leaves, graph.revisions);
     return this.plan(graph, id).columns;
   }
-  async readerDashboardVisual(context: TenantContext, recipeOwner: string, id: string, analysis: unknown, visualId: string, dataSetArn: string) {
+  async readerDashboardVisual(context: TenantContext, recipeOwner: string, id: string, analysis: unknown, visualId: string, dataSetArn: string, includeContext = false) {
     try {
       const stored = await this.stored(context, id, recipeOwner), graph = await this.graph(context, id, stored.resource.opensightPrep!, recipeOwner);
       const plan = planPreparedVisual(this.plan(graph, id).columns, analysis, visualId, dataSetArn);
@@ -323,7 +324,7 @@ export class HostedPrep {
         const result = await containedWork<QueryResult>(scope, { kind: 'visual', table: await wireTable(scope, table,
           { id, table: 'output', connectorId: 'file', columns: table.columns, security: 'unrestricted' }), analysis, visualId, dataSetArn }, this.data.limits(context));
         await this.data.finish(context, graph.leaves, graph.revisions);
-        return { ...result, bindings: Object.fromEntries([...plan.dimensions, ...plan.measures].map(f => [f.fieldId, f.outputName])) };
+        return { ...result, ...visualBindings(plan, includeContext) };
       }, graph.revisions);
     } catch (error) {
       // Preserve operational/visual errors; conceal unavailable or unexecutable

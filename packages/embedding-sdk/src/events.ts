@@ -21,7 +21,9 @@ export function embedRoute(path: unknown, landing = false) {
 export type EmbedCell = string | number | boolean | null;
 export type EmbedValues = Record<string, EmbedCell>;
 export type EmbedFilters = Record<string, (string | number)[]>;
+export interface EmbedCustomAction { id: string; label: string; columns: string[] }
 export type EmbedDataEvent =
+  | { type: 'customAction'; visualId: string; actionId: string; values: EmbedValues }
   | { type: 'selection'; visualId: string; values: EmbedValues }
   | { type: 'filterState'; filters: EmbedFilters }
   | { type: 'navigation'; path: string }
@@ -43,10 +45,25 @@ const scalar = (value: unknown) => typeof value === 'number' ? Number.isFinite(v
 const values = (value: unknown) => record(value) && Object.entries(value).every(([key, v]) => name(key) && (v === null || typeof v === 'boolean' || scalar(v)));
 const filterValues = (v: unknown) => Array.isArray(v) && v.length <= 1000 && Object.keys(v).length === v.length && Array.from(v).every(scalar) && new Set(v).size === v.length;
 
+function list<T>(value: unknown, maximum: number, valid: (entry: unknown) => entry is T): value is T[] {
+  return Array.isArray(value) && value.length <= maximum && Object.keys(value).length === value.length && Array.from(value).every(valid);
+}
 
-export function isEmbedDataEvent(value: unknown): value is EmbedDataEvent {
+export function isCustomActions(value: unknown): value is EmbedCustomAction[] {
+  const action = (item: unknown): item is EmbedCustomAction => record(item) && exact(item, 'id', 'label', 'columns')
+    && id(item.id) && name(item.label) && !!item.label.trim() && list(item.columns, 64, name)
+    && item.columns.length > 0 && new Set(item.columns).size === item.columns.length;
+  return list(value, 32, action) && new Set(value.map(item => item.id)).size === value.length;
+}
+
+export function isEmbedDataEvent(value: unknown, customActions: readonly EmbedCustomAction[] = []): value is EmbedDataEvent {
   if (!record(value)) return false;
   switch (value.type) {
+    case 'customAction': {
+      const action = customActions.find(item => item.id === value.actionId);
+      return !!action && exact(value, 'type', 'visualId', 'actionId', 'values') && id(value.visualId)
+        && record(value.values) && exact(value.values, ...action.columns) && values(value.values);
+    }
     case 'selection': return exact(value, 'type', 'visualId', 'values') && id(value.visualId) && values(value.values);
     case 'filterState': return exact(value, 'type', 'filters') && record(value.filters) && Object.entries(value.filters).every(([key, v]) => name(key) && filterValues(v));
     case 'navigation': return exact(value, 'type', 'path') && !!embedRoute(value.path);
@@ -55,9 +72,9 @@ export function isEmbedDataEvent(value: unknown): value is EmbedDataEvent {
   }
 }
 
-export function isDataMessage(value: unknown, sessionId: string, channelId: string): value is { payload: EmbedDataEvent } {
+export function isDataMessage(value: unknown, sessionId: string, channelId: string, customActions: readonly EmbedCustomAction[] = []): value is { payload: EmbedDataEvent } {
   return record(value) && exact(value, 'version', 'type', 'sessionId', 'channelId', 'payload') && value.version === 2
-    && value.type === 'opensight:data' && value.sessionId === sessionId && value.channelId === channelId && isEmbedDataEvent(value.payload);
+    && value.type === 'opensight:data' && value.sessionId === sessionId && value.channelId === channelId && isEmbedDataEvent(value.payload, customActions);
 }
 
 export type EmbedHostAction =
