@@ -4,6 +4,7 @@ import { sessionFixture, request } from './embed-session-helpers.mjs';
 import { readerMember, seedEmbedContent, assetDefinition, interactiveDefinition, configureInteractions } from './embed-content-helpers.mjs';
 import { tagSecurity } from '../dist/embed-content.js';
 import { EmbedSessions } from '../dist/embed-sessions.js';
+import { upload } from './source-helpers.mjs';
 
 async function fixture(t) {
   const f = await sessionFixture(t), reader = await readerMember(f), data = await seedEmbedContent(f, reader);
@@ -41,6 +42,57 @@ test('H6 anonymous session tags restrict source rows and deny issuer-only column
   const unknown = await f.open({ ...body, SessionTags: [{ Key: 'unknown', Value: 'west' }] }, true);
   await assert.rejects(f.content.content(unknown.context, unknown.session), { code: 'EMBED_TAG_CONFIGURATION_REQUIRED' });
   await assert.rejects(f.content.save(opened.context, opened.session, {}), { code: 'EMBED_SCOPE_DENIED' });
+});
+test('#338 account tags intersect source membership and dataset RLS, preserving each viewer’s CLS', async t => {
+  const f = await fixture(t), readerId = f.reader.identity.userId, issuer = { type: 'user', id: f.identity.userId };
+  await f.metadata.put(await f.context(), { kind: 'group', id: 'east-readers' }, { name: 'East readers', userIds: [readerId] });
+  const source = await f.sources.upload(await f.context(), {
+    ...upload({ rowLevel: true, rowRules: [
+      { id: 'east', principals: [{ type: 'group', id: 'east-readers' }], predicate: { column: 'region', operator: 'eq', value: 'east' } },
+      { id: 'all', principals: [issuer], predicate: { column: 'region', operator: 'is-not-null' } },
+    ], protectedColumns: ['private'], columnGrants: [{ id: 'issuer-only', column: 'private', effect: 'allow', principals: [issuer] }] }),
+    base64: Buffer.from('account,region,amount,private\nA,east,10,x\nB,east,11,x\nA,west,12,x\nA,east,30,x\n').toString('base64'),
+  });
+  const dataset = { definition: { DataSet: { DataSetId: 'dataset', RowLevelPermissionTagConfiguration: {
+    Status: 'ENABLED', TagRules: [{ TagKey: 'account', ColumnName: 'account' }],
+  } } }, sources: [{ kind: 'source', id: source.id, ownerId: issuer.id }] };
+  await f.metadata.put(await f.context(), { kind: 'dataset', id: 'dataset' }, dataset, 1);
+  await f.metadata.put(await f.context(), { kind: 'policy', id: 'dataset-policy' }, { datasetId: 'dataset', dataSetArn: 'urn:opensight:dataset', rowLevel: true,
+    rowRules: [{ id: 'small', principals: [issuer, { type: 'user', id: readerId }], predicate: { column: 'amount', operator: 'lt', value: 25 } }],
+    protectedColumns: [], columnGrants: [] });
+  const q = { QSearchBar: { InitialTopicId: 'dataset' } }, tags = [{ Key: 'account', Value: 'A' }];
+  const reader = { ExperienceConfiguration: q, UserArn: f.arn('user', readerId) };
+  const delegated = await f.open({ ...reader, SessionTags: tags });
+  const registered = await f.open({ ExperienceConfiguration: q, SessionTags: tags });
+  const noClaims = await f.open(reader);
+  const anon = await f.open(request({ Namespace: 'virtual', AuthorizedResourceArns: [f.arn('dashboard', 'dashboard')], SessionTags: [{ Key: 'account', Value: 'B' }] }), true);
+  const rows = async ({ context, session }) => (await f.content.question(context, session, { Question: 'sum amount by account' })).rows;
+  assert.deepEqual(await rows(delegated), [{ category: 'A', value: 10 }]);
+  assert.deepEqual(await rows(registered), [{ category: 'A', value: 22 }]);
+  assert.deepEqual(await rows(noClaims), [{ category: 'A', value: 10 }, { category: 'B', value: 11 }]);
+  assert.deepEqual((await f.content.content(anon.context, anon.session)).visuals[0].rows, [{ amount: 11 }]);
+  assert.deepEqual((await f.content.admission(delegated.context, delegated.session, 'dataset')).deniedColumns, ['private']);
+  assert.deepEqual((await f.content.admission(registered.context, registered.session, 'dataset')).deniedColumns, []);
+});
+
+test('#338 claimed readers deny before source I/O without usable dataset rules', async t => {
+  const f = await fixture(t), subject = { UserArn: f.arn('user', f.reader.identity.userId) };
+  const render = async tags => {
+    const opened = await f.open(request({ ...subject, SessionTags: tags }));
+    return f.content.content(opened.context, opened.session);
+  };
+  f.content.data.table = async () => assert.fail('A denied session must not read source rows');
+  await assert.rejects(render([{ Key: 'region', Value: 'east' }, { Key: 'account', Value: 'A' }]), { code: 'EMBED_TAG_CONFIGURATION_REQUIRED' });
+  const config = { Status: 'ENABLED', TagRules: [{ TagKey: 'region', ColumnName: 'region' }, { TagKey: 'account', ColumnName: 'private' }],
+    TagRuleConfigurations: [['region']] };
+  await f.metadata.put(await f.context(), { kind: 'dataset', id: 'dataset' }, {
+    ...f.dataset, definition: { DataSet: { DataSetId: 'dataset', RowLevelPermissionTagConfiguration: config } },
+  }, 1);
+  await assert.rejects(render([{ Key: 'region', Value: 'east' }, { Key: 'account', Value: 'A' }]), { code: 'EMBED_TAG_CONFIGURATION_REQUIRED' });
+  await f.metadata.put(await f.context(), { kind: 'dataset', id: 'dataset' }, {
+    ...f.dataset, definition: { DataSet: { DataSetId: 'dataset' } },
+  }, 2);
+  await assert.rejects(render([{ Key: 'account', Value: 'A' }]), { code: 'EMBED_TAG_CONFIGURATION_REQUIRED' });
 });
 test('H6 folder and asset grants, viewer removal and asynchronous revision changes revoke publication', async t => {
   const f = await fixture(t), body = request({ UserArn: f.arn('user', f.reader.identity.userId) });

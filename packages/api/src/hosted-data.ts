@@ -1,3 +1,4 @@
+import { datasetSecurity, type DatasetSecurity } from './embed-content.js';
 import { artifactScalar } from '@opensight/query-engine';
 import { PREP_JOIN_SAMPLE_LIMIT, PrepJoinBudget } from '@opensight/query-engine';
 import { prepFail } from '@opensight/bundle-parser/prep';
@@ -113,7 +114,7 @@ export class HostedData {
     if (isQueryConnectorId(result.connectorId)) this.analytics.track(context, { name: 'data_source_connected', props: { sourceType: result.connectorId } });
     return result;
   }
-  async admit(context: TenantContext, id: string, path: DataPath, embedSecurity?: (security: SecurityContext) => SecurityContext): Promise<Admission> {
+  async admit(context: TenantContext, id: string, path: DataPath, dataset?: DatasetSecurity): Promise<Admission> {
     const revisions = await this.sources.metadata.revisions(context);
     await this.sources.capability(context, path === 'ai' ? 'ai' : path === 'prep' ? 'build' : 'view');
     const source = await this.sources.get(context, id), b = source.binding;
@@ -126,8 +127,9 @@ export class HostedData {
       users: users.map(u => ({ id: u.id, namespaceId: context.namespaceId })),
       groups: groups.map(g => ({ id: g.id, namespaceId: context.namespaceId, userIds: g.body.userIds as string[] })),
       policy: { ...source.policy, namespaceId: context.namespaceId, dataSetArn: `urn:opensight:source:${source.id}` } };
-    if (embedSecurity) security = embedSecurity(security);
-    const resolved = resolveSecurity(security, boundColumns(b.columns), security.policy.dataSetArn);
+    const columns = boundColumns(b.columns);
+    if (dataset) security = datasetSecurity(security, columns, dataset);
+    const resolved = resolveSecurity(security, columns, security.policy.dataSetArn);
     const physical: PrepSource = { id, connectorId: b.connectorId === 's3' ? 'file' : b.connectorId, columns: b.columns, table: b.table ?? 'source_rows', ...(b.schema ? { schema: b.schema } : {}), security: protectedData ? 'protected' : 'unrestricted' };
     const admission = { source, security, physical, ...(tenantPredicate ? { tenantPredicate } : {}), deniedColumns: resolved.deniedColumns, revisions };
     // Validate the immutable predicate even on schema/discovery paths.

@@ -1,7 +1,6 @@
 import { resolveSecurity, type RowPredicate, type SecurityContext } from '@opensight/query-engine';
 import { MetadataError } from './metadata-db.js';
 import { object, resourceKey } from './metadata-resources.js';
-import { boundColumns } from './source-schema.js';
 import type { HostedData } from './hosted-data.js';
 import type { TenantContext } from './metadata.js';
 
@@ -16,10 +15,10 @@ export async function metricDatasetPolicies(data: HostedData, context: TenantCon
   return [base, { ...base, policy: { ...policy, namespaceId: context.namespaceId, dataSetArn: base.policy.dataSetArn } } as SecurityContext];
 }
 
-export function intersectSecurity(base: SecurityContext, resolved: ReturnType<typeof resolveSecurity>[]): SecurityContext {
+export function intersectSecurity(base: SecurityContext, resolved: ReturnType<typeof resolveSecurity>[], ruleId = 'digest-intersection'): SecurityContext {
   const predicates = resolved.map(r => r.rowPredicate).filter((p): p is RowPredicate => !!p);
   return { ...base, policy: { namespaceId: base.namespaceId, dataSetArn: base.policy.dataSetArn, rowLevel: !!predicates.length,
-    rowRules: predicates.length ? [{ id: 'digest-intersection', principals: [{ type: 'user', id: base.userId! }], predicate: { all: predicates } }] : [],
+    rowRules: predicates.length ? [{ id: ruleId, principals: [{ type: 'user', id: base.userId! }], predicate: { all: predicates } }] : [],
     protectedColumns: [...new Set(resolved.flatMap(r => r.deniedColumns))], columnGrants: [] } };
 }
 
@@ -33,17 +32,5 @@ export async function admitMetricDataset(data: HostedData, context: TenantContex
     const policies = (await data.sources.metadata.list(context, 'policy')).filter(p => p.body.datasetId === datasetId);
     const wire = object(dataset.body.definition), d = object(wire.DataSet ?? wire);
     if (policies.length > 1 || (d.RowLevelPermissionDataSet || d.ColumnLevelPermissionRules || object(d.RowLevelPermissionTagConfiguration ?? {}).Status === 'ENABLED') && !policies.length) throw new MetadataError('SOURCE_POLICY_REQUIRED', 403);
-    const admittedSource = await data.sources.get(context, source.id);
-    const a = await data.admit(context, source.id, 'query', base => {
-      if (!policies[0]) return base;
-      const { datasetId: _id, ...policy } = policies[0].body;
-      const schema = boundColumns(admittedSource.binding.columns);
-      const first = resolveSecurity(base, schema, base.policy.dataSetArn);
-      const second = resolveSecurity({ ...base, policy: { ...policy, namespaceId: context.namespaceId, dataSetArn: base.policy.dataSetArn } } as SecurityContext, schema, base.policy.dataSetArn);
-      const predicates = [first.rowPredicate, second.rowPredicate].filter((p): p is RowPredicate => !!p);
-      return { ...base, policy: { namespaceId: context.namespaceId, dataSetArn: base.policy.dataSetArn, rowLevel: !!predicates.length,
-        rowRules: predicates.length ? [{ id: 'dashboard-intersection', principals: [{ type: 'user', id: context.userId }], predicate: { all: predicates } }] : [],
-        protectedColumns: [...new Set([...first.deniedColumns, ...second.deniedColumns])], columnGrants: [] } };
-    });
-    return a;
+    return data.admit(context, source.id, 'query', { definition: wire, policy: policies[0]?.body });
 }
