@@ -9,6 +9,18 @@ export interface EmbedBrand {
   productName: string; iframeTitle: string; logoAssetId: string | null; faviconAssetId: string | null;
 }
 export const defaultEmbedBrand: EmbedBrand = { palette: 'navy', font: 'system', layout: 'comfortable', productName: 'OpenSight', iframeTitle: 'OpenSight dashboard', logoAssetId: null, faviconAssetId: null };
+/** D-102 Q7 (#341) amends HQ-5 for embedded surfaces only: a tenant that supplies its own
+ * product name AND logo gets frames with no OpenSight branding or notices. Both are required —
+ * a name alone or a logo alone keeps the notices, so partial branding never silently drops them. */
+export function embedBrandingRemoved(appearance: EmbedBrand): boolean {
+  return appearance.productName !== defaultEmbedBrand.productName && appearance.logoAssetId !== null;
+}
+/** The frame's accessible title: a fully branded tenant that never replaced the default
+ * iframe title is labelled by its own product name, never by the OpenSight default. */
+export function embedTitle(appearance: EmbedBrand): string {
+  return embedBrandingRemoved(appearance) && appearance.iframeTitle === defaultEmbedBrand.iframeTitle
+    ? appearance.productName : appearance.iframeTitle;
+}
 export const embedStates = {
   loading: { title: 'Loading dashboard', detail: 'Checking access and preparing your view.', symbol: '…' },
   empty: { title: 'No visuals in this dashboard', detail: 'There is no content to display in this view.', symbol: '□' },
@@ -28,12 +40,13 @@ export function EmbedFrame({ state, appearance = defaultEmbedBrand, assets = {},
   const font = appearance.font === 'sans' ? 'embed-sans' : 'embed-system';
   const layout = appearance.layout === 'compact' ? 'embed-compact' : 'embed-comfortable';
   const logo = embedAsset(appearance.logoAssetId, assets), message = state === 'ready' ? undefined : embedStates[state];
-  return <main className={`embed-frame ${palette} ${font} ${layout}`} aria-label={appearance.iframeTitle}>
+  const brandingRemoved = embedBrandingRemoved(appearance);
+  return <main className={`embed-frame ${palette} ${font} ${layout}`} aria-label={embedTitle(appearance)}>
     {header !== 'hidden' && <header className="embed-brand" aria-disabled={header === 'disabled' || undefined}>{logo && <img src={logo} alt="" width="32" height="32" />}<span>{appearance.productName}</span><span className="embed-view-label">{viewLabel}</span></header>}
     {message ? <section className={`embed-state embed-state-${state}`} role={state === 'error' ? 'alert' : 'status'} aria-live="polite">
       <span className="embed-state-symbol" aria-hidden="true">{message.symbol}</span><h1>{statusTitle ?? message.title}</h1><p>{detail ?? message.detail}</p>
       {statusAction}
     </section> : <section className="embed-content"><h1>{title}</h1><p>{description}</p>{children}</section>}
-    <footer className="embed-notices"><span>OpenSight · Apache-2.0</span><span>Data access permissions apply</span></footer>
+    {!brandingRemoved && <footer className="embed-notices"><span>OpenSight · Apache-2.0</span><span>Data access permissions apply</span></footer>}
   </main>;
 }

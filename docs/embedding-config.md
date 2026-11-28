@@ -117,6 +117,25 @@ control outside the ceiling or grant returns 403 `EMBED_SURFACE_DENIED`.
 Required notices remain on fixed frames. See the [SDK mount contract](embed-sessions.md#per-embed-surface-control-337)
 for control names, applicable experiences and examples.
 
+### Branding removal (#341, D-102 Q7)
+
+**HQ-5 amendment (D-102 Q7, ruled by Tom 2026-11-25):** HQ-5's rule that required
+OpenSight notices remain is amended for embedded surfaces only. When a tenant's
+appearance supplies its own product name (anything other than the OpenSight
+default) **and** its own logo asset, that tenant's embed frames render without
+OpenSight branding or notices: the `OpenSight · Apache-2.0` / data-permissions
+footer is omitted, and a frame that still carries the default iframe title is
+labelled with the tenant's product name instead. The `brandingRemoval`
+capability is reported as supported.
+
+Both parts are required. A tenant with only a custom name, or only a logo, keeps
+the notices exactly as before, as does a tenant with no branding configured —
+their frames are byte-identical to the pre-#341 rendering. The standalone app is
+untouched: its notices and branding never change. Branding removal is
+presentation only; it changes no session, authorization or data behavior, and
+the earlier statement in this document that "required notices remain on fixed
+frames" now applies only to tenants without full branding of their own.
+
 ### Host actions and column security (#340)
 
 The resolved surface governs v2 host commands. A fixed reader accepts filter
@@ -244,7 +263,9 @@ session and do not display simulated filtering or parameter controls.
 
 ## Decided scope and remaining boundaries
 
-HQ-5 permits narrow appearance/chrome changes; required OpenSight notices remain.
+HQ-5 permits narrow appearance/chrome changes; required OpenSight notices remain
+except inside the embeds of fully branded tenants, per the D-102 Q7 amendment
+in [Branding removal](#branding-removal-341-d-102-q7) above.
 HQ-6 enables anonymous embedding and registered authoring in H6. Export/download
 and persistent reader state remain rejected. HQ-7/HQ-12 session lifetimes, native
 issuance shapes, single-use bootstrap and versioned browser transport are

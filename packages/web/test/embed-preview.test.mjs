@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { act, createElement, useState } from 'react';
 import { create } from 'react-test-renderer';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { EmbedFrame, defaultEmbedBrand, embedAsset } from '../build/test/EmbedFrame.js';
+import { EmbedFrame, defaultEmbedBrand, embedAsset, embedBrandingRemoved, embedTitle } from '../build/test/EmbedFrame.js';
 import { atlasBrand, cedarBrand, previewAssets } from '../build/test/embed-preview-fixtures.js';
 import { EmbedTheme, useEmbedVisual } from '../build/test/EmbedTheme.js';
 import { compileVisual } from '../build/test/compiler.js';
@@ -19,7 +19,12 @@ for (const [state, title] of [['loading', 'Loading dashboard'], ['empty', 'No vi
     for (const appearance of [defaultEmbedBrand, atlasBrand]) {
       const html = renderToStaticMarkup(createElement(EmbedFrame, { state, appearance, assets: previewAssets }, 'SHOULD NEVER RENDER PROTECTED CONTENT'));
       assert.ok(html.includes(title)); assert.ok(html.includes(appearance.productName)); assert.ok(html.includes(appearance.iframeTitle));
-      assert.ok(html.includes('OpenSight · Apache-2.0')); assert.ok(html.includes('Data access permissions apply'));
+      if (appearance === atlasBrand) {
+        // #341 (D-102 Q7): a fully branded tenant's frame carries no OpenSight name or notices.
+        assert.doesNotMatch(html, /OpenSight|embed-notices|Data access permissions apply/);
+      } else {
+        assert.ok(html.includes('OpenSight · Apache-2.0')); assert.ok(html.includes('Data access permissions apply'));
+      }
       assert.ok(html.includes(state === 'error' ? 'role="alert"' : 'role="status"'));
       assert.doesNotMatch(html, /SHOULD NEVER|<button|<input|<a |<script|https?:/);
       assert.equal(html.includes('<img '), appearance === atlasBrand);
@@ -27,6 +32,32 @@ for (const [state, title] of [['loading', 'Loading dashboard'], ['empty', 'No vi
     }
   });
 }
+
+test('#341 branding removal needs both a tenant product name and a tenant logo; partial branding keeps notices', () => {
+  const ready = { state: 'ready', title: 'Regional totals', assets: previewAssets };
+  const branded = renderToStaticMarkup(createElement(EmbedFrame, { ...ready, appearance: atlasBrand }));
+  assert.doesNotMatch(branded, /OpenSight|embed-notices|Data access permissions apply/);
+  assert.match(branded, /Atlas Analytics/);
+  assert.equal(embedBrandingRemoved(atlasBrand), true);
+  // Name only (Cedar) and logo only (default name) are partial branding: notices stay, byte for byte.
+  for (const appearance of [cedarBrand, { ...defaultEmbedBrand, logoAssetId: 'atlas-logo' }]) {
+    assert.equal(embedBrandingRemoved(appearance), false);
+    const html = renderToStaticMarkup(createElement(EmbedFrame, { ...ready, appearance }));
+    assert.ok(html.includes('<footer class="embed-notices"><span>OpenSight · Apache-2.0</span><span>Data access permissions apply</span></footer>'));
+  }
+  // The unbranded default frame is unchanged, and a tenant cannot claim removal by
+  // keeping the OpenSight name while adding a logo, or by dropping the logo asset id.
+  const plain = renderToStaticMarkup(createElement(EmbedFrame, { ...ready, appearance: defaultEmbedBrand }));
+  assert.ok(plain.includes('<footer class="embed-notices"><span>OpenSight · Apache-2.0</span><span>Data access permissions apply</span></footer>'));
+  assert.equal(embedBrandingRemoved({ ...atlasBrand, logoAssetId: null }), false);
+  assert.equal(embedBrandingRemoved({ ...atlasBrand, productName: 'OpenSight' }), false);
+  // A fully branded tenant that never replaced the default iframe title is labelled by its own name.
+  assert.equal(embedTitle({ ...atlasBrand, iframeTitle: defaultEmbedBrand.iframeTitle }), 'Atlas Analytics');
+  assert.equal(embedTitle(atlasBrand), 'Atlas analytics dashboard');
+  assert.equal(embedTitle(defaultEmbedBrand), 'OpenSight dashboard');
+  const labelled = renderToStaticMarkup(createElement(EmbedFrame, { ...ready, appearance: { ...atlasBrand, iframeTitle: defaultEmbedBrand.iframeTitle } }));
+  assert.doesNotMatch(labelled, /OpenSight/); assert.match(labelled, /aria-label="Atlas Analytics"/);
+});
 test('H5 shared frame escapes untrusted text and refuses external, SVG and forged asset strings', () => {
   const attacks = ['javascript:alert(1)', 'https://evil.example/logo.png', 'data:image/svg+xml,<svg onload=alert(1)>', 'data:image/png;base64,AAAA" onerror="alert(1)', 'data:image/png;base64,' + 'a'.repeat(90001)];
   for (const value of attacks) assert.equal(embedAsset('logo', { logo: value }), undefined);

@@ -176,6 +176,7 @@ test('H5 HTTP config enforces If-Match, admin scope, exact browser origin and na
   const f = await fixture(t), request = await serving(t, f);
   const initial = await request(); assert.equal(initial.status, 200); assert.equal(initial.headers.etag, '"0"'); assert.equal(initial.headers['cache-control'], 'no-store');
   assert.equal(initial.body.capabilities.sessionIssuance, true);
+  assert.equal(initial.body.capabilities.brandingRemoval, true); // #341 (D-102 Q7): supported for fully branded tenants.
   for (const value of [undefined, '*', '0', 'W/"0"', '"0", "1"', '"9007199254740992"']) {
     const response = await request(undefined, { method: 'PUT', headers: value === undefined ? {} : { 'if-match': value }, body: config() }); assert.equal(response.status, value === undefined ? 428 : 400);
   }

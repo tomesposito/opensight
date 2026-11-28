@@ -55,7 +55,7 @@ export function defaultEmbedConfig(): TenantEmbedConfig {
 }
 export const embedCapabilities = Object.freeze({ registeredDashboards: true, registeredVisuals: true, parameterControls: true, filtering: true,
   anonymous: true, authoring: true, export: false, download: false, persistentReaderState: false,
-  sessionIssuance: true, customDomains: false, appearancePreview: true, brandingRemoval: false });
+  sessionIssuance: true, customDomains: false, appearancePreview: true, brandingRemoval: true });
 function fields(raw: unknown, allowed?: readonly string[]): Record<string, unknown> {
   try { return object(raw, allowed); } catch { return fail(); }
 }
