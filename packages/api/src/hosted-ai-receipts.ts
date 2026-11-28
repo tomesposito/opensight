@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { claimedAppSession } from './embed-sessions.js';
 import { MetadataError, type Database, type SqlConnection } from './metadata-db.js';
 import type { TenantContext, TenantMetadata } from './metadata.js';
 
@@ -76,7 +77,8 @@ export class HostedAIReceipts {
     await this.db.transaction(c => this.prune(c, new Date(this.clock()).toISOString()));
   }
   async run<T>(context: TenantContext, route: string, key: string, fingerprint: string, work: (attempt: AiAnswerAttempt) => Promise<T>): Promise<T> {
-    const args = [context.tenantId, context.namespaceId, context.userId, route, key], owner = randomUUID();
+    const session = claimedAppSession(context);
+    const args = [context.tenantId, context.namespaceId, context.userId, session ? `${route}/embed/${session.id}` : route, key], owner = randomUUID();
     const at = () => new Date(this.clock()).toISOString(), until = () => new Date(this.clock() + lease).toISOString();
     const receipt = await this.db.transaction(async c => {
       const now = at();

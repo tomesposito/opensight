@@ -26,6 +26,11 @@ export interface SessionGrant {
   revisions: Revisions; durationMinutes: number; request: Record<string, unknown>;
 }
 export interface EmbedSession extends SessionGrant { id: string; expiresAt: number; parentOrigin: string; channelId: string }
+// Hosted handlers receive a fresh authenticated context on every frame request.
+// Standalone requests for the same user have a different context.
+type Viewer = Pick<TenantContext, 'tenantId' | 'namespaceId' | 'userId'>;
+const claimedApps = new WeakMap<Viewer, Pick<EmbedSession, 'id' | 'tags' | 'anonymous'>>();
+export function claimedAppSession(context: Viewer) { return claimedApps.get(context); }
 export interface EmbedKey { id: string; secret: Buffer }
 export function embedSessionKey(env: NodeJS.ProcessEnv): EmbedKey | undefined {
   if (env.OPENSIGHT_EMBED_SESSION_KEY_ID === undefined && env.OPENSIGHT_EMBED_SESSION_KEY === undefined) return undefined;
@@ -277,7 +282,11 @@ export class EmbedSessions {
       if (!Number(row.redeemed) || Number(row.expires_at) <= this.clock()) embedFailure('EMBED_SESSION_EXPIRED', 401);
       return { ...g, id, expiresAt: Number(row.expires_at), parentOrigin: String(row.parent_origin), channelId: String(row.channel_id) };
     });
-    const context = await this.context(session); await this.authorize(context, session); return { session, context };
+    const context = await this.context(session);
+    if (session.experience.kind === 'full-app' && Object.keys(session.tags).length) {
+      claimedApps.set(context, { id, tags: Object.freeze({ ...session.tags }), anonymous: false });
+    }
+    await this.authorize(context, session); return { session, context };
   }
   /** Full-app author writes use the standalone CAS path (no security revision
    * bump). Still check embed revocation/config/key/expiry in the commit transaction;

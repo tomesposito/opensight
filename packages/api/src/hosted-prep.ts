@@ -212,7 +212,7 @@ export class HostedPrep {
       catch (error) {
         if (!(error instanceof MetadataError) && !(error instanceof Error && 'code' in error)) throw error;
         const code = String((error as { code: unknown }).code);
-        if (!['SOURCE_RETIRED', 'UPLOAD_EXPIRED', 'ROW_ACCESS_DENIED', 'SOURCE_POLICY_REQUIRED', 'SOURCE_ENDPOINT_DENIED', 'SOURCE_MIGRATION_REQUIRED'].includes(code)) throw error;
+        if (!['SOURCE_RETIRED', 'UPLOAD_EXPIRED', 'ROW_ACCESS_DENIED', 'SOURCE_POLICY_REQUIRED', 'EMBED_TAG_CONFIGURATION_REQUIRED', 'SOURCE_ENDPOINT_DENIED', 'SOURCE_MIGRATION_REQUIRED'].includes(code)) throw error;
         unavailable.push({ id: r.id, errorCode: code });
       }
     }

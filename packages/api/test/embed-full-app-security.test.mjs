@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { gunzipSync } from 'node:zlib';
-import { fixture, request } from './embed-full-app-helpers.mjs';
+import { fixture, prepared, request } from './embed-full-app-helpers.mjs';
+import { HostedAIReceipts, initializeAiAnswerReceipts } from '../dist/hosted-ai-receipts.js';
 import { HostedAISettings } from '../dist/hosted-ai-settings.js';
 import { dispatchRuntimeRequest } from '../dist/runtime-http-bridge.js';
 import { adaptGatewayRequest } from '../dist/runtime-ingress.js';
@@ -49,6 +50,45 @@ test('full-app Ask O configured landing rechecks configuration without any provi
   assert.equal((await active.app('/api/o/status')).body.configured, true);
   await settings.save(await f.context(), { mode: 'off' });
   assert.equal((await active.app('/route', 'POST', { path: '/ask-o' })).body.errorCode, 'EMBED_SESSION_REVOKED');
+});
+
+test('#338 full-app queries and retries use the signed attributes for this session', async t => {
+  const f = await fixture(t); await prepared(f);
+  const api = `Bearer ${(await f.login()).token}`;
+  const published = await f.call('/api/v1/analyses/analysis/publish', 'POST', {}, api);
+  assert.equal(published.status, 201);
+  const path = `/api/v1/dashboards/${published.body.DashboardId}/versions/1/visuals/total/query`;
+  const headers = { 'idempotency-key': 'same-request' };
+  const query = frame => frame.app(path, 'POST', {}, headers);
+  const none = await f.open(), west = await f.open('/data', { SessionTags: [{ Key: 'region', Value: 'west' }] });
+  assert.deepEqual((await query(none)).body.rows, [{ amount: 60 }]);
+  const initial = await query(west); assert.equal(initial.status, 200, JSON.stringify(initial.body));
+  assert.deepEqual(initial.body.rows, [{ amount: 20 }]);
+  const replay = await query(west); assert.equal(replay.headers['idempotent-replayed'], 'true');
+  assert.deepEqual(replay.body.rows, initial.body.rows);
+  assert.deepEqual((await query(none)).body.rows, [{ amount: 60 }]);
+  for (const [target, verb, input] of [[`/api/sources/${f.source.id}/rows`, 'POST', {}], ['/api/datasets/prepared/rows', 'GET']]) {
+    const denied = await west.app(target, verb, input); assert.equal(denied.status, 403);
+    assert.equal(denied.body.errorCode, 'EMBED_TAG_CONFIGURATION_REQUIRED');
+  }
+  assert.equal((await west.app('/api/sources')).body.find(s => s.id === f.source.id).available, false);
+  assert.equal((await west.app('/api/prep-datasets')).body.unavailable[0].errorCode, 'EMBED_TAG_CONFIGURATION_REQUIRED');
+
+  // The durable AI retry store also serves replies without rerunning the original query.
+  await initializeAiAnswerReceipts(f.db);
+  const receipts = new HostedAIReceipts(f.db);
+  const retry = async (frame, run) => {
+    const { context } = await f.sessions.verify(frame.issued.sessionId, frame.auth.slice(6));
+    return receipts.run(context, '/api/o/generate', 'same-request', 'fingerprint', run);
+  };
+  const revisions = await f.metadata.revisions(await f.context());
+  for (const [frame, amount] of [[none, 60], [west, 20]]) {
+    await retry(frame, async attempt => {
+      assert.equal(attempt.receipt, undefined);
+      await attempt.pending({ amount }, 1, false, revisions); await attempt.committed();
+    });
+    await retry(frame, async attempt => assert.deepEqual(attempt.receipt.answer, { amount }));
+  }
 });
 
 test('full-app shell loads the real app with nonce CSP and fits the gateway envelope using gzip', async t => {
