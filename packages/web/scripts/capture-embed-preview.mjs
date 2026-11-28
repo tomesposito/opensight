@@ -32,7 +32,13 @@ try {
       const status = frame.getByRole(state === 'error' ? 'alert' : 'status'); await status.waitFor();
       const text = await status.innerText();
       assert.match(text, { loading: /Loading dashboard/, empty: /No visuals/, error: /Data access was denied/, expired: /Embed URL expired/ }[state]);
-      assert.equal(await frame.locator('.embed-notices').innerText(), 'OpenSight · Apache-2.0\nData access permissions apply');
+      if (brand === 'atlas') {
+        // #341 (D-102 Q7): fully branded frames carry no OpenSight name, logo or notice strings.
+        assert.equal(await frame.locator('.embed-notices').count(), 0);
+        assert.doesNotMatch(await frame.locator('body').innerText(), /OpenSight/);
+      } else {
+        assert.equal(await frame.locator('.embed-notices').innerText(), 'OpenSight · Apache-2.0\nData access permissions apply');
+      }
       assert.equal(await frame.locator('.embed-brand img').count(), brand === 'atlas' ? 1 : 0);
       if (brand === 'atlas') {
         const src = await frame.locator('.embed-brand img').getAttribute('src'); assert.match(src, /^data:image\/png;base64,/);
