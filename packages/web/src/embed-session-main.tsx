@@ -2,7 +2,7 @@ import { isEmbedSurface } from '@opensight/embedding-sdk/surface';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { EmbedFrame, embedAsset } from './EmbedFrame.js';
+import { EmbedFrame, embedAsset, embedTitle } from './EmbedFrame.js';
 import { EmbedTheme } from './EmbedTheme.js';
 import type { FixtureVisual } from './model.js';
 import { startEmbedTransport, type BrandedEmbedShell, type EmbedTransport, type SessionState } from './embed-transport.js';
@@ -27,7 +27,7 @@ function SessionFrame({ shell }: { shell: BrandedEmbedShell }) {
   const [state, setState] = useState<SessionState>('loading'), [content, setContent] = useState<Content | null>(null), transport = useRef<EmbedTransport | null>(null);
   const readerState = useRef<EmbedReaderState | undefined>(undefined);
   useEffect(() => {
-    document.title = shell.appearance.iframeTitle;
+    document.title = embedTitle(shell.appearance);
     const favicon = embedAsset(shell.appearance.faviconAssetId, shell.assets);
     if (favicon) { const link = document.createElement('link'); link.rel = 'icon'; link.href = favicon; document.head.appendChild(link); }
     const value = bootstrap; bootstrap = '';

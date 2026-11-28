@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { useEffect, useState } from 'react';
-import { EmbedFrame, embedAsset, embedStates, type EmbedBrand } from './EmbedFrame.js';
+import { EmbedFrame, embedAsset, embedStates, embedTitle, type EmbedBrand } from './EmbedFrame.js';
 import { EmbedTheme } from './EmbedTheme.js';
 import { previewAssets, previewBrand, previewBrands } from './embed-preview-fixtures.js';
 import './embed.css';
@@ -16,7 +16,7 @@ const palettes = ['navy', 'teal', 'plum'] as const;
 function PreviewFrame() {
   const base = previewBrand(initialBrand, initialHost), appearance: EmbedBrand = { ...base, palette: palettes.find(p => p === params.get('palette')) ?? base.palette };
   useEffect(() => {
-    document.title = appearance.iframeTitle;
+    document.title = embedTitle(appearance);
     const src = embedAsset(appearance.faviconAssetId, previewAssets);
     if (!src) return;
     const link = document.createElement('link'); link.rel = 'icon'; link.type = 'image/png'; link.href = src; document.head.append(link);
@@ -46,7 +46,7 @@ function Preview() {
         <iframe src={src.href} title={`${appearance.iframeTitle} — ${embedStates[state].title}`} />
       </section>;
     })}</div>
-    <p className="embed-preview-note">Theme choices preserve permissions, error messages and OpenSight notices. No authoring, export, download or saved reader state. Visual fidelity not measured.</p>
+    <p className="embed-preview-note">Theme choices preserve permissions and error messages. A fully branded tenant (its own product name and logo) gets frames without OpenSight notices; other frames keep them. No authoring, export, download or saved reader state. Visual fidelity not measured.</p>
   </main>;
 }
 createRoot(document.getElementById('root')!).render(params.get('frame') === 'true' ? <PreviewFrame /> : <Preview />);
