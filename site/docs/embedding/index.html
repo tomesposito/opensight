@@ -153,6 +153,18 @@ including when a host omits its declaration. Requesting a visible or disabled
 control outside the ceiling or grant returns 403 <code>EMBED_SURFACE_DENIED</code>.
 Required notices remain on fixed frames. See the <a href="/docs/embedding-sessions/#per-embed-surface-control-337">SDK mount contract</a>
 for control names, applicable experiences and examples.</p>
+<h3 id="host-actions-and-column-security-340">Host actions and column security (#340)</h3>
+<p>The resolved surface governs v2 host commands. A fixed reader accepts filter
+changes only when tenant filtering is enabled and the mount exposes that
+control. Full-app navigation requires the navigation menu and the destination&#39;s
+applicable action to be visible. Refresh addresses content already available
+to the session. Every reload uses the viewer&#39;s existing server-authorized query
+path, including session-tag, row and column policies.</p>
+<p>Hosts register custom visual actions per mount. A registration names the
+columns the host wants to receive. The server&#39;s authorized visual plan supplies
+the permitted result bindings. A denied, missing or ambiguous binding prevents
+delivery of the whole action. The tenant configuration needs no additional
+fields. <a href="/docs/embedding-sessions/#host-actions-and-data-events-340">SDK examples and event payloads</a></p>
 <h2 id="operator-configuration">Operator configuration</h2>
 <p>Deployment configuration comes only from <code>OPENSIGHT_EMBEDDING_POLICY</code>, a JSON
 environment value with exactly <code>origins</code>, <code>tenants</code> and <code>assets</code> arrays. Missing

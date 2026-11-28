@@ -101,6 +101,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Hosted embed SDKs can receive selection, filter, navigation and save events, update reader filters, navigate or refresh the current view, and register visual menu actions that return only their declared, column-authorized values (#340).
+
 - Tenant administrators can theme embedded views and full-app sessions with validated design tokens for colors, chart palettes, fonts, corners and spacing. The offline preview includes light and dark examples (#339).
 
 - Product backends can issue registered and delegated embed sessions with signed account or other attribute claims. Dataset tag rules narrow the rows a viewer can read, existing column permissions still apply, and an unusable claim denies the read (#338).
