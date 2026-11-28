@@ -101,6 +101,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Tenant administrators can theme embedded views and full-app sessions with validated design tokens for colors, chart palettes, fonts, corners and spacing. The offline preview includes light and dark examples (#339).
+
 - Product backends can issue registered and delegated embed sessions with signed account or other attribute claims. Dataset tag rules narrow the rows a viewer can read, existing column permissions still apply, and an unusable claim denies the read (#338).
 
 - Tenant administrators can limit embed experiences and controls. Hosts can hide or disable menus, authoring and other actions, and the header for each SDK mount within the session grant (#337).

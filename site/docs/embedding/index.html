@@ -195,14 +195,48 @@ finite ceiling. Null means unset and is allowed only while disabled. H6 requests
 minutes, default 600; the example value above predates H6 and must be raised to at
 least 900 to permit a session. H5 never applies it to the existing v1 TTL.</p>
 <h2 id="appearance-and-capability-boundary">Appearance and capability boundary</h2>
-<p>Approved tokens are <code>palette: navy|teal|plum</code>, <code>font: system|sans</code>, and
-<code>layout: comfortable|compact</code>. They select fixed styles, not caller-supplied CSS.
+<p>The appearance presets are <code>palette</code> (navy, teal, plum), <code>font</code> (system,
+sans), and <code>layout</code> (comfortable, compact).
 Product name is limited to 80 characters and iframe title to 160. Labels accept
 Unicode letters/numbers, spaces and a small punctuation set. Markup, encoded
 markup, URL syntax, control/bidi characters, event-handler attributes, CSS
 <code>url()</code>/<code>expression()</code> and oversized inputs are rejected. React renders text as
 text; no HTML insertion or dynamic style parser is used. Asset IDs only reference
 the validated tenant-owned PNG registry described above.</p>
+<h3 id="design-tokens-339">Design tokens (#339)</h3>
+<p>A tenant administrator can include an optional <code>tokens</code> object inside
+<code>appearance</code> when replacing the configuration. Each member is optional.
+Omitting <code>tokens</code> or sending <code>{}</code> restores preset styling. Existing stored
+configurations need no migration.</p>
+<div class="table-scroll" role="region" aria-label="Table" tabindex="0">
+<table>
+<thead><tr><th scope="col">Token</th><th scope="col">Accepted values</th><th scope="col">Effect</th></tr></thead>
+<tbody>
+<tr><td><code>surface</code></td><td>Opaque six-digit hex color, e.g. <code>#fffaf1</code></td><td>Frame, application surfaces and chart backgrounds</td></tr>
+<tr><td><code>text</code></td><td>Six-digit hex color</td><td>Frame text and chart labels</td></tr>
+<tr><td><code>accent</code></td><td>Six-digit hex color</td><td>Branding, navigation accents and controls</td></tr>
+<tr><td><code>chartPaletteSeed</code></td><td>Six-digit hex color</td><td>First analysis palette color, including KPI values. Subsequent series keep their palette colors. Explicit per-visual palettes take precedence.</td></tr>
+<tr><td><code>fontFamily</code></td><td><code>system</code>, <code>sans</code>, <code>serif</code>, <code>mono</code></td><td>Local system UI, Arial, Georgia or monospace stack</td></tr>
+<tr><td><code>radius</code></td><td>JSON integer from 0 to 24 inclusive</td><td>Corner radius in CSS pixels</td></tr>
+<tr><td><code>density</code></td><td><code>compact</code>, <code>comfortable</code></td><td>Frame and full-app spacing</td></tr>
+</tbody>
+</table>
+</div>
+<p>For example, include the following tokens alongside the preset and branding fields in the appearance object.</p>
+<pre><code class="language-json">{
+  &quot;tokens&quot;: {
+    &quot;surface&quot;: &quot;#fffaf1&quot;, &quot;text&quot;: &quot;#302b25&quot;, &quot;accent&quot;: &quot;#814527&quot;,
+    &quot;chartPaletteSeed&quot;: &quot;#ae633b&quot;, &quot;fontFamily&quot;: &quot;serif&quot;, &quot;radius&quot;: 10,
+    &quot;density&quot;: &quot;compact&quot;
+  }
+}
+</code></pre>
+<p>Colors require a leading <code>#</code> and exactly six hexadecimal digits. Unknown
+members, CSS declarations, functions such as <code>url()</code>, markup, unlisted fonts,
+and values of the wrong type return HTTP 422 <code>EMBED_DESIGN_TOKENS_INVALID</code>.
+The entire PUT fails, preserving the configuration, ETag, sessions and audit
+history. A successful replacement follows the usual revision and renewal rules.
+Choose readable text and accent colors for the intended surface.</p>
 <p>Features describe consumption capabilities and never grant resource or data
 permissions. Registered dashboard/visual consumption, anonymous embedding,
 authoring, filtering and parameter controls can be true. Filtering and parameter
@@ -237,14 +271,17 @@ renderer and <code>packages/web/dist/opensight-embed-preview.html</code>. Open t
 locally: it has four real iframes for loading, empty, permission error and expiry.
 The OpenSight and synthetic Atlas presets exercise approved palette/font/layout
 choices, plain product/title text and local validated-format logo/favicon PNGs.
+Choose <strong>Cedar sample · design tokens</strong>, then <strong>Light</strong> or <strong>Dark</strong> under
+<strong>Host context</strong> to compare two synthetic token sets in the same renderer.
+See the <a href="https://github.com/tomesposito/opensight/blob/master/docs/images/embed-tokens-light.png">light capture</a> and <a href="https://github.com/tomesposito/opensight/blob/master/docs/images/embed-tokens-dark.png">dark capture</a>.
 The v1 renderer shares these state components with its fixed default appearance;
 H5 tenant branding is not silently applied to legacy v1 URLs.</p>
 <p><code>node packages/web/scripts/capture-embed-preview.mjs</code> uses the loop&#39;s existing
 <code>playwright-core</code> and Chromium installation, blocks all external HTTP requests,
 asserts frame titles, state/permission text, notices, raster assets, forbidden
-controls and overflow, and writes twelve screenshots to <code>/tmp/h5-embed-preview</code>.
-The eight per-state/brand captures, two full matrices, alternate palette and
-mobile-width view cover the acceptance states. Override the tool directory,
+controls, overflow and computed token styles, and writes fourteen screenshots to
+<code>/tmp/h5-embed-preview</code>. These include both Cedar host contexts, the original
+preset matrices and individual states, an alternate palette and a mobile view. Override the tool directory,
 browser executable or output directory with <code>OPENSIGHT_SCREENSHOT_TOOLS</code>,
 <code>OPENSIGHT_CHROMIUM</code> or <code>OPENSIGHT_SCREENSHOT_OUTPUT</code>. No package/browser download
 is part of this command. Shared component and injection regression tests run in

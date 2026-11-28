@@ -32,6 +32,21 @@ Start serving nodes with the new environment; stale nodes cannot issue or valida
 retired keys, and retired IDs cannot be reused. No key material is stored in SQL.
 Do not grant tenant SQL roles access to `h6_keys` or `h6_sessions`.
 
+### Tenant design tokens (#339, D-102 Q5)
+
+Fixed dashboard, visual, Q and console frames and registered full-app sessions
+read `appearance.tokens` from the API-served shell. The session's configuration
+revision binds the appearance at issuance. The browser maps validated values to
+frame-scoped CSS variables and uses the same colors and local fonts in the chart
+compiler. Existing preset-only sessions keep their styling. See the
+[configuration values and replacement example](embedding-config.md#design-tokens-339).
+
+Configure the tenant through the admin API. Session requests, SDK mount options
+and parent messages provide no styling channel. An appearance update requires
+a fresh session under the new configuration revision. Surface ceilings, feature
+flags and membership checks continue to apply. All queries use the existing
+planner with the viewer's row and column permissions.
+
 ## Issuance contracts
 
 These are native OpenSight endpoints with the selected compatible request shapes,
