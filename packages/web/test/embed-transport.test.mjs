@@ -67,3 +67,72 @@ test('H6 iframe hides on backgrounding and requires fresh status on resume; save
   b.emit(event(b)); await settle(); b.visibility('hidden'); assert.equal(states.at(-1), 'loading'); b.visibility('visible'); await settle(); assert.equal(states.at(-1), 'ready'); assert.equal(calls, 3);
   transport.saved(); assert.equal(states.at(-1), 'saved'); assert.equal(b.events.at(-1).data.event, 'saved'); await assert.rejects(transport.request('content')); transport.destroy();
 });
+
+test('#340 frame emits projected data on its live channel only', async t => {
+  const b = browser(), expiresAt = Date.now() + 900000, init = event(b);
+  const transport = startEmbedTransport({ sessionId: id, allowedDomains: [parentOrigin] }, bootstrap, () => {}, async t => t.ready(), b.view,
+    async url => Response.json(url.endsWith('/redeem') ? { credential, expiresAt } : { expiresAt }));
+  t.after(() => transport.destroy());
+  const payload = { type: 'selection', visualId: 'sales', values: { Region: 'East' } };
+  transport.events.emit(payload); b.emit(init); await settle();
+  transport.events.emit({ ...payload, credential }); transport.events.emit(payload);
+  b.visibility('hidden'); transport.events.emit(payload);
+  b.visibility('visible'); transport.events.emit(payload); await settle();
+  transport.saved(); transport.events.emit(payload);
+  assert.deepEqual(b.events.filter(e => e.data.type === 'opensight:data'), [
+    { target: parentOrigin, data: { ...init.data, type: 'opensight:data', payload } },
+  ]);
+});
+
+const surface = { menus: { navigation: 'visible', account: 'hidden' }, actions: { filtering: 'visible', authoring: 'hidden', question: 'disabled', parameterControls: 'visible' }, chrome: { header: 'visible' } };
+test('#340 host actions require a live session, bound parent, exact shape and exposed target', async t => {
+  const b = browser(), init = event(b), actions = [], expiresAt = Date.now() + 900000, otherAllowed = 'https://second.example';
+  const profile = structuredClone(surface);
+  const transport = startEmbedTransport({ sessionId: id, allowedDomains: [parentOrigin, otherAllowed], surface: profile }, bootstrap, () => {}, async t => t.ready(), b.view,
+    async url => Response.json(url.endsWith('/redeem') ? { credential, expiresAt } : { expiresAt }));
+  t.after(() => transport.destroy());
+  const unsubscribe = transport.events.onAction(action => actions.push(action));
+  const payload = { type: 'setFilter', filterId: 'regions', values: ['East'] };
+  const data = { ...init.data, type: 'opensight:action', payload };
+  const action = { ...init, data };
+  b.emit(action); b.emit(init); b.emit(action); await settle();
+  for (const invalid of [{ ...action, source: {} }, { ...action, origin: otherAllowed }, { ...action, origin: 'https://evil.example' },
+    ...[{ version: 1 }, { sessionId: 'wrong' }, { channelId: 'wrong' }, { token: 'extra' },
+      { payload: { ...payload, extra: true } }, { payload: { ...payload, values: [NaN] } },
+      { payload: { type: 'navigate', path: '/ask-o' } }, { payload: { type: 'navigate', path: '/analyses/new' } },
+      { payload: { type: 'navigate', path: '/admin/users' } }, { payload: { type: 'refresh', path: '/data' } },
+      { payload: { type: 'customAction', actionId: 'open' } },
+    ].map(override => ({ ...action, data: { ...data, ...override } }))]) b.emit(invalid);
+  assert.deepEqual(actions, []);
+  for (const state of ['disabled', 'hidden']) { profile.actions.filtering = state; b.emit(action); }
+  profile.actions.filtering = 'visible';
+  const navigate = { type: 'navigate', path: '/data' };
+  for (const state of ['disabled', 'hidden']) {
+    profile.menus.navigation = state;
+    b.emit({ ...action, data: { ...data, payload: navigate } });
+  }
+  profile.menus.navigation = 'visible';
+  b.emit(action); b.emit({ ...action, data: { ...data, payload: navigate } });
+  b.visibility('hidden'); b.emit(action); b.visibility('visible'); b.emit(action); await settle();
+  b.emit({ ...action, data: { ...data, payload: { type: 'refresh' } } });
+  unsubscribe(); b.emit(action);
+  assert.deepEqual(actions, [payload, navigate, { type: 'refresh' }]);
+});
+
+test('#340 malformed initialization cannot bind custom actions and later messages cannot replace them', async t => {
+  const b = browser(), expiresAt = Date.now() + 900000, init = event(b), states = [];
+  const transport = startEmbedTransport({ sessionId: id, allowedDomains: [parentOrigin], surface }, bootstrap, state => states.push(state), async t => t.ready(), b.view,
+    async url => Response.json(url.endsWith('/redeem') ? { credential, expiresAt } : { expiresAt }));
+  t.after(() => transport.destroy());
+  const action = { id: 'open', label: 'Open', columns: ['region'] };
+  const register = customActions => b.emit({ ...init, data: { ...init.data, customActions } });
+  b.emit({ ...init, data: Object.assign([], init.data) });
+  for (const invalid of [null, [action, action], [{ ...action, label: [] }], [{ ...action, token: 'extra' }]]) register(invalid);
+  await settle(); assert.deepEqual(states, []);
+  register([action]); await settle();
+  register([{ ...action, columns: ['private'] }]);
+  const payload = { type: 'customAction', actionId: 'open', visualId: 'sales', values: { region: 'west' } };
+  for (const invalid of [{ ...payload, actionId: 'forged' }, { ...payload, values: { private: 1 } }, { ...payload, values: {} }]) transport.events.emit(invalid);
+  transport.events.emit(payload);
+  assert.deepEqual(b.events.filter(e => e.data.payload).map(e => e.data.payload), [payload]);
+});

@@ -1,7 +1,7 @@
 import { isEmbedSurface } from '@opensight/embedding-sdk/surface';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { EmbedFrame, embedAsset } from './EmbedFrame.js';
 import { EmbedTheme } from './EmbedTheme.js';
 import type { FixtureVisual } from './model.js';
@@ -34,13 +34,25 @@ function SessionFrame({ shell }: { shell: BrandedEmbedShell }) {
     const current = startEmbedTransport(shell, value, state => {
       if (['expired', 'revoked', 'error', 'saved'].includes(state)) readerState.current = undefined;
       const update = () => { setState(state); if (shell.idleReconnect ? state !== 'ready' : ['expired', 'revoked', 'error', 'saved'].includes(state)) setContent(null); };
-      if (shell.idleReconnect && state !== 'ready') flushSync(update); else update();
+      if (state === 'ready' || shell.idleReconnect) flushSync(update); else update();
     }, async t => {
       const result = await t.request<Content>('content', readerState.current); setContent(result); t.ready();
     });
     transport.current = current; return () => current.destroy();
   }, [shell]);
   const ready = state === 'ready' && content, empty = ready && ['dashboard', 'visual'].includes(content.kind) && !content.visuals?.length;
+  useLayoutEffect(() => {
+    const current = transport.current;
+    if (!empty || !current) return;
+    let active = true, loading = false;
+    const remove = current.events.onAction(action => {
+      if (action.type !== 'refresh' || loading) return;
+      loading = true;
+      void current.request<Content>('content', readerState.current).then(next => { if (active) setContent(next); })
+        .catch(() => {}).finally(() => { loading = false; });
+    });
+    return () => { active = false; remove(); };
+  }, [empty]);
   const frameState = ready ? empty ? 'empty' : 'ready' : state === 'expired' || state === 'saved' ? 'expired' : state === 'revoked' || state === 'error' ? 'error' : 'loading';
   const statusTitle = state === 'idle' ? 'Connect to view' : state === 'connecting' ? 'Connecting…' : state === 'unavailable' ? 'Connection unavailable' : state === 'saved' ? 'Analysis saved' : state === 'expired' ? 'Session expired' : state === 'revoked' ? 'Access revoked' : state === 'error' ? 'Embedded content unavailable' : state === 'loading' ? 'Loading embedded content' : undefined;
   return <EmbedFrame state={frameState} header={shell.surface.chrome.header} statusTitle={statusTitle} appearance={shell.appearance} assets={shell.assets} title={content?.title} viewLabel={content?.kind === 'console' ? 'Analysis editor' : content?.kind === 'q' ? 'Q search' : 'Embedded view'} description="Session view · using your current data permissions"

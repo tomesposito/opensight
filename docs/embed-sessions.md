@@ -223,9 +223,9 @@ where available; otherwise the column or parameter name is used.
 The frame renders an input for each selected value, with Add/Remove, Apply and
 Reset all. Apply sends the complete current selection and hides old results while
 the server re-plans. Reset all submits `{}` to restore saved defaults. The frame
-keeps state only in memory and resubmits it after an on-demand reconnect; it never
-writes the dashboard, browser storage or parent messages. Terminal session failure
-clears the state. The v2 parent SDK and v1 snapshot transport are unchanged.
+keeps state in memory and resubmits it after an on-demand reconnect. A changed,
+applied filter selection produces a v2 `filterState` event. Terminal session
+failure clears reader state.
 
 `filters` maps existing static `CategoryFilter` IDs to string arrays. The stored
 filter must use `FilterListConfiguration`, `EQUALS` and `NON_NULLS_ONLY`, as required
@@ -326,7 +326,7 @@ and protected writes. Renewal reissues the original declaration against current
 authority. Pre-337 grants acquire the applicable defaults on their next check.
 The SDK snapshots each mount's declaration for refresh and rejects an
 unacknowledged declaration with `EMBED_SURFACE_MISMATCH`. The frame reads its
-profile from the API-served shell. Parent messages carry handshake metadata only.
+profile from the API-served shell and checks host actions against it.
 
 Hiding authoring leaves a direct analysis write available to an authorized
 author. A reader making the same call receives `EMBED_AUTHOR_REQUIRED`.
@@ -338,8 +338,9 @@ the existing hosted handlers for every presentation.
 `createSessionEmbeddingClient({allowedEmbedOrigins, getEmbedUrl, title?})` is the
 v2 SDK entry point. The trusted application supplies exact embed origins and a
 callback to its own authenticated backend; the SDK does not receive the backend's
-API credential. `mount(container, options)` accepts lifecycle callbacks and an
-optional surface declaration and returns `{iframe, refresh, destroy}`.
+API credential. `mount(container, options)` accepts lifecycle callbacks,
+`onDataEvent`, `surface` and `customActions`. It returns
+`{iframe, refresh, sendAction, destroy}`.
 The v1 `createEmbeddingClient` exports and TTL validation are unchanged.
 
 The iframe removes its fragment immediately, accepts one versioned initialization
@@ -351,11 +352,11 @@ storage or cookies. Subsequent frame requests use `Authorization: Embed ...` and
 `credentials: omit`. All responses are `no-store`; shell CSP restricts ancestors,
 connections, scripts and images, and uses a nonce and `no-referrer`.
 
-Messages have version 2, type `opensight:session`, session ID, per-mount random
-channel ID, and one event: `ready`, `sessionExpired`, `authorizationRevoked`,
-`error`, or `saved`. Both sides check the source window, exact origin, version,
-session and schema; the SDK additionally rejects stale refresh generations.
-Messages contain no credentials, rows, query text or exception details.
+Lifecycle messages have version 2, type `opensight:session`, session ID, per-mount random
+channel ID, and one of `ready`, `connectionRequired`, `sessionExpired`,
+`authorizationRevoked`, `error` or `saved`. Both sides check the source window,
+exact origin, version, session, channel and schema. SDK renewal rotates the
+channel. Credentials stay inside the frame on every message type.
 
 Status checks run every 20 seconds with an eight-second request timeout and a
 45-second authorization deadline. Revocation, suspension, membership/policy/config
@@ -368,6 +369,67 @@ Application code does not log bodies, Authorization headers or credentials. Any
 operator-installed proxy/telemetry must also exclude them; do not enable request
 body capture on redemption. V1 still uses its existing bearer query URL and needs
 its documented proxy query redaction.
+
+## Host actions and data events (#340)
+
+A host can subscribe at mount and register plain-text entries for visual menus.
+For example, a dashboard with a category filter named `regions` can open the
+account selected in a visual.
+
+```ts
+const view = await client.mount(container, {
+  surface: { actions: { filtering: 'visible' } },
+  customActions: [{ id: 'open-account', label: 'Open account', columns: ['account'] }],
+  onDataEvent(event) {
+    if (event.type === 'customAction' && event.actionId === 'open-account') {
+      const account = event.values.account;
+      if (typeof account === 'string') openAccount(account);
+    }
+  },
+});
+
+// After onReady, update the currently displayed reader.
+view.sendAction({ type: 'setFilter', filterId: 'regions', values: ['east'] });
+view.sendAction({ type: 'refresh' });
+```
+
+| Data event | Payload fields | When it is sent |
+| --- | --- | --- |
+| `selection` | `visualId`, `values` | Selection of a single query result in a dashboard, visual or fixed console card. Values are the available physical grouping columns. A measure-only row has an empty grouping object. |
+| `filterState` | `filters` | A successful fixed-reader update changes the applied category filters. Keys are filter IDs and values are arrays. |
+| `navigation` | `path` | The full app commits an authorized internal route. |
+| `save` | `analysisId`, `version` | The server confirms an analysis save. The fixed console subsequently sends its terminal `saved` lifecycle event. Full-app editing can continue. |
+| `customAction` | `actionId`, `visualId`, `values` | The user invokes a registered menu item with a selected row. Values have exactly the registered column names. |
+
+`sendAction({ type: 'setFilter', filterId, values })` requires visible filtering
+and a control on the current fixed dashboard or visual. The frame validates
+values against the control and submits the change through the authenticated
+content endpoint. `refresh` reloads the current fixed reader or full-app
+published dashboard. The fixed reader retains applied controls. Wait for a
+reader update to finish before submitting another change. Calling
+`view.refresh()` obtains a fresh session URL.
+
+`sendAction({ type: 'navigate', path: '/dashboards/sales' })` requires a full-app
+session with visible navigation. Authoring, preparation and Ask O destinations
+also require their corresponding visible action. The server authorizes the
+route and resource before the frame changes location. Unsupported surfaces,
+disabled controls and unknown filter IDs cause no state change.
+
+Register up to 32 actions with distinct IDs. Each label is plain text. Each
+action names 1–64 distinct physical column names. The SDK snapshots the list
+for the mount and its renewals. The server supplies the mapping from permitted
+columns to result aliases with each authorized visual query. A measure supplies
+its displayed aggregate. An absent, denied or ambiguously bound column
+suppresses the entire action. Selecting a total or a synthetic chart point
+cannot supply row context. The visual's **View data** table supports selection
+for charts whose marks do not identify a single row.
+
+On the wire, `opensight:initialize` optionally carries `customActions`.
+`opensight:data` and `opensight:action` carry `version: 2`, the session ID,
+channel ID and a strictly validated `payload` with a `type` discriminator.
+The SDK checks a custom event's ID and exact column set against its own mount
+snapshot. The frame accepts commands only from the bound parent while the
+session has a valid display lease. Host actions cannot wake an idle embed.
 
 ## Verification
 

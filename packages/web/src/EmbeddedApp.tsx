@@ -1,3 +1,4 @@
+import { flushSync } from 'react-dom';
 import { useEffect, useState } from 'react';
 import App, { type EmbeddedAppProps } from './App.js';
 import { startEmbedTransport, type EmbedShell, type SessionState } from './embed-transport.js';
@@ -9,13 +10,13 @@ export function EmbeddedApp({ shell, bootstrap }: { shell: EmbedShell; bootstrap
   useEffect(() => {
     let client: ReturnType<typeof embedAppClient> | undefined;
     const transport = startEmbedTransport(shell, bootstrap, state => {
-      setState(state);
+      if (state === 'ready') flushSync(() => setState(state)); else setState(state);
       if (['expired', 'revoked', 'error', 'saved'].includes(state)) { client?.clear(); setApplication(undefined); }
     }, async transport => {
       client = embedAppClient(transport);
       const session = await client.session();
       window.history.replaceState(null, '', `#${shell.fullApp!.landingRoute}`);
-      setApplication({ api: client.api, session, embed: { surface: shell.surface, loadAnalysis: client.loadAnalysis, authorizeRoute: client.authorizeRoute, storage: client.storage } });
+      setApplication({ api: client.api, session, embed: { events: transport.events, surface: shell.surface, loadAnalysis: client.loadAnalysis, authorizeRoute: client.authorizeRoute, storage: client.storage } });
       transport.ready();
     });
     return () => { transport.destroy(); client?.clear(); };

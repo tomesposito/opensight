@@ -131,3 +131,27 @@ test('bound frame surfaces independently hide or disable reader controls and kee
     assert.match(frame, /OpenSight · Apache-2.0/);
   }
 });
+
+test('#340 reader ignores unknown and invalid filters, applies declared filters, refreshes applied state', async t => {
+  const previous = globalThis.IS_REACT_ACT_ENVIRONMENT;
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  let ui, receive;
+  const initial = interactiveContent(), calls = [], emitted = [];
+  const transport = {
+    events: { onAction(fn) { receive = fn; return () => { receive = undefined; }; }, emit: e => emitted.push(e) },
+    async request(action, state) {
+      calls.push({ action, state });
+      const result = structuredClone(initial); result.controls.filters[0].values = state.filters['region-filter']; return result;
+    },
+  };
+  await act(() => { ui = create(createElement(EmbeddedDashboard, { initial, transport, onState() {} })); });
+  t.after(async () => { await act(() => ui.unmount()); globalThis.IS_REACT_ACT_ENVIRONMENT = previous; });
+  const action = { type: 'setFilter', filterId: 'region-filter', values: ['west'] };
+  await act(() => { receive({ ...action, filterId: 'private' }); receive({ ...action, values: [24] }); });
+  assert.deepEqual(calls, []);
+  await act(async () => receive(action)); await act(async () => receive({ type: 'refresh' }));
+  const state = { filters: { 'region-filter': ['west'] }, parameters: { Minimum: [0] } };
+  assert.deepEqual(calls, [1, 2].map(() => ({ action: 'content', state })));
+  assert.deepEqual(emitted, [{ type: 'filterState', filters: state.filters }]);
+  assert.equal(ui.root.findByProps({ 'aria-label': 'Regions 1', type: 'text' }).props.value, 'west');
+});

@@ -98,3 +98,71 @@ test('v2 refuses malformed declarations and URLs issued without the requested pr
   await assert.rejects(wrong.mount(d.container, options), { code: 'EMBED_SURFACE_MISMATCH' });
   assert.deepEqual(d.frames, []); assert.equal(d.listeners.size, 0);
 });
+
+test('#340 callbacks receive strict data events only on the ready, bound channel', async t => {
+  const d = dom(), received = [];
+  const handle = await createSessionEmbeddingClient({ allowedEmbedOrigins: [origin], getEmbedUrl: async () => issued() })
+    .mount(d.container, { onDataEvent: event => received.push(event) });
+  t.after(() => handle.destroy());
+  d.loaded();
+  const init = d.messages[0].data;
+  const selection = { type: 'selection', visualId: 'sales', values: { Region: 'East' } };
+  const data = { ...init, type: 'opensight:data', payload: selection };
+  const event = { origin, source: handle.iframe.contentWindow, data };
+  d.emit(event);
+  const status = name => d.emit({ ...event, data: { ...init, type: 'opensight:session', event: name } });
+  status('ready');
+  for (const invalid of [{ ...event, source: {} }, { ...event, origin: parent }, ...[
+    { version: 1 }, { channelId: 'other' }, { sessionId: 'other' }, { authorization: 'extra' },
+    { payload: { ...selection, token: 'extra' } }, { payload: { ...selection, values: { Region: {} } } },
+    { payload: { type: 'save', analysisId: 'x', version: 0 } },
+    { payload: { type: 'navigation', path: '//external.test' } },
+    { payload: { type: 'filterState', filters: { Region: [null] } } },
+  ].map(override => ({ ...event, data: { ...data, ...override } }))]) d.emit(invalid);
+  const frameWindow = handle.iframe.contentWindow;
+  handle.iframe.contentWindow = null;
+  d.emit({ ...event, source: null });
+  handle.iframe.contentWindow = frameWindow;
+  assert.deepEqual(received, []);
+  const valid = [selection, { type: 'filterState', filters: { Region: ['East'] } },
+    { type: 'navigation', path: '/dashboards/sales' }, { type: 'save', analysisId: 'sales', version: 2 }];
+  for (const payload of valid) d.emit({ ...event, data: { ...data, payload } });
+  assert.deepEqual(received, valid);
+  status('connectionRequired'); d.emit(event); status('ready'); status('sessionExpired'); d.emit(event);
+  assert.deepEqual(received, valid);
+});
+
+test('#340 SDK addresses actions to the ready generation and rejects malformed commands', async t => {
+  const d = dom(), handle = await createSessionEmbeddingClient({ allowedEmbedOrigins: [origin], getEmbedUrl: async () => issued() }).mount(d.container);
+  t.after(() => handle.destroy());
+  const payload = { type: 'refresh' };
+  handle.sendAction(payload); d.loaded(); assert.equal(d.messages.length, 1);
+  const init = d.messages[0].data;
+  d.emit({ origin, source: handle.iframe.contentWindow, data: { ...init, type: 'opensight:session', event: 'ready' } });
+  handle.sendAction(payload);
+  assert.deepEqual(d.messages[1], { target: origin, data: { ...init, type: 'opensight:action', payload } });
+  assert.throws(() => handle.sendAction({ ...payload, sessionId: 'other' }), { code: 'EMBED_ACTION_INVALID' });
+  await handle.refresh(); handle.sendAction(payload); assert.equal(d.messages.length, 2);
+});
+
+test('#340 registration is snapshotted per mount and unknown, partial or enlarged custom payloads are dropped', async t => {
+  const d = dom(), received = [], action = { id: 'open', label: 'Open record', columns: ['region', 'account'] };
+  const client = createSessionEmbeddingClient({ allowedEmbedOrigins: [origin], getEmbedUrl: async () => issued() });
+  for (const customActions of [null, {}, [action, action], [{ ...action, columns: [] }], [{ ...action, columns: ['a', 'a'] }], [{ ...action, token: 'extra' }]]) {
+    await assert.rejects(client.mount(d.container, { customActions }), { code: 'EMBED_CUSTOM_ACTION_INVALID' });
+  }
+  const handle = await client.mount(d.container, { customActions: [action], onDataEvent: e => received.push(e) });
+  t.after(() => handle.destroy());
+  action.columns.push('extra');
+  d.loaded(); const { customActions, ...init } = d.messages[0].data;
+  assert.deepEqual(customActions[0].columns, ['region', 'account']);
+  const frame = { origin, source: handle.iframe.contentWindow };
+  d.emit({ ...frame, data: { ...init, type: 'opensight:session', event: 'ready' } });
+  const payload = { type: 'customAction', actionId: 'open', visualId: 'sales', values: { account: 42, region: 'east' } };
+  for (const override of [{ actionId: 'unknown' }, { values: { region: 'east' } }, { values: { ...payload.values, extra: true } }]) {
+    d.emit({ ...frame, data: { ...init, type: 'opensight:data', payload: { ...payload, ...override } } });
+  }
+  assert.deepEqual(received, []);
+  d.emit({ ...frame, data: { ...init, type: 'opensight:data', payload } });
+  assert.deepEqual(received, [payload]);
+});

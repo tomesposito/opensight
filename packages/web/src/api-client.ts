@@ -31,6 +31,7 @@ import { hostedExecution, prepSources, type HostedPrepDataset, type PrepDatasets
 export type { InteractiveQuery as QueryRequest } from '@opensight/query-engine/browser';
 import type { InteractiveQuery as QueryRequest } from '@opensight/query-engine/browser';
 export interface QueryResponse {
+  contextColumns?: Record<string, string>;
   metrics?: readonly import('@opensight/query-engine/browser').PublishedMetric[];
   columns: { name: string; type: 'string' | 'number' }[];
   rows: Row[];
@@ -564,7 +565,17 @@ export function createApiClient(baseUrl = DEFAULT_API_URL, fetcher: typeof fetch
         ...(typeof p.aggregateName === 'string' ? { aggregateName: p.aggregateName } : {}),
         ...(typeof p.cachedAt === 'string' ? { cachedAt: p.cachedAt } : {}) };
     }
-    return { columns, rows, ...(Array.isArray(body.metrics) ? { metrics: body.metrics as QueryResponse['metrics'] } : {}), ...(provenance ? { provenance } : {}), ...(body.execution ? { execution: body.execution as ExecutionProvenance } : {}) };
+    let contextColumns: Record<string, string> | undefined;
+    if (body.contextColumns !== undefined) {
+      const entries = Object.entries(object(body.contextColumns, 'Context columns'));
+      const mapped: [string, string][] = [];
+      for (const [name, alias] of entries) {
+        if (typeof alias !== 'string' || !expected.includes(alias)) throw new ApiError('Invalid query context binding.');
+        mapped.push([name, alias]);
+      }
+      contextColumns = Object.fromEntries(mapped);
+    }
+    return { columns, rows, ...(contextColumns ? { contextColumns } : {}), ...(Array.isArray(body.metrics) ? { metrics: body.metrics as QueryResponse['metrics'] } : {}), ...(provenance ? { provenance } : {}), ...(body.execution ? { execution: body.execution as ExecutionProvenance } : {}) };
   }
   async function getDefinition(kind: ResourceKind, id: string, signal?: AbortSignal): Promise<DefinitionResponse> {
     if (!/^[A-Za-z0-9_-]{1,512}$/.test(id)) throw new ApiError('Resource ID must contain 1–512 letters, digits, underscores or hyphens.');

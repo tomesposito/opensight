@@ -1,3 +1,4 @@
+import { createEmbedChannel } from './embed-channel.js';
 import { assembleResult } from './object-transfers.js';
 import { startOnDemandEmbed } from './embed-on-demand.js';
 import type { EmbedSurface } from '@opensight/embedding-sdk/surface';
@@ -8,6 +9,7 @@ export type SessionState = 'loading' | 'ready' | 'error' | 'expired' | 'revoked'
 export interface EmbedTransport {
   app?(path: string, init?: RequestInit): Promise<Response>;
   request<T>(action: 'content' | 'question' | 'analysis' | 'save', body?: unknown): Promise<T>;
+  events: Pick<ReturnType<typeof createEmbedChannel>, 'emit' | 'onAction' | 'live' | 'customActions'>;
   ready(): void; saved(): void; destroy(): void;
   connect?(): Promise<void>;
 }
@@ -15,19 +17,17 @@ export interface EmbedTransport {
 export function startEmbedTransport(shell: EmbedShell, bootstrapValue: string, changed: (state: SessionState) => void,
   connected: (transport: EmbedTransport) => Promise<void>, view: Window = window, fetcher: typeof fetch = fetch): EmbedTransport {
   if (shell.idleReconnect && !shell.fullApp) return startOnDemandEmbed(shell, bootstrapValue, changed, connected, view, fetcher);
-  let bootstrap = bootstrapValue, credential = '', parentOrigin = '', channelId = '', expiresAt = 0, deadline = 0;
-  let destroyed = false, terminal = false, initialized = false;
+  let bootstrap = bootstrapValue, credential = '', expiresAt = 0, deadline = 0;
+  let destroyed = false, terminal = false, displayed = false;
   let pendingStatus: Promise<void> | undefined;
   const controllers = new Set<AbortController>();
   let poll: number | undefined, watchdog: number | undefined, expiry: number | undefined;
-  const emit = (event: string) => {
-    if (parentOrigin && channelId && !destroyed) view.parent.postMessage({ version: 2, type: 'opensight:session', event, sessionId: shell.sessionId, channelId }, parentOrigin);
-  };
+  const channel = createEmbedChannel(shell, view, () => displayed && !terminal && !destroyed && view.document.visibilityState === 'visible' && !!credential && Date.now() < deadline && Date.now() < expiresAt);
   const stopTimers = () => { if (poll !== undefined) view.clearInterval(poll); if (watchdog !== undefined) view.clearTimeout(watchdog); if (expiry !== undefined) view.clearTimeout(expiry); };
   const stop = (state: SessionState) => {
     if (terminal || destroyed) return;
     terminal = true; bootstrap = ''; credential = ''; stopTimers(); controllers.forEach(c => c.abort()); controllers.clear();
-    changed(state); emit(state === 'expired' ? 'sessionExpired' : state === 'revoked' ? 'authorizationRevoked' : state === 'saved' ? 'saved' : 'error');
+    changed(state); channel.status(state === 'expired' ? 'sessionExpired' : state === 'revoked' ? 'authorizationRevoked' : state === 'saved' ? 'saved' : 'error');
   };
   const failure = (code: unknown) => stop(code === 'EMBED_SESSION_EXPIRED' || code === 'EMBED_BOOTSTRAP_EXPIRED' ? 'expired'
     : ['EMBED_SESSION_REVOKED', 'EMBED_KEY_REVOKED', 'AUTHORIZATION_REVISED', 'TENANT_UNAVAILABLE', 'EMBED_SUBJECT_UNRESOLVED'].includes(String(code)) ? 'revoked' : 'error');
@@ -69,16 +69,16 @@ export function startEmbedTransport(shell: EmbedShell, bootstrapValue: string, c
   const visibility = () => {
     if (terminal || destroyed || !credential) return;
     // A hidden/frozen document never keeps an authorized view visible on resume.
-    changed('loading');
+    displayed = false; changed('loading');
     if (view.document.visibilityState === 'visible') void status().then(() => {
-      if (!terminal && !destroyed && Date.now() < deadline) changed('ready');
+      if (!terminal && !destroyed && Date.now() < deadline && view.document.visibilityState === 'visible') { displayed = true; changed('ready'); }
     }).catch(() => {});
   };
   const message = (event: MessageEvent<unknown>) => {
-    if (initialized || terminal || destroyed || view.parent === view || event.source !== view.parent || !shell.allowedDomains.includes(event.origin) || event.origin === view.location.origin || !event.data || typeof event.data !== 'object') return;
-    const data = event.data as Record<string, unknown>;
-    if (Object.keys(data).some(k => !['version', 'type', 'sessionId', 'channelId'].includes(k)) || data.version !== 2 || data.type !== 'opensight:initialize' || data.sessionId !== shell.sessionId || typeof data.channelId !== 'string' || !/^[A-Za-z0-9_-]{32,128}$/.test(data.channelId)) return;
-    initialized = true; parentOrigin = event.origin; channelId = data.channelId;
+    if (terminal || destroyed) return;
+    const bound = channel.initialize(event);
+    if (!bound) { channel.receive(event); return; }
+    const { parentOrigin, channelId } = bound;
     void (async () => {
       const result = await call<{ credential: string; expiresAt: number }>('redeem', { bootstrap, parentOrigin, channelId }); bootstrap = '';
       if (typeof result.credential !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(result.credential) || !Number.isSafeInteger(result.expiresAt) || result.expiresAt <= Date.now()) { stop('error'); return; }
@@ -90,6 +90,7 @@ export function startEmbedTransport(shell: EmbedShell, bootstrapValue: string, c
     })().catch(() => stop('error'));
   };
   const transport: EmbedTransport = {
+    events: channel,
     ...(shell.fullApp ? { async app(path: string, init: RequestInit = {}): Promise<Response> {
       if (!/^\/(?:api\/[A-Za-z0-9_/-]+|analysis\/[A-Za-z0-9_-]+|route|session)$/.test(path) || path.includes('//')) throw new Error('EMBED_SCOPE_DENIED');
       if (destroyed || terminal || !credential || Date.now() >= expiresAt || Date.now() >= deadline) { stop('revoked'); throw new Error('EMBED_UNAVAILABLE'); }
@@ -117,7 +118,7 @@ export function startEmbedTransport(shell: EmbedShell, bootstrapValue: string, c
       if (!credential || Date.now() >= expiresAt || Date.now() >= deadline) { stop('revoked'); throw new Error('EMBED_UNAVAILABLE'); }
       return call<T>(action, body);
     },
-    ready() { if (!terminal && !destroyed) { changed('ready'); emit('ready'); } },
+    ready() { if (!terminal && !destroyed) { displayed = true; changed('ready'); channel.status('ready'); } },
     saved() { stop('saved'); },
     destroy() { destroyed = true; bootstrap = ''; credential = ''; stopTimers(); controllers.forEach(c => c.abort()); controllers.clear(); view.removeEventListener('message', message); view.document.removeEventListener('visibilitychange', visibility); },
   };

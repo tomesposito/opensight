@@ -51,7 +51,7 @@ export class DashboardRoutes {
       response.writeHead(reply.status, { 'Content-Type': reply.contentType!, 'Content-Disposition': `attachment; filename="${reply.filename}"`, 'Content-Length': reply.bytes.length, 'Cache-Control': 'no-store' }); response.end(reply.bytes);
     } else send(response, reply.status, reply.body);
   }
-  async route(request: IncomingMessage, response: ServerResponse, path: string, backend: DashboardBackend): Promise<void> {
+  async route(request: IncomingMessage, response: ServerResponse, path: string, backend: DashboardBackend, embedded = false): Promise<void> {
     const question = /^\/api\/v1\/dashboards\/([A-Za-z0-9_-]{1,512})\/question$/.exec(path);
     if (question) {
       method(request, response, ['POST']);
@@ -185,7 +185,7 @@ export class DashboardRoutes {
           reply = { status: 200, body: { id, ...(pinned ? { version: pinned } : {}), removed: true } };
         } else if (visualId) {
           const v = dashboardVersion(record, pinned), definition = dashboardControls(v, body); dataVersion = v.version;
-          const { bindings: _bindings, ...result } = await backend.query(v, definition, visualId); reply = { status: 200, body: result, version: v.version };
+          const { bindings: _bindings, ...result } = await backend.query(v, definition, visualId, embedded); reply = { status: 200, body: result, version: v.version };
         } else {
           const selected = body.version === undefined ? record.latest : version(body.version); dataVersion = selected;
           const artifact = await dashboardExport(backend, record, selected, String(body.format), this.env);

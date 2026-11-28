@@ -1,3 +1,4 @@
+import { visualBindings } from './visual-bindings.js';
 import { lookupMetrics, metricDefinition } from './metric-consumption.js';
 import { planPreparedVisual } from '@opensight/query-engine';
 import { MetadataError } from './metadata-db.js';
@@ -69,7 +70,7 @@ export class HostedDashboards implements DashboardBackend {
       : await this.routes.prep.readerDashboardSchema(this.context, v.bindingOwnerId, binding.id), deniedColumns: [] };
     return (await this.analyses.resolve({ [identifier]: binding })).get(identifier)!;
   }
-  async query(v: DashboardVersion, definition: JsonObject, visualId: string) {
+  async query(v: DashboardVersion, definition: JsonObject, visualId: string, includeContext = false) {
     const bindings = Object.values(v.datasetBindings);
     if (bindings.length !== 1) throw new MetadataError('DASHBOARD_DATASET_UNSUPPORTED', 422);
     const binding = bindings[0]!, data = this.routes.data, context = this.context;
@@ -84,9 +85,9 @@ export class HostedDashboards implements DashboardBackend {
         const dashboardId = this.publishedVersions.get(v);
         if (!dashboardId) throw new MetadataError('DASHBOARD_DATASET_ACCESS_DENIED', 403);
         await this.authorize(dashboardId);
-        return { ...await this.routes.prep.readerDashboardVisual(context, v.bindingOwnerId, binding.id, analysis, visualId, dataSetArn), ...(metrics ? { metrics } : {}) };
+        return { ...await this.routes.prep.readerDashboardVisual(context, v.bindingOwnerId, binding.id, analysis, visualId, dataSetArn, includeContext), ...(metrics ? { metrics } : {}) };
       }
-      return { ...await this.routes.prep.dashboardVisual(context, binding.id, analysis, visualId, dataSetArn), ...(metrics ? { metrics } : {}) };
+      return { ...await this.routes.prep.dashboardVisual(context, binding.id, analysis, visualId, dataSetArn, includeContext), ...(metrics ? { metrics } : {}) };
     }
     // Follow the frozen binding, and admit as the reader. Never use EmbedSources' delegation.
     const dataset = await this.metadata.get(context, { kind: 'dataset', id: binding.id });
@@ -101,7 +102,7 @@ export class HostedDashboards implements DashboardBackend {
     return data.work(context, false, [a], async () => {
       const table = await data.table(context, a, data.read(a).columns);
       const result = await containedWork<QueryResult>(data.scope(context), { kind: 'visual', table: await wireTable(data.scope(context), table, { ...a.physical, columns: table.columns }), analysis, visualId, dataSetArn }, data.limits(context));
-      return { ...result, ...(metrics ? { metrics } : {}), bindings: Object.fromEntries([...plan.dimensions, ...plan.measures].map(f => [f.fieldId, f.outputName])) };
+      return { ...result, ...(metrics ? { metrics } : {}), ...visualBindings(plan, includeContext) };
     });
   }
 }

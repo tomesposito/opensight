@@ -8,6 +8,11 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 for (const [entry, filename] of [['embed.html', 'opensight-embed.html'], ['embed-session.html', 'opensight-embed-session.html'], ['embed-preview.html', 'opensight-embed-preview.html'], ['embed-app.html', 'opensight-embed-app.html']]) {
   const result = await build({
     root, configFile: false, base: './',
+    // The fixed frame shares visual-card styles with the app. Its console uses
+    // EmbeddedAuthor, so standalone editor and navigation roots never mount.
+    css: entry === 'embed-session.html' ? { lightningcss: {
+      unusedSymbols: ['author-workspace', 'author-layout', 'global-search', 'command-palette'],
+    } } : undefined,
     build: {
       write: false, cssCodeSplit: false, modulePreload: false,
       rolldownOptions: { input: new URL(`../${entry}`, import.meta.url).pathname, output: { codeSplitting: false, comments: { legal: true } } },

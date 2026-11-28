@@ -86,4 +86,5 @@ export function createEmbeddingClient(options: EmbeddingClientOptions) {
 
 export { createSessionEmbeddingClient } from './session.js';
 export type { GenerateEmbedUrlForRegisteredUser, GenerateEmbedUrlForAnonymousUser, ExperienceConfiguration, FullAppLandingRoute, SessionEmbedUrl, SessionEmbeddingOptions, SessionCallbacks, SessionMountOptions } from './session.js';
+export type { EmbedDataEvent, EmbedCustomAction, EmbedHostAction, EmbedCell, EmbedValues, EmbedFilters } from './events.js';
 export type { EmbedSurface, SurfaceDeclaration, SurfaceState } from './surface.js';

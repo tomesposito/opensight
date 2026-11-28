@@ -1,7 +1,7 @@
 import type { EmbedSurface } from '@opensight/embedding-sdk/surface';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { parameterValueError, type ParameterDeclaration, type ParameterValue } from '@opensight/query-engine/parameters';
-import { VisualCard } from './VisualCard.js';
+import { EmbedVisualCard } from './EmbedVisualCard.js';
 import type { FixtureVisual } from './model.js';
 import type { EmbedTransport } from './embed-transport.js';
 
@@ -35,6 +35,10 @@ export function EmbeddedDashboard({ initial, transport, onState, onContent, acti
     try {
       const result = await transport.request<DashboardContent>('content', state);
       if (current !== generation.current) return;
+      const filters = (value: DashboardContent) => Object.fromEntries(value.controls.filters.map(c => [c.id, c.values]));
+      if (actions?.filtering !== 'hidden' && JSON.stringify(filters(content)) !== JSON.stringify(filters(result))) {
+        transport.events.emit({ type: 'filterState', filters: filters(result) });
+      }
       setContent(result); setDrafts(draftsFor(result)); onContent?.(result);
     } catch {
       if (current === generation.current) { setFailed(true); setError('Unable to update this view. Reconnect to check access and try again.'); }
@@ -44,6 +48,20 @@ export function EmbeddedDashboard({ initial, transport, onState, onContent, acti
   const hasControls = (kind: keyof Drafts) => groups[kind] !== 'hidden' && content.controls[kind].length > 0;
   const editable = (kind: keyof Drafts) => groups[kind] === 'visible' && hasControls(kind);
   const canApply = editable('filters') || editable('parameters');
+  useLayoutEffect(() => transport.events?.onAction(action => {
+    if (action.type === 'navigate' || flight.current) return;
+    const state: EmbedReaderState = {};
+    for (const kind of ['filters', 'parameters'] as const) {
+      if (editable(kind)) state[kind] = Object.fromEntries(content.controls[kind].map(c => [c.id, c.values]));
+    }
+    if (action.type === 'setFilter') {
+      const control = content.controls.filters.find(c => c.id === action.filterId);
+      if (!state.filters || !control || parameterValueError(control, action.values)) return;
+      state.filters = { ...state.filters, [control.id]: action.values };
+    }
+    void refresh(state);
+  }));
+
   const apply = () => {
     if (!canApply) return;
     const state: EmbedReaderState = {};
@@ -95,7 +113,7 @@ export function EmbeddedDashboard({ initial, transport, onState, onContent, acti
       {error && <p role="alert">{error}</p>}
     </form>}
     <div className="embed-dashboard-results">
-      {busy ? <p role="status">Updating view…</p> : !failed && <div className="dashboard-grid">{content.visuals.map(v => <VisualCard key={v.id} visual={v} />)}</div>}
+      {busy ? <p role="status">Updating view…</p> : !failed && <div className="dashboard-grid">{content.visuals.map(v => <EmbedVisualCard key={v.id} visual={v} events={transport.events} />)}</div>}
     </div>
   </section>;
 }

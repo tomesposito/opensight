@@ -25,3 +25,19 @@ void client.mount(document.createElement('div'), { SessionTags: registered.Sessi
 void client.mount(document.createElement('div'), { surface: { actions: { authoring: true } } });
 // @ts-expect-error Required notices are outside the surface vocabulary.
 void client.mount(document.createElement('div'), { surface: { chrome: { notices: 'hidden' } } });
+void client.mount(document.createElement('div'), { onDataEvent(event) {
+  if (event.type === 'selection') void event.values.Region;
+  // @ts-expect-error The version belongs only to a save receipt.
+  void event.version;
+} });
+
+async function readerCommands() {
+  const reader = await client.mount(document.createElement('div'), {
+    customActions: [{ id: 'open', label: 'Open account', columns: ['account'] }],
+    onDataEvent(event) { if (event.type === 'customAction') void event.values.account; },
+  });
+  reader.sendAction({ type: 'setFilter', filterId: 'regions', values: ['east'] });
+  // @ts-expect-error Refresh cannot choose another resource.
+  reader.sendAction({ type: 'refresh', path: '/dashboards/other' });
+}
+void readerCommands;

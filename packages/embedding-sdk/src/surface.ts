@@ -1,3 +1,4 @@
+import { embedRoute, type EmbedHostAction } from './events.js';
 // The closed vocabulary is shared by config validation, issuance and SDK mounts.
 export const surfaceNames = {
   menus: ['navigation', 'account'],
@@ -30,4 +31,17 @@ export function isEmbedSurface(value: unknown): value is EmbedSurface {
     const entries = value[group];
     return entries !== undefined && surfaceNames[group].every(key => Object.hasOwn(entries, key));
   });
+}
+
+/** Use only the resolved profile from the issued shell. Refresh addresses the
+ * already displayed content and never selects a resource or changes controls. */
+export function allowsHostAction(surface: EmbedSurface, action: EmbedHostAction): boolean {
+  if (!isEmbedSurface(surface)) return false;
+  if (action.type === 'refresh') return true;
+  if (action.type === 'setFilter') return surface.actions.filtering === 'visible';
+  const target = embedRoute(action.path);
+  if (!target || surface.menus.navigation !== 'visible') return false;
+  if (target.area === 'author' || target.area === 'prep') return surface.actions.authoring === 'visible';
+  if (target.area === 'ask') return surface.actions.question === 'visible';
+  return true;
 }

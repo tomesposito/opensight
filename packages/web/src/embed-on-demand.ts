@@ -1,3 +1,4 @@
+import { createEmbedChannel } from './embed-channel.js';
 import type { EmbedShell, EmbedTransport, SessionState } from './embed-transport.js';
 import { createWorkspaceStartup } from './workspace-startup.js';
 import { assembleResult } from './object-transfers.js';
@@ -11,21 +12,19 @@ export function startOnDemandEmbed(shell: EmbedShell, initialBootstrap: string, 
   let leaseTimer: number | undefined, expiryTimer: number | undefined, frame: number | undefined;
   let flight: Promise<void> | undefined, connectController: AbortController | undefined;
   const controllers = new Set<AbortController>(), startup = createWorkspaceStartup(fetcher, view);
-  const emit = (event: string) => {
-    if (initialized && !destroyed) view.parent.postMessage({ version: 2, type: 'opensight:session', event, sessionId: shell.sessionId, channelId }, parentOrigin);
-  };
+  const channel = createEmbedChannel(shell, view, () => state === 'ready' && valid());
   const stopLease = () => { view.clearTimeout(leaseTimer); if (frame !== undefined) view.cancelAnimationFrame(frame); frame = undefined; lease = 0; };
   const cancel = () => { generation++; stopLease(); connectController?.abort(); startup.cancel(); controllers.forEach(c => c.abort()); controllers.clear(); };
   const finish = (next: 'expired' | 'revoked' | 'saved' | 'error') => {
     if (terminal || destroyed) return;
     terminal = true; cancel(); view.clearTimeout(expiryTimer); view.clearTimeout(handshakeTimer); bootstrap = ''; credential = '';
-    state = next; changed(next); emit(next === 'expired' ? 'sessionExpired' : next === 'revoked' ? 'authorizationRevoked' : next === 'saved' ? 'saved' : 'error');
+    state = next; changed(next); channel.status(next === 'expired' ? 'sessionExpired' : next === 'revoked' ? 'authorizationRevoked' : next === 'saved' ? 'saved' : 'error');
   };
   const hide = (next: 'idle' | 'unavailable' = 'idle') => {
     if (terminal || destroyed) return;
     if (redeeming) { finish('error'); return; } // A consumed bootstrap cannot be retried safely.
     if (credential && Date.now() >= expiresAt) { finish('expired'); return; }
-    cancel(); state = next; changed(next); emit('connectionRequired');
+    cancel(); state = next; changed(next); channel.status('connectionRequired');
   };
   const valid = () => {
     if (destroyed || terminal || !credential) return false;
@@ -101,19 +100,20 @@ export function startOnDemandEmbed(shell: EmbedShell, initialBootstrap: string, 
     return flight;
   };
   const message = (event: MessageEvent<unknown>) => {
-    if (initialized || terminal || destroyed || view.parent === view || event.source !== view.parent || !shell.allowedDomains.includes(event.origin) || event.origin === view.location.origin || !event.data || typeof event.data !== 'object') return;
-    const data = event.data as Record<string, unknown>;
-    if (Object.keys(data).some(k => !['version', 'type', 'sessionId', 'channelId'].includes(k)) || data.version !== 2 || data.type !== 'opensight:initialize' || data.sessionId !== shell.sessionId || typeof data.channelId !== 'string' || !/^[A-Za-z0-9_-]{32,128}$/.test(data.channelId)) return;
-    initialized = true; parentOrigin = event.origin; channelId = data.channelId; view.clearTimeout(handshakeTimer); hide();
+    if (terminal || destroyed) return;
+    const bound = channel.initialize(event);
+    if (!bound) { channel.receive(event); return; }
+    initialized = true; ({ parentOrigin, channelId } = bound); view.clearTimeout(handshakeTimer); hide();
   };
   const background = () => hide();
   const visibility = () => { if (view.document.visibilityState === 'hidden') hide(); else if (credential) valid(); };
   const resumed = () => { if (credential) valid(); };
   const input = (event: Event) => { if (state === 'ready' && !valid()) { event.preventDefault(); event.stopImmediatePropagation(); } };
   const transport: EmbedTransport = {
+    events: channel,
     connect,
     async request<T>(action: 'content' | 'question' | 'analysis' | 'save', body?: unknown) { if (!valid()) throw new Error('EMBED_UNAVAILABLE'); return call<T>(action, body); },
-    ready() { if (valid()) { state = 'ready'; changed(state); emit('ready'); if (frame === undefined) frame = view.requestAnimationFrame(guard); } },
+    ready() { if (valid()) { state = 'ready'; changed(state); channel.status('ready'); if (frame === undefined) frame = view.requestAnimationFrame(guard); } },
     saved() { if (valid()) finish('saved'); },
     destroy() {
       destroyed = true; cancel(); bootstrap = ''; credential = ''; view.clearTimeout(expiryTimer); view.clearTimeout(handshakeTimer);

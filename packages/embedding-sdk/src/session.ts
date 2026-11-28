@@ -1,3 +1,4 @@
+import { isCustomActions, isDataMessage, isHostAction, type EmbedCustomAction, type EmbedHostAction, type EmbedDataEvent } from './events.js';
 import { isSurfaceDeclaration, type SurfaceDeclaration } from './surface.js';
 import { EmbeddingError } from './index.js';
 
@@ -16,11 +17,13 @@ export interface GenerateEmbedUrlForAnonymousUser {
 }
 export interface SessionEmbedUrl { Surface?: SurfaceDeclaration; sessionId: string; EmbedUrl: string; bootstrapExpiresAt: string; SessionLifetimeInMinutes: number; configRevision: number }
 export interface SessionCallbacks {
+  onDataEvent?: (event: EmbedDataEvent) => void;
   onReady?: () => void; onSessionExpired?: () => void; onAuthorizationRevoked?: () => void;
   onConnectionRequired?: () => void;
   onSaved?: () => void; onError?: (error: EmbeddingError) => void;
 }
 export interface SessionMountOptions extends SessionCallbacks {
+  customActions?: EmbedCustomAction[];
   surface?: SurfaceDeclaration;
 }
 export interface SessionEmbeddingOptions {
@@ -43,6 +46,8 @@ export function createSessionEmbeddingClient(options: SessionEmbeddingOptions) {
   return {
     async mount(container: HTMLElement, callbacks: SessionMountOptions = {}) {
       if (callbacks.surface !== undefined && !isSurfaceDeclaration(callbacks.surface)) throw new EmbeddingError('EMBED_SURFACE_INVALID', 'Invalid embed surface');
+      if (callbacks.customActions !== undefined && !isCustomActions(callbacks.customActions)) throw new EmbeddingError('EMBED_CUSTOM_ACTION_INVALID', 'Invalid custom actions');
+      const customActions = structuredClone(callbacks.customActions ?? []);
       const surface = structuredClone(callbacks.surface);
       const view = container.ownerDocument.defaultView;
       if (!view) throw new EmbeddingError('PARENT_ORIGIN_MISMATCH', 'A browser window is required');
@@ -58,7 +63,7 @@ export function createSessionEmbeddingClient(options: SessionEmbeddingOptions) {
       const failed = () => { clear(); callbacks.onError?.(new EmbeddingError('FRAME_LOAD_FAILED', 'Unable to load the hosted embed')); };
       const initialize = () => {
         if (!active || destroyed) return;
-        iframe.contentWindow?.postMessage({ version: 2, type: 'opensight:initialize', sessionId: active.id, channelId: active.channelId }, active.origin);
+        iframe.contentWindow?.postMessage({ version: 2, type: 'opensight:initialize', ...(customActions.length ? { customActions } : {}), sessionId: active.id, channelId: active.channelId }, active.origin);
       };
       const loaded = () => {
         if (handshakeTimer !== undefined) clearInterval(handshakeTimer);
@@ -67,12 +72,20 @@ export function createSessionEmbeddingClient(options: SessionEmbeddingOptions) {
         // the frame acknowledges; its one-shot receiver cannot redeem twice.
         handshakeTimer = setInterval(initialize, 250);
       };
+      let ready = false, terminal = false;
       const message = (event: MessageEvent<unknown>) => {
-        if (destroyed || !active || event.source !== iframe.contentWindow || event.origin !== active.origin || !event.data || typeof event.data !== 'object') return;
+        if (destroyed || !active || !iframe.contentWindow || event.source !== iframe.contentWindow || event.origin !== active.origin || !event.data || typeof event.data !== 'object') return;
+        if (isDataMessage(event.data, active.id, active.channelId, customActions)) {
+          if (ready && !terminal) callbacks.onDataEvent?.(event.data.payload);
+          return;
+        }
         const data = event.data as Record<string, unknown>;
         if (Object.keys(data).some(k => !['version', 'type', 'event', 'sessionId', 'channelId', 'errorCode'].includes(k)) || data.version !== 2 || data.type !== 'opensight:session'
           || data.sessionId !== active.id || data.channelId !== active.channelId) return;
-        if (data.event === 'ready') { clear(); callbacks.onReady?.(); }
+        if (data.event === 'ready' && !terminal) ready = true;
+        if (data.event === 'connectionRequired') ready = false;
+        if (['saved', 'error', 'sessionExpired', 'authorizationRevoked'].includes(String(data.event))) terminal = true;
+        if (data.event === 'ready' && !terminal) { clear(); callbacks.onReady?.(); }
         else if (data.event === 'connectionRequired') { clear(); callbacks.onConnectionRequired?.(); }
         else if (data.event === 'sessionExpired') { clear(); callbacks.onSessionExpired?.(); }
         else if (data.event === 'authorizationRevoked') { clear(); callbacks.onAuthorizationRevoked?.(); }
@@ -86,6 +99,7 @@ export function createSessionEmbeddingClient(options: SessionEmbeddingOptions) {
       };
       const refresh = async () => {
         if (destroyed) throw new EmbeddingError('EMBED_DESTROYED', 'The embed has been destroyed');
+        ready = false; terminal = false;
         const current = ++generation; controller?.abort(); controller = new AbortController(); active = undefined; clear();
         const result = await options.getEmbedUrl(controller.signal, structuredClone(surface));
         if (destroyed || generation !== current) return;
@@ -111,7 +125,12 @@ export function createSessionEmbeddingClient(options: SessionEmbeddingOptions) {
       };
       view.addEventListener('message', message); iframe.addEventListener('load', loaded); iframe.addEventListener('error', failed);
       try { await refresh(); container.appendChild(iframe); } catch (error) { destroy(); throw error; }
-      return { iframe, refresh, destroy };
+      const sendAction = (payload: EmbedHostAction) => {
+        if (!isHostAction(payload)) throw new EmbeddingError('EMBED_ACTION_INVALID', 'Invalid host action');
+        if (!active || !ready || terminal || destroyed) return;
+        iframe.contentWindow?.postMessage({ version: 2, type: 'opensight:action', sessionId: active.id, channelId: active.channelId, payload }, active.origin);
+      };
+      return { iframe, refresh, destroy, sendAction };
     },
   };
 }

@@ -1,25 +1,14 @@
+import { embedRoute, type EmbedRouteArea } from '@opensight/embedding-sdk/events';
 import { hasCapability } from '@opensight/query-engine';
 import { MetadataError } from './metadata-db.js';
 import type { TenantEmbedConfig } from './embedding-config.js';
 
-export interface AppLocation { path: string; area: 'dashboard' | 'catalog' | 'author' | 'prep' | 'ask'; id?: string }
+export interface AppLocation { path: string; area: EmbedRouteArea; id?: string }
 /** Exact application paths only: no URLs, queries, fragments, escapes or aliases. */
 export function fullAppLocation(value: unknown, landing = false): AppLocation {
   if (typeof value !== 'string') throw new MetadataError('EMBED_REQUEST_INVALID', 400);
-  const routes: [RegExp, AppLocation['area']][] = [
-    [/^\/dashboards(?:\/([A-Za-z0-9_-]{1,512}))?$/, 'dashboard'],
-    [/^\/data$/, 'catalog'], [/^\/analyses\/author(?:\/([A-Za-z0-9_-]{1,512}))?$/, 'author'],
-    [/^\/data\/preparation$/, 'prep'], [/^\/ask-o$/, 'ask'],
-    ...(!landing ? [
-      [/^\/home$/, 'dashboard'], [/^\/analyses(?:\/new|\/drafts\/[A-Za-z0-9-]{1,80})?$/, 'author'],
-      [/^\/data\/(?:sources|new)$/, 'prep'], [/^\/data\/datasets\/([A-Za-z0-9_-]{1,128})$/, 'catalog'],
-      [/^\/data\/preparation\/(?:source|edit|dataset)\/([A-Za-z0-9_-]{1,128})$/, 'prep'],
-    ] as [RegExp, AppLocation['area']][] : []),
-  ];
-  for (const [pattern, area] of routes) {
-    const match = pattern.exec(value);
-    if (match) return { path: value, area, ...(match[1] ? { id: match[1] } : {}) };
-  }
+  const location = embedRoute(value, landing);
+  if (location) return location;
   throw new MetadataError(landing ? 'EMBED_REQUEST_INVALID' : 'EMBED_SCOPE_DENIED', landing ? 400 : 403);
 }
 export type AppFeatures = Pick<TenantEmbedConfig['features'], 'authoring' | 'registeredDashboards'>;

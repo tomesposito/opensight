@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { startEmbedTransport } from '../build/test/embed-transport.js';
 const id = 's'.repeat(32), credential = 'c'.repeat(43), origin = 'https://parent.example';
 const settle = async () => { for (let i = 0; i < 40; i++) await Promise.resolve(); };
-function fixture(t, handler, lifetime = 900000) {
+function fixture(t, handler, lifetime = 900000, surface) {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 100000 });
   const document = new EventTarget(), view = new EventTarget(), frames = new Map(), states = [], messages = [], calls = []; let next = 0;
   document.visibilityState = 'visible';
@@ -11,7 +11,7 @@ function fixture(t, handler, lifetime = 900000) {
     setTimeout: (...args) => setTimeout(...args), clearTimeout: id => clearTimeout(id),
     requestAnimationFrame: callback => { frames.set(++next, callback); return next; }, cancelAnimationFrame: id => frames.delete(id) });
   const expiresAt = Date.now() + lifetime;
-  const transport = startEmbedTransport({ sessionId: id, allowedDomains: [origin], idleReconnect: true }, 'private-bootstrap', state => states.push(state), async current => { await current.request('content'); current.ready(); }, view, async (url, options) => {
+  const transport = startEmbedTransport({ sessionId: id, allowedDomains: [origin], idleReconnect: true, surface }, 'private-bootstrap', state => states.push(state), async current => { await current.request('content'); current.ready(); }, view, async (url, options) => {
     calls.push({ url, options });
     if (handler) { const response = await handler(url, options); if (response !== undefined) return response; }
     return Response.json(url.endsWith('/startup') ? { state: 'ready' } : url.endsWith('/redeem') ? { credential, expiresAt } : { expiresAt });
@@ -71,4 +71,23 @@ test('successful authority reads renew conservatively from request start; local 
   const f = fixture(t); f.initialize(); await f.transport.connect(); t.mock.timers.tick(30000); await f.transport.request('content');
   t.mock.timers.tick(30000); f.document.dispatchEvent(new Event('pointerdown')); assert.equal(f.states.at(-1), 'ready');
   t.mock.timers.tick(15000); await settle(); assert.equal(f.states.at(-1), 'idle'); assert.equal(f.calls.length, 5);
+});
+
+test('#340 data emission respects the on-demand display lease without renewing it', async t => {
+  const f = fixture(t), payload = { type: 'navigation', path: '/data' };
+  f.initialize(); f.transport.events.emit(payload); await f.transport.connect();
+  f.transport.events.emit(payload); t.mock.timers.setTime(150000); f.transport.events.emit(payload);
+  assert.deepEqual(f.messages.filter(m => m.value.payload).map(m => m.value.payload), [payload]);
+  assert.equal(f.calls.length, 4);
+});
+
+test('#340 host refresh cannot wake an idle frame or renew an expired display lease', async t => {
+  const surface = { menus: { navigation: 'hidden', account: 'hidden' }, actions: { filtering: 'hidden', authoring: 'hidden', question: 'hidden', parameterControls: 'hidden' }, chrome: { header: 'visible' } };
+  const f = fixture(t, undefined, 900000, surface), actions = [];
+  f.transport.events.onAction(action => actions.push(action));
+  const refresh = () => f.initialize({ data: { version: 2, type: 'opensight:action', sessionId: id, channelId: 'h'.repeat(32), payload: { type: 'refresh' } } });
+  f.initialize(); refresh(); assert.equal(f.calls.length, 0);
+  await f.transport.connect(); refresh();
+  t.mock.timers.setTime(150000); refresh(); assert.equal(f.states.at(-1), 'idle');
+  assert.deepEqual(actions, [{ type: 'refresh' }]); assert.equal(f.calls.length, 4);
 });

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { useAccess } from './access.js';
 import { adminPages, dataPages, developerPages, pages, parseRoute, productSections, resetRouteScroll, routeSurface, routeHash, visiblePage, type AppRoute, type Page } from './app-navigation.js';
 import { useCommandPalette } from './CommandPalette.js';
@@ -6,17 +6,17 @@ import { useGlobalSearch } from './GlobalSearch.js';
 import { BrandMark } from './BrandMark.js';
 
 export function useAppRoute() {
-  const authorize = useAccess().embed?.authorizeRoute;
+  const access = useAccess(), embed = access.embed, authorize = embed?.authorizeRoute;
   const [route, setRoute] = useState(() => authorize ? undefined : parseRoute(typeof window === 'undefined' ? '' : window.location?.hash ?? ''));
   const [entry, setEntry] = useState(0);
   const [routeError, setRouteError] = useState<string>();
   const [routePending, setRoutePending] = useState(!!authorize);
-  const epoch = useRef(0);
+  const epoch = useRef(0), hostRequest = useRef(0);
   const check = (hash: string, commit: () => void) => {
     const current = ++epoch.current;
     if (!authorize) { commit(); return; }
     setRoutePending(true); setRouteError(undefined);
-    void authorize(hash.slice(1)).then(() => { if (current === epoch.current) { setRoutePending(false); commit(); } }).catch((error: unknown) => {
+    void authorize(hash.slice(1)).then(() => { if (current === epoch.current) { setRoutePending(false); commit(); embed?.events?.emit({ type: 'navigation', path: hash.slice(1) }); } }).catch((error: unknown) => {
       if (current === epoch.current) { setRoutePending(false); setRoute(undefined); setRouteError(error instanceof Error ? error.message : 'EMBED_SCOPE_DENIED'); }
     });
   };
@@ -30,6 +30,19 @@ export function useAppRoute() {
     window.addEventListener('hashchange', changed);
     return () => { epoch.current++; window.removeEventListener('hashchange', changed); };
   }, [authorize]);
+  useLayoutEffect(() => embed?.events?.onAction(action => {
+    if (action.type !== 'navigate' || !authorize) return;
+    const hash = `#${action.path}`, next = parseRoute(hash);
+    if (!next || routeSurface(access, next) !== 'visible' || hash === window.location.hash) return;
+    const current = epoch.current, request = ++hostRequest.current;
+    void authorize(action.path).then(() => {
+      if (current !== epoch.current || request !== hostRequest.current || !embed.events?.live()) return;
+      epoch.current++;
+      window.history.pushState(null, '', hash);
+      setRoute(next); setRouteError(undefined); setRoutePending(false); setEntry(value => value + 1); resetRouteScroll(window);
+      embed.events.emit({ type: 'navigation', path: action.path });
+    }).catch(() => {});
+  }));
   const navigate = (next: AppRoute, replace = false) => {
     const hash = routeHash(next);
     if (route && routeHash(route) === hash) return;

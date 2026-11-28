@@ -19,7 +19,12 @@ export function embedAppClient(transport: EmbedTransport) {
   };
   const values = new Map<string, string>();
   const storage: DraftStorage = () => ({ getItem: key => values.get(key) ?? null, setItem: (key, value) => { values.set(key, value); } });
-  return { api, storage, clear: () => values.clear(),
+  const saveHostedAnalysis: typeof api.saveHostedAnalysis = async (id, input, revision) => {
+    const version = await api.saveHostedAnalysis(id, input, revision);
+    transport.events?.emit({ type: 'save', analysisId: id, version });
+    return version;
+  };
+  return { api: { ...api, saveHostedAnalysis }, storage, clear: () => values.clear(),
     session: () => checked('/session') as Promise<Session>,
     loadAnalysis: (id: string) => checked(`/analysis/${encodeURIComponent(id)}`) as Promise<EmbeddedAnalysisRecord>,
     authorizeRoute: async (path: string) => { await checked('/route', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) }); },
