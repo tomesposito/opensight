@@ -67,7 +67,10 @@ test('full-app App opens real Author, edits and saves twice, then navigates unde
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   let ui;
   t.after(async () => { if (ui) await act(() => ui.unmount()); globalThis.window = previousWindow; globalThis.IS_REACT_ACT_ENVIRONMENT = previousAct; client.clear(); });
-  const embedded = { api: client.api, session: await client.session(), embed: { storage: client.storage, loadAnalysis: client.loadAnalysis, authorizeRoute: client.authorizeRoute } };
+  const received = [];
+  let command;
+  const channel = { live: () => true, onAction(fn) { command = fn; return () => { command = undefined; }; }, emit: event => received.push(event) };
+  const embedded = { api: client.api, session: await client.session(), embed: { events: channel, storage: client.storage, loadAnalysis: client.loadAnalysis, authorizeRoute: client.authorizeRoute } };
   await act(() => { ui = create(h(App, { embedded })); });
   const until = async condition => {
     for (let i = 0; i < 100 && !condition(); i++) await act(() => new Promise(resolve => setTimeout(resolve, 20)));
@@ -83,8 +86,15 @@ test('full-app App opens real Author, edits and saves twice, then navigates unde
     assert.equal((await active.app('/analysis/working')).body.name, name);
     assert.equal(ui.root.findAllByType(Author).length, 1);
   }
-  await act(() => ui.root.findByType(AppNavigation).props.navigate({ page: 'data' }));
+  const before = location.hash;
+  await act(() => command({ type: 'navigate', path: '/dashboards/missing' }));
+  await act(() => new Promise(resolve => setTimeout(resolve, 30)));
+  assert.equal(location.hash, before);
+  assert.equal(ui.root.findAllByType(Author).length, 1);
+  await act(() => command({ type: 'navigate', path: '/data' }));
   await until(() => location.hash === '#/data');
+  assert.deepEqual(received.at(-1), { type: 'navigation', path: '/data' });
+  assert.ok(!received.some(e => e.path === '/dashboards/missing'));
   assert.equal((await f.call(`${active.root}/status`, 'GET', undefined, active.auth)).status, 200);
 });
 

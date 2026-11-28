@@ -102,7 +102,7 @@ export function startOnDemandEmbed(shell: EmbedShell, initialBootstrap: string, 
   const message = (event: MessageEvent<unknown>) => {
     if (terminal || destroyed) return;
     const bound = channel.initialize(event);
-    if (!bound) return;
+    if (!bound) { channel.receive(event); return; }
     initialized = true; ({ parentOrigin, channelId } = bound); view.clearTimeout(handshakeTimer); hide();
   };
   const background = () => hide();

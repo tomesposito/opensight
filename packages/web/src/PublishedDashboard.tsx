@@ -3,7 +3,7 @@ import { metricFormatting } from './governed-metrics.js';
 import { QSidePanel } from './QSidePanel.js';
 import { publishedQuestionDraft } from './published-question.js';
 import { allowed, useAccess, type Session } from './access.js';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import type { createApiClient } from './api-client.js';
 import type { PublishedDashboard as Definition, ControlValues } from './published-dashboard.js';
 import { publishedBindings, readerControls } from './published-dashboard.js';
@@ -18,6 +18,9 @@ type ReaderClient = Pick<ReturnType<typeof createApiClient>, 'getPublishedDashbo
 export function PublishedDashboard({ id, client, navigate }: { id: string; client: ReaderClient; navigate: Navigate }) {
   const access = useAccess();
   const [state, setState] = useState<{ value?: Definition; error?: string }>(), [attempt, setAttempt] = useState(0);
+  useLayoutEffect(() => access.embed?.events?.onAction(action => {
+    if (action.type === 'refresh') setAttempt(value => value + 1);
+  }), [access.embed]);
   useEffect(() => {
     const abort = new AbortController(); setState(undefined);
     void client.getPublishedDashboard(id, abort.signal).then(value => { if (!abort.signal.aborted) setState({ value }); })

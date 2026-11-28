@@ -127,3 +127,16 @@ test('#340 callbacks receive strict data events only on the ready, bound channel
   status('connectionRequired'); d.emit(event); status('ready'); status('sessionExpired'); d.emit(event);
   assert.deepEqual(received, valid);
 });
+
+test('#340 SDK addresses actions to the ready generation and rejects malformed commands', async t => {
+  const d = dom(), handle = await createSessionEmbeddingClient({ allowedEmbedOrigins: [origin], getEmbedUrl: async () => issued() }).mount(d.container);
+  t.after(() => handle.destroy());
+  const payload = { type: 'refresh' };
+  handle.sendAction(payload); d.loaded(); assert.equal(d.messages.length, 1);
+  const init = d.messages[0].data;
+  d.emit({ origin, source: handle.iframe.contentWindow, data: { ...init, type: 'opensight:session', event: 'ready' } });
+  handle.sendAction(payload);
+  assert.deepEqual(d.messages[1], { target: origin, data: { ...init, type: 'opensight:action', payload } });
+  assert.throws(() => handle.sendAction({ ...payload, sessionId: 'other' }), { code: 'EMBED_ACTION_INVALID' });
+  await handle.refresh(); handle.sendAction(payload); assert.equal(d.messages.length, 2);
+});

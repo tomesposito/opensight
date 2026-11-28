@@ -1,4 +1,4 @@
-import { isDataMessage, type EmbedDataEvent } from './events.js';
+import { isDataMessage, isHostAction, type EmbedHostAction, type EmbedDataEvent } from './events.js';
 import { isSurfaceDeclaration, type SurfaceDeclaration } from './surface.js';
 import { EmbeddingError } from './index.js';
 
@@ -122,7 +122,12 @@ export function createSessionEmbeddingClient(options: SessionEmbeddingOptions) {
       };
       view.addEventListener('message', message); iframe.addEventListener('load', loaded); iframe.addEventListener('error', failed);
       try { await refresh(); container.appendChild(iframe); } catch (error) { destroy(); throw error; }
-      return { iframe, refresh, destroy };
+      const sendAction = (payload: EmbedHostAction) => {
+        if (!isHostAction(payload)) throw new EmbeddingError('EMBED_ACTION_INVALID', 'Invalid host action');
+        if (!active || !ready || terminal || destroyed) return;
+        iframe.contentWindow?.postMessage({ version: 2, type: 'opensight:action', sessionId: active.id, channelId: active.channelId, payload }, active.origin);
+      };
+      return { iframe, refresh, destroy, sendAction };
     },
   };
 }

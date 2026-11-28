@@ -9,7 +9,7 @@ export type SessionState = 'loading' | 'ready' | 'error' | 'expired' | 'revoked'
 export interface EmbedTransport {
   app?(path: string, init?: RequestInit): Promise<Response>;
   request<T>(action: 'content' | 'question' | 'analysis' | 'save', body?: unknown): Promise<T>;
-  events: Pick<ReturnType<typeof createEmbedChannel>, 'emit'>;
+  events: Pick<ReturnType<typeof createEmbedChannel>, 'emit' | 'onAction' | 'live'>;
   ready(): void; saved(): void; destroy(): void;
   connect?(): Promise<void>;
 }
@@ -77,7 +77,7 @@ export function startEmbedTransport(shell: EmbedShell, bootstrapValue: string, c
   const message = (event: MessageEvent<unknown>) => {
     if (terminal || destroyed) return;
     const bound = channel.initialize(event);
-    if (!bound) return;
+    if (!bound) { channel.receive(event); return; }
     const { parentOrigin, channelId } = bound;
     void (async () => {
       const result = await call<{ credential: string; expiresAt: number }>('redeem', { bootstrap, parentOrigin, channelId }); bootstrap = '';

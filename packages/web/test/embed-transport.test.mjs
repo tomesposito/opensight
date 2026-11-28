@@ -83,3 +83,38 @@ test('#340 frame emits projected data on its live channel only', async t => {
     { target: parentOrigin, data: { ...init.data, type: 'opensight:data', payload } },
   ]);
 });
+
+const surface = { menus: { navigation: 'visible', account: 'hidden' }, actions: { filtering: 'visible', authoring: 'hidden', question: 'disabled', parameterControls: 'visible' }, chrome: { header: 'visible' } };
+test('#340 host actions require a live session, bound parent, exact shape and exposed target', async t => {
+  const b = browser(), init = event(b), actions = [], expiresAt = Date.now() + 900000, otherAllowed = 'https://second.example';
+  const profile = structuredClone(surface);
+  const transport = startEmbedTransport({ sessionId: id, allowedDomains: [parentOrigin, otherAllowed], surface: profile }, bootstrap, () => {}, async t => t.ready(), b.view,
+    async url => Response.json(url.endsWith('/redeem') ? { credential, expiresAt } : { expiresAt }));
+  t.after(() => transport.destroy());
+  const unsubscribe = transport.events.onAction(action => actions.push(action));
+  const payload = { type: 'setFilter', filterId: 'regions', values: ['East'] };
+  const data = { ...init.data, type: 'opensight:action', payload };
+  const action = { ...init, data };
+  b.emit(action); b.emit(init); b.emit(action); await settle();
+  for (const invalid of [{ ...action, source: {} }, { ...action, origin: otherAllowed }, { ...action, origin: 'https://evil.example' },
+    ...[{ version: 1 }, { sessionId: 'wrong' }, { channelId: 'wrong' }, { token: 'extra' },
+      { payload: { ...payload, extra: true } }, { payload: { ...payload, values: [NaN] } },
+      { payload: { type: 'navigate', path: '/ask-o' } }, { payload: { type: 'navigate', path: '/analyses/new' } },
+      { payload: { type: 'navigate', path: '/admin/users' } }, { payload: { type: 'refresh', path: '/data' } },
+      { payload: { type: 'customAction', actionId: 'open' } },
+    ].map(override => ({ ...action, data: { ...data, ...override } }))]) b.emit(invalid);
+  assert.deepEqual(actions, []);
+  for (const state of ['disabled', 'hidden']) { profile.actions.filtering = state; b.emit(action); }
+  profile.actions.filtering = 'visible';
+  const navigate = { type: 'navigate', path: '/data' };
+  for (const state of ['disabled', 'hidden']) {
+    profile.menus.navigation = state;
+    b.emit({ ...action, data: { ...data, payload: navigate } });
+  }
+  profile.menus.navigation = 'visible';
+  b.emit(action); b.emit({ ...action, data: { ...data, payload: navigate } });
+  b.visibility('hidden'); b.emit(action); b.visibility('visible'); b.emit(action); await settle();
+  b.emit({ ...action, data: { ...data, payload: { type: 'refresh' } } });
+  unsubscribe(); b.emit(action);
+  assert.deepEqual(actions, [payload, navigate, { type: 'refresh' }]);
+});

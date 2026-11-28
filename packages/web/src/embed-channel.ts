@@ -1,10 +1,23 @@
-import { isEmbedDataEvent, type EmbedDataEvent } from '@opensight/embedding-sdk/events';
+import { allowsHostAction } from '@opensight/embedding-sdk/surface';
+import { isActionMessage, isEmbedDataEvent, type EmbedDataEvent, type EmbedHostAction } from '@opensight/embedding-sdk/events';
 import type { EmbedShell } from './embed-transport.js';
 
 /** One parent, exact origin and nonce for the lifetime of this frame. */
 export function createEmbedChannel(shell: EmbedShell, view: Window, live: () => boolean) {
   let binding: { parentOrigin: string; channelId: string } | undefined;
+  const listeners = new Set<(action: EmbedHostAction) => void>();
   return {
+    live,
+    onAction(listener: (action: EmbedHostAction) => void) {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+    receive(event: MessageEvent<unknown>) {
+      if (!binding || event.source !== view.parent || event.origin !== binding.parentOrigin || !isActionMessage(event.data, shell.sessionId, binding.channelId)) return;
+      const action = event.data.payload;
+      if (!allowsHostAction(shell.surface, action) || !live()) return;
+      for (const listener of listeners) listener(action);
+    },
     initialize(event: MessageEvent<unknown>) {
       if (binding || view.parent === view || event.source !== view.parent || event.origin === view.location.origin || !shell.allowedDomains.includes(event.origin)) return;
       if (!event.data || typeof event.data !== 'object') return;
