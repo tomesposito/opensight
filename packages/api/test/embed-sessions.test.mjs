@@ -174,6 +174,11 @@ test('#338 the signed grant rejects stored claim changes before redemption, use 
   const pending = await f.issue(body), issued = await f.issue(body), active = await f.redeem(issued);
   const renewed = await f.sessions.renew(await f.context(), issued.sessionId), credential = await f.redeem(renewed);
   assert.deepEqual((await f.sessions.verify(renewed.sessionId, credential.credential)).session.tags, { account: 'north' });
+  // These are the two persisted comparisons a pre-338 server makes. It must
+  // reject both credentials during a rolling upgrade.
+  const [row] = await f.db.transaction(c => c.query('SELECT bootstrap_hash, credential_hash FROM h6_sessions WHERE session_id = ?', [renewed.sessionId]));
+  assert.notEqual(row.bootstrap_hash, digest(new URL(renewed.EmbedUrl).hash.slice(11)));
+  assert.notEqual(row.credential_hash, digest(credential.credential));
   await assert.rejects(f.sessions.verify(issued.sessionId, active.credential), { code: 'EMBED_SESSION_REVOKED' });
   for (const { sessionId } of [pending, renewed]) {
     await editStoredGrant(f, sessionId, grant => {

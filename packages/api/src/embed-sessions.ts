@@ -84,6 +84,12 @@ function signedBootstrap(key: EmbedKey, id: string, nonce: string, grantBody: st
   const signature = createHmac('sha256', key.secret).update(`OpenSight:embed:v2:${payload}:${digest(grantBody)}`).digest('base64url');
   return `${payload}.${signature}`;
 }
+function credentialHash(credential: string, grant: SessionGrant, row: SqlRow): string {
+  // A pre-338 node checks only digest(credential) and would ignore registered
+  // claims. Its credential check must fail even after a newer node redeems.
+  if (!grant.anonymous && Object.keys(grant.tags).length) return digest(`OpenSight:embed:claims:${row.bootstrap_hash}:${credential}`);
+  return digest(credential);
+}
 export function resourceArn(namespaceId: string, kind: string, id: string): string { return `urn:opensight:${namespaceId}:${kind}/${id}`; }
 function arn(value: unknown, namespaceId: string, kind: string): string {
   const prefix = `urn:opensight:${namespaceId}:${kind}/`;
@@ -270,7 +276,7 @@ export class EmbedSessions {
       if (Number(row.redeemed)) embedFailure('EMBED_BOOTSTRAP_REPLAY', 401);
       if (Number(row.bootstrap_expires_at) <= this.clock()) embedFailure('EMBED_BOOTSTRAP_EXPIRED', 401);
       const credential = randomBytes(32).toString('base64url'), expiresAt = this.clock() + g.durationMinutes * 60000;
-      const consumed = await c.query('UPDATE h6_sessions SET redeemed = 1, credential_hash = ?, expires_at = ?, parent_origin = ?, channel_id = ? WHERE session_id = ? AND redeemed = 0 AND revoked = 0 RETURNING session_id', [digest(credential), expiresAt, parentOrigin, channelId, id]);
+      const consumed = await c.query('UPDATE h6_sessions SET redeemed = 1, credential_hash = ?, expires_at = ?, parent_origin = ?, channel_id = ? WHERE session_id = ? AND redeemed = 0 AND revoked = 0 RETURNING session_id', [credentialHash(credential, g, row), expiresAt, parentOrigin, channelId, id]);
       if (!consumed.length) embedFailure('EMBED_BOOTSTRAP_REPLAY', 401);
       return { credential, expiresAt, sessionId: id, experience: g.experience };
     });
@@ -278,7 +284,7 @@ export class EmbedSessions {
   async verify(id: string, credential: string): Promise<{ session: EmbedSession; context: TenantContext }> {
     const session = await this.database.transaction(async c => {
       const row = await this.load(c, id), g = await this.check(c, row);
-      if (!/^[A-Za-z0-9_-]{43}$/.test(credential) || !row.credential_hash || !equal(digest(credential), String(row.credential_hash))) embedFailure('INVALID_EMBED_TOKEN', 401);
+      if (!/^[A-Za-z0-9_-]{43}$/.test(credential) || !row.credential_hash || !equal(credentialHash(credential, g, row), String(row.credential_hash))) embedFailure('INVALID_EMBED_TOKEN', 401);
       if (!Number(row.redeemed) || Number(row.expires_at) <= this.clock()) embedFailure('EMBED_SESSION_EXPIRED', 401);
       return { ...g, id, expiresAt: Number(row.expires_at), parentOrigin: String(row.parent_origin), channelId: String(row.channel_id) };
     });
@@ -303,7 +309,7 @@ export class EmbedSessions {
         // operator pool would deadlock; all validation predicates remain identical.
         const row = await this.load(c, id), grant = await this.check(c, row, false);
         if (grant.experience.kind !== 'full-app' || grant.anonymous || grant.tenantId !== context.tenantId || grant.namespaceId !== context.namespaceId || grant.userId !== context.userId) embedFailure('EMBED_SCOPE_DENIED', 403);
-        if (!/^[A-Za-z0-9_-]{43}$/.test(credential) || !row.credential_hash || !equal(digest(credential), String(row.credential_hash))) embedFailure('INVALID_EMBED_TOKEN', 401);
+        if (!/^[A-Za-z0-9_-]{43}$/.test(credential) || !row.credential_hash || !equal(credentialHash(credential, grant, row), String(row.credential_hash))) embedFailure('INVALID_EMBED_TOKEN', 401);
         if (!Number(row.redeemed) || Number(row.expires_at) <= this.clock()) embedFailure('EMBED_SESSION_EXPIRED', 401);
       };
       // SQLite has one serialized connection and no SQL role boundary.

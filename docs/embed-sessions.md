@@ -169,7 +169,8 @@ the supplied keys. An unknown or unusable key returns
 fails with `ROW_ACCESS_DENIED`.
 
 The server signs the claims into the grant and rechecks its integrity on use
-and renewal. Renewal carries the original tags forward. To change accounts,
+and renewal. Older nodes reject a registered session carrying claims during
+a rolling upgrade. Renewal carries the original tags forward. To change accounts,
 the backend issues a new session. Frame redemption, reader controls and SDK
 mount options cannot override the claims.
 
