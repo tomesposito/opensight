@@ -6,6 +6,21 @@ import { EmbedSessions, activateEmbedKey } from '../dist/embed-sessions.js';
 import { SqliteMetadataDatabase } from '../dist/metadata-db.js';
 import { digest } from '../dist/auth-crypto.js';
 
+test('#339 fixed and full-app shells receive tenant tokens through the revision-bound appearance', async t => {
+  const f = await sessionFixture(t), original = await f.issue();
+  const shell = await f.sessions.shell(original.sessionId);
+  assert.deepEqual(shell.appearance, f.config.appearance);
+  const tokens = { accent: '#225544', chartPaletteSeed: '#ee8866' };
+  const config = { ...f.config, appearance: { ...f.config.appearance, tokens } };
+  await f.embedding.put(await f.context(), config, 1);
+  await assert.rejects(f.sessions.shell(original.sessionId), { code: 'EMBED_SESSION_REVOKED' });
+  for (const experience of [{ Dashboard: { InitialDashboardId: 'dashboard' } }, { FullApp: { InitialPath: '/dashboards' } }]) {
+    const issued = await f.issue(request({ ExperienceConfiguration: experience }));
+    assert.deepEqual((await f.sessions.shell(issued.sessionId)).appearance, config.appearance);
+  }
+  await assert.rejects(f.issue(request({ appearance: { tokens } })));
+});
+
 async function editStoredGrant(f, id, change) {
   await f.db.transaction(async c => {
     const [row] = await c.query('SELECT grant_body FROM h6_sessions WHERE session_id = ?', [id]);

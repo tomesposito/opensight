@@ -1,8 +1,10 @@
 import type { SurfaceState } from '@opensight/embedding-sdk/surface';
+import type { EmbedDesignTokens } from '@opensight/embedding-sdk/appearance';
 import type { ReactNode } from 'react';
 
 export type EmbedState = 'loading' | 'empty' | 'error' | 'expired' | 'ready';
 export interface EmbedBrand {
+  tokens?: EmbedDesignTokens;
   palette: 'navy' | 'teal' | 'plum'; font: 'system' | 'sans'; layout: 'comfortable' | 'compact';
   productName: string; iframeTitle: string; logoAssetId: string | null; faviconAssetId: string | null;
 }

@@ -164,14 +164,50 @@ least 900 to permit a session. H5 never applies it to the existing v1 TTL.
 
 ## Appearance and capability boundary
 
-Approved tokens are `palette: navy|teal|plum`, `font: system|sans`, and
-`layout: comfortable|compact`. They select fixed styles, not caller-supplied CSS.
+The appearance presets are `palette` (navy, teal, plum), `font` (system,
+sans), and `layout` (comfortable, compact).
 Product name is limited to 80 characters and iframe title to 160. Labels accept
 Unicode letters/numbers, spaces and a small punctuation set. Markup, encoded
 markup, URL syntax, control/bidi characters, event-handler attributes, CSS
 `url()`/`expression()` and oversized inputs are rejected. React renders text as
 text; no HTML insertion or dynamic style parser is used. Asset IDs only reference
 the validated tenant-owned PNG registry described above.
+
+### Design tokens (#339)
+
+A tenant administrator can include an optional `tokens` object inside
+`appearance` when replacing the configuration. Each member is optional.
+Omitting `tokens` or sending `{}` restores preset styling. Existing stored
+configurations need no migration.
+
+| Token | Accepted values | Effect |
+| --- | --- | --- |
+| `surface` | Opaque six-digit hex color, e.g. `#fffaf1` | Frame, application surfaces and chart backgrounds |
+| `text` | Six-digit hex color | Frame text and chart labels |
+| `accent` | Six-digit hex color | Branding, navigation accents and controls |
+| `chartPaletteSeed` | Six-digit hex color | First analysis palette color, including KPI values. Subsequent series keep their palette colors. Explicit per-visual palettes take precedence. |
+| `fontFamily` | `system`, `sans`, `serif`, `mono` | Local system UI, Arial, Georgia or monospace stack |
+| `radius` | JSON integer from 0 to 24 inclusive | Corner radius in CSS pixels |
+| `density` | `compact`, `comfortable` | Frame and full-app spacing |
+
+For example, include the following tokens alongside the preset and branding fields in the appearance object.
+
+```json
+{
+  "tokens": {
+    "surface": "#fffaf1", "text": "#302b25", "accent": "#814527",
+    "chartPaletteSeed": "#ae633b", "fontFamily": "serif", "radius": 10,
+    "density": "compact"
+  }
+}
+```
+
+Colors require a leading `#` and exactly six hexadecimal digits. Unknown
+members, CSS declarations, functions such as `url()`, markup, unlisted fonts,
+and values of the wrong type return HTTP 422 `EMBED_DESIGN_TOKENS_INVALID`.
+The entire PUT fails, preserving the configuration, ETag, sessions and audit
+history. A successful replacement follows the usual revision and renewal rules.
+Choose readable text and accent colors for the intended surface.
 
 Features describe consumption capabilities and never grant resource or data
 permissions. Registered dashboard/visual consumption, anonymous embedding,
@@ -214,15 +250,18 @@ renderer and `packages/web/dist/opensight-embed-preview.html`. Open that last fi
 locally: it has four real iframes for loading, empty, permission error and expiry.
 The OpenSight and synthetic Atlas presets exercise approved palette/font/layout
 choices, plain product/title text and local validated-format logo/favicon PNGs.
+Choose **Cedar sample · design tokens**, then **Light** or **Dark** under
+**Host context** to compare two synthetic token sets in the same renderer.
+See the [light capture](images/embed-tokens-light.png) and [dark capture](images/embed-tokens-dark.png).
 The v1 renderer shares these state components with its fixed default appearance;
 H5 tenant branding is not silently applied to legacy v1 URLs.
 
 `node packages/web/scripts/capture-embed-preview.mjs` uses the loop's existing
 `playwright-core` and Chromium installation, blocks all external HTTP requests,
 asserts frame titles, state/permission text, notices, raster assets, forbidden
-controls and overflow, and writes twelve screenshots to `/tmp/h5-embed-preview`.
-The eight per-state/brand captures, two full matrices, alternate palette and
-mobile-width view cover the acceptance states. Override the tool directory,
+controls, overflow and computed token styles, and writes fourteen screenshots to
+`/tmp/h5-embed-preview`. These include both Cedar host contexts, the original
+preset matrices and individual states, an alternate palette and a mobile view. Override the tool directory,
 browser executable or output directory with `OPENSIGHT_SCREENSHOT_TOOLS`,
 `OPENSIGHT_CHROMIUM` or `OPENSIGHT_SCREENSHOT_OUTPUT`. No package/browser download
 is part of this command. Shared component and injection regression tests run in

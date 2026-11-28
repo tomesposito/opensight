@@ -27,7 +27,7 @@ try {
   const settings = new HostedAISettings(f.metadata, f.hostedConfig.encryptionKey.toString('base64'), {});
   await settings.save(await f.context(), { provider: 'openai', model: 'synthetic-model' });
   await settings.saveKey(await f.context(), { key: 'synthetic-test-only-not-a-credential' });
-  const backendAuthorization = await token();
+  let backendAuthorization = await token();
   let issued, landing, surface;
   const host = 'https://product.example', embed = f.hostedConfig.origin;
   browser = await chromium.launch({ executablePath: process.env.OPENSIGHT_CHROMIUM ?? '/opt/meta-chromium/chrome', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
@@ -107,6 +107,21 @@ try {
     await page.screenshot({ path: `${output}/authoring-${authoring}.png`, animations: 'disabled' });
     checks.push(`Same tenant mounts ${authoring} authoring with no account menu`);
   }
+  const tokens = { surface: '#fffaf1', text: '#302b25', accent: '#814527', chartPaletteSeed: '#ae633b', fontFamily: 'serif', radius: 10, density: 'compact' };
+  await f.embedding.put(await f.context(), { ...f.config, appearance: { ...f.config.appearance, tokens } }, 1);
+  backendAuthorization = await token();
+  frame = await mount(`/dashboards/${published.body.DashboardId}`, { menus: { account: 'hidden' } });
+  const kpi = frame.locator(`.visual-card svg text[fill="${tokens.chartPaletteSeed}"]`).filter({ hasText: '60' });
+  await kpi.waitFor();
+  const card = frame.locator('.visual-card').first();
+  assert.deepEqual(await card.evaluate(el => {
+    const css = getComputedStyle(el);
+    return [css.backgroundColor, css.color, css.fontFamily, css.borderRadius];
+  }), ['rgb(255, 250, 241)', 'rgb(48, 43, 37)', 'Georgia, serif', '10px']);
+  assert.equal(await frame.locator('.product-header').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(129, 69, 39)');
+  assert.equal(await frame.getByLabel('Account', { exact: true }).count(), 0);
+  await page.screenshot({ path: `${output}/design-tokens.png`, animations: 'disabled' });
+  checks.push('Tenant tokens style the hosted shell, card and compiled KPI; account remains hidden');
   assert.deepEqual(errors, []);
   await writeFile(`${output}/evidence.json`, JSON.stringify({ checks, externalRequests: 0, pageErrors: errors }, null, 2));
   console.log(JSON.stringify({ passed: checks.length, failed: 0, output }));

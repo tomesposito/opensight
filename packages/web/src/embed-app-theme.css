@@ -1,0 +1,33 @@
+/* Imported only by the FullApp frame. Only a configured token overrides a
+   product style, including when the editor switches its own chrome theme. */
+.embed-theme { min-height: 100dvh; background: var(--embed-surface); color: var(--embed-text); }
+[data-embed-tokens~="surface"] :is(.app-shell, .product-navigation, .collection-card, .route-notice, .q-trigger, .published-dashboard > button) {
+  background-color: var(--embed-surface);
+}
+[data-embed-tokens~="surface"] .author-workspace {
+  --chrome-surface: var(--embed-surface);
+  --chrome-bg: var(--embed-surface);
+}
+[data-embed-tokens~="text"] :is(.app-shell, .product-navigation .app-nav a, .product-navigation button, .rail-recents a, .rail-recents p,
+  .collection-card, .q-trigger, .published-dashboard > button, .card-footer, .app-footer) {
+  color: var(--embed-text);
+}
+[data-embed-tokens~="text"] .author-workspace {
+  --chrome-text: var(--embed-text);
+  --chrome-muted: var(--embed-text);
+}
+[data-embed-tokens~="accent"] .app-shell .product-header,
+[data-embed-tokens~="accent"] .collection-banner { background: var(--embed-token-accent); }
+[data-embed-tokens~="accent"] .author-workspace { --header-menu-bg: var(--embed-token-accent); }
+[data-embed-tokens~="accent"] :is(.published-dashboard > a, .dashboard-collection a, .sheet-tabs button[aria-current]) { color: var(--embed-token-accent); }
+[data-embed-tokens~="accent"] .sheet-tabs button[aria-current] { border-color: var(--embed-token-accent); }
+[data-embed-tokens~="accent"] .product-navigation .app-nav a[aria-current] {
+  border-color: var(--embed-token-accent);
+  background: color-mix(in srgb, var(--embed-token-accent) 15%, var(--embed-surface, white));
+}
+[data-embed-tokens~="fontFamily"] :is(.app-shell, .product-navigation .app-nav a, .product-navigation button, .q-trigger) { font-family: var(--embed-font); }
+[data-embed-tokens~="fontFamily"] .author-workspace { --editor-font-family: var(--embed-font); }
+[data-embed-tokens~="radius"] :is(.collection-banner, .collection-card, .visual-card, .app-nav a, button, input, select) { border-radius: var(--embed-radius); }
+[data-embed-tokens~="density"] .app-shell > main:not(.author-main) { padding: calc(4 * var(--embed-space)); }
+[data-embed-tokens~="density"] .product-navigation .app-nav a { padding-block: var(--embed-space); min-height: calc(20px + 2 * var(--embed-space)); }
+[data-embed-tokens~="chartPaletteSeed"] .visual-card .chart-kind { color: var(--embed-chart-seed); }

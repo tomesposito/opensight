@@ -1,6 +1,7 @@
 import { formatMetric } from './governed-metrics.js';
 import { insightGraphic } from './insight-graphic.js';
 import { LIGHT_THEME } from './themes.js';
+import { useEmbedVisual } from './EmbedTheme.js';
 import { fieldName, fieldRule, cardChromeStyle, cardLoadingAnimation } from './formatting.js';
 import { rowSelection, brushSelection, type VisualInteraction } from './visual-selection.js';
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
@@ -102,7 +103,8 @@ function DataTable({ compiled, interaction, onRowGroupToggle }: { compiled: Comp
   </table></div>;
 }
 
-export function VisualCard({ visual, dataMessage, loading = false, definitionPreview = false, interaction, onRowGroupToggle, actionMenu, actionNote, provenance }: { visual: FixtureVisual; dataMessage?: string; loading?: boolean; definitionPreview?: boolean; interaction?: VisualInteraction; onRowGroupToggle?: RowGroupToggle; actionMenu?: ReactNode; actionNote?: string; provenance?: QueryResponse['provenance'] }) {
+export function VisualCard({ visual: sourceVisual, dataMessage, loading = false, definitionPreview = false, interaction, onRowGroupToggle, actionMenu, actionNote, provenance }: { visual: FixtureVisual; dataMessage?: string; loading?: boolean; definitionPreview?: boolean; interaction?: VisualInteraction; onRowGroupToggle?: RowGroupToggle; actionMenu?: ReactNode; actionNote?: string; provenance?: QueryResponse['provenance'] }) {
+  const visual = useEmbedVisual(sourceVisual);
   const headingId = useId();
   const theme = visual.theme ?? LIGHT_THEME;
   const result = useMemo(() => {

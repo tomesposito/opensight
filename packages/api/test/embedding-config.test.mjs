@@ -71,6 +71,35 @@ test('H5 strict configuration, feature capabilities and operator lifetime ceilin
   assert.equal(validateEmbedConfig(defaultEmbedConfig(), 'no-policy', embeddingPolicy({}, origin)).enabled, false);
 });
 
+test('#339 token replacements validate the whole request before changing revisions, sessions or audit events', async t => {
+  const f = await fixture(t), call = await serving(t, f);
+  const tokens = { surface: '#fffAF1', text: '#302b25', accent: '#814527', chartPaletteSeed: '#ae633b', fontFamily: 'serif', radius: 0, density: 'compact' };
+  const body = config(); body.appearance.tokens = tokens;
+  const put = (body, revision, token) => call(undefined, { method: 'PUT', body, headers: { 'if-match': `"${revision}"`, authorization: `Bearer ${token}` } });
+  const saved = await put(body, 0, f.token);
+  assert.equal(saved.status, 200); assert.deepEqual(saved.body.config.appearance.tokens, tokens);
+  const fresh = (await f.login()).token, revisions = await f.metadata.revisions(f.context);
+  const events = () => f.db.transaction(c => c.query("SELECT * FROM h1_outbox WHERE event_type = 'embedding.config.changed'"));
+  const before = await events();
+  for (const invalid of [null, [], 'color: red', { css: 'display:none' }, JSON.parse('{"__proto__":{"accent":"#ffffff"}}'),
+    { constructor: '#ffffff' }, { '--embed-text': '#ffffff' }, { surface: 'url(https://invalid.example)' },
+    { text: '<img src=x>' }, { accent: '#123456;display:none' }, { chartPaletteSeed: '#123456\n' },
+    { surface: 'var(--host)' }, { text: '#abc' }, { accent: '#123456ff' }, { chartPaletteSeed: ['#123456'] },
+    { fontFamily: 'Arial, serif' }, { radius: '1px' }, { radius: 25 }, { radius: -1 }, { radius: 1.5 },
+    { density: 'dense' }, { density: false }, { fontFamily: 'url(font)' }, { authoring: true }]) {
+    const result = await put({ ...body, enabled: false, appearance: { ...body.appearance, productName: 'Rejected', tokens: invalid } }, 1, fresh);
+    assert.equal(result.status, 422); assert.deepEqual(result.body, { errorCode: 'EMBED_DESIGN_TOKENS_INVALID' });
+  }
+  const read = await call(undefined, { headers: { authorization: `Bearer ${fresh}` } });
+  assert.equal(read.headers.etag, '"1"'); assert.deepEqual(read.body.config, body);
+  assert.deepEqual(await f.metadata.revisions(f.context), revisions); assert.deepEqual(await events(), before);
+  for (const allowed of [{}, { radius: 24 }, { fontFamily: 'mono' }, { density: 'comfortable' }]) {
+    const replacement = { ...body, appearance: { ...body.appearance, tokens: allowed } };
+    assert.deepEqual(validateEmbedConfig(replacement, f.tenant.tenantId, f.policy), replacement);
+  }
+  assert.deepEqual((await put(config(), 1, fresh)).body.config, config());
+});
+
 test('H5 exact origin lists and canonical registry deny spoofed hosts without disclosing tenants', () => {
   const policy = parsePolicy(policyInput());
   for (const value of ['https://product.example.evil', 'https://product.example/', 'https://product.example:443', 'https://user@product.example', 'https://*.example', 'null', 'http://product.example', 'https://product.example?next=evil', 'https://product.example#x', 'https://PRODUCT.example', 'https://product.example:8443']) {

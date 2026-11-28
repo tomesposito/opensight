@@ -36,7 +36,7 @@ try {
       assert.equal(await frame.locator('.embed-brand img').count(), brand === 'atlas' ? 1 : 0);
       if (brand === 'atlas') {
         const src = await frame.locator('.embed-brand img').getAttribute('src'); assert.match(src, /^data:image\/png;base64,/);
-        assert.match(await frame.locator('link[rel="icon"]').getAttribute('href'), /^data:image\/png;base64,/);
+        assert.match(await frame.locator('link[rel="icon"][type="image/png"]').getAttribute('href'), /^data:image\/png;base64,/);
         assert.ok(await frame.locator('.embed-frame').evaluate(el => el.classList.contains('embed-compact') && el.classList.contains('embed-sans')));
         assert.equal(await frame.locator('.embed-brand img').evaluate(img => img.complete && img.naturalWidth === 32), true);
       }
@@ -55,6 +55,26 @@ try {
   await page.setViewportSize({ width: 390, height: await page.locator('body').evaluate(el => el.scrollHeight) });
   for (const state of ['loading', 'empty', 'error', 'expired']) await page.locator(`[data-preview-state="${state}"] iframe`).contentFrame().locator('.embed-plum').waitFor();
   await page.screenshot({ path: `${output}/mobile.png`, fullPage: true }); captures++;
+  await page.setViewportSize({ width: 1440, height: 1140 });
+  await page.getByLabel('Branding', { exact: true }).selectOption('cedar');
+  for (const host of ['light', 'dark']) {
+    await page.getByLabel('Host context').selectOption(host);
+    const dark = host === 'dark';
+    for (const state of ['loading', 'empty', 'error', 'expired']) {
+      const frame = page.locator(`[data-preview-state="${state}"] iframe`).contentFrame();
+      await frame.locator(`.embed-theme[style*="${dark ? '#292521' : '#fffaf1'}"] .embed-frame`).waitFor();
+      const css = (selector, key) => frame.locator(selector).evaluate((el, key) => getComputedStyle(el)[key], key);
+      assert.equal(await css('.embed-frame', 'backgroundColor'), dark ? 'rgb(41, 37, 33)' : 'rgb(255, 250, 241)');
+      assert.equal(await css('.embed-state h1', 'color'), dark ? 'rgb(244, 231, 214)' : 'rgb(48, 43, 37)');
+      assert.equal(await css('.embed-brand', 'color'), dark ? 'rgb(243, 188, 142)' : 'rgb(129, 69, 39)');
+      assert.equal(await css('.embed-state-symbol', 'borderRadius'), '10px');
+      assert.equal(await css('.embed-brand', 'paddingTop'), '12px');
+      assert.equal(await css('.embed-frame', 'fontFamily'), 'Georgia, serif');
+      assert.equal(await frame.getByText('Cedar Analytics', { exact: true }).count(), 1);
+      assert.equal(await frame.getByText('Data access permissions apply', { exact: true }).count(), 1);
+    }
+    await page.screenshot({ path: `${output}/cedar-${host}.png`, fullPage: true }); captures++;
+  }
   assert.deepEqual(network, []); assert.deepEqual(errors, []);
   console.log(JSON.stringify({ assertions: 'passed', captures, output, externalRequests: network.length, pageErrors: errors.length }));
 } finally { await browser.close(); }

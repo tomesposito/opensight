@@ -1,4 +1,5 @@
 import { surfaceNames } from '@opensight/embedding-sdk/surface';
+import { isEmbedDesignTokens, type EmbedDesignTokens } from '@opensight/embedding-sdk/appearance';
 import { hasCapability } from '@opensight/query-engine';
 import { embedOrigin } from './embedding.js';
 import { validatedPng } from './embed-assets.js';
@@ -8,10 +9,11 @@ import type { TenantContext, TenantMetadata } from './metadata.js';
 import { appendMetadataEvent } from './metadata-outbox.js';
 
 export const embedConfigFields = ['enabled', 'allowedParentOrigins', 'embedOriginId', 'maxSessionSeconds', 'appearance', 'features', 'surfaceCeiling'] as const;
-const appearanceFields = ['palette', 'font', 'layout', 'productName', 'iframeTitle', 'logoAssetId', 'faviconAssetId'] as const;
+const appearanceFields = ['palette', 'font', 'layout', 'productName', 'iframeTitle', 'logoAssetId', 'faviconAssetId', 'tokens'] as const;
 const featureNames = ['registeredDashboards', 'registeredVisuals', 'parameterControls', 'filtering', 'anonymous', 'authoring', 'export', 'download', 'persistentReaderState'] as const;
 type Features = Record<typeof featureNames[number], boolean>;
 export interface EmbedAppearance {
+  tokens?: EmbedDesignTokens;
   palette: 'navy' | 'teal' | 'plum'; font: 'system' | 'sans'; layout: 'comfortable' | 'compact';
   productName: string; iframeTitle: string; logoAssetId: string | null; faviconAssetId: string | null;
 }
@@ -97,6 +99,10 @@ export function validateEmbedConfig(raw: unknown, tenantId: string, policy: Embe
   const appearance: EmbedAppearance = { palette: selection(a.palette, ['navy', 'teal', 'plum']), font: selection(a.font, ['system', 'sans']),
     layout: selection(a.layout, ['comfortable', 'compact']), productName: text(a.productName, 80), iframeTitle: text(a.iframeTitle, 160),
     logoAssetId: assetId(a.logoAssetId, 'logo', tenantId, policy), faviconAssetId: assetId(a.faviconAssetId, 'favicon', tenantId, policy) };
+  if (Object.hasOwn(a, 'tokens')) {
+    if (!isEmbedDesignTokens(a.tokens)) fail('EMBED_DESIGN_TOKENS_INVALID');
+    appearance.tokens = { ...a.tokens };
+  }
   const flags = fields(input.features), features = {} as Features;
   if (Object.keys(flags).some(k => !featureNames.includes(k as typeof featureNames[number]))) fail('EMBED_FEATURE_UNSUPPORTED');
   for (const name of featureNames) {

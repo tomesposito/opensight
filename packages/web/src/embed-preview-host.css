@@ -1,0 +1,5 @@
+.embed-preview[data-host=dark] { background: #191b1d; color: #f5f1eb; color-scheme: dark; }
+.embed-preview[data-host=dark] :is(.embed-preview-eyebrow, .embed-preview-description, .embed-preview-card h2, .embed-preview-note) { color: #c4c1bb; }
+.embed-preview[data-host=dark] .embed-preview-controls select { background: #292b2e; border-color: #777776; color: #f5f1eb; }
+.embed-preview[data-host=dark] .embed-preview-controls label:hover { background: #343638; }
+.embed-preview[data-host=dark] iframe { border-color: #67615b; }

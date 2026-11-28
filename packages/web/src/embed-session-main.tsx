@@ -2,16 +2,16 @@ import { isEmbedSurface } from '@opensight/embedding-sdk/surface';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { useEffect, useRef, useState } from 'react';
-import { EmbedFrame, embedAsset, type EmbedBrand } from './EmbedFrame.js';
+import { EmbedFrame, embedAsset } from './EmbedFrame.js';
+import { EmbedTheme } from './EmbedTheme.js';
 import type { FixtureVisual } from './model.js';
-import { startEmbedTransport, type EmbedShell, type EmbedTransport, type SessionState } from './embed-transport.js';
+import { startEmbedTransport, type BrandedEmbedShell, type EmbedTransport, type SessionState } from './embed-transport.js';
 import { EmbeddedAuthor, type ConsoleContent } from './EmbeddedAuthor.js';
 import { EmbeddedDashboard, type DashboardContent, type EmbedReaderState } from './EmbeddedDashboard.js';
 import './style.css';
 import './embed.css';
-interface Shell extends EmbedShell { appearance: EmbedBrand; assets: Record<string, string> }
 interface Content { kind: 'dashboard' | 'visual' | 'q' | 'console'; title: string; visuals?: (FixtureVisual & { id: string })[]; columns?: { name: string; type: string }[] }
-const shell = JSON.parse(document.getElementById('opensight-embed-data')?.textContent ?? 'null') as Shell | null;
+const shell = JSON.parse(document.getElementById('opensight-embed-data')?.textContent ?? 'null') as BrandedEmbedShell | null;
 let bootstrap = new URLSearchParams(window.location.hash.slice(1)).get('bootstrap') ?? '';
 window.history.replaceState(null, '', window.location.pathname);
 document.getElementById('opensight-embed-data')?.remove();
@@ -23,7 +23,7 @@ function Question({ transport, columns, disabled }: { disabled: boolean; transpo
     <p>Use sum, total, average, min, max, or count followed by a field, optionally “by” another field.</p><p>Available fields: {columns.map(c => c.name).join(', ')}</p>
   </div>{rows.length > 0 && <table><thead><tr>{Object.keys(rows[0]!).map(k => <th key={k}>{k}</th>)}</tr></thead><tbody>{rows.map((row, i) => <tr key={i}>{Object.values(row).map((value, j) => <td key={j}>{String(value ?? '')}</td>)}</tr>)}</tbody></table>}</section>;
 }
-function SessionFrame({ shell }: { shell: Shell }) {
+function SessionFrame({ shell }: { shell: BrandedEmbedShell }) {
   const [state, setState] = useState<SessionState>('loading'), [content, setContent] = useState<Content | null>(null), transport = useRef<EmbedTransport | null>(null);
   const readerState = useRef<EmbedReaderState | undefined>(undefined);
   useEffect(() => {
@@ -51,4 +51,5 @@ function SessionFrame({ shell }: { shell: Shell }) {
     {ready && ['dashboard', 'visual'].includes(content.kind) && transport.current && <EmbeddedDashboard actions={shell.surface.actions} initial={content as DashboardContent} transport={transport.current} onState={value => { readerState.current = value; }} onContent={setContent} />}
   </EmbedFrame>;
 }
-createRoot(document.getElementById('root')!).render(shell && isEmbedSurface(shell.surface) ? <SessionFrame shell={shell} /> : <EmbedFrame state="error" />);
+createRoot(document.getElementById('root')!).render(shell?.appearance && isEmbedSurface(shell.surface)
+  ? <EmbedTheme tokens={shell.appearance.tokens}><SessionFrame shell={shell} /></EmbedTheme> : <EmbedFrame state="error" />);

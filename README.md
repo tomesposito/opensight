@@ -431,7 +431,10 @@ tool for the same authorized member. See the [surface declaration and SDK exampl
 ![Full-app embedded editor after two saves, using synthetic live data](docs/images/embed-full-app.png)
 
 The separate [offline appearance preview](docs/images/embed-preview.png) shows
-loading, empty, permission-error and expiry states.
+loading, empty, permission-error and expiry states. Tenant design tokens can
+set colors, a chart palette seed, typography, corner radius and density.
+See the Cedar preview in [light](docs/images/embed-tokens-light.png) and
+[dark](docs/images/embed-tokens-dark.png) host contexts.
 
 ### Tenant schedules and delivery
 
