@@ -11,6 +11,10 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ## [Unreleased]
 
+### Added
+
+- Seamless embed step 7: tenants whose appearance config supplies their own product name and logo now get embed frames with no OpenSight branding or notices (D-102 Q7, amending HQ-5 for embedded surfaces only); the `brandingRemoval` capability is supported, and tenants without full branding of their own keep the previous frames exactly (#341).
+
 ### Fixed
 
 - Reduce authenticated dashboard request work in the CloudFront viewer by dispatching through the relevant shared route family and using constant-time header-policy lookup (#347).
