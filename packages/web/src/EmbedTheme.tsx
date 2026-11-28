@@ -1,7 +1,7 @@
 import { isEmbedDesignTokens, type EmbedDesignTokens } from '@opensight/embedding-sdk/appearance';
 import { createContext, useContext, useMemo, type CSSProperties, type ReactNode } from 'react';
 import type { FixtureVisual } from './model.js';
-import { FONTS, LIGHT_THEME } from './themes.js';
+import { FONTS, LIGHT_THEME, themeValid } from './themes.js';
 
 const fonts = { system: FONTS[0], sans: FONTS[1], serif: FONTS[2], mono: FONTS[3] };
 const TokenContext = createContext<EmbedDesignTokens | undefined>(undefined);
@@ -29,6 +29,8 @@ export function useEmbedVisual(visual: FixtureVisual): FixtureVisual {
   const tokens = useContext(TokenContext);
   return useMemo(() => {
     if (!tokens || !(tokens.surface || tokens.text || tokens.fontFamily || tokens.chartPaletteSeed)) return visual;
+    // Let the compiler report malformed stored themes before applying any overrides.
+    if (visual.theme !== undefined && !themeValid(visual.theme)) return visual;
     const base = visual.theme ?? LIGHT_THEME;
     const seed = tokens.chartPaletteSeed;
     return { ...visual, theme: {

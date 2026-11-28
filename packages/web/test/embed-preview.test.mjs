@@ -4,7 +4,9 @@ import { act, createElement, useState } from 'react';
 import { create } from 'react-test-renderer';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { EmbedFrame, defaultEmbedBrand, embedAsset } from '../build/test/EmbedFrame.js';
-import { atlasBrand, previewAssets } from '../build/test/embed-preview-fixtures.js';
+import { atlasBrand, cedarBrand, previewAssets } from '../build/test/embed-preview-fixtures.js';
+import { EmbedTheme, useEmbedVisual } from '../build/test/EmbedTheme.js';
+import { compileVisual } from '../build/test/compiler.js';
 import { EmbeddedDashboard } from '../build/test/EmbeddedDashboard.js';
 import { VisualCard } from '../build/test/VisualCard.js';
 
@@ -31,6 +33,38 @@ test('H5 shared frame escapes untrusted text and refuses external, SVG and forge
   assert.equal(embedAsset('constructor', {}), undefined);
   const html = renderToStaticMarkup(createElement(EmbedFrame, { state: 'ready', appearance: { ...atlasBrand, productName: '<script>alert(1)</script>', iframeTitle: '" onload="alert(1)' }, title: '<img src=x onerror=alert(1)>' }));
   assert.doesNotMatch(html, /<script|<img| onload="/); assert.match(html, /&lt;script&gt;/);
+});
+
+test('#339 token variables and chart options use the same validated appearance', () => {
+  const source = interactiveContent().visuals[0];
+  const before = structuredClone(source);
+  let compiled;
+  function ChartProbe() {
+    compiled = compileVisual(useEmbedVisual(source));
+    return null;
+  }
+  const html = renderToStaticMarkup(createElement(EmbedTheme, { tokens: cedarBrand.tokens }, createElement(ChartProbe)));
+  for (const variable of ['--embed-surface:#fffaf1', '--embed-text:#302b25', '--embed-token-accent:#814527',
+    '--embed-chart-seed:#ae633b', '--embed-font:Georgia, serif', '--embed-radius:10px', '--embed-space:4px']) assert.ok(html.includes(variable));
+  assert.equal(compiled.option.color[0], cedarBrand.tokens.chartPaletteSeed);
+  assert.equal(compiled.option.graphic[0].style.fill, cedarBrand.tokens.chartPaletteSeed);
+  assert.equal(compiled.option.backgroundColor, cedarBrand.tokens.surface);
+  assert.deepEqual(compiled.option.textStyle, { color: cedarBrand.tokens.text, fontFamily: 'Georgia, serif' });
+  assert.deepEqual(source, before);
+  source.theme = { palette: null };
+  const invalid = renderToStaticMarkup(createElement(EmbedTheme, { tokens: cedarBrand.tokens }, createElement(VisualCard, { visual: source })));
+  assert.match(invalid, /invalid analysis theme/);
+});
+
+test('#339 preset-only and empty tokens preserve markup; malformed shell tokens suppress the entire child', () => {
+  for (const appearance of [atlasBrand, defaultEmbedBrand]) {
+    const frame = createElement(EmbedFrame, { state: 'error', appearance });
+    for (const tokens of [undefined, {}]) assert.equal(renderToStaticMarkup(createElement(EmbedTheme, { tokens }, frame)), renderToStaticMarkup(frame));
+  }
+  for (const tokens of [null, [], { accent: 'url(x)' }, { text: '<script>' }, { radius: '0;display:none' }, { css: {} }, { fontFamily: 'constructor' }]) {
+    const html = renderToStaticMarkup(createElement(EmbedTheme, { tokens }, createElement('b', null, 'Protected content')));
+    assert.equal(html, '<p role="alert">EMBED_DESIGN_TOKENS_INVALID</p>');
+  }
 });
 
 test('#335 frame controls submit complete typed state, hide stale results and reset through the server', async t => {
