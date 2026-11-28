@@ -129,6 +129,15 @@ sessions just as it revokes the fixed experiences. Saving an analysis through
 the full-app editor keeps the session active because content saves follow the
 standalone versioned analysis-write path. See <a href="/docs/embedding-sessions/#full-app-experience-336-d-102-q1">full-app issuance and authority</a>
 for the request shape, allowed routes and session behavior.</p>
+<h3 id="session-attribute-claims-338">Session attribute claims (#338)</h3>
+<p>The product backend sets <code>SessionTags</code> for each registered, delegated or
+anonymous session at issuance. To scope a grant by account, enable the dataset&#39;s
+<code>RowLevelPermissionTagConfiguration</code> and map the <code>account</code> tag key to its
+physical account column. The claimed rows must also pass the registered
+viewer’s source and dataset membership rules, and existing column permissions
+apply. Missing or unusable tag rules deny the claimed read. These checks apply
+with every appearance, surface ceiling and filtering setting.
+See <a href="/docs/embedding-sessions/#session-attribute-claims-338">session attribute claims</a>.</p>
 <h3 id="surface-ceiling-337">Surface ceiling (#337)</h3>
 <p>Each array above lists the surfaces that may appear in this tenant&#39;s H6 sessions.
 Supply all four arrays when replacing the ceiling. Empty arrays exclude every
