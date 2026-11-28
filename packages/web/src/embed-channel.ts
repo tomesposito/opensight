@@ -23,6 +23,8 @@ export function createEmbedChannel(shell: EmbedShell, view: Window, live: () => 
     initialize(event: MessageEvent<unknown>) {
       if (binding || view.parent === view || event.source !== view.parent || event.origin === view.location.origin || !shell.allowedDomains.includes(event.origin)) return;
       if (!event.data || typeof event.data !== 'object') return;
+      const prototype: unknown = Object.getPrototypeOf(event.data);
+      if (prototype !== null && prototype !== Object.prototype) return;
       const data = event.data as Record<string, unknown>;
       const hasActions = Object.hasOwn(data, 'customActions');
       if (Object.keys(data).length !== (hasActions ? 5 : 4) || !['version', 'type', 'sessionId', 'channelId'].every(k => Object.hasOwn(data, k))

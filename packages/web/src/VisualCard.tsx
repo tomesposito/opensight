@@ -116,10 +116,11 @@ export function VisualCard({ visual: sourceVisual, dataMessage, loading = false,
   const visual = useEmbedVisual(sourceVisual);
   const headingId = useId();
   const theme = visual.theme ?? LIGHT_THEME;
+  const selectRows = !!onResultSelect;
   const result = useMemo(() => {
-    try { return { compiled: compileVisual(visual, !!onResultSelect) }; }
+    try { return { compiled: compileVisual({ ...visual, selectRows }) }; }
     catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
-  }, [visual, !!onResultSelect]);
+  }, [visual, selectRows]);
   const { compiled, error } = result;
   const { column, columns, row, rows } = visual.placement;
   return <section className="visual-card" aria-busy={loading} aria-labelledby={headingId} style={{ '--visual-header': theme.background, background: theme.surface, color: theme.textColor, fontFamily: theme.fontFamily, gridColumn: `${column + 1} / span ${columns}`, gridRow: `${row + 1} / span ${rows}`, ...cardChromeStyle(compiled?.model.formatting) } as CSSProperties}>

@@ -74,7 +74,7 @@ export function createSessionEmbeddingClient(options: SessionEmbeddingOptions) {
       };
       let ready = false, terminal = false;
       const message = (event: MessageEvent<unknown>) => {
-        if (destroyed || !active || event.source !== iframe.contentWindow || event.origin !== active.origin || !event.data || typeof event.data !== 'object') return;
+        if (destroyed || !active || !iframe.contentWindow || event.source !== iframe.contentWindow || event.origin !== active.origin || !event.data || typeof event.data !== 'object') return;
         if (isDataMessage(event.data, active.id, active.channelId, customActions)) {
           if (ready && !terminal) callbacks.onDataEvent?.(event.data.payload);
           return;

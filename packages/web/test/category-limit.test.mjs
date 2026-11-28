@@ -184,7 +184,10 @@ test('faceted line limits each panel independently and maps limited rows to tool
   wells(value).smallMultiples = [dim('region')];
   config(value).tooltip = { selectedTooltipType: 'DETAILED' };
   body(value).opensightFormatting = { rules: [{ fieldId: 'revenue', operator: 'gte', threshold: 80, color: '#aa0000', background: '#ffeeee' }] };
-  const c = compileVisual(value);
+  const c = compileVisual({ ...value, selectRows: true });
+  assert.equal(c.resultRow(0, 2), value.rows[1], 'the second panel selects the East query row');
+  assert.equal(c.resultRow(1, 2), undefined, 'a synthetic Other mark has no individual result row');
+  assert.equal(c.resultRow(1), undefined, 'the synthetic table row has no individual result row');
   assert.deepEqual(c.option.title.map(t => t.text), ['West', 'East']);
   assert.deepEqual(c.option.xAxis.map(a => a.data), [['B', 'Other'], ['A', 'Other']]);
   assert.deepEqual(c.table.rows, [['B', 'West', 20, 2], ['Other', 'West', 90, 9], ['A', 'East', 10, 1], ['Other', 'East', 30, 3]]);

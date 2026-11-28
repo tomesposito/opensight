@@ -126,6 +126,7 @@ test('#340 malformed initialization cannot bind custom actions and later message
   t.after(() => transport.destroy());
   const action = { id: 'open', label: 'Open', columns: ['region'] };
   const register = customActions => b.emit({ ...init, data: { ...init.data, customActions } });
+  b.emit({ ...init, data: Object.assign([], init.data) });
   for (const invalid of [null, [action, action], [{ ...action, label: [] }], [{ ...action, token: 'extra' }]]) register(invalid);
   await settle(); assert.deepEqual(states, []);
   register([action]); await settle();

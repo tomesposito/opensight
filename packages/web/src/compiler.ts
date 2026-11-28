@@ -24,7 +24,7 @@ import { FACETED_KINDS, applyFacetLimit, facetLayout, facetPanelGrids, facetTitl
 export const DATA_REQUIRED_LABEL = 'Needs data';
 
 type ObjectValue = Record<string, unknown>;
-type Input = Pick<FixtureVisual, 'source' | 'rows' | 'bindings' | 'path' | 'theme'> & { definition: unknown; metrics?: readonly PublishedMetric[] };
+type Input = Pick<FixtureVisual, 'source' | 'rows' | 'bindings' | 'path' | 'theme'> & { definition: unknown; selectRows?: boolean; metrics?: readonly PublishedMetric[] };
 export interface CompiledVisual {
   model: VisualModel;
   /** A single query result behind a selectable point or detail row. */
@@ -801,7 +801,8 @@ function measureCombination(field: Field, metrics: readonly PublishedMetric[] = 
 }
 
 /** Pure renderer: rows must already be authorized, filtered and aggregated. No query execution. */
-export function compileVisual(input: Input, selectRows = false): CompiledVisual {
+export function compileVisual(input: Input): CompiledVisual {
+  const selectRows = input.selectRows === true;
   if (input.theme !== undefined && !themeValid(input.theme)) fail(input.path, 'invalid analysis theme');
   const theme = input.theme ?? LIGHT_THEME;
   const model = normalizeVisual(input.source, input.definition, input.path);

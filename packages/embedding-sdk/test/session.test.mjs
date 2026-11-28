@@ -119,6 +119,10 @@ test('#340 callbacks receive strict data events only on the ready, bound channel
     { payload: { type: 'navigation', path: '//external.test' } },
     { payload: { type: 'filterState', filters: { Region: [null] } } },
   ].map(override => ({ ...event, data: { ...data, ...override } }))]) d.emit(invalid);
+  const frameWindow = handle.iframe.contentWindow;
+  handle.iframe.contentWindow = null;
+  d.emit({ ...event, source: null });
+  handle.iframe.contentWindow = frameWindow;
   assert.deepEqual(received, []);
   const valid = [selection, { type: 'filterState', filters: { Region: ['East'] } },
     { type: 'navigation', path: '/dashboards/sales' }, { type: 'save', analysisId: 'sales', version: 2 }];

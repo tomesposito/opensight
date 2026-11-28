@@ -70,7 +70,12 @@ test('full-app App opens real Author, edits and saves twice, then navigates unde
   const received = [];
   let command;
   const channel = { live: () => true, onAction(fn) { command = fn; return () => { command = undefined; }; }, emit: event => received.push(event) };
-  const embedded = { api: client.api, session: await client.session(), embed: { events: channel, storage: client.storage, loadAnalysis: client.loadAnalysis, authorizeRoute: client.authorizeRoute } };
+  let checked;
+  const authorizeRoute = path => {
+    checked = client.authorizeRoute(path);
+    return checked;
+  };
+  const embedded = { api: client.api, session: await client.session(), embed: { events: channel, storage: client.storage, loadAnalysis: client.loadAnalysis, authorizeRoute } };
   await act(() => { ui = create(h(App, { embedded })); });
   const until = async condition => {
     for (let i = 0; i < 100 && !condition(); i++) await act(() => new Promise(resolve => setTimeout(resolve, 20)));
@@ -87,8 +92,10 @@ test('full-app App opens real Author, edits and saves twice, then navigates unde
     assert.equal(ui.root.findAllByType(Author).length, 1);
   }
   const before = location.hash;
-  await act(() => command({ type: 'navigate', path: '/dashboards/missing' }));
-  await act(() => new Promise(resolve => setTimeout(resolve, 30)));
+  await act(async () => {
+    command({ type: 'navigate', path: '/dashboards/missing' });
+    await assert.rejects(checked, /RESOURCE_NOT_FOUND/);
+  });
   assert.equal(location.hash, before);
   assert.equal(ui.root.findAllByType(Author).length, 1);
   await act(() => command({ type: 'navigate', path: '/data' }));
