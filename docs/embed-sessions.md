@@ -50,6 +50,7 @@ inferred from browser input.
 ```json
 {
   "UserArn": "urn:opensight:namespace:user/reader",
+  "SessionTags": [{ "Key": "account", "Value": "north" }],
   "SessionLifetimeInMinutes": 600,
   "AllowedDomains": ["https://product.example"],
   "ExperienceConfiguration": {
@@ -94,8 +95,7 @@ This is an embedded editor, not full QuickSight console parity.
 
 The virtual namespace is a session label, never a tenant switch or durable user.
 Anonymous dashboard/visual scope must be in `AuthorizedResourceArns` (1–25).
-Tags have unique keys (at most 50), bounded strings, and cannot be supplied by an
-interaction. Anonymous authoring is rejected. Registered authoring is supported.
+Anonymous authoring is rejected. Registered authoring is supported.
 
 Both contracts issue a **five-minute, single-use bootstrap** and a session lasting
 **15–600 whole minutes**, default 600, subject to H5/operator ceilings. Session time
@@ -148,6 +148,36 @@ protected columns are denied. Virtual namespace values never select assets.
 Author saves validate source access and every visual before committing. Version
 and revision checks are atomic; clients cannot change grants or folder placement
 through a save. Existing assets need co-owner access where grants are explicit.
+
+### Session attribute claims (#338)
+
+The authenticated product backend can include `SessionTags` on self-issued
+registered, delegated and anonymous sessions. Derive the values from the
+backend's authenticated account or entitlement records. Each request accepts up
+to 50 unique keys. Keys and values must be nonempty strings of at most 128 and
+256 UTF-16 code units respectively. Both reject control characters U+0000–U+001F.
+Omitting the array or sending `[]` issues a registered session with the viewer's
+ordinary membership permissions.
+
+For the registered example above, configure a dataset tag rule such as
+`{"TagKey":"account","ColumnName":"account_id"}`. A viewer who can read the
+north and south accounts through membership can now read only north. A viewer
+whose membership permits only south receives no rows. Column grants and
+denials still apply to the viewer. Each dataset must have enabled tag rules for
+the supplied keys. An unknown or unusable key returns
+`EMBED_TAG_CONFIGURATION_REQUIRED`. If no complete rule group matches, access
+fails with `ROW_ACCESS_DENIED`.
+
+The server signs the claims into the grant and rechecks its integrity on use
+and renewal. Older nodes reject a registered session carrying claims during
+a rolling upgrade. Renewal carries the original tags forward. To change accounts,
+the backend issues a new session. Frame redemption, reader controls and SDK
+mount options cannot override the claims.
+
+Full-app dashboard and Ask O queries use the same dataset tag rules. Direct
+source reads and prepared pipelines lack a dataset tag-rule binding and deny
+access for sessions carrying claims. Cached query and AI retries are scoped
+to the claimed session.
 
 ## Filtering and parameter controls (#335)
 

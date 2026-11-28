@@ -1,6 +1,6 @@
 import type { GenerateEmbedUrlForRegisteredUser, GenerateEmbedUrlForAnonymousUser, FullAppLandingRoute } from '../dist/index.js';
 const path: FullAppLandingRoute = '/analyses/author/working';
-const registered: GenerateEmbedUrlForRegisteredUser = { ExperienceConfiguration: { FullApp: { InitialPath: path } } };
+const registered: GenerateEmbedUrlForRegisteredUser = { ExperienceConfiguration: { FullApp: { InitialPath: path } }, SessionTags: [{ Key: 'account', Value: 'north' }] };
 void registered;
 // @ts-expect-error Unknown route classes are rejected before server validation.
 const invalid: FullAppLandingRoute = '/admin/users';
@@ -19,6 +19,8 @@ const client = createSessionEmbeddingClient({
   getEmbedUrl: (signal, requested) => issueThroughBackend({ ...registered, Surface: requested }, signal),
 });
 void client.mount(document.createElement('div'), { surface, onReady() {} });
+// @ts-expect-error Session tags belong to backend issuance.
+void client.mount(document.createElement('div'), { SessionTags: registered.SessionTags });
 // @ts-expect-error A boolean does not express one of the three surface states.
 void client.mount(document.createElement('div'), { surface: { actions: { authoring: true } } });
 // @ts-expect-error Required notices are outside the surface vocabulary.

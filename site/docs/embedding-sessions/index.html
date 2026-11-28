@@ -94,6 +94,7 @@ inferred from browser input.</p>
 <code>POST /api/embedding/sessions</code>) accepts:</p>
 <pre><code class="language-json">{
   &quot;UserArn&quot;: &quot;urn:opensight:namespace:user/reader&quot;,
+  &quot;SessionTags&quot;: [{ &quot;Key&quot;: &quot;account&quot;, &quot;Value&quot;: &quot;north&quot; }],
   &quot;SessionLifetimeInMinutes&quot;: 600,
   &quot;AllowedDomains&quot;: [&quot;https://product.example&quot;],
   &quot;ExperienceConfiguration&quot;: {
@@ -136,8 +137,7 @@ This is an embedded editor, not full QuickSight console parity.</p>
 </code></pre>
 <p>The virtual namespace is a session label, never a tenant switch or durable user.
 Anonymous dashboard/visual scope must be in <code>AuthorizedResourceArns</code> (1–25).
-Tags have unique keys (at most 50), bounded strings, and cannot be supplied by an
-interaction. Anonymous authoring is rejected. Registered authoring is supported.</p>
+Anonymous authoring is rejected. Registered authoring is supported.</p>
 <p>Both contracts issue a <strong>five-minute, single-use bootstrap</strong> and a session lasting
 <strong>15–600 whole minutes</strong>, default 600, subject to H5/operator ceilings. Session time
 starts on redemption. An explicit runtime <code>AllowedDomains</code> list contains 1–3
@@ -182,6 +182,31 @@ protected columns are denied. Virtual namespace values never select assets.</p>
 <p>Author saves validate source access and every visual before committing. Version
 and revision checks are atomic; clients cannot change grants or folder placement
 through a save. Existing assets need co-owner access where grants are explicit.</p>
+<h3 id="session-attribute-claims-338">Session attribute claims (#338)</h3>
+<p>The authenticated product backend can include <code>SessionTags</code> on self-issued
+registered, delegated and anonymous sessions. Derive the values from the
+backend&#39;s authenticated account or entitlement records. Each request accepts up
+to 50 unique keys. Keys and values must be nonempty strings of at most 128 and
+256 UTF-16 code units respectively. Both reject control characters U+0000–U+001F.
+Omitting the array or sending <code>[]</code> issues a registered session with the viewer&#39;s
+ordinary membership permissions.</p>
+<p>For the registered example above, configure a dataset tag rule such as
+<code>{&quot;TagKey&quot;:&quot;account&quot;,&quot;ColumnName&quot;:&quot;account_id&quot;}</code>. A viewer who can read the
+north and south accounts through membership can now read only north. A viewer
+whose membership permits only south receives no rows. Column grants and
+denials still apply to the viewer. Each dataset must have enabled tag rules for
+the supplied keys. An unknown or unusable key returns
+<code>EMBED_TAG_CONFIGURATION_REQUIRED</code>. If no complete rule group matches, access
+fails with <code>ROW_ACCESS_DENIED</code>.</p>
+<p>The server signs the claims into the grant and rechecks its integrity on use
+and renewal. Older nodes reject a registered session carrying claims during
+a rolling upgrade. Renewal carries the original tags forward. To change accounts,
+the backend issues a new session. Frame redemption, reader controls and SDK
+mount options cannot override the claims.</p>
+<p>Full-app dashboard and Ask O queries use the same dataset tag rules. Direct
+source reads and prepared pipelines lack a dataset tag-rule binding and deny
+access for sessions carrying claims. Cached query and AI retries are scoped
+to the claimed session.</p>
 <h2 id="filtering-and-parameter-controls-335">Filtering and parameter controls (#335)</h2>
 <p>D-102 Q3 enables frame-local reader state for dashboard and visual sessions,
 including authorized anonymous sessions. The tenant must independently enable

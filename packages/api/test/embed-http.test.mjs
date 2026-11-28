@@ -62,6 +62,27 @@ test('H6 HTTP refuses broad browser issuance, forged identities, unconfigured fe
   }
 });
 
+test('#338 only authenticated backend issuance can supply or change frame claims', async t => {
+  const f = await sessionFixture(t), seeded = await seedEmbedContent(f); t.after(() => seeded.budgets.close());
+  const { call } = await httpStack(t, f), api = `Bearer ${(await f.login()).token}`;
+  const issue = '/api/embedding/GenerateEmbedUrlForRegisteredUser';
+  const body = request({ SessionTags: [{ Key: 'region', Value: 'west' }] });
+  assert.equal((await call(issue, 'POST', body)).status, 401);
+  assert.equal((await call(issue, 'POST', body, api, { origin: f.hostedConfig.origin })).body.errorCode, 'EMBED_BACKEND_REQUIRED');
+  const issued = await call(issue, 'POST', body, api); assert.equal(issued.status, 200);
+  const path = `/api/embed/sessions/${issued.body.sessionId}`, url = new URL(issued.body.EmbedUrl);
+  const redeem = { bootstrap: url.hash.slice(11), parentOrigin, channelId: randomBytes(24).toString('base64url') };
+  const forged = { SessionTags: [{ Key: 'region', Value: 'east' }] };
+  assert.equal((await call(path + '/redeem', 'POST', { ...redeem, ...forged })).status, 400);
+  const active = await call(path + '/redeem', 'POST', redeem); assert.equal(active.status, 200);
+  const auth = `Embed ${active.body.credential}`;
+  assert.equal((await call(issue, 'POST', body, auth)).status, 401);
+  for (const input of [forged, { tags: { region: 'east' } }, { claims: {} }]) {
+    assert.equal((await call(path + '/content', 'POST', input, auth)).body.errorCode, 'EMBED_STATE_INVALID');
+  }
+  assert.deepEqual((await call(path + '/content', 'GET', undefined, auth)).body.visuals[0].rows, [{ amount: 20 }]);
+});
+
 test('#335 HTTP content POST enforces current flags, typed state and viewer scope', async t => {
   const f = await sessionFixture(t), reader = await readerMember(f), seeded = await seedEmbedContent(f, reader);
   t.after(() => seeded.budgets.close());

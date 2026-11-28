@@ -8,6 +8,7 @@ export type ExperienceConfiguration = { Dashboard: { InitialDashboardId: string 
   | { FullApp: { InitialPath: FullAppLandingRoute } };
 export interface GenerateEmbedUrlForRegisteredUser {
   Surface?: SurfaceDeclaration; UserArn?: string; ExperienceConfiguration: ExperienceConfiguration; SessionLifetimeInMinutes?: number; AllowedDomains?: string[];
+  SessionTags?: { Key: string; Value: string }[];
 }
 export interface GenerateEmbedUrlForAnonymousUser {
   Surface?: SurfaceDeclaration; Namespace: string; AuthorizedResourceArns: string[]; ExperienceConfiguration: Exclude<ExperienceConfiguration, { FullApp: unknown }>;

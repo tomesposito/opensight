@@ -14,6 +14,7 @@ import { collectColumnNames, FIELD_NAME_PII_MESSAGE, hasFieldNamePII } from './a
 import { dashboardExport } from './dashboard-export.js';
 import type { AnalysisProtocol } from './analysis-routes.js';
 import { RetryStore, type RetryAdapter } from './retry-store.js';
+import { claimedAppSession } from './embed-sessions.js';
 
 interface Reply { status: number; body: unknown; version?: number; bytes?: Buffer; contentType?: string; filename?: string }
 interface Replay { fingerprint: string; reply: Omit<Reply, 'bytes'> & { bytes?: string }; id: string; sourceId?: string; removed?: boolean; access?: unknown; dataVersion?: number; dataStamp?: unknown }
@@ -109,7 +110,8 @@ export class DashboardRoutes {
       expected = Number(raw.slice(1, -1));
     }
     const keyHeader = request.headers['idempotency-key']; if (Array.isArray(keyHeader)) fail('INVALID_HEADER', 400);
-    const scope = backend.analyses.scope, key = keyHeader === undefined ? undefined : canonical([scope.tenantId, scope.namespaceId, scope.userId, verb, path, identifier(keyHeader)]);
+    const scope = backend.analyses.scope, session = claimedAppSession(scope);
+    const key = keyHeader === undefined ? undefined : canonical([scope.tenantId, scope.namespaceId, scope.userId, verb, path, identifier(keyHeader), ...(session ? [session.id] : [])]);
     const fingerprint = createHash('sha256').update(canonical([raw, expected])).digest('hex');
     const execute = () => this.serial(canonical([scope.tenantId, scope.namespaceId, publish ? `source:${publish[1]}` : id]), async () => {
       const receiptKey = key === undefined ? undefined : `dashboard:${key}`;

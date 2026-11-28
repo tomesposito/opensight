@@ -101,6 +101,8 @@ Unreleased entries into a new version section (see AGENTS.md §1).
 
 ### Added
 
+- Product backends can issue registered and delegated embed sessions with signed account or other attribute claims. Dataset tag rules narrow the rows a viewer can read, existing column permissions still apply, and an unusable claim denies the read (#338).
+
 - Tenant administrators can limit embed experiences and controls. Hosts can hide or disable menus, authoring and other actions, and the header for each SDK mount within the session grant (#337).
 
 - Registered full-app embeds can land on dashboards, the data catalog, the real analysis editor, preparation or configured Ask O, navigate in-frame, and keep editing after repeated saves in the same session. Existing resource permissions, RLS/CLS and revocation remain enforced; the four fixed embed experiences retain their behavior (#336).

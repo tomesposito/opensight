@@ -1,3 +1,5 @@
+import { datasetSecurity, type DatasetSecurity } from './embed-content.js';
+import { claimedAppSession } from './embed-sessions.js';
 import { artifactScalar } from '@opensight/query-engine';
 import { PREP_JOIN_SAMPLE_LIMIT, PrepJoinBudget } from '@opensight/query-engine';
 import { prepFail } from '@opensight/bundle-parser/prep';
@@ -113,9 +115,11 @@ export class HostedData {
     if (isQueryConnectorId(result.connectorId)) this.analytics.track(context, { name: 'data_source_connected', props: { sourceType: result.connectorId } });
     return result;
   }
-  async admit(context: TenantContext, id: string, path: DataPath, embedSecurity?: (security: SecurityContext) => SecurityContext): Promise<Admission> {
+  async admit(context: TenantContext, id: string, path: DataPath, dataset?: DatasetSecurity): Promise<Admission> {
     const revisions = await this.sources.metadata.revisions(context);
     await this.sources.capability(context, path === 'ai' ? 'ai' : path === 'prep' ? 'build' : 'view');
+    const session = claimedAppSession(context);
+    if (session && !dataset) sourceError('EMBED_TAG_CONFIGURATION_REQUIRED', 403);
     const source = await this.sources.get(context, id), b = source.binding;
     const endpoint = b.endpointId ? this.sources.endpoint(b.endpointId) : undefined;
     const tenantPredicate: RowPredicate | undefined = endpoint?.tenantColumn ? { column: endpoint.tenantColumn, operator: 'eq', value: context.tenantId } : undefined;
@@ -126,8 +130,9 @@ export class HostedData {
       users: users.map(u => ({ id: u.id, namespaceId: context.namespaceId })),
       groups: groups.map(g => ({ id: g.id, namespaceId: context.namespaceId, userIds: g.body.userIds as string[] })),
       policy: { ...source.policy, namespaceId: context.namespaceId, dataSetArn: `urn:opensight:source:${source.id}` } };
-    if (embedSecurity) security = embedSecurity(security);
-    const resolved = resolveSecurity(security, boundColumns(b.columns), security.policy.dataSetArn);
+    const columns = boundColumns(b.columns);
+    if (dataset) security = datasetSecurity(security, columns, { ...dataset, grant: session ?? dataset.grant });
+    const resolved = resolveSecurity(security, columns, security.policy.dataSetArn);
     const physical: PrepSource = { id, connectorId: b.connectorId === 's3' ? 'file' : b.connectorId, columns: b.columns, table: b.table ?? 'source_rows', ...(b.schema ? { schema: b.schema } : {}), security: protectedData ? 'protected' : 'unrestricted' };
     const admission = { source, security, physical, ...(tenantPredicate ? { tenantPredicate } : {}), deniedColumns: resolved.deniedColumns, revisions };
     // Validate the immutable predicate even on schema/discovery paths.
@@ -165,7 +170,7 @@ export class HostedData {
       } catch (error) {
         if (!(error instanceof MetadataError) && !(error instanceof Error && 'code' in error)) throw error;
         const code = String((error as { code: unknown }).code);
-        if (!['SOURCE_RETIRED', 'UPLOAD_EXPIRED', 'ROW_ACCESS_DENIED', 'SOURCE_POLICY_REQUIRED', 'SOURCE_ENDPOINT_DENIED', 'SOURCE_MIGRATION_REQUIRED'].includes(code)) throw error;
+        if (!['SOURCE_RETIRED', 'UPLOAD_EXPIRED', 'ROW_ACCESS_DENIED', 'SOURCE_POLICY_REQUIRED', 'EMBED_TAG_CONFIGURATION_REQUIRED', 'SOURCE_ENDPOINT_DENIED', 'SOURCE_MIGRATION_REQUIRED'].includes(code)) throw error;
         results.push({ id: r.id, available: false, columns: [], errorCode: code });
       }
     }

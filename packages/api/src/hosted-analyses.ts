@@ -1,11 +1,9 @@
 import { convertDefinition, projectDefinition, analysisFail, type AnalysisSchema } from '@opensight/web/analysis';
-import { resolveSecurity } from '@opensight/query-engine';
 import { EmbedContent } from './embed-content.js';
 import { MetadataError } from './metadata-db.js';
 import type { HostedDataRoutes } from './hosted-data-routes.js';
 import type { TenantContext, Revisions } from './metadata.js';
 import { object, resourceKey } from './metadata-resources.js';
-import { boundColumns } from './source-schema.js';
 import type { AnalysisBackend, AnalysisRecord, DatasetBindings } from './analysis-model.js';
 import type { RetryCommit } from './retry-store.js';
 
@@ -57,15 +55,8 @@ export class HostedAnalyses implements AnalysisBackend {
           const policies = (await this.metadata.list(this.scope, 'policy')).filter(p => p.body.datasetId === ref.id);
           const wire = object(dataset.body.definition), d = object(wire.DataSet ?? wire);
           if (policies.length > 1 || (d.RowLevelPermissionDataSet || d.ColumnLevelPermissionRules) && !policies.length) analysisFail('SECURITY_REJECTED', path, 'Dataset policy is unresolved');
-          const a = await this.routes.data.admit(this.scope, source.id, 'query');
-          let denied = a.deniedColumns;
-          if (policies[0]) {
-            const { datasetId: _id, ...policy } = policies[0].body;
-            const scoped = { ...a.security, policy: { ...policy, namespaceId: this.scope.namespaceId, dataSetArn: a.security.policy.dataSetArn } } as typeof a.security;
-            const additional = resolveSecurity(scoped, boundColumns(a.source.binding.columns), a.security.policy.dataSetArn);
-            denied = [...new Set([...denied, ...additional.deniedColumns])];
-          }
-          schemas.set(identifier, { columns: a.physical.columns, deniedColumns: denied });
+          const a = await this.routes.data.admit(this.scope, source.id, 'query', { definition: wire, policy: policies[0]?.body });
+          schemas.set(identifier, { columns: a.physical.columns, deniedColumns: a.deniedColumns });
         }
       } catch (error) {
         if (error instanceof MetadataError) throw Object.assign(error, { path });

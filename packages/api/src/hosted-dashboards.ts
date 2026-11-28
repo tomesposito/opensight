@@ -1,5 +1,5 @@
 import { lookupMetrics, metricDefinition } from './metric-consumption.js';
-import { planPreparedVisual, resolveSecurity, type RowPredicate, type SecurityContext } from '@opensight/query-engine';
+import { planPreparedVisual } from '@opensight/query-engine';
 import { MetadataError } from './metadata-db.js';
 import { HostedAnalyses } from './hosted-analyses.js';
 import { EmbedContent } from './embed-content.js';
@@ -9,7 +9,6 @@ import type { HostedDataRoutes } from './hosted-data-routes.js';
 import type { TenantContext, Revisions } from './metadata.js';
 import type { AssetGrant } from './organization.js';
 import type { JsonObject } from './mapping.js';
-import { boundColumns } from './source-schema.js';
 import { containedWork, wireTable, type QueryResult } from './contained-work.js';
 import type { RetryCommit } from './retry-store.js';
 
@@ -97,18 +96,7 @@ export class HostedDashboards implements DashboardBackend {
     const policies = (await this.metadata.list(context, 'policy')).filter(p => p.body.datasetId === binding.id);
     const wire = object(dataset.body.definition), d = object(wire.DataSet ?? wire);
     if (policies.length > 1 || (d.RowLevelPermissionDataSet || d.ColumnLevelPermissionRules) && !policies.length) throw new MetadataError('SOURCE_POLICY_REQUIRED', 403);
-    const admittedSource = await data.sources.get(context, source.id);
-    const a = await data.admit(context, source.id, 'query', base => {
-      if (!policies[0]) return base;
-      const { datasetId: _id, ...policy } = policies[0].body;
-      const schema = boundColumns(admittedSource.binding.columns);
-      const first = resolveSecurity(base, schema, base.policy.dataSetArn);
-      const second = resolveSecurity({ ...base, policy: { ...policy, namespaceId: context.namespaceId, dataSetArn: base.policy.dataSetArn } } as SecurityContext, schema, base.policy.dataSetArn);
-      const predicates = [first.rowPredicate, second.rowPredicate].filter((p): p is RowPredicate => !!p);
-      return { ...base, policy: { namespaceId: context.namespaceId, dataSetArn: base.policy.dataSetArn, rowLevel: !!predicates.length,
-        rowRules: predicates.length ? [{ id: 'dashboard-intersection', principals: [{ type: 'user', id: context.userId }], predicate: { all: predicates } }] : [],
-        protectedColumns: [...new Set([...first.deniedColumns, ...second.deniedColumns])], columnGrants: [] } };
-    });
+    const a = await data.admit(context, source.id, 'query', { definition: wire, policy: policies[0]?.body });
     const plan = planPreparedVisual(a.physical.columns, analysis, visualId, dataSetArn, a.security);
     return data.work(context, false, [a], async () => {
       const table = await data.table(context, a, data.read(a).columns);

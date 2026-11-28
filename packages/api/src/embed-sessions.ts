@@ -26,6 +26,11 @@ export interface SessionGrant {
   revisions: Revisions; durationMinutes: number; request: Record<string, unknown>;
 }
 export interface EmbedSession extends SessionGrant { id: string; expiresAt: number; parentOrigin: string; channelId: string }
+// Hosted handlers receive a fresh authenticated context on every frame request.
+// Standalone requests for the same user have a different context.
+type Viewer = Pick<TenantContext, 'tenantId' | 'namespaceId' | 'userId'>;
+const claimedApps = new WeakMap<Viewer, Pick<EmbedSession, 'id' | 'tags' | 'anonymous'>>();
+export function claimedAppSession(context: Viewer) { return claimedApps.get(context); }
 export interface EmbedKey { id: string; secret: Buffer }
 export function embedSessionKey(env: NodeJS.ProcessEnv): EmbedKey | undefined {
   if (env.OPENSIGHT_EMBED_SESSION_KEY_ID === undefined && env.OPENSIGHT_EMBED_SESSION_KEY === undefined) return undefined;
@@ -62,6 +67,28 @@ export async function activateEmbedKey(database: Database, key: EmbedKey): Promi
 function boundedString(value: unknown, max = 256): string {
   if (typeof value !== 'string' || !value.length || value.length > max || /[\x00-\x1f]/.test(value)) embedFailure();
   return value;
+}
+function sessionTags(raw: unknown): Record<string, string> {
+  const tags: Record<string, string> = Object.create(null) as Record<string, string>;
+  if (raw === undefined) return tags;
+  if (!Array.isArray(raw) || raw.length > 50) embedFailure();
+  for (const entry of raw) {
+    const tag = object(entry, ['Key', 'Value']), name = boundedString(tag.Key, 128);
+    if (Object.hasOwn(tags, name)) embedFailure();
+    tags[name] = boundedString(tag.Value);
+  }
+  return tags;
+}
+function signedBootstrap(key: EmbedKey, id: string, nonce: string, grantBody: string): string {
+  const payload = `${key.id}.${id}.${nonce}`;
+  const signature = createHmac('sha256', key.secret).update(`OpenSight:embed:v2:${payload}:${digest(grantBody)}`).digest('base64url');
+  return `${payload}.${signature}`;
+}
+function credentialHash(credential: string, grant: SessionGrant, row: SqlRow): string {
+  // A pre-338 node checks only digest(credential) and would ignore registered
+  // claims. Its credential check must fail even after a newer node redeems.
+  if (!grant.anonymous && Object.keys(grant.tags).length) return digest(`OpenSight:embed:claims:${row.bootstrap_hash}:${credential}`);
+  return digest(credential);
 }
 export function resourceArn(namespaceId: string, kind: string, id: string): string { return `urn:opensight:${namespaceId}:${kind}/${id}`; }
 function arn(value: unknown, namespaceId: string, kind: string): string {
@@ -132,7 +159,7 @@ export class EmbedSessions {
   private async check(c: SqlConnection, row: SqlRow, lockTenant = true): Promise<SessionGrant & { surface: EmbedSurface }> {
     await this.checkKey(c, String(row.key_id));
     if (Number(row.revoked)) embedFailure('EMBED_SESSION_REVOKED', 401);
-    const g = JSON.parse(String(row.grant_body)) as SessionGrant, current = await this.configuration(c, g, lockTenant);
+    const g = this.readGrant(row), current = await this.configuration(c, g, lockTenant);
     if (current.revision !== g.configRevision || JSON.stringify(current.revisions) !== JSON.stringify(g.revisions)) embedFailure('EMBED_SESSION_REVOKED', 401);
     await this.membership(c, g.tenantId, g.namespaceId, g.issuerId);
     const user = await this.membership(c, g.tenantId, g.namespaceId, g.userId);
@@ -145,6 +172,19 @@ export class EmbedSessions {
     if ((g.surface !== undefined || g.request.Surface !== undefined) && !isDeepStrictEqual(g.surface, surface)) embedFailure('EMBED_SESSION_REVOKED', 401);
     // Authority comes from current validated config, including grants issued before #335.
     return { ...g, surface, ...(g.experience.kind === 'full-app' ? { appFeatures: { authoring: current.config.features.authoring, registeredDashboards: current.config.features.registeredDashboards } } : {}), interactionFeatures: { filtering: current.config.features.filtering, parameterControls: current.config.features.parameterControls } };
+  }
+  private readGrant(row: SqlRow): SessionGrant {
+    const body = String(row.grant_body), verifier = String(row.bootstrap_hash);
+    const legacy = /^[a-f0-9]{64}$/.test(verifier);
+    if (!legacy) {
+      // The nonce alone is not a credential. Keeping it with the digest lets
+      // every read verify the original HMAC without storing the bootstrap.
+      const match = /^([A-Za-z0-9_-]{43}):([a-f0-9]{64})$/.exec(verifier);
+      if (!match || !equal(digest(signedBootstrap(this.configured(), String(row.session_id), match[1]!, body)), match[2]!)) embedFailure('INVALID_EMBED_TOKEN', 401);
+    }
+    const grant = JSON.parse(body) as SessionGrant;
+    if (legacy && !grant.anonymous && (Object.keys(grant.tags).length || grant.request.SessionTags !== undefined)) embedFailure('INVALID_EMBED_TOKEN', 401);
+    return grant;
   }
   private async context(g: SessionGrant): Promise<TenantContext> {
     const context = await this.metadata.authenticate(null, async () => ({ namespaceId: g.namespaceId, userId: g.userId }));
@@ -159,13 +199,12 @@ export class EmbedSessions {
     this.metadata.assertContext(context); this.configured();
     const input = object(structuredClone(raw), anonymous
       ? ['Namespace', 'AuthorizedResourceArns', 'ExperienceConfiguration', 'SessionLifetimeInMinutes', 'SessionTags', 'AllowedDomains', 'Surface']
-      : ['UserArn', 'ExperienceConfiguration', 'SessionLifetimeInMinutes', 'AllowedDomains', 'Surface']);
+      : ['UserArn', 'ExperienceConfiguration', 'SessionLifetimeInMinutes', 'SessionTags', 'AllowedDomains', 'Surface']);
     const experience = parseExperience(input.ExperienceConfiguration);
     if (anonymous && experience.kind === 'full-app') embedFailure('EMBED_FEATURE_UNSUPPORTED', 422);
     const minutes = input.SessionLifetimeInMinutes === undefined ? 600 : input.SessionLifetimeInMinutes;
     if (!Number.isSafeInteger(minutes) || Number(minutes) < 15 || Number(minutes) > 600) embedFailure('EMBED_SESSION_LIMIT_EXCEEDED', 422);
     const userId = anonymous ? context.userId : input.UserArn === undefined ? context.userId : arn(input.UserArn, context.namespaceId, 'user');
-    const tags: Record<string, string> = Object.create(null) as Record<string, string>;
     let authorizedResources: string[] = [], virtualNamespace: string | undefined;
     if (anonymous) {
       virtualNamespace = identifier(input.Namespace);
@@ -173,11 +212,8 @@ export class EmbedSessions {
       authorizedResources = input.AuthorizedResourceArns.map(v => resourceArn(context.namespaceId, 'dashboard', arn(v, context.namespaceId, 'dashboard')));
       if (experience.kind === 'console' || experience.kind === 'q' || experience.kind === 'full-app') embedFailure('EMBED_FEATURE_UNSUPPORTED', 422);
       if (!authorizedResources.includes(resourceArn(context.namespaceId, 'dashboard', experience.dashboardId))) embedFailure('EMBED_SCOPE_DENIED', 403);
-      if (input.SessionTags !== undefined) {
-        if (!Array.isArray(input.SessionTags) || input.SessionTags.length > 50) embedFailure();
-        for (const rawTag of input.SessionTags) { const tag = object(rawTag, ['Key', 'Value']), name = boundedString(tag.Key, 128); if (Object.hasOwn(tags, name)) embedFailure(); tags[name] = boundedString(tag.Value); }
-      }
     }
+    const tags = sessionTags(input.SessionTags);
     const snapshot = await this.database.transaction(async c => {
       const current = await this.configuration(c, context);
       if (current.revisions.authorization !== context.authorizationRevision) embedFailure('EMBED_SESSION_REVOKED', 401);
@@ -202,13 +238,13 @@ export class EmbedSessions {
     });
     await this.authorize(await this.context(snapshot), snapshot);
     const id = randomBytes(24).toString('base64url'), nonce = randomBytes(32).toString('base64url'), key = this.configured();
-    const payload = `${key.id}.${id}.${nonce}`, signature = createHmac('sha256', key.secret).update(`OpenSight:embed:v2:${payload}:${digest(JSON.stringify(snapshot))}`).digest('base64url');
-    const bootstrap = `${payload}.${signature}`, bootstrapExpiresAt = this.clock() + 300000;
+    const grantBody = JSON.stringify(snapshot), bootstrap = signedBootstrap(key, id, nonce, grantBody);
+    const verifier = `${nonce}:${digest(bootstrap)}`, bootstrapExpiresAt = this.clock() + 300000;
     await this.database.transaction(async c => {
-      const row = { key_id: key.id, revoked: 0, grant_body: JSON.stringify(snapshot) };
+      const row = { session_id: id, key_id: key.id, revoked: 0, grant_body: grantBody, bootstrap_hash: verifier };
       await this.check(c, row);
       await c.query('INSERT INTO h6_sessions (session_id, tenant_id, namespace_id, issuer_id, key_id, grant_body, bootstrap_hash, bootstrap_expires_at) VALUES (?,?,?,?,?,?,?,?)',
-        [id, snapshot.tenantId, snapshot.namespaceId, snapshot.issuerId, key.id, JSON.stringify(snapshot), digest(bootstrap), bootstrapExpiresAt]);
+        [id, snapshot.tenantId, snapshot.namespaceId, snapshot.issuerId, key.id, grantBody, verifier, bootstrapExpiresAt]);
     });
     return { sessionId: id, EmbedUrl: `${snapshot.origin}/embed/sessions/${id}#bootstrap=${bootstrap}`, bootstrapExpiresAt: new Date(bootstrapExpiresAt).toISOString(),
       SessionLifetimeInMinutes: snapshot.durationMinutes, configRevision: snapshot.configRevision,
@@ -233,12 +269,14 @@ export class EmbedSessions {
     await this.authorize(await this.context(grant), grant);
     return this.database.transaction(async c => {
       const row = await this.load(c, id), g = await this.check(c, row);
-      if (!equal(digest(String(r.bootstrap)), String(row.bootstrap_hash))) embedFailure('INVALID_EMBED_TOKEN', 401);
+      const nonce = String(r.bootstrap).split('.')[2] ?? '';
+      if (!equal(String(r.bootstrap), signedBootstrap(this.configured(), id, nonce, String(row.grant_body))) ||
+          !equal(digest(String(r.bootstrap)), String(row.bootstrap_hash).split(':').at(-1)!)) embedFailure('INVALID_EMBED_TOKEN', 401);
       if (!g.allowedDomains.includes(parentOrigin)) embedFailure('EMBED_ORIGIN_DENIED', 403);
       if (Number(row.redeemed)) embedFailure('EMBED_BOOTSTRAP_REPLAY', 401);
       if (Number(row.bootstrap_expires_at) <= this.clock()) embedFailure('EMBED_BOOTSTRAP_EXPIRED', 401);
       const credential = randomBytes(32).toString('base64url'), expiresAt = this.clock() + g.durationMinutes * 60000;
-      const consumed = await c.query('UPDATE h6_sessions SET redeemed = 1, credential_hash = ?, expires_at = ?, parent_origin = ?, channel_id = ? WHERE session_id = ? AND redeemed = 0 AND revoked = 0 RETURNING session_id', [digest(credential), expiresAt, parentOrigin, channelId, id]);
+      const consumed = await c.query('UPDATE h6_sessions SET redeemed = 1, credential_hash = ?, expires_at = ?, parent_origin = ?, channel_id = ? WHERE session_id = ? AND redeemed = 0 AND revoked = 0 RETURNING session_id', [credentialHash(credential, g, row), expiresAt, parentOrigin, channelId, id]);
       if (!consumed.length) embedFailure('EMBED_BOOTSTRAP_REPLAY', 401);
       return { credential, expiresAt, sessionId: id, experience: g.experience };
     });
@@ -246,11 +284,15 @@ export class EmbedSessions {
   async verify(id: string, credential: string): Promise<{ session: EmbedSession; context: TenantContext }> {
     const session = await this.database.transaction(async c => {
       const row = await this.load(c, id), g = await this.check(c, row);
-      if (!/^[A-Za-z0-9_-]{43}$/.test(credential) || !row.credential_hash || !equal(digest(credential), String(row.credential_hash))) embedFailure('INVALID_EMBED_TOKEN', 401);
+      if (!/^[A-Za-z0-9_-]{43}$/.test(credential) || !row.credential_hash || !equal(credentialHash(credential, g, row), String(row.credential_hash))) embedFailure('INVALID_EMBED_TOKEN', 401);
       if (!Number(row.redeemed) || Number(row.expires_at) <= this.clock()) embedFailure('EMBED_SESSION_EXPIRED', 401);
       return { ...g, id, expiresAt: Number(row.expires_at), parentOrigin: String(row.parent_origin), channelId: String(row.channel_id) };
     });
-    const context = await this.context(session); await this.authorize(context, session); return { session, context };
+    const context = await this.context(session);
+    if (session.experience.kind === 'full-app' && Object.keys(session.tags).length) {
+      claimedApps.set(context, { id, tags: Object.freeze({ ...session.tags }), anonymous: false });
+    }
+    await this.authorize(context, session); return { session, context };
   }
   /** Full-app author writes use the standalone CAS path (no security revision
    * bump). Still check embed revocation/config/key/expiry in the commit transaction;
@@ -267,7 +309,7 @@ export class EmbedSessions {
         // operator pool would deadlock; all validation predicates remain identical.
         const row = await this.load(c, id), grant = await this.check(c, row, false);
         if (grant.experience.kind !== 'full-app' || grant.anonymous || grant.tenantId !== context.tenantId || grant.namespaceId !== context.namespaceId || grant.userId !== context.userId) embedFailure('EMBED_SCOPE_DENIED', 403);
-        if (!/^[A-Za-z0-9_-]{43}$/.test(credential) || !row.credential_hash || !equal(digest(credential), String(row.credential_hash))) embedFailure('INVALID_EMBED_TOKEN', 401);
+        if (!/^[A-Za-z0-9_-]{43}$/.test(credential) || !row.credential_hash || !equal(credentialHash(credential, grant, row), String(row.credential_hash))) embedFailure('INVALID_EMBED_TOKEN', 401);
         if (!Number(row.redeemed) || Number(row.expires_at) <= this.clock()) embedFailure('EMBED_SESSION_EXPIRED', 401);
       };
       // SQLite has one serialized connection and no SQL role boundary.
@@ -290,7 +332,7 @@ export class EmbedSessions {
     const row = await this.database.transaction(c => this.load(c, id));
     if (row.tenant_id !== context.tenantId || row.namespace_id !== context.namespaceId || row.issuer_id !== context.userId) embedFailure('RESOURCE_NOT_FOUND', 404);
     if (Number(row.revoked)) embedFailure('EMBED_SESSION_REVOKED', 401);
-    const grant = JSON.parse(String(row.grant_body)) as SessionGrant;
+    const grant = this.readGrant(row);
     const result = await this.issue(context, grant.request, grant.anonymous);
     try {
       await this.database.transaction(async c => {

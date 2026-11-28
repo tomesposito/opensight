@@ -4,6 +4,15 @@ import { randomBytes } from 'node:crypto';
 import { sessionFixture, request, parentOrigin } from './embed-session-helpers.mjs';
 import { EmbedSessions, activateEmbedKey } from '../dist/embed-sessions.js';
 import { SqliteMetadataDatabase } from '../dist/metadata-db.js';
+import { digest } from '../dist/auth-crypto.js';
+
+async function editStoredGrant(f, id, change) {
+  await f.db.transaction(async c => {
+    const [row] = await c.query('SELECT grant_body FROM h6_sessions WHERE session_id = ?', [id]);
+    const grant = JSON.parse(row.grant_body); change(grant);
+    await c.query('UPDATE h6_sessions SET grant_body = ? WHERE session_id = ?', [JSON.stringify(grant), id]);
+  });
+}
 
 test('H6 scoped five-minute bootstrap, atomic race/replay, memory-only credential and restart', async t => {
   const f = await sessionFixture(t), issued = await f.issue();
@@ -48,6 +57,21 @@ test('H6 renewal needs issuer authentication, invalidates the old session and se
   assert.ok(await f.sessions.verify(next.sessionId, active.credential));
   await f.sessions.revoke(context, next.sessionId);
   await assert.rejects(f.sessions.renew(context, next.sessionId), { code: 'EMBED_SESSION_REVOKED' });
+});
+test('#338 authenticated issuers use the same SessionTags bounds for every subject', async t => {
+  const f = await sessionFixture(t);
+  const max = Array.from({ length: 50 }, (_, i) => ({ Key: String(i).padStart(128, 'k'), Value: 'v'.repeat(256) }));
+  for (const [subject, anonymous] of [[{}, false], [{ Namespace: 'virtual', AuthorizedResourceArns: [f.arn('dashboard', 'dashboard')] }, true]]) {
+    const issue = tags => f.issue(request({ ...subject, SessionTags: tags }), anonymous);
+    for (const invalid of [null, {}, [...max, { Key: 'extra', Value: 'v' }], [max[0], max[0]],
+      [{ Key: 'k'.repeat(129), Value: 'v' }], [{ Key: 'k', Value: 'v'.repeat(257) }],
+      [{ Key: '', Value: 'v' }], [{ Key: 'k', Value: '' }], [{ Key: 'k', Value: 'v\n' }]]) {
+      await assert.rejects(issue(invalid), { code: 'EMBED_REQUEST_INVALID' });
+    }
+    const issued = await issue(max), active = await f.redeem(issued);
+    const { session } = await f.sessions.verify(issued.sessionId, active.credential);
+    assert.deepEqual(session.tags, Object.fromEntries(max.map(({ Key, Value }) => [Key, Value])));
+  }
 });
 test('H6 bootstrap/session expiry, configuration/policy revisions, suspension and user removal fail closed', async t => {
   for (const change of ['bootstrap', 'expiry', 'configuration', 'policy', 'suspension', 'removal']) {
@@ -134,14 +158,36 @@ test('H6 resolves each session surface within the tenant, experience, feature an
 
 test('H6 rechecks the persisted surface and derives defaults for grants issued before #337', async t => {
   const f = await sessionFixture(t), old = await f.issue(), r = await f.redeem(old);
-  const editStored = (id, change) => f.db.transaction(async c => {
-    const [row] = await c.query('SELECT grant_body FROM h6_sessions WHERE session_id = ?', [id]);
-    const grant = JSON.parse(row.grant_body); change(grant);
-    await c.query('UPDATE h6_sessions SET grant_body = ? WHERE session_id = ?', [JSON.stringify(grant), id]);
-  });
-  await editStored(old.sessionId, grant => { delete grant.surface; });
+  const legacyVerifier = issued => f.db.transaction(c => c.query('UPDATE h6_sessions SET bootstrap_hash = ? WHERE session_id = ?',
+    [digest(new URL(issued.EmbedUrl).hash.slice(11)), issued.sessionId]));
+  await legacyVerifier(old);
+  await editStoredGrant(f, old.sessionId, grant => { delete grant.surface; });
   assert.equal((await f.sessions.verify(old.sessionId, r.credential)).session.surface.actions.authoring, 'hidden');
   const bound = await f.issue(request({ Surface: { chrome: { header: 'disabled' } } })), active = await f.redeem(bound);
-  await editStored(bound.sessionId, grant => { grant.surface.chrome.header = 'visible'; });
+  await legacyVerifier(bound);
+  await editStoredGrant(f, bound.sessionId, grant => { grant.surface.chrome.header = 'visible'; });
   await assert.rejects(f.sessions.verify(bound.sessionId, active.credential), { code: 'EMBED_SESSION_REVOKED' });
+});
+
+test('#338 the signed grant rejects stored claim changes before redemption, use and renewal', async t => {
+  const f = await sessionFixture(t), body = request({ SessionTags: [{ Key: 'account', Value: 'north' }] });
+  const pending = await f.issue(body), issued = await f.issue(body), active = await f.redeem(issued);
+  const renewed = await f.sessions.renew(await f.context(), issued.sessionId), credential = await f.redeem(renewed);
+  assert.deepEqual((await f.sessions.verify(renewed.sessionId, credential.credential)).session.tags, { account: 'north' });
+  // These are the two persisted comparisons a pre-338 server makes. It must
+  // reject both credentials during a rolling upgrade.
+  const [row] = await f.db.transaction(c => c.query('SELECT bootstrap_hash, credential_hash FROM h6_sessions WHERE session_id = ?', [renewed.sessionId]));
+  assert.notEqual(row.bootstrap_hash, digest(new URL(renewed.EmbedUrl).hash.slice(11)));
+  assert.notEqual(row.credential_hash, digest(credential.credential));
+  await assert.rejects(f.sessions.verify(issued.sessionId, active.credential), { code: 'EMBED_SESSION_REVOKED' });
+  for (const { sessionId } of [pending, renewed]) {
+    await editStoredGrant(f, sessionId, grant => {
+      grant.tags.account = 'south';
+      grant.request.SessionTags[0].Value = 'south';
+    });
+    await assert.rejects(f.sessions.shell(sessionId), { code: 'INVALID_EMBED_TOKEN' });
+    await assert.rejects(f.sessions.renew(await f.context(), sessionId), { code: 'INVALID_EMBED_TOKEN' });
+  }
+  await assert.rejects(f.redeem(pending), { code: 'INVALID_EMBED_TOKEN' });
+  await assert.rejects(f.sessions.verify(renewed.sessionId, credential.credential), { code: 'INVALID_EMBED_TOKEN' });
 });

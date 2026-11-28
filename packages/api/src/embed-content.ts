@@ -1,12 +1,12 @@
-import { hasCapability, planPreparedVisual, resolveSecurity, type RowPredicate, type SecurityContext, type InteractiveQuery, type Role } from '@opensight/query-engine';
+import { hasCapability, planPreparedVisual, resolveSecurity, type BoundColumn, type RowPredicate, type SecurityContext, type InteractiveQuery, type Role } from '@opensight/query-engine';
 import { compileVisual } from '@opensight/web/compiler';
 import { containedWork, wireTable, type QueryResult } from './contained-work.js';
 import { EmbedSources } from './embed-sources.js';
-import { HostedData } from './hosted-data.js';
+import type { HostedData } from './hosted-data.js';
 import { embedFailure, resourceArn, type SessionGrant } from './embed-sessions.js';
 import { identifier, object, type MetadataResource } from './metadata-resources.js';
 import type { TenantContext } from './metadata.js';
-import { boundColumns } from './source-schema.js';
+import { intersectSecurity } from './digest-admission.js';
 import type { JsonObject } from './mapping.js';
 import { applyEmbedInteractions, embedInteractionState, type EmbedInteractionState, type EmbedControls } from './embed-interactions.js';
 import { fullAppLocation, appRole } from './embed-app-profile.js';
@@ -36,8 +36,8 @@ export function grantAllows(grants: unknown, userId: string, groupIds: string[],
     return (!write || g.role === 'co-owner') && (p.type === 'user' ? p.id === userId : p.type === 'group' && groupIds.includes(String(p.id)));
   });
 }
-/** Anonymous tags are immutable server-validated predicates, never interactive filters. */
-export function tagSecurity(base: SecurityContext, dataset: JsonObject, tags: Record<string, string>): SecurityContext {
+/** Resolve immutable issuance tags using the dataset's configured OR-of-AND rule groups. */
+export function tagSecurity(base: SecurityContext, dataset: JsonObject, tags: Record<string, string>, viewerPolicies?: ReturnType<typeof resolveSecurity>[]): SecurityContext {
   const definition = object(dataset.DataSet ?? dataset), raw = definition.RowLevelPermissionTagConfiguration;
   const required = base.policy.rowLevel || Object.keys(tags).length > 0 || raw !== undefined;
   let predicate: RowPredicate | undefined;
@@ -59,17 +59,42 @@ export function tagSecurity(base: SecurityContext, dataset: JsonObject, tags: Re
     if (Object.keys(tags).some(name => !rules.has(name))) embedFailure('EMBED_TAG_CONFIGURATION_REQUIRED', 403);
     const combinations = config.TagRuleConfigurations ?? [config.TagRules.map(v => String(object(v).TagKey))];
     if (!Array.isArray(combinations) || !combinations.length || combinations.length > 50) embedFailure('EMBED_TAG_CONFIGURATION_REQUIRED', 403);
-    const matches: RowPredicate[] = [];
+    const matches: RowPredicate[] = [], matchedKeys = new Set<string>();
     for (const group of combinations) {
       if (!Array.isArray(group) || !group.length || group.length > 50 || group.some(k => typeof k !== 'string' || !declared.has(k))) embedFailure('EMBED_TAG_CONFIGURATION_REQUIRED', 403);
-      if (group.every(k => rules.has(String(k)))) matches.push({ all: group.map(k => rules.get(String(k))!) });
+      if (group.every(k => rules.has(String(k)))) {
+        matches.push({ all: group.map(k => rules.get(String(k))!) });
+        for (const key of group) matchedKeys.add(key);
+      }
     }
     if (!matches.length) embedFailure('ROW_ACCESS_DENIED', 403);
+    if (viewerPolicies && Object.keys(tags).some(key => !matchedKeys.has(key))) embedFailure('EMBED_TAG_CONFIGURATION_REQUIRED', 403);
     predicate = { any: matches };
   }
+  if (viewerPolicies) return intersectSecurity(base, [...viewerPolicies, { rowPredicate: predicate, deniedColumns: [], protected: !!predicate }], 'embed-intersection');
   const userId = 'anonymous';
   return { namespaceId: base.namespaceId, userId, users: [{ id: userId, namespaceId: base.namespaceId }], groups: [],
     policy: { ...base.policy, rowLevel: !!predicate, rowRules: predicate ? [{ id: 'session-tags', principals: [{ type: 'user', id: userId }], predicate }] : [], columnGrants: [] } };
+}
+export interface DatasetSecurity {
+  definition: JsonObject;
+  policy?: JsonObject;
+  grant?: Pick<SessionGrant, 'anonymous' | 'tags'>;
+}
+
+export function datasetSecurity(base: SecurityContext, columns: BoundColumn[], { definition, policy, grant }: DatasetSecurity): SecurityContext {
+  if (grant?.anonymous) {
+    const protectedColumns = [...new Set([...base.policy.protectedColumns ?? [], ...(policy?.protectedColumns as string[] | undefined) ?? []])];
+    return tagSecurity({ ...base, policy: { ...base.policy, rowLevel: base.policy.rowLevel || policy?.rowLevel === true, protectedColumns } }, definition, grant.tags);
+  }
+  const tags = grant?.tags, hasTags = tags !== undefined && Object.keys(tags).length > 0;
+  if (!policy && !hasTags) return base;
+  const arn = base.policy.dataSetArn, resolved = [resolveSecurity(base, columns, arn)];
+  if (policy) {
+    const { datasetId: _id, ...datasetPolicy } = policy;
+    resolved.push(resolveSecurity({ ...base, policy: { ...datasetPolicy, namespaceId: base.namespaceId, dataSetArn: arn } }, columns, arn));
+  }
+  return hasTags ? tagSecurity(base, definition, tags, resolved) : intersectSecurity(base, resolved, 'embed-intersection');
 }
 export class EmbedContent {
   constructor(readonly data: HostedData) {}
@@ -124,21 +149,7 @@ export class EmbedContent {
     const policy = policies[0]?.body;
     const definition = object(dataset.body.definition), d = object(definition.DataSet ?? definition);
     if ((d.RowLevelPermissionDataSet || d.ColumnLevelPermissionRules) && !policy) embedFailure('SOURCE_POLICY_REQUIRED', 403);
-    const source = await this.data.sources.get(context, sourceId);
-    return this.data.admit(context, sourceId, 'query', base => {
-      if (g.anonymous) {
-        const protectedColumns = [...new Set([...base.policy.protectedColumns ?? [], ...(policy?.protectedColumns as string[] | undefined) ?? []])];
-        return tagSecurity({ ...base, policy: { ...base.policy, rowLevel: base.policy.rowLevel || policy?.rowLevel === true, protectedColumns } }, definition, g.tags);
-      }
-      if (!policy) return base;
-      const { datasetId: _datasetId, ...datasetPolicy } = policy;
-      const scoped = { ...base, policy: { ...datasetPolicy, namespaceId: context.namespaceId, dataSetArn: base.policy.dataSetArn } } as SecurityContext;
-      const first = resolveSecurity(base, boundColumns(source.binding.columns), base.policy.dataSetArn), second = resolveSecurity(scoped, boundColumns(source.binding.columns), base.policy.dataSetArn);
-      const predicates = [first.rowPredicate, second.rowPredicate].filter((p): p is RowPredicate => p !== undefined);
-      return { ...base, policy: { namespaceId: context.namespaceId, dataSetArn: base.policy.dataSetArn, rowLevel: !!predicates.length,
-        rowRules: predicates.length ? [{ id: 'embed-intersection', principals: [{ type: 'user', id: context.userId }], predicate: { all: predicates } }] : [],
-        protectedColumns: [...new Set([...first.deniedColumns, ...second.deniedColumns])], columnGrants: [] } };
-    });
+    return this.data.admit(context, sourceId, 'query', { definition, policy, grant: g });
   }
   async visuals(context: TenantContext, g: Pick<SessionGrant, 'anonymous' | 'tags' | 'experience'>, asset: MetadataResource) {
     return (await this.renderVisuals(context, g, asset)).visuals;
