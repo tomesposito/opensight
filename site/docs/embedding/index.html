@@ -153,6 +153,22 @@ including when a host omits its declaration. Requesting a visible or disabled
 control outside the ceiling or grant returns 403 <code>EMBED_SURFACE_DENIED</code>.
 Required notices remain on fixed frames. See the <a href="/docs/embedding-sessions/#per-embed-surface-control-337">SDK mount contract</a>
 for control names, applicable experiences and examples.</p>
+<h3 id="branding-removal-341-d-102-q7">Branding removal (#341, D-102 Q7)</h3>
+<p><strong>HQ-5 amendment (D-102 Q7, ruled by Tom 2026-11-25):</strong> HQ-5&#39;s rule that required
+OpenSight notices remain is amended for embedded surfaces only. When a tenant&#39;s
+appearance supplies its own product name (anything other than the OpenSight
+default) <strong>and</strong> its own logo asset, that tenant&#39;s embed frames render without
+OpenSight branding or notices: the <code>OpenSight · Apache-2.0</code> / data-permissions
+footer is omitted, and a frame that still carries the default iframe title is
+labelled with the tenant&#39;s product name instead. The <code>brandingRemoval</code>
+capability is reported as supported.</p>
+<p>Both parts are required. A tenant with only a custom name, or only a logo, keeps
+the notices exactly as before, as does a tenant with no branding configured —
+their frames are byte-identical to the pre-#341 rendering. The standalone app is
+untouched: its notices and branding never change. Branding removal is
+presentation only; it changes no session, authorization or data behavior, and
+the earlier statement in this document that &quot;required notices remain on fixed
+frames&quot; now applies only to tenants without full branding of their own.</p>
 <h3 id="host-actions-and-column-security-340">Host actions and column security (#340)</h3>
 <p>The resolved surface governs v2 host commands. A fixed reader accepts filter
 changes only when tenant filtering is enabled and the mount exposes that
@@ -266,7 +282,9 @@ Unsupported true flags and unknown flag names return 422
 remain false. Phase 3c snapshots and the H5 offline preview have no live data
 session and do not display simulated filtering or parameter controls.</p>
 <h2 id="decided-scope-and-remaining-boundaries">Decided scope and remaining boundaries</h2>
-<p>HQ-5 permits narrow appearance/chrome changes; required OpenSight notices remain.
+<p>HQ-5 permits narrow appearance/chrome changes; required OpenSight notices remain
+except inside the embeds of fully branded tenants, per the D-102 Q7 amendment
+in <a href="#branding-removal-341-d-102-q7">Branding removal</a> above.
 HQ-6 enables anonymous embedding and registered authoring in H6. Export/download
 and persistent reader state remain rejected. HQ-7/HQ-12 session lifetimes, native
 issuance shapes, single-use bootstrap and versioned browser transport are

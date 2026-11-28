@@ -430,6 +430,14 @@ channel ID and a strictly validated <code>payload</code> with a <code>type</code
 The SDK checks a custom event&#39;s ID and exact column set against its own mount
 snapshot. The frame accepts commands only from the bound parent while the
 session has a valid display lease. Host actions cannot wake an idle embed.</p>
+<h2 id="branding-removal-341-d-102-q7">Branding removal (#341, D-102 Q7)</h2>
+<p>A session whose tenant appearance supplies its own product name and logo renders
+its frames with no OpenSight name, logo or notice strings: the frame footer is
+omitted and a default iframe title falls back to the tenant&#39;s product name.
+Tenants with partial or no branding of their own keep the notices exactly as
+before. This is presentation only — session issuance, authorization and the data
+path are unchanged. See <a href="/docs/embedding/#branding-removal-341-d-102-q7">branding removal</a>
+for the configuration-side rule and the HQ-5 amendment.</p>
 <h2 id="verification">Verification</h2>
 <p>Tests are included in root <code>npm test</code>: session replay/races/restart, renewal,
 expiry, revisions, suspension, key rotation, viewer RLS/CLS, anonymous tag rules,
