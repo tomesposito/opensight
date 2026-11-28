@@ -10,7 +10,7 @@ export interface Session {
   billingPaused?: boolean; trial?: TrialInfo | null; billing?: BillingState;
   workspaceName?: string; workspaceSlug?: string | null;
 }
-export interface Access { embed?: { surface: import('@opensight/embedding-sdk/surface').EmbedSurface; loadAnalysis(id: string): Promise<EmbeddedAnalysisRecord>; authorizeRoute(path: string): Promise<void>; storage: DraftStorage }; mode: 'demo' | 'hosted' | 'local'; session?: Session; signOut?(): Promise<void>; aiClient?: Pick<ReturnType<typeof createApiClient>, 'getAIStatus' | 'generateO' | 'generateCalculation' | 'planO' | 'reviseO'> & Partial<Pick<ReturnType<typeof createApiClient>, 'migrationGuidance'>> }
+export interface Access { embed?: { events?: import('./embed-transport.js').EmbedTransport['events']; surface: import('@opensight/embedding-sdk/surface').EmbedSurface; loadAnalysis(id: string): Promise<EmbeddedAnalysisRecord>; authorizeRoute(path: string): Promise<void>; storage: DraftStorage }; mode: 'demo' | 'hosted' | 'local'; session?: Session; signOut?(): Promise<void>; aiClient?: Pick<ReturnType<typeof createApiClient>, 'getAIStatus' | 'generateO' | 'generateCalculation' | 'planO' | 'reviseO'> & Partial<Pick<ReturnType<typeof createApiClient>, 'migrationGuidance'>> }
 // Public sample preview has a fixed author_ai persona, never a hosted credential.
 export const demoAccess: Access = { mode: 'demo', session: { id: 'sample', namespaceId: 'sample', name: 'Public sample preview', role: 'author_ai' } };
 const Context = createContext<Access>(demoAccess);

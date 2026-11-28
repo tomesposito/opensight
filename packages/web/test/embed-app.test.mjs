@@ -42,6 +42,7 @@ test('full-app lands on every route class, navigates and saves through one redee
   await saveHostedDraft(f.client.api, hostedAnalysisInput(draft), link, persist);
   await saveHostedDraft(f.client.api, hostedAnalysisInput({ ...draft, title: 'Edited again' }), link, persist);
   await f.client.authorizeRoute('/data'); f.initialize(); await settle();
+  assert.deepEqual(f.messages.filter(m => m.data.payload).map(m => m.data.payload), [1, 2].map(version => ({ type: 'save', analysisId: 'working', version })));
   assert.equal(link.revision, 2); assert.equal(f.calls.filter(c => c.path.endsWith('/redeem')).length, 1);
   assert.deepEqual(f.states, ['ready']); assert.equal(f.messages.some(m => m.data.event === 'saved'), false);
   for (const call of f.calls.filter(c => c.path.includes('/app/'))) {

@@ -27,6 +27,8 @@ type ObjectValue = Record<string, unknown>;
 type Input = Pick<FixtureVisual, 'source' | 'rows' | 'bindings' | 'path' | 'theme'> & { definition: unknown; metrics?: readonly PublishedMetric[] };
 export interface CompiledVisual {
   model: VisualModel;
+  /** A single query result behind a selectable point or detail row. */
+  resultRow?: (index: number, seriesIndex?: number) => Row | undefined;
   narrative?: InsightNarrative;
   kpiTrendArrow?: { direction: 'up' | 'down'; label: string };
   kpiTarget?: { value: number | null; label: string; progress?: { ratio: number; percent: number; label: string } };
@@ -799,7 +801,7 @@ function measureCombination(field: Field, metrics: readonly PublishedMetric[] = 
 }
 
 /** Pure renderer: rows must already be authorized, filtered and aggregated. No query execution. */
-export function compileVisual(input: Input): CompiledVisual {
+export function compileVisual(input: Input, selectRows = false): CompiledVisual {
   if (input.theme !== undefined && !themeValid(input.theme)) fail(input.path, 'invalid analysis theme');
   const theme = input.theme ?? LIGHT_THEME;
   const model = normalizeVisual(input.source, input.definition, input.path);
@@ -1172,7 +1174,15 @@ export function compileVisual(input: Input): CompiledVisual {
   }
   if (model.kind === 'pivot' || model.kind === 'table' && (model.totals || model.subtotals)) {
     const table = compilePivotTable(model, rows, cell, number, input.path);
-    return { model, option, state: state === 'ready' && !table.rows.length ? 'empty' : state, table };
+    if (!selectRows) return { model, option, state: state === 'ready' && !table.rows.length ? 'empty' : state, table };
+    const dimensions = model.kind === 'pivot' ? model.rowDimensions : model.dimensions;
+    const byPath = new Map<string, Row | undefined>();
+    for (const row of rows) {
+      const path = rowGroupKey(dimensions.map(field => cell(row, field)));
+      byPath.set(path, byPath.has(path) ? undefined : row);
+    }
+    return { model, option, state: state === 'ready' && !table.rows.length ? 'empty' : state, table,
+      resultRow: index => table.rowKinds?.[index] === 'detail' ? byPath.get(rowGroupKey(table.rowGroupPaths![index]!)) : undefined };
   }
   // Forecast post-pass (issue #235): appended extras keep every earlier index
   // (facet map, conditional formatting, detailed tooltips) valid.
@@ -1271,7 +1281,16 @@ export function compileVisual(input: Input): CompiledVisual {
       };
     }
   }
-  return { model, option, state, ...(kpiTrendArrow ? { kpiTrendArrow } : {}), ...(kpiTarget ? { kpiTarget } : {}), ...(forecastNote ? { forecastNote } : {}), ...(narrative ? { narrative } : {}), table: { ...(model.trendDimension ? { dimensionCount: 1 } : {}), columns: fields.map(f => f === model.targetMeasure ? `Target: ${fieldName(f, model.formatting)}` : fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
+  // Series-local indices on small multiples refer to their panel. Synthetic
+  // buckets, forecasts and transformed series cannot identify a query row.
+  const original = selectRows ? new Set(input.rows) : undefined;
+  const resultRow = (index: number, seriesIndex?: number) => {
+    if (seriesIndex !== undefined && !['bar', 'line', 'area', 'bar100', 'combo', 'pie', 'scatter', 'funnel', 'heatmap', 'pointMap', 'gauge'].includes(model.kind)) return;
+    if (seriesIndex !== undefined && model.forecast?.enabled && seriesIndex >= (facetSeriesMap?.length ?? model.measures.length)) return;
+    const row = seriesIndex !== undefined && facetSeriesMap ? facetSeriesMap[seriesIndex]?.rows[index] : rows[index];
+    return row && original?.has(row) ? row : undefined;
+  };
+  return { model, option, state, ...(selectRows ? { resultRow } : {}), ...(kpiTrendArrow ? { kpiTrendArrow } : {}), ...(kpiTarget ? { kpiTarget } : {}), ...(forecastNote ? { forecastNote } : {}), ...(narrative ? { narrative } : {}), table: { ...(model.trendDimension ? { dimensionCount: 1 } : {}), columns: fields.map(f => f === model.targetMeasure ? `Target: ${fieldName(f, model.formatting)}` : fieldName(f, model.formatting)), rows: rows.map(row => fields.map(field => cell(row, field))),
     ...(model.formatting ? { visibleColumns: fields.map(f => (model.measures.includes(f) ? model.formatting?.valueNamesVisible : model.formatting?.rowNamesVisible) === false ? '' : fieldName(f, model.formatting)) } : {}),
   } };
 }

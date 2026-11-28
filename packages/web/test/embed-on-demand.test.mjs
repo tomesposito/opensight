@@ -72,3 +72,11 @@ test('successful authority reads renew conservatively from request start; local 
   t.mock.timers.tick(30000); f.document.dispatchEvent(new Event('pointerdown')); assert.equal(f.states.at(-1), 'ready');
   t.mock.timers.tick(15000); await settle(); assert.equal(f.states.at(-1), 'idle'); assert.equal(f.calls.length, 5);
 });
+
+test('#340 data emission respects the on-demand display lease without renewing it', async t => {
+  const f = fixture(t), payload = { type: 'navigation', path: '/data' };
+  f.initialize(); f.transport.events.emit(payload); await f.transport.connect();
+  f.transport.events.emit(payload); t.mock.timers.setTime(150000); f.transport.events.emit(payload);
+  assert.deepEqual(f.messages.filter(m => m.value.payload).map(m => m.value.payload), [payload]);
+  assert.equal(f.calls.length, 4);
+});

@@ -6,7 +6,7 @@ import { useGlobalSearch } from './GlobalSearch.js';
 import { BrandMark } from './BrandMark.js';
 
 export function useAppRoute() {
-  const authorize = useAccess().embed?.authorizeRoute;
+  const embed = useAccess().embed, authorize = embed?.authorizeRoute;
   const [route, setRoute] = useState(() => authorize ? undefined : parseRoute(typeof window === 'undefined' ? '' : window.location?.hash ?? ''));
   const [entry, setEntry] = useState(0);
   const [routeError, setRouteError] = useState<string>();
@@ -16,7 +16,7 @@ export function useAppRoute() {
     const current = ++epoch.current;
     if (!authorize) { commit(); return; }
     setRoutePending(true); setRouteError(undefined);
-    void authorize(hash.slice(1)).then(() => { if (current === epoch.current) { setRoutePending(false); commit(); } }).catch((error: unknown) => {
+    void authorize(hash.slice(1)).then(() => { if (current === epoch.current) { setRoutePending(false); commit(); embed?.events?.emit({ type: 'navigation', path: hash.slice(1) }); } }).catch((error: unknown) => {
       if (current === epoch.current) { setRoutePending(false); setRoute(undefined); setRouteError(error instanceof Error ? error.message : 'EMBED_SCOPE_DENIED'); }
     });
   };

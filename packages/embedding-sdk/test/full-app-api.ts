@@ -25,3 +25,8 @@ void client.mount(document.createElement('div'), { SessionTags: registered.Sessi
 void client.mount(document.createElement('div'), { surface: { actions: { authoring: true } } });
 // @ts-expect-error Required notices are outside the surface vocabulary.
 void client.mount(document.createElement('div'), { surface: { chrome: { notices: 'hidden' } } });
+void client.mount(document.createElement('div'), { onDataEvent(event) {
+  if (event.type === 'selection') void event.values.Region;
+  // @ts-expect-error The version belongs only to a save receipt.
+  void event.version;
+} });

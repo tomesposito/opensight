@@ -1,6 +1,6 @@
 import type { SurfaceState } from '@opensight/embedding-sdk/surface';
 import { useState } from 'react';
-import { VisualCard } from './VisualCard.js';
+import { EmbedVisualCard } from './EmbedVisualCard.js';
 import type { FixtureVisual } from './model.js';
 import type { EmbedTransport } from './embed-transport.js';
 interface Column { name: string; type: string }
@@ -24,7 +24,10 @@ export function EmbeddedAuthor({ initial, transport, authoring = 'visible' }: { 
   };
   const save = () => {
     if (!analysis) return; setBusy(true);
-    void transport.request('save', { analysisId: analysis.AnalysisId, definition: { ...analysis, Name: name }, datasetId, expectedVersion: content.analysis?.AnalysisId === analysis.AnalysisId ? content.version : 0 }).then(() => transport.saved()).catch(() => {}).finally(() => setBusy(false));
+    void transport.request<{ analysisId: string; version: number }>('save', { analysisId: analysis.AnalysisId, definition: { ...analysis, Name: name }, datasetId, expectedVersion: content.analysis?.AnalysisId === analysis.AnalysisId ? content.version : 0 }).then(receipt => {
+      transport.events.emit({ type: 'save', analysisId: receipt.analysisId, version: receipt.version });
+      transport.saved();
+    }).catch(() => {}).finally(() => setBusy(false));
   };
   return <section className="embed-author">
     {authoring !== 'hidden' && <aside inert={authoring === 'disabled'} aria-disabled={authoring === 'disabled' || undefined}><h2>Analyses</h2>{content.analyses.map(a => <button key={a.id} disabled={busy} onClick={() => open(a.id)}>{a.name}</button>)}
@@ -36,6 +39,6 @@ export function EmbeddedAuthor({ initial, transport, authoring = 'visible' }: { 
       <label>Aggregation<select value={aggregation} onChange={e => setAggregation(e.target.value)}>{['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'].map(a => <option key={a}>{a}</option>)}</select></label>
       <button disabled={busy || !measure || kind === 'BarChartVisual' && !dimension} onClick={add}>Add visual</button><button disabled={busy || !analysis || !name.trim()} onClick={save}>Save analysis</button>
       <p role="status">{note}</p>
-    </aside>}<div><h2>{name}</h2><p>{analysis?.Definition.Sheets.reduce((n, s) => n + s.Visuals.length, 0) ?? 0} visuals</p><div className="dashboard-grid">{content.visuals?.map(v => <VisualCard key={v.id} visual={v} />)}</div></div>
+    </aside>}<div><h2>{name}</h2><p>{analysis?.Definition.Sheets.reduce((n, s) => n + s.Visuals.length, 0) ?? 0} visuals</p><div className="dashboard-grid">{content.visuals?.map(v => <EmbedVisualCard key={v.id} visual={v} events={transport.events} />)}</div></div>
   </section>;
 }

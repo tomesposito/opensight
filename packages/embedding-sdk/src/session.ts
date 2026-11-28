@@ -1,3 +1,4 @@
+import { isDataMessage, type EmbedDataEvent } from './events.js';
 import { isSurfaceDeclaration, type SurfaceDeclaration } from './surface.js';
 import { EmbeddingError } from './index.js';
 
@@ -16,6 +17,7 @@ export interface GenerateEmbedUrlForAnonymousUser {
 }
 export interface SessionEmbedUrl { Surface?: SurfaceDeclaration; sessionId: string; EmbedUrl: string; bootstrapExpiresAt: string; SessionLifetimeInMinutes: number; configRevision: number }
 export interface SessionCallbacks {
+  onDataEvent?: (event: EmbedDataEvent) => void;
   onReady?: () => void; onSessionExpired?: () => void; onAuthorizationRevoked?: () => void;
   onConnectionRequired?: () => void;
   onSaved?: () => void; onError?: (error: EmbeddingError) => void;
@@ -67,12 +69,20 @@ export function createSessionEmbeddingClient(options: SessionEmbeddingOptions) {
         // the frame acknowledges; its one-shot receiver cannot redeem twice.
         handshakeTimer = setInterval(initialize, 250);
       };
+      let ready = false, terminal = false;
       const message = (event: MessageEvent<unknown>) => {
         if (destroyed || !active || event.source !== iframe.contentWindow || event.origin !== active.origin || !event.data || typeof event.data !== 'object') return;
+        if (isDataMessage(event.data, active.id, active.channelId)) {
+          if (ready && !terminal) callbacks.onDataEvent?.(event.data.payload);
+          return;
+        }
         const data = event.data as Record<string, unknown>;
         if (Object.keys(data).some(k => !['version', 'type', 'event', 'sessionId', 'channelId', 'errorCode'].includes(k)) || data.version !== 2 || data.type !== 'opensight:session'
           || data.sessionId !== active.id || data.channelId !== active.channelId) return;
-        if (data.event === 'ready') { clear(); callbacks.onReady?.(); }
+        if (data.event === 'ready' && !terminal) ready = true;
+        if (data.event === 'connectionRequired') ready = false;
+        if (['saved', 'error', 'sessionExpired', 'authorizationRevoked'].includes(String(data.event))) terminal = true;
+        if (data.event === 'ready' && !terminal) { clear(); callbacks.onReady?.(); }
         else if (data.event === 'connectionRequired') { clear(); callbacks.onConnectionRequired?.(); }
         else if (data.event === 'sessionExpired') { clear(); callbacks.onSessionExpired?.(); }
         else if (data.event === 'authorizationRevoked') { clear(); callbacks.onAuthorizationRevoked?.(); }
@@ -86,6 +96,7 @@ export function createSessionEmbeddingClient(options: SessionEmbeddingOptions) {
       };
       const refresh = async () => {
         if (destroyed) throw new EmbeddingError('EMBED_DESTROYED', 'The embed has been destroyed');
+        ready = false; terminal = false;
         const current = ++generation; controller?.abort(); controller = new AbortController(); active = undefined; clear();
         const result = await options.getEmbedUrl(controller.signal, structuredClone(surface));
         if (destroyed || generation !== current) return;

@@ -10,6 +10,7 @@
   },
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./events": { "types": "./dist/events.d.ts", "import": "./dist/events.js" },
     "./surface": { "types": "./dist/surface.d.ts", "import": "./dist/surface.js" },
     "./appearance": { "types": "./dist/appearance.d.ts", "import": "./dist/appearance.js" }
   },

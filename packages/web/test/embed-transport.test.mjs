@@ -67,3 +67,19 @@ test('H6 iframe hides on backgrounding and requires fresh status on resume; save
   b.emit(event(b)); await settle(); b.visibility('hidden'); assert.equal(states.at(-1), 'loading'); b.visibility('visible'); await settle(); assert.equal(states.at(-1), 'ready'); assert.equal(calls, 3);
   transport.saved(); assert.equal(states.at(-1), 'saved'); assert.equal(b.events.at(-1).data.event, 'saved'); await assert.rejects(transport.request('content')); transport.destroy();
 });
+
+test('#340 frame emits projected data on its live channel only', async t => {
+  const b = browser(), expiresAt = Date.now() + 900000, init = event(b);
+  const transport = startEmbedTransport({ sessionId: id, allowedDomains: [parentOrigin] }, bootstrap, () => {}, async t => t.ready(), b.view,
+    async url => Response.json(url.endsWith('/redeem') ? { credential, expiresAt } : { expiresAt }));
+  t.after(() => transport.destroy());
+  const payload = { type: 'selection', visualId: 'sales', values: { Region: 'East' } };
+  transport.events.emit(payload); b.emit(init); await settle();
+  transport.events.emit({ ...payload, credential }); transport.events.emit(payload);
+  b.visibility('hidden'); transport.events.emit(payload);
+  b.visibility('visible'); transport.events.emit(payload); await settle();
+  transport.saved(); transport.events.emit(payload);
+  assert.deepEqual(b.events.filter(e => e.data.type === 'opensight:data'), [
+    { target: parentOrigin, data: { ...init.data, type: 'opensight:data', payload } },
+  ]);
+});

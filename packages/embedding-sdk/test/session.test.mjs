@@ -98,3 +98,32 @@ test('v2 refuses malformed declarations and URLs issued without the requested pr
   await assert.rejects(wrong.mount(d.container, options), { code: 'EMBED_SURFACE_MISMATCH' });
   assert.deepEqual(d.frames, []); assert.equal(d.listeners.size, 0);
 });
+
+test('#340 callbacks receive strict data events only on the ready, bound channel', async t => {
+  const d = dom(), received = [];
+  const handle = await createSessionEmbeddingClient({ allowedEmbedOrigins: [origin], getEmbedUrl: async () => issued() })
+    .mount(d.container, { onDataEvent: event => received.push(event) });
+  t.after(() => handle.destroy());
+  d.loaded();
+  const init = d.messages[0].data;
+  const selection = { type: 'selection', visualId: 'sales', values: { Region: 'East' } };
+  const data = { ...init, type: 'opensight:data', payload: selection };
+  const event = { origin, source: handle.iframe.contentWindow, data };
+  d.emit(event);
+  const status = name => d.emit({ ...event, data: { ...init, type: 'opensight:session', event: name } });
+  status('ready');
+  for (const invalid of [{ ...event, source: {} }, { ...event, origin: parent }, ...[
+    { version: 1 }, { channelId: 'other' }, { sessionId: 'other' }, { authorization: 'extra' },
+    { payload: { ...selection, token: 'extra' } }, { payload: { ...selection, values: { Region: {} } } },
+    { payload: { type: 'save', analysisId: 'x', version: 0 } },
+    { payload: { type: 'navigation', path: '//external.test' } },
+    { payload: { type: 'filterState', filters: { Region: [null] } } },
+  ].map(override => ({ ...event, data: { ...data, ...override } }))]) d.emit(invalid);
+  assert.deepEqual(received, []);
+  const valid = [selection, { type: 'filterState', filters: { Region: ['East'] } },
+    { type: 'navigation', path: '/dashboards/sales' }, { type: 'save', analysisId: 'sales', version: 2 }];
+  for (const payload of valid) d.emit({ ...event, data: { ...data, payload } });
+  assert.deepEqual(received, valid);
+  status('connectionRequired'); d.emit(event); status('ready'); status('sessionExpired'); d.emit(event);
+  assert.deepEqual(received, valid);
+});

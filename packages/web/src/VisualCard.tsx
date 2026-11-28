@@ -9,16 +9,22 @@ import { VisualSkeleton } from './VisualSkeleton.js';
 import type { EChartsOption } from 'echarts';
 import { compileVisual, DATA_REQUIRED_LABEL, displayCell, rowGroupKey, rowGroupVisibility, pivotRowGroupHeaders } from './compiler.js';
 import type { CompiledVisual } from './compiler.js';
-import type { Cell, FixtureVisual } from './model.js';
+import type { Cell, FixtureVisual, Row } from './model.js';
 import { init } from './echarts.js';
 import type { QueryResponse } from './api-client.js';
 
-function Chart({ option, title, compiled, interaction }: { option: EChartsOption; title: string; compiled: CompiledVisual; interaction?: VisualInteraction }) {
+type SelectResult = (row: Row, compiled: CompiledVisual) => void;
+function Chart({ option, title, compiled, interaction, onResultSelect }: { option: EChartsOption; title: string; compiled: CompiledVisual; onResultSelect?: SelectResult; interaction?: VisualInteraction }) {
   const container = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!container.current) return;
     const chart = init(container.current, undefined, { renderer: 'svg' });
     chart.setOption(interaction?.brush ? { ...option, brush: { toolbox: ['lineX', 'clear'], xAxisIndex: 0, brushMode: 'single', throttleType: 'debounce', throttleDelay: 100 } } : option, { notMerge: true });
+    if (onResultSelect) chart.on('click', event => {
+      if (event.componentType !== 'series' || typeof event.seriesIndex !== 'number') return;
+      const row = compiled.resultRow?.(event.dataIndex, event.seriesIndex);
+      if (row) onResultSelect(row, compiled);
+    });
     if (interaction) {
       chart.on('click', event => { if (!['wordCloud', 'histogram', 'box', 'treemap', 'filledMap', 'sankey'].includes(compiled.model.kind) && (event.componentType === 'series' && typeof event.dataIndex === 'number')) { const selection = rowSelection(compiled, event.dataIndex); if (selection) interaction.onSelect(selection); } });
       if (interaction.brush) chart.on('brushEnd', (event: unknown) => {
@@ -39,7 +45,7 @@ function Chart({ option, title, compiled, interaction }: { option: EChartsOption
     const observer = new ResizeObserver(resize);
     observer.observe(container.current);
     return () => { observer.disconnect(); chart.dispose(); };
-  }, [option, compiled, interaction]);
+  }, [option, compiled, interaction, onResultSelect]);
   // Separate roots keep disposal of the old ECharts host from clearing the new nested host.
   if (compiled.kpiTarget || compiled.kpiTrendArrow) return <div key="kpi-adornments" className="chart" role="img" aria-label={`${compiled.model.formatting?.altText ?? title}. ${compiled.kpiTarget ? `Target: ${compiled.kpiTarget.label}.` : ''} ${compiled.kpiTarget?.progress?.label ?? ''} ${compiled.kpiTrendArrow?.label ?? ''}`}>
     <div ref={container} style={{ width: '100%', height: '100%' }} aria-hidden="true" />
@@ -50,7 +56,7 @@ function Chart({ option, title, compiled, interaction }: { option: EChartsOption
 
 export type RowGroupToggle = (path: Cell[], collapsed: boolean) => void;
 
-function DataTable({ compiled, interaction, onRowGroupToggle }: { compiled: CompiledVisual; interaction?: VisualInteraction; onRowGroupToggle?: RowGroupToggle }) {
+function DataTable({ compiled, interaction, onRowGroupToggle, onResultSelect }: { compiled: CompiledVisual; onResultSelect?: SelectResult; interaction?: VisualInteraction; onRowGroupToggle?: RowGroupToggle }) {
   const { model, table } = compiled, f = model.formatting;
   const dimensionCount = table.dimensionCount ?? (model.kind === 'pivot' ? model.rowDimensions.length : model.dimensions.length);
   const pivot = model.kind === 'pivot' ? f?.pivot : undefined;
@@ -93,24 +99,27 @@ function DataTable({ compiled, interaction, onRowGroupToggle }: { compiled: Comp
       const isAnchor = expandable && table.rowKinds?.[i] === 'subtotal' && !!path?.length && !subtotalAnchors.has(key!);
       if (isAnchor) subtotalAnchors.add(key!);
       const toggleCell = isAnchor ? path!.length - 1 : -1;
+      const result = onResultSelect && compiled.resultRow?.(i);
+      const selection = interaction && rowSelection(compiled, i);
+      const select = result ? () => onResultSelect(result, compiled) : selection ? () => interaction!.onSelect(selection) : undefined;
       return <Fragment key={i}>{headers.get(i)?.map(path => <tr key={rowGroupKey(path)} className="row-group">{table.columns.map((_, j) => <td key={j} style={cellStyle}>{j === path.length - 1 ? <>{toggle(path)} {displayCell(path[j]!)}</> : j < path.length ? displayCell(path[j]!) : ''}</td>)}</tr>)}
-      {visible[i] && <tr className={table.rowKinds?.[i]} onClick={interaction && rowSelection(compiled, i) ? () => interaction.onSelect(rowSelection(compiled, i)!) : undefined}>{row.map((cell, j) => {
+      {visible[i] && <tr className={table.rowKinds?.[i]} onClick={select}>{row.map((cell, j) => {
       const measure = j >= dimensionCount ? model.measures[table.measureIndices?.[i]?.[j] ?? (j - dimensionCount) % model.measures.length] : undefined;
       const rule = measure && fieldRule(f, measure, cell);
       const toggleButton = j === toggleCell ? toggle(path!) : null;
-      return <td key={j} style={{ ...cellStyle, ...(rule ? { color: rule.color, background: rule.background } : {}) }}>{toggleButton}{toggleButton ? ' ' : null}{pivot?.metricPlacement === 'rows' && j === dimensionCount - 1 && f?.valueNamesVisible === false ? <span className="sr-only">{formatted(cell, j, i)}</span> : j === 0 && interaction && rowSelection(compiled, i) ? <button type="button" onClick={event => { event.stopPropagation(); interaction.onSelect(rowSelection(compiled, i)!); }}>{formatted(cell, j, i)}</button> : formatted(cell, j, i)}</td>;
+      return <td key={j} style={{ ...cellStyle, ...(rule ? { color: rule.color, background: rule.background } : {}) }}>{toggleButton}{toggleButton ? ' ' : null}{pivot?.metricPlacement === 'rows' && j === dimensionCount - 1 && f?.valueNamesVisible === false ? <span className="sr-only">{formatted(cell, j, i)}</span> : j === 0 && select ? <button type="button" onClick={event => { event.stopPropagation(); select(); }}>{formatted(cell, j, i)}</button> : formatted(cell, j, i)}</td>;
     })}</tr>}</Fragment>; })}</tbody>
   </table></div>;
 }
 
-export function VisualCard({ visual: sourceVisual, dataMessage, loading = false, definitionPreview = false, interaction, onRowGroupToggle, actionMenu, actionNote, provenance }: { visual: FixtureVisual; dataMessage?: string; loading?: boolean; definitionPreview?: boolean; interaction?: VisualInteraction; onRowGroupToggle?: RowGroupToggle; actionMenu?: ReactNode; actionNote?: string; provenance?: QueryResponse['provenance'] }) {
+export function VisualCard({ visual: sourceVisual, dataMessage, loading = false, definitionPreview = false, interaction, onResultSelect, onRowGroupToggle, actionMenu, actionNote, provenance }: { visual: FixtureVisual; dataMessage?: string; loading?: boolean; definitionPreview?: boolean; onResultSelect?: SelectResult; interaction?: VisualInteraction; onRowGroupToggle?: RowGroupToggle; actionMenu?: ReactNode; actionNote?: string; provenance?: QueryResponse['provenance'] }) {
   const visual = useEmbedVisual(sourceVisual);
   const headingId = useId();
   const theme = visual.theme ?? LIGHT_THEME;
   const result = useMemo(() => {
-    try { return { compiled: compileVisual(visual) }; }
+    try { return { compiled: compileVisual(visual, !!onResultSelect) }; }
     catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
-  }, [visual]);
+  }, [visual, !!onResultSelect]);
   const { compiled, error } = result;
   const { column, columns, row, rows } = visual.placement;
   return <section className="visual-card" aria-busy={loading} aria-labelledby={headingId} style={{ '--visual-header': theme.background, background: theme.surface, color: theme.textColor, fontFamily: theme.fontFamily, gridColumn: `${column + 1} / span ${columns}`, gridRow: `${row + 1} / span ${rows}`, ...cardChromeStyle(compiled?.model.formatting) } as CSSProperties}>
@@ -126,7 +135,7 @@ export function VisualCard({ visual: sourceVisual, dataMessage, loading = false,
     {error && <div className="visual-error" role="alert"><strong>Unable to render</strong><p>{error}</p></div>}
     {compiled && <>
       <div className="visual-content">
-        {!loading && compiled.state === 'ready' && ((compiled.model.kind === 'table' || compiled.model.kind === 'pivot') ? <DataTable compiled={compiled} interaction={interaction} onRowGroupToggle={onRowGroupToggle} /> : <Chart option={compiled.option} title={compiled.model.title} compiled={compiled} interaction={interaction} />)}
+        {!loading && compiled.state === 'ready' && ((compiled.model.kind === 'table' || compiled.model.kind === 'pivot') ? <DataTable compiled={compiled} interaction={interaction} onResultSelect={onResultSelect} onRowGroupToggle={onRowGroupToggle} /> : <Chart option={compiled.option} title={compiled.model.title} compiled={compiled} interaction={interaction} onResultSelect={onResultSelect} />)}
         {loading && compiled.state !== 'ready' && <VisualSkeleton kind={compiled.model.kind} animated={cardLoadingAnimation(compiled.model.formatting)} />}
         {!loading && compiled.state !== 'ready' && <div className="empty-state" role="status">
           <strong>{compiled.state === 'unavailable' ? definitionPreview ? 'Definition only' : dataMessage ? 'Unable to load data' : DATA_REQUIRED_LABEL : 'No results'}</strong>
@@ -140,7 +149,7 @@ export function VisualCard({ visual: sourceVisual, dataMessage, loading = false,
         {compiled.forecastNote && <p className="forecast-note">{compiled.forecastNote}</p>}
         {compiled.model.facet && <p className="facet-caption">Group by: {fieldName(compiled.model.facet, compiled.model.formatting)}</p>}
         {compiled.model.breakdown && <p className="facet-caption">Breakdown: {fieldName(compiled.model.breakdown, compiled.model.formatting)}</p>}
-        {compiled.state === 'ready' && compiled.model.kind !== 'table' && compiled.model.kind !== 'pivot' && <details><summary>View data · {compiled.table.rows.length} {compiled.table.rows.length === 1 ? 'row' : 'rows'}</summary><DataTable compiled={compiled} interaction={interaction} /></details>}
+        {compiled.state === 'ready' && compiled.model.kind !== 'table' && compiled.model.kind !== 'pivot' && <details><summary>View data · {compiled.table.rows.length} {compiled.table.rows.length === 1 ? 'row' : 'rows'}</summary><DataTable compiled={compiled} interaction={interaction} onResultSelect={onResultSelect} /></details>}
         {!!compiled.model.warnings.length && <details className="render-notes"><summary>Rendering notes · {compiled.model.warnings.length}</summary><ul>{compiled.model.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul></details>}
       </footer>
     </>}
