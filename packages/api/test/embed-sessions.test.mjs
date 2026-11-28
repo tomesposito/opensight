@@ -49,6 +49,21 @@ test('H6 renewal needs issuer authentication, invalidates the old session and se
   await f.sessions.revoke(context, next.sessionId);
   await assert.rejects(f.sessions.renew(context, next.sessionId), { code: 'EMBED_SESSION_REVOKED' });
 });
+test('#338 authenticated issuers use the same SessionTags bounds for every subject', async t => {
+  const f = await sessionFixture(t);
+  const max = Array.from({ length: 50 }, (_, i) => ({ Key: String(i).padStart(128, 'k'), Value: 'v'.repeat(256) }));
+  for (const [subject, anonymous] of [[{}, false], [{ Namespace: 'virtual', AuthorizedResourceArns: [f.arn('dashboard', 'dashboard')] }, true]]) {
+    const issue = tags => f.issue(request({ ...subject, SessionTags: tags }), anonymous);
+    for (const invalid of [null, {}, [...max, { Key: 'extra', Value: 'v' }], [max[0], max[0]],
+      [{ Key: 'k'.repeat(129), Value: 'v' }], [{ Key: 'k', Value: 'v'.repeat(257) }],
+      [{ Key: '', Value: 'v' }], [{ Key: 'k', Value: '' }], [{ Key: 'k', Value: 'v\n' }]]) {
+      await assert.rejects(issue(invalid), { code: 'EMBED_REQUEST_INVALID' });
+    }
+    const issued = await issue(max), active = await f.redeem(issued);
+    const { session } = await f.sessions.verify(issued.sessionId, active.credential);
+    assert.deepEqual(session.tags, Object.fromEntries(max.map(({ Key, Value }) => [Key, Value])));
+  }
+});
 test('H6 bootstrap/session expiry, configuration/policy revisions, suspension and user removal fail closed', async t => {
   for (const change of ['bootstrap', 'expiry', 'configuration', 'policy', 'suspension', 'removal']) {
     const f = await sessionFixture(t), issued = await f.issue(request({ SessionLifetimeInMinutes: 15 }));

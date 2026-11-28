@@ -63,6 +63,17 @@ function boundedString(value: unknown, max = 256): string {
   if (typeof value !== 'string' || !value.length || value.length > max || /[\x00-\x1f]/.test(value)) embedFailure();
   return value;
 }
+function sessionTags(raw: unknown): Record<string, string> {
+  const tags: Record<string, string> = Object.create(null) as Record<string, string>;
+  if (raw === undefined) return tags;
+  if (!Array.isArray(raw) || raw.length > 50) embedFailure();
+  for (const entry of raw) {
+    const tag = object(entry, ['Key', 'Value']), name = boundedString(tag.Key, 128);
+    if (Object.hasOwn(tags, name)) embedFailure();
+    tags[name] = boundedString(tag.Value);
+  }
+  return tags;
+}
 export function resourceArn(namespaceId: string, kind: string, id: string): string { return `urn:opensight:${namespaceId}:${kind}/${id}`; }
 function arn(value: unknown, namespaceId: string, kind: string): string {
   const prefix = `urn:opensight:${namespaceId}:${kind}/`;
@@ -159,13 +170,12 @@ export class EmbedSessions {
     this.metadata.assertContext(context); this.configured();
     const input = object(structuredClone(raw), anonymous
       ? ['Namespace', 'AuthorizedResourceArns', 'ExperienceConfiguration', 'SessionLifetimeInMinutes', 'SessionTags', 'AllowedDomains', 'Surface']
-      : ['UserArn', 'ExperienceConfiguration', 'SessionLifetimeInMinutes', 'AllowedDomains', 'Surface']);
+      : ['UserArn', 'ExperienceConfiguration', 'SessionLifetimeInMinutes', 'SessionTags', 'AllowedDomains', 'Surface']);
     const experience = parseExperience(input.ExperienceConfiguration);
     if (anonymous && experience.kind === 'full-app') embedFailure('EMBED_FEATURE_UNSUPPORTED', 422);
     const minutes = input.SessionLifetimeInMinutes === undefined ? 600 : input.SessionLifetimeInMinutes;
     if (!Number.isSafeInteger(minutes) || Number(minutes) < 15 || Number(minutes) > 600) embedFailure('EMBED_SESSION_LIMIT_EXCEEDED', 422);
     const userId = anonymous ? context.userId : input.UserArn === undefined ? context.userId : arn(input.UserArn, context.namespaceId, 'user');
-    const tags: Record<string, string> = Object.create(null) as Record<string, string>;
     let authorizedResources: string[] = [], virtualNamespace: string | undefined;
     if (anonymous) {
       virtualNamespace = identifier(input.Namespace);
@@ -173,11 +183,8 @@ export class EmbedSessions {
       authorizedResources = input.AuthorizedResourceArns.map(v => resourceArn(context.namespaceId, 'dashboard', arn(v, context.namespaceId, 'dashboard')));
       if (experience.kind === 'console' || experience.kind === 'q' || experience.kind === 'full-app') embedFailure('EMBED_FEATURE_UNSUPPORTED', 422);
       if (!authorizedResources.includes(resourceArn(context.namespaceId, 'dashboard', experience.dashboardId))) embedFailure('EMBED_SCOPE_DENIED', 403);
-      if (input.SessionTags !== undefined) {
-        if (!Array.isArray(input.SessionTags) || input.SessionTags.length > 50) embedFailure();
-        for (const rawTag of input.SessionTags) { const tag = object(rawTag, ['Key', 'Value']), name = boundedString(tag.Key, 128); if (Object.hasOwn(tags, name)) embedFailure(); tags[name] = boundedString(tag.Value); }
-      }
     }
+    const tags = sessionTags(input.SessionTags);
     const snapshot = await this.database.transaction(async c => {
       const current = await this.configuration(c, context);
       if (current.revisions.authorization !== context.authorizationRevision) embedFailure('EMBED_SESSION_REVOKED', 401);
