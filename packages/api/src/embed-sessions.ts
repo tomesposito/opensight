@@ -74,6 +74,11 @@ function sessionTags(raw: unknown): Record<string, string> {
   }
   return tags;
 }
+function signedBootstrap(key: EmbedKey, id: string, nonce: string, grantBody: string): string {
+  const payload = `${key.id}.${id}.${nonce}`;
+  const signature = createHmac('sha256', key.secret).update(`OpenSight:embed:v2:${payload}:${digest(grantBody)}`).digest('base64url');
+  return `${payload}.${signature}`;
+}
 export function resourceArn(namespaceId: string, kind: string, id: string): string { return `urn:opensight:${namespaceId}:${kind}/${id}`; }
 function arn(value: unknown, namespaceId: string, kind: string): string {
   const prefix = `urn:opensight:${namespaceId}:${kind}/`;
@@ -143,7 +148,7 @@ export class EmbedSessions {
   private async check(c: SqlConnection, row: SqlRow, lockTenant = true): Promise<SessionGrant & { surface: EmbedSurface }> {
     await this.checkKey(c, String(row.key_id));
     if (Number(row.revoked)) embedFailure('EMBED_SESSION_REVOKED', 401);
-    const g = JSON.parse(String(row.grant_body)) as SessionGrant, current = await this.configuration(c, g, lockTenant);
+    const g = this.readGrant(row), current = await this.configuration(c, g, lockTenant);
     if (current.revision !== g.configRevision || JSON.stringify(current.revisions) !== JSON.stringify(g.revisions)) embedFailure('EMBED_SESSION_REVOKED', 401);
     await this.membership(c, g.tenantId, g.namespaceId, g.issuerId);
     const user = await this.membership(c, g.tenantId, g.namespaceId, g.userId);
@@ -156,6 +161,19 @@ export class EmbedSessions {
     if ((g.surface !== undefined || g.request.Surface !== undefined) && !isDeepStrictEqual(g.surface, surface)) embedFailure('EMBED_SESSION_REVOKED', 401);
     // Authority comes from current validated config, including grants issued before #335.
     return { ...g, surface, ...(g.experience.kind === 'full-app' ? { appFeatures: { authoring: current.config.features.authoring, registeredDashboards: current.config.features.registeredDashboards } } : {}), interactionFeatures: { filtering: current.config.features.filtering, parameterControls: current.config.features.parameterControls } };
+  }
+  private readGrant(row: SqlRow): SessionGrant {
+    const body = String(row.grant_body), verifier = String(row.bootstrap_hash);
+    const legacy = /^[a-f0-9]{64}$/.test(verifier);
+    if (!legacy) {
+      // The nonce alone is not a credential. Keeping it with the digest lets
+      // every read verify the original HMAC without storing the bootstrap.
+      const match = /^([A-Za-z0-9_-]{43}):([a-f0-9]{64})$/.exec(verifier);
+      if (!match || !equal(digest(signedBootstrap(this.configured(), String(row.session_id), match[1]!, body)), match[2]!)) embedFailure('INVALID_EMBED_TOKEN', 401);
+    }
+    const grant = JSON.parse(body) as SessionGrant;
+    if (legacy && !grant.anonymous && (Object.keys(grant.tags).length || grant.request.SessionTags !== undefined)) embedFailure('INVALID_EMBED_TOKEN', 401);
+    return grant;
   }
   private async context(g: SessionGrant): Promise<TenantContext> {
     const context = await this.metadata.authenticate(null, async () => ({ namespaceId: g.namespaceId, userId: g.userId }));
@@ -209,13 +227,13 @@ export class EmbedSessions {
     });
     await this.authorize(await this.context(snapshot), snapshot);
     const id = randomBytes(24).toString('base64url'), nonce = randomBytes(32).toString('base64url'), key = this.configured();
-    const payload = `${key.id}.${id}.${nonce}`, signature = createHmac('sha256', key.secret).update(`OpenSight:embed:v2:${payload}:${digest(JSON.stringify(snapshot))}`).digest('base64url');
-    const bootstrap = `${payload}.${signature}`, bootstrapExpiresAt = this.clock() + 300000;
+    const grantBody = JSON.stringify(snapshot), bootstrap = signedBootstrap(key, id, nonce, grantBody);
+    const verifier = `${nonce}:${digest(bootstrap)}`, bootstrapExpiresAt = this.clock() + 300000;
     await this.database.transaction(async c => {
-      const row = { key_id: key.id, revoked: 0, grant_body: JSON.stringify(snapshot) };
+      const row = { session_id: id, key_id: key.id, revoked: 0, grant_body: grantBody, bootstrap_hash: verifier };
       await this.check(c, row);
       await c.query('INSERT INTO h6_sessions (session_id, tenant_id, namespace_id, issuer_id, key_id, grant_body, bootstrap_hash, bootstrap_expires_at) VALUES (?,?,?,?,?,?,?,?)',
-        [id, snapshot.tenantId, snapshot.namespaceId, snapshot.issuerId, key.id, JSON.stringify(snapshot), digest(bootstrap), bootstrapExpiresAt]);
+        [id, snapshot.tenantId, snapshot.namespaceId, snapshot.issuerId, key.id, grantBody, verifier, bootstrapExpiresAt]);
     });
     return { sessionId: id, EmbedUrl: `${snapshot.origin}/embed/sessions/${id}#bootstrap=${bootstrap}`, bootstrapExpiresAt: new Date(bootstrapExpiresAt).toISOString(),
       SessionLifetimeInMinutes: snapshot.durationMinutes, configRevision: snapshot.configRevision,
@@ -240,7 +258,9 @@ export class EmbedSessions {
     await this.authorize(await this.context(grant), grant);
     return this.database.transaction(async c => {
       const row = await this.load(c, id), g = await this.check(c, row);
-      if (!equal(digest(String(r.bootstrap)), String(row.bootstrap_hash))) embedFailure('INVALID_EMBED_TOKEN', 401);
+      const nonce = String(r.bootstrap).split('.')[2] ?? '';
+      if (!equal(String(r.bootstrap), signedBootstrap(this.configured(), id, nonce, String(row.grant_body))) ||
+          !equal(digest(String(r.bootstrap)), String(row.bootstrap_hash).split(':').at(-1)!)) embedFailure('INVALID_EMBED_TOKEN', 401);
       if (!g.allowedDomains.includes(parentOrigin)) embedFailure('EMBED_ORIGIN_DENIED', 403);
       if (Number(row.redeemed)) embedFailure('EMBED_BOOTSTRAP_REPLAY', 401);
       if (Number(row.bootstrap_expires_at) <= this.clock()) embedFailure('EMBED_BOOTSTRAP_EXPIRED', 401);
@@ -297,7 +317,7 @@ export class EmbedSessions {
     const row = await this.database.transaction(c => this.load(c, id));
     if (row.tenant_id !== context.tenantId || row.namespace_id !== context.namespaceId || row.issuer_id !== context.userId) embedFailure('RESOURCE_NOT_FOUND', 404);
     if (Number(row.revoked)) embedFailure('EMBED_SESSION_REVOKED', 401);
-    const grant = JSON.parse(String(row.grant_body)) as SessionGrant;
+    const grant = this.readGrant(row);
     const result = await this.issue(context, grant.request, grant.anonymous);
     try {
       await this.database.transaction(async c => {

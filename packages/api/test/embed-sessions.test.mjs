@@ -4,6 +4,15 @@ import { randomBytes } from 'node:crypto';
 import { sessionFixture, request, parentOrigin } from './embed-session-helpers.mjs';
 import { EmbedSessions, activateEmbedKey } from '../dist/embed-sessions.js';
 import { SqliteMetadataDatabase } from '../dist/metadata-db.js';
+import { digest } from '../dist/auth-crypto.js';
+
+async function editStoredGrant(f, id, change) {
+  await f.db.transaction(async c => {
+    const [row] = await c.query('SELECT grant_body FROM h6_sessions WHERE session_id = ?', [id]);
+    const grant = JSON.parse(row.grant_body); change(grant);
+    await c.query('UPDATE h6_sessions SET grant_body = ? WHERE session_id = ?', [JSON.stringify(grant), id]);
+  });
+}
 
 test('H6 scoped five-minute bootstrap, atomic race/replay, memory-only credential and restart', async t => {
   const f = await sessionFixture(t), issued = await f.issue();
@@ -149,14 +158,31 @@ test('H6 resolves each session surface within the tenant, experience, feature an
 
 test('H6 rechecks the persisted surface and derives defaults for grants issued before #337', async t => {
   const f = await sessionFixture(t), old = await f.issue(), r = await f.redeem(old);
-  const editStored = (id, change) => f.db.transaction(async c => {
-    const [row] = await c.query('SELECT grant_body FROM h6_sessions WHERE session_id = ?', [id]);
-    const grant = JSON.parse(row.grant_body); change(grant);
-    await c.query('UPDATE h6_sessions SET grant_body = ? WHERE session_id = ?', [JSON.stringify(grant), id]);
-  });
-  await editStored(old.sessionId, grant => { delete grant.surface; });
+  const legacyVerifier = issued => f.db.transaction(c => c.query('UPDATE h6_sessions SET bootstrap_hash = ? WHERE session_id = ?',
+    [digest(new URL(issued.EmbedUrl).hash.slice(11)), issued.sessionId]));
+  await legacyVerifier(old);
+  await editStoredGrant(f, old.sessionId, grant => { delete grant.surface; });
   assert.equal((await f.sessions.verify(old.sessionId, r.credential)).session.surface.actions.authoring, 'hidden');
   const bound = await f.issue(request({ Surface: { chrome: { header: 'disabled' } } })), active = await f.redeem(bound);
-  await editStored(bound.sessionId, grant => { grant.surface.chrome.header = 'visible'; });
+  await legacyVerifier(bound);
+  await editStoredGrant(f, bound.sessionId, grant => { grant.surface.chrome.header = 'visible'; });
   await assert.rejects(f.sessions.verify(bound.sessionId, active.credential), { code: 'EMBED_SESSION_REVOKED' });
+});
+
+test('#338 the signed grant rejects stored claim changes before redemption, use and renewal', async t => {
+  const f = await sessionFixture(t), body = request({ SessionTags: [{ Key: 'account', Value: 'north' }] });
+  const pending = await f.issue(body), issued = await f.issue(body), active = await f.redeem(issued);
+  const renewed = await f.sessions.renew(await f.context(), issued.sessionId), credential = await f.redeem(renewed);
+  assert.deepEqual((await f.sessions.verify(renewed.sessionId, credential.credential)).session.tags, { account: 'north' });
+  await assert.rejects(f.sessions.verify(issued.sessionId, active.credential), { code: 'EMBED_SESSION_REVOKED' });
+  for (const { sessionId } of [pending, renewed]) {
+    await editStoredGrant(f, sessionId, grant => {
+      grant.tags.account = 'south';
+      grant.request.SessionTags[0].Value = 'south';
+    });
+    await assert.rejects(f.sessions.shell(sessionId), { code: 'INVALID_EMBED_TOKEN' });
+    await assert.rejects(f.sessions.renew(await f.context(), sessionId), { code: 'INVALID_EMBED_TOKEN' });
+  }
+  await assert.rejects(f.redeem(pending), { code: 'INVALID_EMBED_TOKEN' });
+  await assert.rejects(f.sessions.verify(renewed.sessionId, credential.credential), { code: 'INVALID_EMBED_TOKEN' });
 });
